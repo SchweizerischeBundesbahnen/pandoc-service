@@ -75,7 +75,7 @@ def convert(source_format, target_format):
         encoding = request.args.get("encoding", default="utf-8")
         file_name = request.args.get(
             "file_name",
-            default=("converted-document." + FILE_EXTENSIONS.get(target_format, "doc")),
+            default=("converted-document." + FILE_EXTENSIONS.get(target_format, "docx")),
         )
 
         source = request.get_data().decode(encoding)
