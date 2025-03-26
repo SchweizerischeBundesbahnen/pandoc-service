@@ -198,7 +198,8 @@ def postprocess_and_build_response(output: bytes, target_format: str, file_name:
 
 
 def process_error(e: Exception, err_msg: str, status: int) -> Response:
-    logging.exception(msg=err_msg + ": " + str(e))
+    sanitized_err_msg = err_msg.replace("\r\n", "").replace("\n", "")
+    logging.exception(msg=sanitized_err_msg + ": " + str(e))
     return Response(
         err_msg + ": " + getattr(e, "message", repr(e)),
         mimetype="plain/text",
