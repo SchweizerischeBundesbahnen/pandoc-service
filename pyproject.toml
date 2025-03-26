@@ -1,21 +1,30 @@
 [project]
-name = "open-source-polarion-docker-repo-template"
-version = "0.1.0"
-description = ""
+name = "pandoc-service"
+version = "0.0.0"  # the version is controll by the pipeline
+description = "Service for https://pandoc.org/"
 authors = [
     {name="SBB Polarion Team", email="polarion-opensource@sbb.ch"}
 ]
 license = "Apache License 2.0"
 readme = "README.md"
-requires-python=">=3.13"
-dependencies = []
+requires-python=">=3.12"
+dependencies = [
+    "flask (>=3.1.0,<4.0.0)",
+    "gevent (>=24.11.1,<25.0.0)",
+    "pandoc (>=2.4,<3.0)",
+    "python-docx (>=1.1.2,<2.0.0)",
+    "defusedxml (>=0.7.1,<0.8.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "unittest-xml-reporting (>=3.2.0,<4.0.0)",
+    "testcontainers (>=4.9.2,<5.0.0)",
+]
 
 [tool.poetry]
 packages = [{include = "app"}]
 requires-poetry = ">=2.0"
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = "^3.12"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.1.0"
@@ -24,6 +33,7 @@ mypy = "1.15.0"
 
 [tool.poetry.group.test.dependencies]
 tox = "^4.18.0"
+docker = "^7.1.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -55,7 +65,10 @@ extend-select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
-    "S101" # No assert rule (bandit)
+    "S101", # No assert rule (bandit)
+    "PLR2004", # No magic values (pylint)
+    "F405", # undefined-local-with-import-star-usage (pyflakes)
+    "F403", # No import * (pyflakes)
 ]
 
 [tool.ruff.format]
