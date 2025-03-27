@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install Pandoc
-        run: apt-get install pandoc
+        run: sudo apt-get install pandoc
       - name: 🧱 Install Poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
       - name: 🧱 Setup Python
