@@ -33,6 +33,8 @@ jobs:
           cache: poetry
       - name: 🧱 Install dependencies
         run: poetry install --all-extras
+      - name: Install all missing stub packages
+        run: mypy --install-types
       - name: 🧪 Run tests
         run: poetry run tox
       - name: SonarCloud scan for PR
