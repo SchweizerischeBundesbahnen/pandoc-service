@@ -16,7 +16,7 @@ dependencies = [
     "defusedxml (>=0.7.1,<0.8.0)",
     "requests (>=2.32.3,<3.0.0)",
     "unittest-xml-reporting (>=3.2.0,<4.0.0)",
-    "testcontainers (>=4.9.2,<5.0.0)",
+    "lxml (>=5.3.1,<6.0.0)"
 ]
 
 [tool.poetry]
