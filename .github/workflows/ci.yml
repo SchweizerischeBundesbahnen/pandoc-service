@@ -41,8 +41,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: |
-            -Dsonar.pullrequest.base=${{ github.base_ref }}
-            -Dsonar.pullrequest.branch=${{ github.head_ref }}
             -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
       - name: SonarCloud scan for Push
         uses: sonarsource/sonarqube-scan-action@13990a695682794b53148ff9f6a8b6e22e43955e  # v3.1.0
