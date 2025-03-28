@@ -9,6 +9,7 @@ import pytest
 import requests
 from docker.models.containers import Container
 from docx import Document
+from docx.shared import RGBColor
 
 SOURCE_HTML = """
             <html>
@@ -23,6 +24,22 @@ SOURCE_HTML = """
                 </body>
             </html>
             """
+
+SOURCE_HTML_WITH_HEADINGS = """
+            <html>
+                <head>
+                    <title>Test doc title</title>
+                </head>
+                <body>
+                    <h1>Simple html with several headings</h1>
+                    <p>Some content 1</p>
+                    <h2>Second heading with German vowels ä, ö, and ü</h2>
+                    <p>Some content 2</p>
+                    <h3>Third</h3>
+                    <p>Some content 3</p>
+                </body>
+            </html>
+        """
 
 
 class TestParameters(NamedTuple):
@@ -129,6 +146,18 @@ def test_convert_html_to_docx(test_parameters: TestParameters) -> None:
     assert expected_paragraphs == paragraphs
 
 
+def test_convert_with_docx_template(test_parameters: TestParameters) -> None:
+    # First test without template - it has some default headings color
+    response = __send_docx_with_template_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, data=SOURCE_HTML_WITH_HEADINGS, source_format="html")
+    __assert_doc_contains_specific_headers_color(RGBColor(15, 71, 97), response.content)
+
+    # Now test with 'RED' template - it forces red color for headings
+    with Path("test-data/template-red.docx").open("rb") as t:
+        template = t.read()
+    response = __send_docx_with_template_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, data=SOURCE_HTML_WITH_HEADINGS, source_format="html", template=template)
+    __assert_doc_contains_specific_headers_color(RGBColor(255, 0, 0), response.content)
+
+
 def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data) -> requests.Response:
     url = f"{base_url}/convert/{source_format}/to/{target_format}"
     try:
@@ -140,6 +169,40 @@ def __send_request(base_url: str, request_session: requests.Session, source_form
     except requests.exceptions.RequestException as e:
         logging.error(f"Error: {e}")
         raise
+
+
+def __send_docx_with_template_request(base_url: str, request_session: requests.Session, source_format: str, data, template=None) -> requests.Response:
+    url = f"{base_url}/convert/{source_format}/to/docx-with-template"
+    files = {"source": ("file.html", data)}
+    if template:
+        files["template"] = ("template.docx", template)
+    try:
+        response = request_session.request(method="POST", url=url, files=files, verify=True)
+        if response.status_code // 100 != 2:
+            logging.error(f"Error: Unexpected response: '{response}'")
+            logging.error(f"Error: Response content: '{response.content}'")
+        return response
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error: {e}")
+        raise
+
+
+def __assert_doc_contains_specific_headers_color(color, doc_content):
+    document = Document(io.BytesIO(doc_content))
+
+    # Check for specific headings colors and extract their text
+    headings = []
+    for paragraph in document.paragraphs:
+        if paragraph.style.style_id.startswith("Heading"):
+            assert color in {paragraph.style.base_style.font.color.rgb, paragraph.style.font.color.rgb}
+            headings.append(paragraph.text.replace("\xa0", " "))
+
+    expected_headings = [
+        "Simple html with several headings",
+        "Second heading with German vowels ä, ö, and ü",
+        "Third",
+    ]
+    assert expected_headings == headings
 
 
 def __load_test_file(file_path: str) -> str:
