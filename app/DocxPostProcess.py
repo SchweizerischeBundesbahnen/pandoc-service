@@ -36,31 +36,31 @@ def replace_table_properties(docx_bytes: bytes) -> bytes:
 def process_table(table: Table, parent_columns_count: int, max_width: int) -> None:
     tbl = table._element
     columns_count = parent_columns_count + len(table.columns)
-    tblPr = tbl.find(".//w:tblPr", namespaces={"w": SCHEMA})
-    if tblPr is None:
-        tblPr = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
-        tbl.insert(0, tblPr)
+    table_properties = tbl.find(".//w:tblPr", namespaces={"w": SCHEMA})
+    if table_properties is None:
+        table_properties = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
+        tbl.insert(0, table_properties)
 
     # Set table width (5000 = 100%)
-    tblW = parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>')
-    old_tblW = tblPr.find(".//w:tblW", namespaces={"w": SCHEMA})
-    if old_tblW is not None:
-        tblPr.remove(old_tblW)
-    tblPr.append(tblW)
+    table_width = parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>')
+    old_table_width = table_properties.find(".//w:tblW", namespaces={"w": SCHEMA})
+    if old_table_width is not None:
+        table_properties.remove(old_table_width)
+    table_properties.append(table_width)
 
     # Set table layout to autofit
-    tblLayout = parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="autofit"/>')
-    old_tblLayout = tblPr.find(".//w:tblLayout", namespaces={"w": SCHEMA})
-    if old_tblLayout is not None:
-        tblPr.remove(old_tblLayout)
-    tblPr.append(tblLayout)
+    table_layout = parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="autofit"/>')
+    old_table_layout = table_properties.find(".//w:tblLayout", namespaces={"w": SCHEMA})
+    if old_table_layout is not None:
+        table_properties.remove(old_table_layout)
+    table_properties.append(table_layout)
 
     # Process nested tables
     for row in table.rows:
         for cell in row.cells:
             resize_images_in_cell(cell, max_width / columns_count)
-            for subtable in cell.tables:
-                process_table(subtable, columns_count, max_width)
+            for sub_table in cell.tables:
+                process_table(sub_table, columns_count, max_width)
 
 
 def get_available_content_width(doc: DocumentObject) -> int:

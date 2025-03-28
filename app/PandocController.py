@@ -130,7 +130,7 @@ def convert(source_format: str, target_format: str) -> Response:
 
         return postprocess_and_build_response(output, target_format, file_name)
 
-    except (UnicodeDecodeError, LookupError, Exception) as e:
+    except Exception as e:
         return process_error(e, "Bad request", 400)
 
 
@@ -168,7 +168,7 @@ def convert_docx_with_ref(source_format: str) -> Response:
 
         return postprocess_and_build_response(output, "docx", file_name)
 
-    except (UnicodeDecodeError, LookupError, Exception) as e:
+    except Exception as e:
         return process_error(e, "Bad request", 400)
     finally:
         if temp_template_filename is not None:
