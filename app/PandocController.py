@@ -130,12 +130,8 @@ def convert(source_format: str, target_format: str) -> Response:
 
         return postprocess_and_build_response(output, target_format, file_name)
 
-    except AssertionError as e:
-        return process_error(e, "Assertion error, check the request body", 400)
-    except (UnicodeDecodeError, LookupError) as e:
-        return process_error(e, "Cannot decode request body", 400)
-    except Exception as e:
-        return process_error(e, f"Unexpected error due converting to {target_format}", 500)
+    except (UnicodeDecodeError, LookupError, Exception) as e:
+        return process_error(e, "Bad request", 400)
 
 
 @app.route("/convert/<source_format>/to/docx-with-template", methods=["POST"])
@@ -172,12 +168,8 @@ def convert_docx_with_ref(source_format: str) -> Response:
 
         return postprocess_and_build_response(output, "docx", file_name)
 
-    except AssertionError as e:
-        return process_error(e, "Assertion error, check the request data", 400)
-    except (UnicodeDecodeError, LookupError) as e:
-        return process_error(e, "Cannot decode source content", 400)
-    except Exception as e:
-        return process_error(e, "Unexpected error due converting to docx", 500)
+    except (UnicodeDecodeError, LookupError, Exception) as e:
+        return process_error(e, "Bad request", 400)
     finally:
         if temp_template_filename is not None:
             Path.unlink(Path(temp_template_filename))

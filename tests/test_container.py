@@ -41,6 +41,29 @@ SOURCE_HTML_WITH_HEADINGS = """
             </html>
         """
 
+SOURCE_HTML_WITH_TABLE = """
+            <html>
+                <head>
+                    <title>Test doc title</title>
+                </head>
+                <body>
+                    <h1>Simple html with table</h1>
+                    <table>
+                        <thead>
+                            <tr>
+                                <td style="width: 1000px">Wide column</td>
+                                <td>
+                                    <img src="{0}"></img>
+                                </td>
+                            </tr>
+                        </thead>
+                    </table>
+                </body>
+            </html>
+        """
+
+EMUS_IN_INCH = 914400
+
 
 class TestParameters(NamedTuple):
     base_url: str
@@ -156,6 +179,37 @@ def test_convert_with_docx_template(test_parameters: TestParameters) -> None:
         template = t.read()
     response = __send_docx_with_template_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, data=SOURCE_HTML_WITH_HEADINGS, source_format="html", template=template)
     __assert_doc_contains_specific_headers_color(RGBColor(255, 0, 0), response.content)
+
+
+def test_replace_table_properties(test_parameters: TestParameters) -> None:
+    big_image_in_base64 = __load_test_file("test-data/big_image_in_base64.txt")
+    request_data = SOURCE_HTML_WITH_TABLE.format(big_image_in_base64)
+    response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="docx", data=request_data)
+    assert response.status_code == 200
+
+    document = Document(io.BytesIO(response.content))
+
+    assert len(document.tables) > 0
+    table = document.tables[0]._element
+    table_properties = table.find("w:tblPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+    if table_properties is not None:
+        # Look for the width attribute
+        table_width = table_properties.find("w:tblW", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+
+        if table_width is not None:
+            # Get width value and type
+            width_value = table_width.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}w")
+            width_type = table_width.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}type")
+
+            assert width_value == "5000"
+            assert width_type == "pct"
+
+    images = table.findall(".//pic:pic", {"pic": "http://schemas.openxmlformats.org/drawingml/2006/picture"})
+    assert len(images) > 0
+    image = images[0]
+    image_extent = image.find(".//a:ext", {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"})
+    image_width_in_inches = round(int(image_extent.get("cx", 0)) / EMUS_IN_INCH)
+    assert image_width_in_inches == 6
 
 
 def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data) -> requests.Response:

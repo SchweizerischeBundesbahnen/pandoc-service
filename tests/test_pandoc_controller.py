@@ -37,7 +37,6 @@ def test_version_endpoint():
 
 def test_get_docx_template():
     """Test the docx template retrieval endpoint."""
-    # Mock Werkzeug version to prevent metadata lookup
     with (
         patch("importlib.metadata.version", return_value="3.0.0"),
         patch("subprocess.run") as mock_subprocess,
