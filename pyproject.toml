@@ -1,9 +1,9 @@
 [project]
 name = "open-source-polarion-docker-repo-template"
-version = "0.1.0"
+version = "0.0.0"  # the version is controll by the pipeline
 description = ""
 authors = [
-    {name="SBB Polarion Team", email="polarion-opensource@sbb.ch"}
+    {name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch"},
 ]
 license = "Apache License 2.0"
 readme = "README.md"
