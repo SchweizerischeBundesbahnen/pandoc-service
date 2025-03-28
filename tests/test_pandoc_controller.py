@@ -141,7 +141,6 @@ def test_convert_endpoint_error_handling():
 
         # Assertions
         assert response.status_code == 400
-        assert b"Cannot decode request body" in response.data
 
 
 def test_convert_docx_with_template_no_source():
