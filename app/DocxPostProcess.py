@@ -8,7 +8,7 @@ from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 from docx.table import Table, _Cell
-from lxml import etree
+from lxml import etree  # type: ignore
 
 SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 

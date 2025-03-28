@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandoc  # type: ignore
 from flask import Flask, Response, request, send_file
-from gevent.pywsgi import WSGIServer
+from gevent.pywsgi import WSGIServer  # type: ignore
 
 from app import DocxPostProcess
 

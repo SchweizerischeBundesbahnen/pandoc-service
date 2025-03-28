@@ -723,21 +723,6 @@ htmlsoup = ["BeautifulSoup4"]
 source = ["Cython (>=3.0.11,<3.1.0)"]
 
 [[package]]
-name = "lxml-stubs"
-version = "0.5.1"
-description = "Type annotations for the lxml package"
-optional = false
-python-versions = "*"
-groups = ["dev"]
-files = [
-    {file = "lxml-stubs-0.5.1.tar.gz", hash = "sha256:e0ec2aa1ce92d91278b719091ce4515c12adc1d564359dfaf81efa7d4feab79d"},
-    {file = "lxml_stubs-0.5.1-py3-none-any.whl", hash = "sha256:1f689e5dbc4b9247cb09ae820c7d34daeb1fdbd1db06123814b856dae7787272"},
-]
-
-[package.extras]
-test = ["coverage[toml] (>=7.2.5)", "mypy (>=1.2.0)", "pytest (>=7.3.0)", "pytest-mypy-plugins (>=1.10.1)"]
-
-[[package]]
 name = "markupsafe"
 version = "3.0.2"
 description = "Safely add untrusted strings to HTML/XML markup."
@@ -1233,46 +1218,6 @@ virtualenv = ">=20.29.1"
 test = ["devpi-process (>=1.0.2)", "pytest (>=8.3.4)", "pytest-mock (>=3.14)"]
 
 [[package]]
-name = "types-gevent"
-version = "24.11.0.20250305"
-description = "Typing stubs for gevent"
-optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
-files = [
-    {file = "types_gevent-24.11.0.20250305-py3-none-any.whl", hash = "sha256:63eab6b2b823ccbb5ffc865c4fc97f45b1d0ab46af7b559eefbaa68b239b4bc3"},
-    {file = "types_gevent-24.11.0.20250305.tar.gz", hash = "sha256:dd19d524f1ebd1c8bb2136abd622d7200ca73bd14f6e8d6a56ab4051e5f8778f"},
-]
-
-[package.dependencies]
-types-greenlet = "*"
-types-psutil = "*"
-
-[[package]]
-name = "types-greenlet"
-version = "3.1.0.20250318"
-description = "Typing stubs for greenlet"
-optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
-files = [
-    {file = "types_greenlet-3.1.0.20250318-py3-none-any.whl", hash = "sha256:7077aa3eed66034914cdd36b708cac8534baafe00d7d0ef97dc49953055f314f"},
-    {file = "types_greenlet-3.1.0.20250318.tar.gz", hash = "sha256:5e69fff0ea986363c59c5dc803cc7f0a07f915875cfb297bc73becace7b5ad40"},
-]
-
-[[package]]
-name = "types-psutil"
-version = "7.0.0.20250218"
-description = "Typing stubs for psutil"
-optional = false
-python-versions = ">=3.9"
-groups = ["dev"]
-files = [
-    {file = "types_psutil-7.0.0.20250218-py3-none-any.whl", hash = "sha256:1447a30c282aafefcf8941ece854e1100eee7b0296a9d9be9977292f0269b121"},
-    {file = "types_psutil-7.0.0.20250218.tar.gz", hash = "sha256:1e642cdafe837b240295b23b1cbd4691d80b08a07d29932143cbbae30eb0db9c"},
-]
-
-[[package]]
 name = "typing-extensions"
 version = "4.13.0"
 description = "Backported and Experimental Type Hints for Python 3.8+"
@@ -1433,4 +1378,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "7d0f3dd5562d02ae907f1f6e61446607c622f46319d82a4948373cfefac0cbec"
+content-hash = "249f8a3493eef9e4ce72c8f1262f93b4c7ac2e4f5f8ca152409087f395e0d767"
