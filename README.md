@@ -1,34 +1,157 @@
-# << TITLE >>
-<< Short Description >>
+# Pandoc Service
 
-## Build Docker image
+A Dockerized service providing a REST API interface to leverage Pandoc's functionality for converting documents
+from one format into another.
+
+## Features
+
+- Simple REST API to access Pandoc
+- Compatible with amd64 and arm64 architectures
+- Easily deployable via Docker
+
+## Getting Started
+
+### Installation
+
+To install the latest version of the Pandoc Service, run the following command:
 
 ```bash
-  docker build \
-    --build-arg APP_IMAGE_VERSION=X.Y.Z \
-    --file Dockerfile \
-    --tag <<docker-image-name>>:X.Y.Z
-    .
+docker pull ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
 
-## Start Docker container
+### Running the Service
+
+To start the Pandoc service container, execute:
 
 ```bash
   docker run --detach \
-    --publish 9080:9080 \
-    --name <<docker-container-name>> \
-    <<docker-image-name>>:X.Y.Z
+    --publish 9082:9082 \
+    --name pandoc-service \
+    ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
 
-## Stop Docker container
+The service will be accessible on port 9082.
+
+### Using as a Base Image
+
+To extend or customize the service, use it as a base image in the Dockerfile:
+
+```Dockerfile
+FROM ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+```
+
+## Development
+
+### Building the Docker Image
+
+To build the Docker image from the source with a custom version, use:
 
 ```bash
-  docker container stop <<docker-container-name>>
+  docker build \
+    --build-arg APP_IMAGE_VERSION=0.0.0-dev \
+    --file Dockerfile \
+    --tag pandoc-service:0.0.0-dev .
 ```
 
-## Testing Docker image
+Replace 0.0.0 with the desired version number.
+
+### Running the Development Container
+
+To start the Docker container with your custom-built image:
 
 ```bash
-docker build -t open-source-polarion-docker-repo-template:local .
-container-structure-test test --image open-source-polarion-docker-repo-template:local --config .config/container-structure-test.yaml
+  docker run --detach \
+    --publish 9082:9082 \
+    --name pandoc-service \
+    pandoc-service:0.0.0-dev
 ```
+
+### Stopping the Container
+
+To stop the running container, execute:
+
+```bash
+  docker container stop pandoc-service
+```
+
+### Access service
+
+Pandoc Service provides the following endpoints:
+
+------------------------------------------------------------------------------------------
+
+#### Getting version info
+
+<details>
+  <summary>
+    <code>GET</code> <code>/version</code>
+  </summary>
+
+##### Responses
+
+> | HTTP code | Content-Type       | Response                                                                                                       |
+> |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
+> | `200`     | `application/json` | `{ "python": "3.12.5", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0-dev" }` |
+
+##### Example cURL
+
+> ```bash
+>  curl -X GET -H "Content-Type: application/json" http://localhost:9082/version
+> ```
+
+</details>
+
+------------------------------------------------------------------------------------------
+
+#### Getting docx template
+
+<details>
+  <summary>
+    <code>GET</code> <code>/docx-template</code>
+  </summary>
+
+##### Responses
+
+> | HTTP code | Content-Type                                                              | Response                 |
+> |-----------|---------------------------------------------------------------------------|--------------------------|
+> | `200`     | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | binary document content  |
+
+##### Example cURL
+
+> ```bash
+>  curl -X GET -H "Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document" http://localhost:9082/docx-template
+> ```
+
+</details>
+
+------------------------------------------------------------------------------------------
+
+#### Convert HTML to PDF
+
+<details>
+  <summary>
+    <code>POST</code> <code>/convert/html/to/docx</code>
+  </summary>
+
+##### Parameters
+
+> | Parameter name       | Type     | Data type | Description                                                          |
+> |----------------------|----------|-----------|----------------------------------------------------------------------|
+> | encoding             | optional | string    | Encoding of provided HTML (default: utf-8)                           |
+> | file_name            | optional | string    | Output filename (default: converted-document.pdf)                    |
+
+##### Responses
+
+> | HTTP code | Content-Type      | Response                     |
+> |-----------|-------------------|------------------------------|
+> | `200`     | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | DOCX document (binary data)  |
+> | `400`     | `plain/text`      | Error message with exception |
+> | `500`     | `plain/text`      | Error message with exception |
+
+##### Example cURL
+
+> ```bash
+> curl -X POST -H "Content-Type: application/html" --data @input_html http://localhost:9082/convert/html/to/docx --output output.docx
+> ```
+
+</details>
