@@ -1,14 +1,31 @@
-FROM python:3.13.2-slim@sha256:8f3aba466a471c0ab903dbd7cb979abd4bda370b04789d25440cc90372b50e04
+FROM pandoc/extra:3.6.4-ubuntu
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0-dev
-WORKDIR ${WORKING_DIR}
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get --yes --no-install-recommends install dbus python3-brotli python3-cffi vim && \
+    apt-get clean autoclean && \
+    apt-get --yes autoremove && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ${WORKING_DIR}/requirements.txt
-COPY ./app/ ${WORKING_DIR}/app/
-COPY ./poetry.lock ${WORKING_DIR}
-COPY ./pyproject.toml ${WORKING_DIR}
+ENV WORKING_DIR="/opt/pandoc"
+ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
 
-RUN pip install --no-cache-dir -r "${WORKING_DIR}"/requirements.txt && poetry install --no-root
+WORKDIR "${WORKING_DIR}"
 
-ENTRYPOINT [ "poetry", "run", "python", "-m", "app.requirements_inspector_service" ]
+RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
+    echo "${BUILD_TIMESTAMP}" > "${WORKING_DIR}/.build_timestamp"
+
+COPY requirements.txt "${WORKING_DIR}/requirements.txt"
+
+COPY ./app/*.py "${WORKING_DIR}/app/"
+COPY ./pyproject.toml ${WORKING_DIR}/pyproject.toml
+COPY ./poetry.lock ${WORKING_DIR}/poetry.lock
+
+RUN pip3 install --no-cache-dir --break-system-packages -r "${WORKING_DIR}/requirements.txt" && poetry install --no-root --only main
+
+COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
+RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
+
+ENTRYPOINT [ "./entrypoint.sh" ]
