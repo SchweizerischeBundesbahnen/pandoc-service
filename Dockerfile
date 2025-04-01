@@ -23,7 +23,7 @@ COPY ./app/*.py "${WORKING_DIR}/app/"
 COPY ./pyproject.toml ${WORKING_DIR}/pyproject.toml
 COPY ./poetry.lock ${WORKING_DIR}/poetry.lock
 
-RUN pip3 install --no-cache-dir --break-system-packages -r "${WORKING_DIR}/requirements.txt" && poetry install --no-root && poetry env activate
+RUN pip3 install --no-cache-dir --break-system-packages -r "${WORKING_DIR}/requirements.txt" && poetry install --no-root --only main
 
 COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
