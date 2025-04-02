@@ -1,4 +1,4 @@
-FROM pandoc/extra:3.6.4-ubuntu
+FROM pandoc/extra:3.6.4-ubuntu@sha256:858fbccef809a01d2db30f03cb881d22a223907da303e4d66023c2b549f4f99a
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0-dev
