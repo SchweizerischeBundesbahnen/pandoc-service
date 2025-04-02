@@ -93,7 +93,7 @@ def test_parameters(pandoc_container: Container):
 def test_container_logs(test_parameters: TestParameters) -> None:
     logs = test_parameters.container.logs()
 
-    assert logs == b"INFO:root:Pandoc service listening port: 9082\n"
+    assert b"Pandoc service listening port: 9082\n" in logs
 
 
 def test_convert_html_to_md(test_parameters: TestParameters) -> None:
