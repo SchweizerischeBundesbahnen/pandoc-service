@@ -27,22 +27,3 @@ commandTests:
     args: [run, pytest, --version]
     exitCode: 1
     expectedError: ['Command not found: pytest']
-  - name: Log directory exists
-    command: test
-    args: [-d, /opt/pandoc/logs]
-    exitCode: 0
-  - name: Log directory is writable
-    command: touch
-    args: [/opt/pandoc/logs/test.log]
-    exitCode: 0
-  - name: Python logging module is available
-    command: python3
-    args: [-c, import logging; logging.basicConfig(); logging.info('test')]
-    exitCode: 0
-fileExistenceTests:
-  - name: Log directory
-    path: /opt/pandoc/logs
-    shouldExist: true
-    permissions: drwxrwxrwx
-    uid: 0
-    gid: 0

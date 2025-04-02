@@ -105,7 +105,7 @@ poetry run pytest
 ```
 ```bash
 # a specific test
-poetry run pytest tests/test_svg_utils.py -v
+poetry run pytest tests/test_docx_post_process.py -v
 ```
 #### pre-commit
 ```bash
