@@ -4,13 +4,21 @@ LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 ARG APP_IMAGE_VERSION=0.0.0-dev
 # hadolint ignore=DL3008
 RUN apt-get update && \
-    apt-get --yes --no-install-recommends install dbus python3-brotli python3-cffi vim && \
+    apt-get --yes --no-install-recommends install \
+    dbus \
+    python3-brotli \
+    python3-cffi \
+    vim && \
     apt-get clean autoclean && \
     apt-get --yes autoremove && \
     rm -rf /var/lib/apt/lists/*
 
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
+
+# Create and configure logging directory
+RUN mkdir -p ${WORKING_DIR}/logs && \
+    chmod 777 ${WORKING_DIR}/logs
 
 WORKDIR "${WORKING_DIR}"
 
