@@ -6,6 +6,10 @@ ARG APP_IMAGE_VERSION=0.0.0-dev
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
 
+# Create and configure logging directory
+RUN mkdir -p ${WORKING_DIR}/logs && \
+    chmod 777 ${WORKING_DIR}/logs
+
 WORKDIR "${WORKING_DIR}"
 
 RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
