@@ -3,7 +3,6 @@ LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0-dev
 
-# hadolint disable=DL3047
 RUN apk add --no-cache  \
     python3=~3.12  \
     py3-pip=~24.3  \
