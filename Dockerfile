@@ -1,7 +1,14 @@
-FROM pandoc/extra:3.6.4-ubuntu@sha256:858fbccef809a01d2db30f03cb881d22a223907da303e4d66023c2b549f4f99a
+FROM pandoc/minimal:3.6.4-alpine@sha256:6de776089b7204840084cd9f6267a96162742f45db493b343bf8464f10044810
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0-dev
+
+RUN apk add --no-cache  \
+    python3=~3.12  \
+    py3-pip=~24.3  \
+    bash=~5.2 &&  \
+    mkdir -p /usr/local/share/pandoc/filters/ &&  \
+    wget -q https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -O /usr/local/share/pandoc/filters/pagebreak.lua
 
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
