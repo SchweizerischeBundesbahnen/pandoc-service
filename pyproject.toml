@@ -24,7 +24,7 @@ requires-poetry = ">=2.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.2.0"
-ruff = "0.11.3"
+ruff = "0.11.4"
 mypy = "1.15.0"
 
 [tool.poetry.group.test.dependencies]
