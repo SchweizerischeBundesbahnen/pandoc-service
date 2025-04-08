@@ -3,7 +3,7 @@ name = "pandoc-service"
 version = "0.0.0"  # the version is controll by the pipeline
 description = "Service for https://pandoc.org/"
 authors = [
-    {name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch"},
+    { name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch" },
 ]
 license = "Apache License 2.0"
 readme = "README.md"
@@ -20,8 +20,6 @@ dependencies = [
 packages = [{include = "app"}]
 requires-poetry = ">=2.0"
 
-[tool.poetry.dependencies]
-
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.2.0"
 ruff = "0.11.4"
@@ -29,6 +27,7 @@ mypy = "1.15.0"
 
 [tool.poetry.group.test.dependencies]
 tox = "^4.18.0"
+coverage = "^7.6.4"
 
 [build-system]
 requires = ["poetry-core"]

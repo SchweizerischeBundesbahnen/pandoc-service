@@ -1,7 +1,7 @@
 FROM pandoc/minimal:3.6.4-alpine@sha256:6de776089b7204840084cd9f6267a96162742f45db493b343bf8464f10044810
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
-ARG APP_IMAGE_VERSION=0.0.0-dev
+ARG APP_IMAGE_VERSION=0.0.0
 
 RUN apk add --no-cache  \
     python3=~3.12  \
