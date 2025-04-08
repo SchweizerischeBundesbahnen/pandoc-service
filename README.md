@@ -59,9 +59,9 @@ To build the Docker image from the source with a custom version, use:
 
 ```bash
   docker build \
-    --build-arg APP_IMAGE_VERSION=0.0.0-dev \
+    --build-arg APP_IMAGE_VERSION=0.0.0 \
     --file Dockerfile \
-    --tag pandoc-service:0.0.0-dev .
+    --tag pandoc-service:0.0.0 .
 ```
 
 Replace 0.0.0 with the desired version number.
@@ -74,7 +74,7 @@ To start the Docker container with your custom-built image:
   docker run --detach \
     --publish 9082:9082 \
     --name pandoc-service \
-    pandoc-service:0.0.0-dev
+    pandoc-service:0.0.0
 ```
 
 ### Stopping the Container
@@ -129,7 +129,7 @@ Pandoc Service provides the following endpoints:
 
 > | HTTP code | Content-Type       | Response                                                                                                       |
 > |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
-> | `200`     | `application/json` | `{ "python": "3.12.5", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0-dev" }` |
+> | `200`     | `application/json` | `{ "python": "3.12.5", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0" }` |
 
 ##### Example cURL
 
