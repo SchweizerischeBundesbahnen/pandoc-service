@@ -17,6 +17,7 @@ from one format into another.
 ## Features
 
 - Simple REST API to access Pandoc
+- Direct subprocess calls to the pandoc binary (no Python module dependency)
 - Compatible with amd64 and arm64 architectures
 - Easily deployable via Docker
 

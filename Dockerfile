@@ -7,7 +7,7 @@ ARG APP_IMAGE_VERSION=0.0.0
 RUN apk add --no-cache  \
     python3=~3.12  \
     py3-pip  \
-    bash \
+    bash  \
     tini &&  \
     mkdir -p /usr/local/share/pandoc/filters/ &&  \
     wget -q https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -O /usr/local/share/pandoc/filters/pagebreak.lua
