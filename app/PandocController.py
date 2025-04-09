@@ -132,6 +132,8 @@ def get_docx_template() -> Response:
             Path.unlink(path)
 
 
+ALLOWED_FORMATS = ["markdown", "html", "docx", "pdf", "latex"]  # Add other allowed formats as needed
+
 def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None) -> bytes:
     """
     Run pandoc conversion using subprocess.
@@ -147,6 +149,9 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     """
     if options is None:
         options = []
+
+    if source_format not in ALLOWED_FORMATS or target_format not in ALLOWED_FORMATS:
+        raise ValueError("Invalid format specified.")
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
