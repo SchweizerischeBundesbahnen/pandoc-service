@@ -1,16 +1,26 @@
-FROM pandoc/minimal:3.6.4-alpine@sha256:6de776089b7204840084cd9f6267a96162742f45db493b343bf8464f10044810
+FROM python:3.13-alpine
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
+ARG PANDOC_VERSION=3.6.3
 
+# Install pandoc and other dependencies
 # hadolint ignore=DL3018
-RUN apk add --no-cache  \
-    python3=~3.12  \
-    py3-pip  \
-    bash  \
-    tini &&  \
-    mkdir -p /usr/local/share/pandoc/filters/ &&  \
-    wget -q https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -O /usr/local/share/pandoc/filters/pagebreak.lua
+RUN apk add --no-cache \
+    bash \
+    tini \
+    wget \
+    ca-certificates \
+    tar \
+    gzip \
+    lua \
+    && wget -q https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz -O /tmp/pandoc.tar.gz \
+    && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
+    && mv /tmp/pandoc-${PANDOC_VERSION}/bin/pandoc /usr/local/bin/ \
+    && mkdir -p /usr/local/share/pandoc/filters/ \
+    && wget -q https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -O /usr/local/share/pandoc/filters/pagebreak.lua \
+    && rm -rf /tmp/pandoc* \
+    && apk del wget tar gzip
 
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"

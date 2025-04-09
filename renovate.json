@@ -3,6 +3,19 @@
   "extends": [
     "github>SchweizerischeBundesbahnen/casc-renovate-preset-polarion-docker"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "Dockerfile$"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "jgm/pandoc",
+      "matchStrings": [
+        "PANDOC_VERSION=(?<currentValue>.*)"
+      ]
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": [
