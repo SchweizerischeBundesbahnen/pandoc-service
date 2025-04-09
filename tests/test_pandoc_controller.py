@@ -3,13 +3,22 @@ import os
 import platform
 import subprocess
 import zipfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
+from flask import Response
 from werkzeug.datastructures import FileStorage
 
 # Import the module to test
-from app.PandocController import app, postprocess_and_build_response, process_error, version
+from app.PandocController import (
+    DEFAULT_CONVERSION_OPTIONS,
+    app,
+    postprocess_and_build_response,
+    process_error,
+    run_pandoc_conversion,
+    start_server,
+    version,
+)
 
 
 @pytest.fixture
@@ -389,3 +398,182 @@ def create_mock_docx(files: dict[str, bytes] = None) -> bytes:
     # Reset buffer position
     buffer.seek(0)
     return buffer.getvalue()
+
+
+def test_run_pandoc_conversion_with_string_input():
+    """Test run_pandoc_conversion function with string input."""
+    # Mock subprocess.run
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"Converted content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        # Set up mock subprocess
+        mock_subprocess.return_value.returncode = 0
+
+        # Create mock files with context manager behavior
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.md"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.html"
+
+        # Create mock context managers for NamedTemporaryFile
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        # Patch tempfile.NamedTemporaryFile to return our mock context managers
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            # Test with string input
+            result = run_pandoc_conversion("# Test markdown", "markdown", "html")
+
+            # Assertions
+            assert mock_subprocess.called
+            assert result == b"Converted content"
+
+            # Verify subprocess.run was called with correct args
+            expected_cmd = ["/usr/local/bin/pandoc", "-f", "markdown", "-t", "html", "-o", "output.html", "source.md"]
+            mock_subprocess.assert_called_once_with(expected_cmd, check=True)
+
+
+def test_convert_with_encoding():
+    """Test the convert endpoint with encoding parameter."""
+    # Create patches for the required functions
+    with patch("app.PandocController.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+        # Set up mock for Response
+        mock_response = Response(b"<html>Test</html>", mimetype="text/html", status=200)
+        mock_postprocess.return_value = mock_response
+
+        # Create a test client
+        client = app.test_client()
+
+        # Send a request with encoding specified
+        response = client.post("/convert/markdown/to/html?encoding=utf-8", data=b"# Test Content")
+
+        # Assertions
+        mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
+        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html")
+        assert response.status_code == 200
+        assert response.mimetype == "text/html"
+        assert response.data == b"<html>Test</html>"
+
+
+def test_convert_with_custom_filename():
+    """Test the convert endpoint with custom filename parameter."""
+    # Create patches for the required functions
+    with patch("app.PandocController.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+        # Set up mock for Response
+        mock_response = Response(b"<html>Test</html>", mimetype="text/html", status=200)
+        mock_postprocess.return_value = mock_response
+
+        # Create a test client
+        client = app.test_client()
+
+        # Send a request with custom filename
+        response = client.post("/convert/markdown/to/html?file_name=custom.html", data=b"# Test Content")
+
+        # Assertions
+        mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
+        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html")
+        assert response.status_code == 200
+        assert response.mimetype == "text/html"
+        assert response.data == b"<html>Test</html>"
+
+
+def test_convert_docx_with_ref_source_text():
+    """Test convert_docx_with_ref function using text in form data."""
+    # Create patches for the required functions
+    with patch("app.PandocController.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+        # Set up mock for Response
+        mock_response = Response(b"DOCX content", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status=200)
+        mock_postprocess.return_value = mock_response
+
+        # Create a test client
+        client = app.test_client()
+
+        # Create form data with source text
+        data = {"source": "# Test Markdown"}
+
+        # Send a request with form data
+        response = client.post("/convert/markdown/to/docx-with-template", data=data)
+
+        # Assertions
+        # Check that run_pandoc_conversion was called with correct params
+        mock_convert.assert_called_once()
+        call_args = mock_convert.call_args[0]
+        assert call_args[0] == "# Test Markdown"  # Source data
+        assert call_args[1] == "markdown"  # Source format
+        assert call_args[2] == "docx"  # Target format
+
+        # Check that postprocess_and_build_response was called
+        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx")
+
+        # Check the response
+        assert response.status_code == 200
+        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.data == b"DOCX content"
+
+
+def test_convert_docx_with_ref_no_template():
+    """Test convert_docx_with_ref function without template file."""
+    # Create patches for the required functions
+    with patch("app.PandocController.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+        # Set up mock for Response
+        mock_response = Response(b"DOCX content", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status=200)
+        mock_postprocess.return_value = mock_response
+
+        # Create a test client
+        client = app.test_client()
+
+        # Create source file for multipart/form-data
+        source_file = FileStorage(stream=io.BytesIO(b"# Test Markdown"), filename="test.md", content_type="text/markdown")
+
+        # Send request with source file but no template
+        response = client.post("/convert/markdown/to/docx-with-template", data={"source": source_file}, content_type="multipart/form-data")
+
+        # Assertions
+        # Check that run_pandoc_conversion was called with correct params
+        mock_convert.assert_called_once()
+
+        # When using a file, the content is read as bytes
+        call_args = mock_convert.call_args[0]
+        assert isinstance(call_args[0], bytes)  # Source data should be bytes from file
+        assert call_args[1] == "markdown"  # Source format
+        assert call_args[2] == "docx"  # Target format
+
+        # Check that the conversion options don't include a reference-doc
+        options = mock_convert.call_args[0][3]
+        assert not any("--reference-doc" in option for option in options)
+
+        # Check that postprocess_and_build_response was called
+        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx")
+
+        # Check the response
+        assert response.status_code == 200
+        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.data == b"DOCX content"
+
+
+@pytest.mark.timeout(5)  # Limit test to 5 seconds maximum
+def test_start_server():
+    """Test start_server function configures WSGIServer correctly.
+
+    Instead of actually calling the function (which would hang in a test),
+    we inspect the function's source code to verify it uses the correct parameters.
+    """
+    # Get the source code of the start_server function
+    import inspect
+
+    source = inspect.getsource(start_server)
+
+    # Verify that the function creates a WSGIServer with the expected arguments
+    assert 'WSGIServer(("", port), app)' in source
+
+    # Verify that the function calls serve_forever on the server
+    assert "http_server.serve_forever()" in source
+
+    # This is a more reliable test than trying to mock gevent's internals,
+    # which can lead to hanging tests

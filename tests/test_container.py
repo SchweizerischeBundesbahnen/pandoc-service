@@ -158,6 +158,29 @@ def test_convert_with_docx_template(test_parameters: TestParameters) -> None:
     __assert_doc_contains_specific_headers_color(RGBColor(255, 0, 0), response.content)
 
 
+def test_version_endpoint(test_parameters: TestParameters) -> None:
+    """Test that the /version endpoint returns the expected information."""
+    url = f"{test_parameters.base_url}/version"
+    response = test_parameters.request_session.get(url)
+
+    # Verify response status
+    assert response.status_code == 200
+
+    # Parse response as JSON
+    version_info = response.json()
+
+    # Verify all expected fields are present
+    assert "python" in version_info
+    assert "pandoc" in version_info
+    assert "pandocService" in version_info
+    assert "timestamp" in version_info
+
+    # Verify that values are reasonable (not empty where required)
+    assert version_info["python"], "Python version should not be empty"
+    assert version_info["pandoc"], "Pandoc version should not be empty"
+    assert version_info["pandocService"], "Pandoc service version should not be empty"
+
+
 def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data) -> requests.Response:
     url = f"{base_url}/convert/{source_format}/to/{target_format}"
     try:
