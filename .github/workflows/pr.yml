@@ -16,9 +16,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}  # Only checkout the PR's HEAD commit
           fetch-depth: 0
           persist-credentials: false
+      - name: Create temporary config
+        run: echo 'ignore_merge_commits = true' > .cog.toml
       - name: Lint commit messages
         uses: cocogitto/cocogitto-action@c7a74f5406bab86da17da0f0e460a69f8219a68c  # v3.11
         with:
           check: true
-          config: |
-            ignore_merge_commits = true
