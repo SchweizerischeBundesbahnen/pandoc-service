@@ -3,10 +3,12 @@ LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache  \
     python3=~3.12  \
-    py3-pip=~24.3  \
-    bash=~5.2 &&  \
+    py3-pip  \
+    bash \
+    tini &&  \
     mkdir -p /usr/local/share/pandoc/filters/ &&  \
     wget -q https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -O /usr/local/share/pandoc/filters/pagebreak.lua
 
@@ -33,4 +35,5 @@ RUN pip3 install --no-cache-dir --break-system-packages -r "${WORKING_DIR}/requi
 COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
 
-ENTRYPOINT [ "./entrypoint.sh" ]
+# Use Tini as entrypoint with security options
+ENTRYPOINT ["/sbin/tini", "--", "./entrypoint.sh"]
