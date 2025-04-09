@@ -88,30 +88,43 @@ To stop the running container, execute:
 
 ### Testing
 
-#### container-structure-test
+The project includes several test methods to ensure functionality.
+
+#### Container Structure Test
 ```bash
 docker build -t pandoc-service:local .
 ```
 ```bash
 container-structure-test test --image pandoc-service:local --config ./tests/container/container-structure-test.yaml
 ```
-#### tox
+
+#### Docker Image Smoke Test
+To test the Docker image build and API functionality:
+```bash
+bash tests/shell/test_pandoc_service.sh
+```
+This script builds the image, starts a container, and performs tests on all endpoints.
+
+#### Python Tests
+```bash
+# Run all Python tests
+poetry run pytest
+
+# Run a specific test
+poetry run pytest tests/test_docx_post_process.py -v
+```
+
+#### Tox
 ```bash
 poetry run tox
 ```
-#### pytest (for debugging)
-```bash
-# all tests
-poetry run pytest
-```
-```bash
-# a specific test
-poetry run pytest tests/test_docx_post_process.py -v
-```
-#### pre-commit
+
+#### Pre-commit
 ```bash
 poetry run pre-commit run --all
 ```
+
+For more detailed testing information, see the [tests README](tests/README.md).
 
 ### Access service
 

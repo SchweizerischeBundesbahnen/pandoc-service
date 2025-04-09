@@ -97,29 +97,29 @@ def test_container_logs(test_parameters: TestParameters) -> None:
 
 
 def test_convert_html_to_md(test_parameters: TestParameters) -> None:
-    expected_content = __load_test_file("test-data/expected-html-to-md.md")
+    expected_content = __load_test_file("tests/data/expected-html-to-md.md")
     response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="markdown", data=SOURCE_HTML)
     assert response.status_code == 200
     assert response.content.decode("utf-8") == expected_content
 
 
 def test_convert_html_to_textile(test_parameters: TestParameters) -> None:
-    expected_content = __load_test_file("test-data/expected-html-to-textile.textile")
+    expected_content = __load_test_file("tests/data/expected-html-to-textile.textile")
     response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="textile", data=SOURCE_HTML)
     assert response.status_code == 200
     assert response.content.decode("utf-8") == expected_content
 
 
 def test_convert_html_to_plain(test_parameters: TestParameters) -> None:
-    expected_content = __load_test_file("test-data/expected-html-to-txt.txt")
+    expected_content = __load_test_file("tests/data/expected-html-to-txt.txt")
     response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="plain", data=SOURCE_HTML)
     assert response.status_code == 200
     assert response.content.decode("utf-8") == expected_content
 
 
 def test_convert_docx_to_plain(test_parameters: TestParameters) -> None:
-    with Path("test-data/test-input.docx").open("rb") as source_file:
-        expected_content = __load_test_file("test-data/expected-docx-to-txt.txt")
+    with Path("tests/data/test-input.docx").open("rb") as source_file:
+        expected_content = __load_test_file("tests/data/expected-docx-to-txt.txt")
         response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="docx", target_format="plain", data=source_file.read())
         assert response.status_code == 200
         assert response.content.decode("utf-8") == expected_content
@@ -152,7 +152,7 @@ def test_convert_with_docx_template(test_parameters: TestParameters) -> None:
     __assert_doc_contains_specific_headers_color(RGBColor(15, 71, 97), response.content)
 
     # Now test with 'RED' template - it forces red color for headings
-    with Path("test-data/template-red.docx").open("rb") as t:
+    with Path("tests/data/template-red.docx").open("rb") as t:
         template = t.read()
     response = __send_docx_with_template_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, data=SOURCE_HTML_WITH_HEADINGS, source_format="html", template=template)
     __assert_doc_contains_specific_headers_color(RGBColor(255, 0, 0), response.content)

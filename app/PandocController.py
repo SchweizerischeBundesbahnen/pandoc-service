@@ -15,6 +15,13 @@ from app import DocxPostProcess
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
 
+# List of allowed pandoc options for security
+ALLOWED_PANDOC_OPTIONS = [
+    "--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua",
+    "--track-changes=all",
+    "--reference-doc=",  # Prefix for reference-doc option
+]
+
 MIME_TYPES = {
     "html": "text/html",
     "html5": "text/html",
@@ -107,16 +114,20 @@ def get_docx_template() -> Response:
     path = Path(CUSTOM_REFERENCE_DOCX)
     try:
         # ruff: noqa: S603
-        subprocess.run(
-            [
-                PANDOC_PATH,
-                "-o",
-                "custom-reference.docx",
-                "--print-default-data-file",
-                "reference.docx",
-            ],
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    PANDOC_PATH,
+                    "-o",
+                    "custom-reference.docx",
+                    "--print-default-data-file",
+                    "reference.docx",
+                ],
+                check=True,
+            )
+        except subprocess.SubprocessError as e:
+            logging.error(f"Error generating template: {e}")
+            return Response(f"Error generating template: {e}", status=500)
 
         with path.open("rb") as f:
             doc_content = f.read()
@@ -132,7 +143,42 @@ def get_docx_template() -> Response:
             Path.unlink(path)
 
 
-ALLOWED_FORMATS = ["markdown", "html", "docx", "pdf", "latex"]  # Add other allowed formats as needed
+ALLOWED_FORMATS = ["markdown", "html", "docx", "pdf", "latex", "textile", "plain"]  # Add other allowed formats as needed
+
+
+def _validate_pandoc_options(options: list[str]) -> list[str]:
+    """
+    Validate pandoc options against the whitelist to prevent command injection.
+
+    Args:
+        options: List of pandoc options to validate
+
+    Returns:
+        List of validated options
+
+    Raises:
+        ValueError: If any option is not in the whitelist
+    """
+    validated_options = []
+    for option in options:
+        is_valid = False
+        # Check exact match
+        if option in ALLOWED_PANDOC_OPTIONS:
+            is_valid = True
+        # Check prefix match (for options like --reference-doc=filename.docx)
+        else:
+            for allowed_prefix in ALLOWED_PANDOC_OPTIONS:
+                if allowed_prefix.endswith("=") and option.startswith(allowed_prefix):
+                    is_valid = True
+                    break
+
+        if not is_valid:
+            raise ValueError(f"Invalid pandoc option: {option}")
+
+        validated_options.append(option)
+
+    return validated_options
+
 
 def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None) -> bytes:
     """
@@ -153,6 +199,9 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if source_format not in ALLOWED_FORMATS or target_format not in ALLOWED_FORMATS:
         raise ValueError("Invalid format specified.")
 
+    # Validate all options against whitelist to prevent command injection
+    validated_options = _validate_pandoc_options(options)
+
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
             # Write input data to temporary file
@@ -162,8 +211,8 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
                 source_file.write(source_data)
             source_file.flush()
 
-            # Build pandoc command
-            cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name] + options
+            # Build pandoc command with validated options
+            cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name] + validated_options
 
             # Run pandoc
             subprocess.run(cmd, check=True)
