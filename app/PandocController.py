@@ -129,7 +129,7 @@ def get_docx_template() -> Response:
             )
         except subprocess.SubprocessError as e:
             logging.error(f"Error generating template: {e}")
-            return Response(f"Error generating template: {e}", status=500)
+            return Response("An internal error has occurred while generating the template.", status=500)
 
         with path.open("rb") as f:
             doc_content = f.read()
