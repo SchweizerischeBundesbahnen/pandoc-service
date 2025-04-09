@@ -90,6 +90,7 @@ def get_pandoc_version() -> str | None:
             capture_output=True,
             text=True,
             check=True,
+            shell=False,
         )
         # Extract version from the first line of output
         version_line = result.stdout.splitlines()[0]
@@ -124,6 +125,7 @@ def get_docx_template() -> Response:
                     "reference.docx",
                 ],
                 check=True,
+                shell=False,
             )
         except subprocess.SubprocessError as e:
             logging.error(f"Error generating template: {e}")
@@ -196,6 +198,10 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if options is None:
         options = []
 
+    # Sanitize format parameters to prevent shell injection
+    if not source_format.isalnum() or not target_format.isalnum():
+        raise ValueError("Format parameters must be alphanumeric")
+
     if source_format not in ALLOWED_FORMATS or target_format not in ALLOWED_FORMATS:
         raise ValueError("Invalid format specified.")
 
@@ -215,7 +221,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name] + validated_options
 
             # Run pandoc
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE)
 
             # Read output
             with Path(output_file.name).open("rb") as f:

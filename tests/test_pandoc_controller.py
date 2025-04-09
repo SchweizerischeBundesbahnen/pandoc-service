@@ -509,7 +509,7 @@ def test_run_pandoc_conversion_with_string_input():
 
             # Verify subprocess.run was called with correct args
             expected_cmd = ["/usr/local/bin/pandoc", "-f", "markdown", "-t", "html", "-o", "output.html", "source.md"]
-            mock_subprocess.assert_called_once_with(expected_cmd, check=True)
+            mock_subprocess.assert_called_once_with(expected_cmd, check=True, shell=False, stdin=subprocess.PIPE)
 
 
 def test_convert_with_encoding():
