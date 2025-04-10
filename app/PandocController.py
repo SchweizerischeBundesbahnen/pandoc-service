@@ -203,13 +203,13 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
         raise ValueError("Format parameters must be alphanumeric")
 
     # Define fixed allowlist directly to avoid any external manipulation
-    FIXED_ALLOWED_FORMATS = frozenset(["markdown", "html", "docx", "pdf", "latex", "textile", "plain"])
+    fixed_allowed_formats = frozenset(["markdown", "html", "docx", "pdf", "latex", "textile", "plain"])
 
     # Strict equality check against allowlist
-    if source_format not in FIXED_ALLOWED_FORMATS:
+    if source_format not in fixed_allowed_formats:
         raise ValueError(f"Invalid source format: {source_format}")
 
-    if target_format not in FIXED_ALLOWED_FORMATS:
+    if target_format not in fixed_allowed_formats:
         raise ValueError(f"Invalid target format: {target_format}")
 
     # Validate all options against whitelist to prevent command injection
@@ -225,8 +225,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             source_file.flush()
 
             # Build pandoc command with validated options and safe parameters
-            pandoc_executable = PANDOC_PATH
-            cmd = [pandoc_executable, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name]
+            cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name]
 
             # Add validated options separately
             if validated_options:
