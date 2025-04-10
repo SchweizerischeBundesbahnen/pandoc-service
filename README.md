@@ -107,15 +107,22 @@ This script builds the image, starts a container, and performs tests on all endp
 
 #### Python Tests
 ```bash
+# Prepare testing
+poetry install
+```
+
+```bash
 # Run all Python tests
 poetry run pytest
-
+```
+```bash
 # Run a specific test
 poetry run pytest tests/test_docx_post_process.py -v
 ```
 
 #### Tox
 ```bash
+# Run all test pytest and linting
 poetry run tox
 ```
 
