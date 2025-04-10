@@ -202,8 +202,15 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if not source_format.isalnum() or not target_format.isalnum():
         raise ValueError("Format parameters must be alphanumeric")
 
-    if source_format not in ALLOWED_FORMATS or target_format not in ALLOWED_FORMATS:
-        raise ValueError("Invalid format specified.")
+    # Define fixed allowlist directly to avoid any external manipulation
+    FIXED_ALLOWED_FORMATS = frozenset(["markdown", "html", "docx", "pdf", "latex", "textile", "plain"])
+
+    # Strict equality check against allowlist
+    if source_format not in FIXED_ALLOWED_FORMATS:
+        raise ValueError(f"Invalid source format: {source_format}")
+
+    if target_format not in FIXED_ALLOWED_FORMATS:
+        raise ValueError(f"Invalid target format: {target_format}")
 
     # Validate all options against whitelist to prevent command injection
     validated_options = _validate_pandoc_options(options)
@@ -217,10 +224,15 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
                 source_file.write(source_data)
             source_file.flush()
 
-            # Build pandoc command with validated options
-            cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name] + validated_options
+            # Build pandoc command with validated options and safe parameters
+            pandoc_executable = PANDOC_PATH
+            cmd = [pandoc_executable, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name]
 
-            # Run pandoc
+            # Add validated options separately
+            if validated_options:
+                cmd.extend(validated_options)
+
+            # Run pandoc with validated parameters
             subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE)
 
             # Read output

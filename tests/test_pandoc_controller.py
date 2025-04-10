@@ -700,22 +700,30 @@ def test_run_pandoc_conversion_validation_edge_cases():
         run_pandoc_conversion(source_data_bytes, source_format, target_format, [])
 
 
-@pytest.mark.skip(reason="This test actually starts the server, so we skip it")
 def test_start_server_with_coverage():
-    """Test the start_server function with better coverage."""
-    with patch("gevent.pywsgi.WSGIServer", autospec=True) as mock_server_class:
-        # Create a mock instance
+    """Test the start_server function."""
+    with (
+        patch("gevent.pywsgi.WSGIServer") as mock_server_class,
+        patch("flask.Flask.test_client"),  # Prevent actual Flask app initialization
+    ):
+        # Create a mock server instance
         mock_server = MagicMock()
         mock_server_class.return_value = mock_server
 
+        # Test port
+        test_port = 9082
+
         # Call the function we want to test
-        start_server(9082)
+        start_server(test_port)
 
         # Verify the server was created with the correct arguments
-        mock_server_class.assert_called_once_with(("", 9082), app)
+        mock_server_class.assert_called_once_with(("", test_port), app)
 
         # Verify serve_forever was called
         mock_server.serve_forever.assert_called_once()
+
+        # Verify no actual server was started
+        assert not mock_server.started
 
 
 def test_run_pandoc_conversion_with_invalid_option():
@@ -825,7 +833,7 @@ def test_convert_endpoint_invalid_format():
 
     # Assertions
     assert response.status_code == 400
-    assert b"Invalid format specified" in response.data
+    assert b"Invalid source format: invalid" in response.data
 
 
 def test_convert_docx_with_ref_no_source_file():
