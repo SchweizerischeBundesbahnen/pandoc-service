@@ -13,10 +13,10 @@ from werkzeug.datastructures import FileStorage
 from app.PandocController import (
     DEFAULT_CONVERSION_OPTIONS,
     app,
+    create_server,
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
-    start_server,
     version,
 )
 
@@ -700,28 +700,23 @@ def test_run_pandoc_conversion_validation_edge_cases():
         run_pandoc_conversion(source_data_bytes, source_format, target_format, [])
 
 
-@pytest.mark.skip(reason="This test actually starts the server, so we skip it")
-def test_start_server_with_coverage():
-    """Test the start_server function with better coverage."""
-    with patch("gevent.pywsgi.WSGIServer", autospec=True) as mock_server_class:
-        # Create a mock instance
-        mock_server = MagicMock()
-        mock_server_class.return_value = mock_server
+def test_server_creation():
+    """Test the server creation functionality."""
+    # Create a mock server instance
+    mock_server = MagicMock()
 
-        # Test port
+    # Patch WSGIServer with the correct path
+    with patch("app.PandocController.WSGIServer", return_value=mock_server) as mock_server_class:
         test_port = 9082
 
-        # Call the function we want to test
-        start_server(test_port)
+        # Test server creation
+        server = create_server(test_port)
 
-        # Verify the server was created with the correct arguments
+        # Verify the server was created with correct arguments
         mock_server_class.assert_called_once_with(("", test_port), app)
 
-        # Verify serve_forever was called
-        mock_server.serve_forever.assert_called_once()
-
-        # Verify no actual server was started
-        assert not mock_server.started
+        # Verify we got back our mock server
+        assert server == mock_server
 
 
 def test_run_pandoc_conversion_with_invalid_option():

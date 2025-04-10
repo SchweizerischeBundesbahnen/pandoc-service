@@ -329,6 +329,23 @@ def process_error(e: Exception, err_msg: str, status: int) -> Response:
     )
 
 
+def create_server(port: int) -> WSGIServer:
+    """Create a new WSGI server instance.
+
+    Args:
+        port: The port number to listen on
+
+    Returns:
+        A configured WSGIServer instance
+    """
+    return WSGIServer(("", port), app)
+
+
 def start_server(port: int) -> None:
-    http_server = WSGIServer(("", port), app)
+    """Start the server on the specified port.
+
+    Args:
+        port: The port number to listen on
+    """
+    http_server = create_server(port)
     http_server.serve_forever()
