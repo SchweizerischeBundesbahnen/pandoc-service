@@ -22,6 +22,10 @@ ALLOWED_PANDOC_OPTIONS = [
     "--reference-doc=",  # Prefix for reference-doc option
 ]
 
+# Add other allowed formats as needed
+ALLOWED_SOURCE_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile"]
+ALLOWED_TARGET_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "odt", "pdf", "plain", "rtf", "textile"]
+
 MIME_TYPES = {
     "html": "text/html",
     "html5": "text/html",
@@ -145,9 +149,6 @@ def get_docx_template() -> Response:
             Path.unlink(path)
 
 
-ALLOWED_FORMATS = ["markdown", "html", "docx", "pdf", "latex", "textile", "plain"]  # Add other allowed formats as needed
-
-
 def _validate_pandoc_options(options: list[str]) -> list[str]:
     """
     Validate pandoc options against the whitelist to prevent command injection.
@@ -202,14 +203,11 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if not source_format.isalnum() or not target_format.isalnum():
         raise ValueError("Format parameters must be alphanumeric")
 
-    # Define fixed allowlist directly to avoid any external manipulation
-    fixed_allowed_formats = frozenset(["markdown", "html", "docx", "pdf", "latex", "textile", "plain"])
-
     # Strict equality check against allowlist
-    if source_format not in fixed_allowed_formats:
+    if source_format not in ALLOWED_SOURCE_FORMATS:
         raise ValueError(f"Invalid source format: {source_format}")
 
-    if target_format not in fixed_allowed_formats:
+    if target_format not in ALLOWED_TARGET_FORMATS:
         raise ValueError(f"Invalid target format: {target_format}")
 
     # Validate all options against whitelist to prevent command injection
