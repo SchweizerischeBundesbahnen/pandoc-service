@@ -19,7 +19,7 @@
   "packageRules": [
     {
       "matchManagers": [
-        "regex"
+        "custom.regex"
       ],
       "matchDatasources": [
         "github-releases"
@@ -34,7 +34,7 @@
     },
     {
       "matchManagers": [
-        "regex"
+        "custom.regex"
       ],
       "matchDatasources": [
         "github-releases"
