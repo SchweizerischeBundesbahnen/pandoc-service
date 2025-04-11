@@ -19,32 +19,32 @@
   "packageRules": [
     {
       "matchManagers": [
-        "poetry"
+        "regex"
       ],
       "matchDatasources": [
-        "pypi"
+        "github-releases"
+      ],
+      "matchDepNames": [
+        "jgm/pandoc"
       ],
       "semanticCommitType": "feat",
       "matchUpdateTypes": [
         "minor"
-      ],
-      "matchPackageNames": [
-        "/^pandoc$/"
       ]
     },
     {
       "matchManagers": [
-        "poetry"
+        "regex"
       ],
       "matchDatasources": [
-        "pypi"
+        "github-releases"
+      ],
+      "matchDepNames": [
+        "jgm/pandoc"
       ],
       "semanticCommitType": "feat!",
       "matchUpdateTypes": [
         "major"
-      ],
-      "matchPackageNames": [
-        "/^pandoc$/"
       ]
     }
   ]

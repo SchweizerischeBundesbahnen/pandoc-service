@@ -1,4 +1,4 @@
-FROM python:3.13-alpine@sha256:18159b2be11db91f84b8f8f655cd860f805dbd9e49a583ddaac8ab39bf4fe1a7
+FROM python:3.13.3-alpine@sha256:18159b2be11db91f84b8f8f655cd860f805dbd9e49a583ddaac8ab39bf4fe1a7
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
@@ -40,7 +40,7 @@ COPY ./app/*.py "${WORKING_DIR}/app/"
 COPY ./pyproject.toml ${WORKING_DIR}/pyproject.toml
 COPY ./poetry.lock ${WORKING_DIR}/poetry.lock
 
-RUN pip3 install --no-cache-dir --break-system-packages -r "${WORKING_DIR}/requirements.txt" && poetry install --no-root --only main
+RUN pip3 install --no-cache-dir -r "${WORKING_DIR}/requirements.txt" && poetry install --no-root --only main
 
 COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
