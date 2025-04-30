@@ -5,12 +5,18 @@ import platform
 import subprocess
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from flask import Flask, Response, request, send_file
-from gevent.pywsgi import WSGIServer  # type: ignore
+import starlette.datastructures
+import uvicorn
+from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from app import DocxPostProcess
+from app.schema import VersionSchema
+
+from . import DocxPostProcess
 
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
@@ -77,13 +83,37 @@ FILE_EXTENSIONS = {
 
 DEFAULT_CONVERSION_OPTIONS = ["--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua", "--track-changes=all"]
 
-app = Flask(__name__)
-
-data_limit = 200 * 1024 * 1024  # 200MB;
-app.config.update(
-    MAX_CONTENT_LENGTH=data_limit,
-    MAX_FORM_MEMORY_SIZE=data_limit,
+app = FastAPI(
+    openapi_url="/static/openapi.json",
+    docs_url="/api/docs",
 )
+data_limit = 200 * 1024 * 1024  # 200MB;
+
+
+# Set the maximum request body size to data_limit
+@app.middleware("http")
+async def check_request_size(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    size = len(await request.body())
+
+    if size > data_limit:
+        return process_error(
+            Exception(f"Body Size {size} > {data_limit}"),
+            "Request Body too large",
+            413,
+        )
+
+    response = await call_next(request)
+    return response
+
+
+# Replace standard request validation error handler to adhere to the PlainText format
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(request: Request, exc: RequestValidationError) -> PlainTextResponse:
+    return process_error(
+        exc,
+        "Validation Error",
+        422,
+    )
 
 
 def get_pandoc_version() -> str | None:
@@ -104,18 +134,36 @@ def get_pandoc_version() -> str | None:
         return None
 
 
-@app.route("/version", methods=["GET"])
-def version() -> dict[str, str | None]:
-    return {
-        "python": platform.python_version(),
-        "pandoc": get_pandoc_version(),
-        "pandocService": os.environ.get("PANDOC_SERVICE_VERSION"),
-        "timestamp": os.environ.get("PANDOC_SERVICE_BUILD_TIMESTAMP"),
-    }
+@app.get(
+    "/version",
+    summary="Get service version information",
+    description="Get version information for python, pandoc executable and pandoc service",
+    response_model=VersionSchema,
+    responses={200: {"description": "Success", "content": {MIME_TYPES["txt"]: {}}}, 422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}}},
+)
+def version() -> VersionSchema:
+    return VersionSchema(
+        python=platform.python_version(),
+        pandoc=get_pandoc_version(),
+        pandocService=os.environ.get("PANDOC_SERVICE_VERSION"),
+        timestamp=os.environ.get("PANDOC_SERVICE_BUILD_TIMESTAMP"),
+    )
 
 
-@app.route("/docx-template", methods=["GET"])
-def get_docx_template() -> Response:
+@app.get(
+    "/docx-template",
+    summary="Download DOCX template",
+    description="Get the default DOCX template for document conversion",
+    responses={
+        200: {
+            "description": "Success",
+            "content": {MIME_TYPES["docx"]: {}},
+        },
+        422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
+        500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
+    },
+)
+async def get_docx_template():  # type: ignore
     path = Path(CUSTOM_REFERENCE_DOCX)
     try:
         # ruff: noqa: S603
@@ -132,18 +180,17 @@ def get_docx_template() -> Response:
                 shell=False,
             )
         except subprocess.SubprocessError as e:
-            logging.error(f"Error generating template: {e}")
-            return Response("An internal error has occurred while generating the template.", status=500)
+            return process_error(e, "An internal error has occurred while generating the template", 500)
 
         with path.open("rb") as f:
             doc_content = f.read()
 
-        return send_file(
+        response = StreamingResponse(
             io.BytesIO(doc_content),
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            as_attachment=True,
-            download_name="reference.docx",
+            headers={"Content-Disposition": "attachment; filename=reference.docx"},
+            media_type=MIME_TYPES["docx"],
         )
+        return response
     finally:
         if Path.exists(path):
             Path.unlink(path)
@@ -243,51 +290,39 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
                 Path(output_file.name).unlink()
 
 
-@app.route("/convert/<source_format>/to/<target_format>", methods=["POST"])
-def convert(source_format: str, target_format: str) -> Response:
-    try:
-        encoding = request.args.get("encoding")
-        file_name = request.args.get(
-            "file_name",
-            default=("converted-document." + FILE_EXTENSIONS.get(target_format, "docx")),
-        )
-
-        source = request.get_data() if not encoding else request.get_data().decode(encoding)
-
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, target_format, DEFAULT_CONVERSION_OPTIONS)
-
-        return postprocess_and_build_response(output, target_format, file_name)
-
-    except Exception as e:
-        return process_error(e, "Bad request", 400)
-
-
-@app.route("/convert/<source_format>/to/docx-with-template", methods=["POST"])
-def convert_docx_with_ref(source_format: str) -> Response:
+@app.post(
+    "/convert/{source_format}/to/docx-with-template",
+    summary="Convert to DOCX with a template",
+    description="Converts a source document to DOCX format with an optional template file.",
+    responses={
+        200: {
+            "description": "Success",
+            "content": {MIME_TYPES["docx"]: {}},
+        },
+        400: {"description": "Bad request.", "content": {MIME_TYPES["txt"]: {}}},
+        413: {"description": "Request body too large.", "content": {MIME_TYPES["txt"]: {}}},
+        422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
+    },
+)
+async def convert_docx_with_ref(request: Request, source_format: str, encoding: str | None = None, file_name: str = "converted-document.docx"):  # type: ignore
     temp_template_filename = None
     try:
-        encoding = request.args.get("encoding")
-        file_name = request.args.get(
-            "file_name",
-            default="converted-document.docx",
-        )
-
-        source_text = request.form.get("source")  # first try to get it as a form text data
-        if source_text is not None:
-            source = source_text
-        else:
-            source_file = request.files.get("source")  # then we attempt to get it as a file
-            if not source_file:
-                return process_error(Exception("No source file"), "No data or file provided using key 'source'", 400)
-            source = source_file.read() if not encoding else source_file.read().decode(encoding)
+        form = await request.form()
+        source_content = form.get("source")
+        source = await get_docx_source_data(source_content, encoding)
+        if not source:
+            return process_error(Exception("No source file"), "No data or file provided using key 'source'", 400)
 
         # Optional docx template file
-        docx_template_file = request.files.get("template")
+        docx_template_file = form.get("template")
+
+        if isinstance(docx_template_file, str):
+            return process_error(Exception("Docx template must be a File"), "Invalid template file", 400)
+
         if docx_template_file:
             temp_template_filename = f"ref_{int(time.time())}.docx"
             with Path(temp_template_filename).open("wb") as f:
-                f.write(docx_template_file.read())
+                f.write(await docx_template_file.read())
 
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
@@ -306,39 +341,64 @@ def convert_docx_with_ref(source_format: str) -> Response:
             Path(temp_template_filename).unlink()
 
 
+@app.post(
+    "/convert/{source_format}/to/{target_format}",
+    summary="Convert document between formats",
+    description="Converts document from source format to target format",
+    responses={
+        200: {
+            "description": "Success",
+            "content": {DEFAULT_MIME_TYPE: {}},
+        },
+        400: {"description": "Bad request.", "content": {MIME_TYPES["txt"]: {}}},
+        413: {"description": "Request body too large.", "content": {MIME_TYPES["txt"]: {}}},
+        422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
+    },
+)
+async def convert(request: Request, source_format: str, target_format: str, encoding: str | None = None, file_name: str | None = None) -> Response:
+    try:
+        file_name = file_name if file_name else "converted-document." + FILE_EXTENSIONS.get(target_format, "docx")
+        data = await request.body()
+        source = data if not encoding else data.decode(encoding)
+
+        # Convert using subprocess instead of pandoc module
+        output = run_pandoc_conversion(source, source_format, target_format, DEFAULT_CONVERSION_OPTIONS)
+
+        return postprocess_and_build_response(output, target_format, file_name)
+
+    except Exception as e:
+        return process_error(e, "Bad request", 400)
+
+
+async def get_docx_source_data(source_content: starlette.datastructures.UploadFile | str | None, encoding: str | None) -> bytes | str | None:
+    if isinstance(source_content, starlette.datastructures.UploadFile):
+        source_bytes = await source_content.read()
+        if not source_bytes:
+            return None
+        return source_bytes if not encoding else source_bytes.decode(encoding)
+    return source_content
+
+
 def postprocess_and_build_response(output: bytes, target_format: str, file_name: str) -> Response:
     if target_format == "docx":
         output = DocxPostProcess.replace_table_properties(output)
     mime_type = MIME_TYPES.get(target_format, DEFAULT_MIME_TYPE)
 
-    response = Response(output, mimetype=mime_type, status=200)
-    response.headers.add("Content-Disposition", "attachment; filename=" + file_name)
-    response.headers.add("Python-Version", platform.python_version())
-    response.headers.add("Pandoc-Version", get_pandoc_version() or "unknown")
-    response.headers.add("Pandoc-Service-Version", os.environ.get("PANDOC_SERVICE_VERSION"))
+    response = Response(output, media_type=mime_type, status_code=200)
+    response.headers.append("Content-Disposition", "attachment; filename=" + file_name)
+    response.headers.append("Python-Version", platform.python_version())
+    response.headers.append("Pandoc-Version", (get_pandoc_version() or "unknown"))
+    response.headers.append("Pandoc-Service-Version", os.environ.get("PANDOC_SERVICE_VERSION", "unknown"))
     return response
 
 
-def process_error(e: Exception, err_msg: str, status: int) -> Response:
+def process_error(e: Exception, err_msg: str, status: int) -> PlainTextResponse:
     sanitized_err_msg = err_msg.replace("\r\n", "").replace("\n", "")
     logging.exception(msg=sanitized_err_msg + ": " + str(e))
-    return Response(
-        err_msg + ": " + getattr(e, "message", repr(e)),
-        mimetype="plain/text",
-        status=status,
+    return PlainTextResponse(
+        content=err_msg + ": " + getattr(e, "message", repr(e)),
+        status_code=status,
     )
-
-
-def create_server(port: int) -> WSGIServer:
-    """Create a new WSGI server instance.
-
-    Args:
-        port: The port number to listen on
-
-    Returns:
-        A configured WSGIServer instance
-    """
-    return WSGIServer(("", port), app)
 
 
 def start_server(port: int) -> None:
@@ -347,5 +407,4 @@ def start_server(port: int) -> None:
     Args:
         port: The port number to listen on
     """
-    http_server = create_server(port)
-    http_server.serve_forever()
+    uvicorn.run(app=app, host="", port=port)
