@@ -407,4 +407,4 @@ def start_server(port: int) -> None:
     Args:
         port: The port number to listen on
     """
-    uvicorn.run(app=app, host="", port=port)
+    uvicorn.run(app=app, port=port)
