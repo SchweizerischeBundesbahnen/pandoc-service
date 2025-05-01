@@ -3,17 +3,17 @@ import os
 import platform
 import subprocess
 import zipfile
+from typing import NamedTuple
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
-from flask import Response
-from werkzeug.datastructures import FileStorage
+from starlette.responses import Response
+from starlette.testclient import TestClient
 
 # Import the module to test
 from app.PandocController import (
     DEFAULT_CONVERSION_OPTIONS,
     app,
-    create_server,
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
@@ -21,14 +21,20 @@ from app.PandocController import (
 )
 
 
+class File(NamedTuple):
+    filename: str
+    file: io.BytesIO
+    content_type: str
+
+
 @pytest.fixture
 def mock_test_client():
-    """Create a mock test client for the Flask app to avoid werkzeug issues."""
+    """Create a mock test client for the FastAPI app to avoid werkzeug issues."""
     mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    mock_response.data = b"Mock response data"
+    mock_response.headers.get.return_value = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    mock_response.content = b"Mock response data"
     mock_client.get.return_value = mock_response
     mock_client.post.return_value = mock_response
     return mock_client
@@ -46,10 +52,10 @@ def test_version_endpoint():
         result = version()
 
         # Assertions
-        assert result["python"] == platform.python_version()
-        assert result["pandoc"] == "3.1.9"
-        assert result["pandocService"] == "1.0.0"
-        assert result["timestamp"] == "2024-03-27"
+        assert result.python == platform.python_version()
+        assert result.pandoc == "3.1.9"
+        assert result.pandocService == "1.0.0"
+        assert result.timestamp == "2024-03-27"
 
 
 def test_version_endpoint_with_subprocess_error():
@@ -62,10 +68,10 @@ def test_version_endpoint_with_subprocess_error():
         result = version()
 
         # Assertions
-        assert result["python"] == platform.python_version()
-        assert result["pandoc"] is None  # Should be None when subprocess fails
-        assert result["pandocService"] == "1.0.0"
-        assert result["timestamp"] == "2024-03-27"
+        assert result.python == platform.python_version()
+        assert result.pandoc is None  # Should be None when subprocess fails
+        assert result.pandocService == "1.0.0"
+        assert result.timestamp == "2024-03-27"
 
 
 def test_get_docx_template(mock_test_client):
@@ -75,7 +81,7 @@ def test_get_docx_template(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Mock file content and handling
         mock_docx_content = b"Mock DOCX template content"
@@ -84,14 +90,15 @@ def test_get_docx_template(mock_test_client):
         mock_path_open.return_value.__enter__.return_value = mock_file
         mock_subprocess.return_value = MagicMock()
 
+        test_client = TestClient(app)
         # Create test client and send request
-        response = app.test_client().get("/docx-template")
+        response = test_client.get("/docx-template")
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-        # Since we're mocking the Flask test client, just verify the test worked
+        # Since we're mocking the FastAPI test client, just verify the test worked
         assert response is mock_test_client.get.return_value
 
 
@@ -102,7 +109,7 @@ def test_get_docx_template_subprocess_error(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Mock file content and handling
         mock_docx_content = b"Mock DOCX template content"
@@ -116,9 +123,9 @@ def test_get_docx_template_subprocess_error(mock_test_client):
         # Set up the mock client response for error
         mock_test_client.get.return_value.status_code = 500
         mock_test_client.get.return_value.data = b"Internal server error"
-
+        test_client = TestClient(app)
         # Create test client and send request
-        response = app.test_client().get("/docx-template")
+        response = test_client.get("/docx-template")
 
         # The subprocess error should be caught and return a 500
         assert response.status_code == 500
@@ -131,21 +138,21 @@ def test_get_docx_template_file_handling(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Mock file content and handling
         mock_docx_content = b"Mock DOCX template content"
         mock_file = MagicMock()
         mock_file.read.return_value = mock_docx_content
         mock_path_open.return_value.__enter__.return_value = mock_file
-
+        test_client = TestClient(app)
         # Create test client and send request
-        response = app.test_client().get("/docx-template")
+        response = test_client.get("/docx-template")
 
         # Assertions
         assert response.status_code == 200
 
-        # Since we're mocking the Flask test client, just verify the test worked
+        # Since we're mocking the FastAPI test client, just verify the test worked
         assert response is mock_test_client.get.return_value
 
 
@@ -159,7 +166,7 @@ def test_convert_endpoint(mock_test_client):
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -178,15 +185,15 @@ def test_convert_endpoint(mock_test_client):
         source_format = "markdown"
         target_format = "docx"
         test_content = b"# Test Markdown Content"
-
+        test_client = TestClient(app)
         # Send POST request
-        response = app.test_client().post(f"/convert/{source_format}/to/{target_format}", data=test_content)
+        response = test_client.post(f"/convert/{source_format}/to/{target_format}", content=test_content)
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-        # Since we're mocking the Flask test client, just verify the test worked
+        # Since we're mocking the FastAPI test client, just verify the test worked
         assert response is mock_test_client.post.return_value
 
 
@@ -200,7 +207,7 @@ def test_convert_endpoint_with_encoding(mock_test_client):
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -219,13 +226,13 @@ def test_convert_endpoint_with_encoding(mock_test_client):
         source_format = "markdown"
         target_format = "docx"
         test_content = b"# Test Markdown Content"
-
+        test_client = TestClient(app)
         # Send POST request with encoding parameter
-        response = app.test_client().post(f"/convert/{source_format}/to/{target_format}?encoding=utf-8&file_name=test.docx", data=test_content)
+        response = test_client.post(f"/convert/{source_format}/to/{target_format}?encoding=utf-8&file_name=test.docx", content=test_content)
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         assert response is mock_test_client.post.return_value
 
 
@@ -239,7 +246,7 @@ def test_convert_docx_with_template(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -260,16 +267,17 @@ def test_convert_docx_with_template(mock_test_client):
         # Not using the template filename in the test anymore, so we can remove it
 
         # Create a mock template file
-        template_file = FileStorage(stream=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        template_file = File(file=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
+        test_client = TestClient(app)
         # Send POST request with source and template
-        response = app.test_client().post(f"/convert/{source_format}/to/docx-with-template", data={"source": test_content, "template": template_file}, content_type="multipart/form-data")
+        response = test_client.post(f"/convert/{source_format}/to/docx-with-template", files={"source": test_content, "template": template_file})
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-        # Since we're mocking the Flask test client, just verify the test worked
+        # Since we're mocking the FastAPI test client, just verify the test worked
         assert response is mock_test_client.post.return_value
 
 
@@ -283,7 +291,7 @@ def test_convert_docx_with_template_using_file(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -301,33 +309,35 @@ def test_convert_docx_with_template_using_file(mock_test_client):
         # Prepare test data
         source_format = "markdown"
         source_content = b"# Test Markdown Content"
-        source_file = FileStorage(stream=io.BytesIO(source_content), filename="source.md", content_type="text/markdown")
+        source_file = File(file=io.BytesIO(source_content), filename="source.md", content_type="text/markdown")
 
         # Create a mock template file
-        template_file = FileStorage(stream=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        template_file = File(file=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
+        test_client = TestClient(app)
         # Send POST request with source as file
-        response = app.test_client().post(f"/convert/{source_format}/to/docx-with-template", data={"source": source_file, "template": template_file}, content_type="multipart/form-data")
+        response = test_client.post(f"/convert/{source_format}/to/docx-with-template", files={"source": source_file, "template": template_file})
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         assert response is mock_test_client.post.return_value
 
 
 def test_convert_endpoint_error_handling(mock_test_client):
     """Test error handling in conversion endpoints."""
-    with patch("subprocess.run") as mock_subprocess, patch("flask.Flask.test_client", return_value=mock_test_client):
+    with patch("subprocess.run") as mock_subprocess, patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client):
         # Create a test client
         mock_test_client.post.return_value.status_code = 400
 
         # Simulate subprocess error
         mock_subprocess.side_effect = subprocess.CalledProcessError(1, "pandoc")
 
+        test_client = TestClient(app)
         # Send POST request
-        response = app.test_client().post(
+        response = test_client.post(
             "/convert/markdown/to/docx",
-            data=b"# Test Markdown Content",
+            content=b"# Test Markdown Content",
         )
 
         # Assertions
@@ -336,17 +346,18 @@ def test_convert_endpoint_error_handling(mock_test_client):
 
 def test_convert_docx_with_template_no_source(mock_test_client):
     """Test conversion endpoint with missing source."""
-    with patch("flask.Flask.test_client", return_value=mock_test_client):
+    with patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client):
         # Set up mock response for the "no source" case
         mock_test_client.post.return_value.status_code = 400
-        mock_test_client.post.return_value.data = b"No data or file provided using key 'source'"
+        mock_test_client.post.return_value.content = b"No data or file provided using key 'source'"
 
+        test_client = TestClient(app)
         # Send POST request without source
-        response = app.test_client().post("/convert/markdown/to/docx-with-template")
+        response = test_client.post("/convert/markdown/to/docx-with-template")
 
         # Assertions
         assert response.status_code == 400
-        assert b"No data or file provided" in response.data
+        assert b"No data or file provided" in response.content
 
 
 def test_process_error():
@@ -359,9 +370,9 @@ def test_process_error():
 
     # Assertions
     assert response.status_code == 500
-    assert response.mimetype == "plain/text"
-    assert "Test error" in response.get_data(as_text=True)
-    assert "ValueError" in response.get_data(as_text=True)
+    assert response.media_type == "text/plain"
+    assert "Test error" in response.body.decode("utf-8")
+    assert "ValueError" in response.body.decode("utf-8")
 
     # Test with exception that has a message attribute
     class CustomException(Exception):
@@ -373,7 +384,7 @@ def test_process_error():
     response = process_error(custom_exception, "Custom error", 400)
 
     assert response.status_code == 400
-    assert "Custom error message" in response.get_data(as_text=True)
+    assert "Custom error message" in response.body.decode("utf-8")
 
 
 def test_postprocess_and_build_response():
@@ -391,21 +402,21 @@ def test_postprocess_and_build_response():
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         assert response.headers.get("Content-Disposition") == "attachment; filename=test.docx"
         assert response.headers.get("Python-Version") == platform.python_version()
         assert response.headers.get("Pandoc-Version") == "3.1.9"
         assert response.headers.get("Pandoc-Service-Version") == "1.0.0"
-        assert response.data == b"Processed DOCX content"
+        assert response.body == b"Processed DOCX content"
 
         # Test with non-DOCX format (should not call replace_table_properties)
         pdf_content = b"Test PDF content"
         response = postprocess_and_build_response(pdf_content, "pdf", "test.pdf")
 
         assert response.status_code == 200
-        assert response.mimetype == "application/pdf"
+        assert response.headers.get("content-type") == "application/pdf"
         assert response.headers.get("Content-Disposition") == "attachment; filename=test.pdf"
-        assert response.data == pdf_content
+        assert response.body == pdf_content
 
 
 def create_mock_docx(files: dict[str, bytes] = None) -> bytes:
@@ -517,21 +528,19 @@ def test_convert_with_encoding():
     # Create patches for the required functions
     with patch("app.PandocController.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
-        mock_response = Response(b"<html>Test</html>", mimetype="text/html", status=200)
+        mock_response = Response(b"<html>Test</html>", media_type="text/html", status_code=200)
         mock_postprocess.return_value = mock_response
 
-        # Create a test client
-        client = app.test_client()
-
+        test_client = TestClient(app)
         # Send a request with encoding specified
-        response = client.post("/convert/markdown/to/html?encoding=utf-8", data=b"# Test Content")
+        response = test_client.post("/convert/markdown/to/html?encoding=utf-8", content=b"# Test Content")
 
         # Assertions
         mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
         mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html")
         assert response.status_code == 200
-        assert response.mimetype == "text/html"
-        assert response.data == b"<html>Test</html>"
+        assert response.headers.get("content-type") == "text/html; charset=utf-8"
+        assert response.content == b"<html>Test</html>"
 
 
 def test_convert_with_custom_filename():
@@ -539,21 +548,19 @@ def test_convert_with_custom_filename():
     # Create patches for the required functions
     with patch("app.PandocController.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
-        mock_response = Response(b"<html>Test</html>", mimetype="text/html", status=200)
+        mock_response = Response(b"<html>Test</html>", media_type="text/html", status_code=200)
         mock_postprocess.return_value = mock_response
 
-        # Create a test client
-        client = app.test_client()
-
+        test_client = TestClient(app)
         # Send a request with custom filename
-        response = client.post("/convert/markdown/to/html?file_name=custom.html", data=b"# Test Content")
+        response = test_client.post("/convert/markdown/to/html?file_name=custom.html", content=b"# Test Content")
 
         # Assertions
         mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
         mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html")
         assert response.status_code == 200
-        assert response.mimetype == "text/html"
-        assert response.data == b"<html>Test</html>"
+        assert response.headers.get("content-type") == "text/html; charset=utf-8"
+        assert response.content == b"<html>Test</html>"
 
 
 def test_convert_docx_with_ref_source_text():
@@ -561,17 +568,15 @@ def test_convert_docx_with_ref_source_text():
     # Create patches for the required functions
     with patch("app.PandocController.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
-        mock_response = Response(b"DOCX content", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status=200)
+        mock_response = Response(b"DOCX content", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status_code=200)
         mock_postprocess.return_value = mock_response
-
-        # Create a test client
-        client = app.test_client()
 
         # Create form data with source text
         data = {"source": "# Test Markdown"}
 
+        test_client = TestClient(app)
         # Send a request with form data
-        response = client.post("/convert/markdown/to/docx-with-template", data=data)
+        response = test_client.post("/convert/markdown/to/docx-with-template", data=data)
 
         # Assertions
         # Check that run_pandoc_conversion was called with correct params
@@ -586,8 +591,8 @@ def test_convert_docx_with_ref_source_text():
 
         # Check the response
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        assert response.data == b"DOCX content"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.content == b"DOCX content"
 
 
 def test_convert_docx_with_ref_no_template():
@@ -595,17 +600,16 @@ def test_convert_docx_with_ref_no_template():
     # Create patches for the required functions
     with patch("app.PandocController.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
-        mock_response = Response(b"DOCX content", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status=200)
+        mock_response = Response(b"DOCX content", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status_code=200)
         mock_postprocess.return_value = mock_response
 
-        # Create a test client
-        client = app.test_client()
-
         # Create source file for multipart/form-data
-        source_file = FileStorage(stream=io.BytesIO(b"# Test Markdown"), filename="test.md", content_type="text/markdown")
+        source_file = ()
+        source_file = File(file=io.BytesIO(b"# Test Markdown"), filename="test.md", content_type="text/markdown")
 
+        test_client = TestClient(app)
         # Send request with source file but no template
-        response = client.post("/convert/markdown/to/docx-with-template", data={"source": source_file}, content_type="multipart/form-data")
+        response = test_client.post("/convert/markdown/to/docx-with-template", files={"source": source_file})
 
         # Assertions
         # Check that run_pandoc_conversion was called with correct params
@@ -626,15 +630,15 @@ def test_convert_docx_with_ref_no_template():
 
         # Check the response
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        assert response.data == b"DOCX content"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.content == b"DOCX content"
 
 
 def test_convert_docx_with_ref_exception(mock_test_client):
     """Test convert_docx_with_ref with an exception during conversion."""
     with (
         patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("flask.Flask.test_client", return_value=mock_test_client),
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mock to raise an exception
         mock_run_conversion.side_effect = ValueError("Test error")
@@ -648,10 +652,11 @@ def test_convert_docx_with_ref_exception(mock_test_client):
         test_content = "# Test Markdown Content"
 
         # Create a mock template file
-        template_file = FileStorage(stream=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        template_file = File(file=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
+        test_client = TestClient(app)
         # Send POST request with source and template
-        response = app.test_client().post(f"/convert/{source_format}/to/docx-with-template", data={"source": test_content, "template": template_file}, content_type="multipart/form-data")
+        response = test_client.post(f"/convert/{source_format}/to/docx-with-template", data={"source": test_content, "template": template_file})
 
         # Assertions
         assert response.status_code == 400
@@ -698,25 +703,6 @@ def test_run_pandoc_conversion_validation_edge_cases():
         # Test bytes input instead of string
         source_data_bytes = b"# Test Markdown"
         run_pandoc_conversion(source_data_bytes, source_format, target_format, [])
-
-
-def test_server_creation():
-    """Test the server creation functionality."""
-    # Create a mock server instance
-    mock_server = MagicMock()
-
-    # Patch WSGIServer with the correct path
-    with patch("app.PandocController.WSGIServer", return_value=mock_server) as mock_server_class:
-        test_port = 9082
-
-        # Test server creation
-        server = create_server(test_port)
-
-        # Verify the server was created with correct arguments
-        mock_server_class.assert_called_once_with(("", test_port), app)
-
-        # Verify we got back our mock server
-        assert server == mock_server
 
 
 def test_run_pandoc_conversion_with_invalid_option():
@@ -814,36 +800,34 @@ def test_run_pandoc_conversion_with_valid_reference_doc():
 def test_convert_endpoint_invalid_format():
     """Test the conversion endpoint with invalid format."""
     # Create a test client
-    test_client = app.test_client()
+    with TestClient(app) as test_client:
+        # Prepare test data with invalid format
+        source_format = "invalid"
+        target_format = "docx"
+        test_content = b"# Test Markdown Content"
 
-    # Prepare test data with invalid format
-    source_format = "invalid"
-    target_format = "docx"
-    test_content = b"# Test Markdown Content"
-
-    # Send POST request
-    response = test_client.post(f"/convert/{source_format}/to/{target_format}", data=test_content)
+        # Send POST request
+        response = test_client.post(f"/convert/{source_format}/to/{target_format}", content=test_content)
 
     # Assertions
     assert response.status_code == 400
-    assert b"Invalid source format: invalid" in response.data
+    assert b"Invalid source format: invalid" in response.content
 
 
 def test_convert_docx_with_ref_no_source_file():
     """Test convert_docx_with_ref with no source file."""
     # Create a test client
-    test_client = app.test_client()
-
+    test_client = TestClient(app)
     # Prepare request with no source
     source_format = "markdown"
     data = {}  # Empty data, no source
 
     # Send POST request
-    response = test_client.post(f"/convert/{source_format}/to/docx-with-template", data=data, content_type="multipart/form-data")
+    response = test_client.post(f"/convert/{source_format}/to/docx-with-template", files=data)
 
     # Assertions
     assert response.status_code == 400
-    assert b"No data or file provided using key 'source'" in response.data
+    assert b"No data or file provided using key 'source'" in response.content
 
 
 def test_postprocess_and_build_response_with_headers():
@@ -876,8 +860,8 @@ def test_postprocess_and_build_response_with_headers():
         response = postprocess_and_build_response(output, target_format, file_name)
 
         # Check content and mime type
-        assert response.data == output
-        assert response.mimetype == "text/html"
+        assert response.body == output
+        assert response.headers.get("content-type") == "text/html; charset=utf-8"
 
 
 def test_process_error_with_multiline_message():
@@ -892,8 +876,8 @@ def test_process_error_with_multiline_message():
     # Assertions
     assert response.status_code == 400
     # Note: only the log message is sanitized, not the response
-    assert b"Error message\nwith\r\nnewlines: Exception('Test exception')" in response.data
-    assert response.mimetype == "plain/text"
+    assert b"Error message\nwith\r\nnewlines: Exception('Test exception')" in response.body
+    assert response.headers.get("content-type") == "text/plain; charset=utf-8"
 
 
 def test_get_docx_template_with_path_handling():
@@ -903,7 +887,7 @@ def test_get_docx_template_with_path_handling():
         patch("pathlib.Path.exists", side_effect=[False, True]),  # False for initial check, True for finally
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("flask.send_file") as mock_send_file,
+        patch("fastapi.responses.StreamingResponse") as mock_send_file,
     ):
         # Mock file content
         mock_file = MagicMock()
@@ -911,16 +895,15 @@ def test_get_docx_template_with_path_handling():
         mock_path_open.return_value.__enter__.return_value = mock_file
 
         # Mock send_file to return a response
-        mock_response = Response(b"Mock DOCX template content", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status=200)
+        mock_response = Response(b"Mock DOCX template content", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status_code=200)
         mock_send_file.return_value = mock_response
-
+        test_client = TestClient(app)
         # Call endpoint using test client
-        test_client = app.test_client()
         response = test_client.get("/docx-template")
 
         # Assertions
         assert response.status_code == 200
-        assert response.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def test_convert_endpoint_with_custom_file_extension():
@@ -937,10 +920,9 @@ def test_convert_endpoint_with_custom_file_extension():
         mock_response.mimetype = "text/html"
         mock_response.status_code = 200
         mock_postprocess.return_value = mock_response
-
+        test_client = TestClient(app)
         # Create client and send request with custom file extension
-        test_client = app.test_client()
-        response = test_client.post("/convert/markdown/to/html?file_name=custom_name.html", data="# Test markdown")
+        response = test_client.post("/convert/markdown/to/html?file_name=custom_name.html", content="# Test markdown")
 
         # Assertions
         assert response.status_code == 200
@@ -970,10 +952,7 @@ def test_docx_with_template_encoding():
         mock_response.mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         mock_response.status_code = 200
         mock_postprocess.return_value = mock_response
-
-        # Create a test client
-        test_client = app.test_client()
-
+        test_client = TestClient(app)
         # Create test file
         test_file = MagicMock()
         test_file.read.return_value = b"Test content"
@@ -983,16 +962,13 @@ def test_docx_with_template_encoding():
         template_file.read.return_value = b"Template content"
 
         # Send request with encoding
-        from werkzeug.datastructures import FileStorage
-
         # Create file storage objects with content
-        source_file = FileStorage(stream=io.BytesIO(b"Test content"), filename="test.md", content_type="text/markdown")
+        source_file = File(file=io.BytesIO(b"Test content"), filename="test.md", content_type="text/markdown")
 
-        template_file = FileStorage(stream=io.BytesIO(b"Template content"), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        template_file = File(file=io.BytesIO(b"Template content"), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
         # Send request with encoding parameter
-        with test_client as client:
-            response = client.post("/convert/markdown/to/docx-with-template?encoding=utf-8&file_name=custom_name.docx", data={"source": source_file, "template": template_file}, content_type="multipart/form-data")
+        response = test_client.post("/convert/markdown/to/docx-with-template?encoding=utf-8&file_name=custom_name.docx", files={"source": source_file, "template": template_file})
 
         # Assertions
         assert response.status_code == 200
