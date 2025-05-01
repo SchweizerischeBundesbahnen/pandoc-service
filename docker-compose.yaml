@@ -1,6 +1,6 @@
 ---
 services:
-  weasyprint-service:
+  pandoc-service:
     build:
       context: .
       dockerfile: Dockerfile
