@@ -92,9 +92,6 @@ The project includes several test methods to ensure functionality.
 
 #### Container Structure Test
 ```bash
-docker build -t pandoc-service:local .
-```
-```bash
 container-structure-test test --image pandoc-service:local --config ./tests/container/container-structure-test.yaml
 ```
 
@@ -113,7 +110,7 @@ poetry install
 
 ```bash
 # Run all Python tests
-poetry run pytest
+poetry run pytest -v
 ```
 ```bash
 # Run a specific test
@@ -158,6 +155,28 @@ Pandoc Service provides the following endpoints:
 >  curl -X GET -H "Content-Type: application/json" http://localhost:9082/version
 > ```
 
+</details>
+
+------------------------------------------------------------------------------------------
+
+#### Getting openapi info
+
+<details>
+  <summary>
+    <code>GET</code> <code>/static/openapi.json</code>
+  </summary>
+
+##### Responses
+
+> | HTTP code | Content-Type       | Response      |
+> |-----------|--------------------|---------------|
+> | `200`     | `application/json` | openapi.json  |
+
+##### Example cURL
+
+> ```bash
+>  curl -X GET -H "Content-Type: application/json" http://localhost:9082/static/openapi.json
+> ```
 </details>
 
 ------------------------------------------------------------------------------------------
