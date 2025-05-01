@@ -105,7 +105,7 @@ fi
 
 # Run container
 log "Starting container..."
-if ! docker run -d --name ${CONTAINER_NAME} -p ${PORT}:9082 ${IMAGE_NAME} >/dev/null 2>&1; then
+if ! docker run --init -d --name ${CONTAINER_NAME} -p ${PORT}:9082 ${IMAGE_NAME} >/dev/null 2>&1; then
     error "Failed to start container"
 fi
 
