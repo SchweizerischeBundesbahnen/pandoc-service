@@ -1,0 +1,25 @@
+---
+services:
+  weasyprint-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true  # Enable init process (equivalent to using tini)
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}  # Can be DEBUG, INFO, WARNING, ERROR, CRITICAL
+      - PYTHONUNBUFFERED=1  # Ensures Python output is sent straight to container logs
+    volumes:
+      - pandoc_service_logs:/opt/pandoc/logs  # Use named volume for logs
+    ports:
+      - 9082:9082  # Adjust port as needed for your application
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9082/health]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+volumes:
+  pandoc_service_logs:
+    name: ${COMPOSE_PROJECT_NAME:-pandoc}_logs
+    driver: local

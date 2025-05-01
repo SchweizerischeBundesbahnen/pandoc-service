@@ -204,7 +204,7 @@ def pandoc_container():
         image, _ = client.images.build(path=".", tag=TEST_IMAGE_FULL, buildargs={"APP_IMAGE_VERSION": "1.0.0"})
 
         # Run the container with test-specific name
-        container = client.containers.run(image=image, detach=True, name=TEST_CONTAINER_NAME, ports={"9082": 9082})
+        container = client.containers.run(image=image, detach=True, name=TEST_CONTAINER_NAME, ports={"9082": 9082}, init=True)
 
         # Wait for container to be ready
         time.sleep(5)

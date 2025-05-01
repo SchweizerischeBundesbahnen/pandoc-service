@@ -8,7 +8,6 @@ ARG PANDOC_VERSION=3.6.4
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
     bash \
-    tini \
     wget \
     ca-certificates \
     tar \
@@ -46,4 +45,4 @@ COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
 
 # Use Tini as entrypoint with security options
-ENTRYPOINT ["/sbin/tini", "--", "./entrypoint.sh"]
+ENTRYPOINT ["./entrypoint.sh"]
