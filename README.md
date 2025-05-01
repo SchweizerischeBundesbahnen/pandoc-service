@@ -36,7 +36,7 @@ docker pull ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 To start the Pandoc service container, execute:
 
 ```bash
-  docker run --detach \
+  docker run --init --detach \
     --publish 9082:9082 \
     --name pandoc-service \
     ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
@@ -72,7 +72,7 @@ Replace 0.0.0 with the desired version number.
 To start the Docker container with your custom-built image:
 
 ```bash
-  docker run --detach \
+  docker run --init --detach \
     --publish 9082:9082 \
     --name pandoc-service \
     pandoc-service:0.0.0
