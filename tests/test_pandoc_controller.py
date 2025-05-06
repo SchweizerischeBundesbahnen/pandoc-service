@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import zipfile
+from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -632,6 +633,32 @@ def test_convert_docx_with_ref_no_template():
         assert response.status_code == 200
         assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         assert response.content == b"DOCX content"
+
+
+def test_convert_docx_to_pdf_with_custom_filename():
+    """Test DOCX to PDF conversion with custom filename and PDF engine."""
+    with patch("app.PandocController.run_pandoc_conversion", return_value=b"%PDF-test") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+        mock_response = Response(content=b"%PDF-test", media_type="application/pdf", status_code=200)
+        mock_postprocess.return_value = mock_response
+
+        test_client = TestClient(app)
+
+        with Path("tests/data/test-input.docx").open("rb") as file:
+            files = {"source": ("test-input.docx", file, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+
+            response = test_client.post("/convert/docx/to/pdf?file_name=custom.pdf", files=files)
+
+        mock_convert.assert_called_once()
+        args = mock_convert.call_args[0]
+        assert args[1] == "docx"
+        assert args[2] == "pdf"
+        assert "--pdf-engine=tectonic" in args[3]
+
+        mock_postprocess.assert_called_once_with(b"%PDF-test", "pdf", "custom.pdf")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.content == b"%PDF-test"
 
 
 def test_convert_docx_with_ref_exception(mock_test_client):
