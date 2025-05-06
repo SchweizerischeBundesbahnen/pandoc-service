@@ -1009,9 +1009,9 @@ def test_request_body_too_large():
     """Test that the middleware returns 413 when request body exceeds size limit."""
     data_limit = 1024
     large_body = "x" * (data_limit + 1)
-    with patch("main.data_limit", data_limit):
+    with patch("app.PandocController.data_limit", data_limit):
         client = TestClient(app)
         response = client.post("/test-endpoint", data=large_body)
 
         assert response.status_code == 413
-        assert response.text == "Request Body too large"
+        assert response.text == "Request Body too large: Exception('Body Size 1025 > 1024')"
