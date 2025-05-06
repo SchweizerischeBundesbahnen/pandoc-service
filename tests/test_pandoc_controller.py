@@ -832,9 +832,10 @@ def test_convert_endpoint_invalid_format():
         source_format = "invalid"
         target_format = "docx"
         test_content = b"# Test Markdown Content"
-
+        with Path("tests/data/test-input.docx").open("rb") as file:
+            files = {"source": ("test-input.docx", file, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
         # Send POST request
-        response = test_client.post(f"/convert/{source_format}/to/{target_format}", content=test_content)
+        response = test_client.post(f"/convert/{source_format}/to/{target_format}", content=test_content, files=files)
 
     # Assertions
     assert response.status_code == 400

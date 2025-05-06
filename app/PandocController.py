@@ -10,7 +10,7 @@ from pathlib import Path
 
 import starlette.datastructures
 import uvicorn
-from fastapi import FastAPI, Request, Response, UploadFile
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
