@@ -371,10 +371,7 @@ async def convert(request: Request, source_format: str, target_format: str, enco
                 source = None
 
         # Convert using subprocess instead of pandoc module
-        if target_format == "pdf":
-            output = run_pandoc_conversion(source, source_format, target_format, ["--pdf-engine=tectonic"])
-        else:
-            output = run_pandoc_conversion(source, source_format, target_format, DEFAULT_CONVERSION_OPTIONS)
+        output = run_pandoc_conversion(source, source_format, target_format, ["--pdf-engine=tectonic"]) if target_format == "pdf" else run_pandoc_conversion(source, source_format, target_format, DEFAULT_CONVERSION_OPTIONS)
 
         return postprocess_and_build_response(output, target_format, file_name)
 
