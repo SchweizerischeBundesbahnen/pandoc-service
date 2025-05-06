@@ -204,7 +204,7 @@ Pandoc Service provides the following endpoints:
 
 ------------------------------------------------------------------------------------------
 
-#### Convert HTML to PDF
+#### Convert HTML to DOCX
 
 <details>
   <summary>
