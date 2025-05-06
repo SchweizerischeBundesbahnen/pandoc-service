@@ -359,7 +359,7 @@ async def convert_docx_with_ref(request: Request, source_format: str, encoding: 
 async def convert(request: Request, source_format: str, target_format: str, encoding: str | None = None, file_name: str | None = None) -> Response:
     try:
         file_name = file_name if file_name else "converted-document." + FILE_EXTENSIONS.get(target_format, "docx")
-        if source_format in {"txt", "md", "html"}:
+        if source_format in {"txt", "markdown", "html"}:
             data = await request.body()
             source = data if not encoding else data.decode(encoding)
         else:
