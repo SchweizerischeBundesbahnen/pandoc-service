@@ -367,7 +367,7 @@ async def convert(request: Request, source_format: str, target_format: str, enco
             uploaded_file = form.get("source")
 
             try:
-                source = await uploaded_file.read()
+                source = await uploaded_file.read() # type: ignore
             except AttributeError:
                 return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
