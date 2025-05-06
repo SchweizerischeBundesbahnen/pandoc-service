@@ -109,12 +109,12 @@ def resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
 
 
 # Just for manual test purposes. Accepts path to docx to process.
-if __name__ == "__main__":
+def main():
     args_number = 2
 
     if len(sys.argv) != args_number:
         logging.info("Provide <path_to_docx>")
-        sys.exit(1)
+        return 1
 
     docx_path = sys.argv[1]
 
@@ -125,3 +125,8 @@ if __name__ == "__main__":
         docx_file_writer.write(result_bytes)
 
     logging.debug(f"Successfully modified table properties in {docx_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    main()

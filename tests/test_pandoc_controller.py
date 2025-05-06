@@ -1011,7 +1011,7 @@ def test_request_body_too_large():
     large_body = "x" * (data_limit + 1)
     with patch("app.PandocController.data_limit", data_limit):
         client = TestClient(app)
-        response = client.post("/test-endpoint", data=large_body)
+        response = client.post("/test-endpoint", content=large_body)
 
         assert response.status_code == 413
         assert response.text == "Request Body too large: Exception('Body Size 1025 > 1024')"
