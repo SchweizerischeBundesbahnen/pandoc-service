@@ -1003,3 +1003,15 @@ def test_docx_with_template_encoding():
         # Verify the reference doc option was passed
         run_options = mock_run_conversion.call_args[0][3]
         assert any("--reference-doc=ref_1234567890.docx" in opt for opt in run_options)
+
+
+def test_request_body_too_large():
+    """Test that the middleware returns 413 when request body exceeds size limit."""
+    data_limit = 1024
+    large_body = "x" * (data_limit + 1)
+    with patch("main.data_limit", data_limit):
+        client = TestClient(app)
+        response = client.post("/test-endpoint", data=large_body)
+
+        assert response.status_code == 413
+        assert response.text == "Request Body too large"
