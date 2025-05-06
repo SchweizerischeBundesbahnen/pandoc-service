@@ -10,7 +10,7 @@ from pathlib import Path
 
 import starlette.datastructures
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
@@ -365,13 +365,15 @@ async def convert(request: Request, source_format: str, target_format: str, enco
         else:
             form = await request.form()
             uploaded_file = form.get("source")
-            if uploaded_file:
+
+            try:
                 source = await uploaded_file.read()
-            else:
-                source = None
+            except AttributeError:
+                return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
         # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, target_format, ["--pdf-engine=tectonic"]) if target_format == "pdf" else run_pandoc_conversion(source, source_format, target_format, DEFAULT_CONVERSION_OPTIONS)
+        options = ["--pdf-engine=tectonic"] if target_format == "pdf" else DEFAULT_CONVERSION_OPTIONS
+        output = run_pandoc_conversion(source, source_format, target_format, options)
 
         return postprocess_and_build_response(output, target_format, file_name)
 

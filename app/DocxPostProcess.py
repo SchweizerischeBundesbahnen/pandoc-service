@@ -109,7 +109,7 @@ def resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
 
 
 # Just for manual test purposes. Accepts path to docx to process.
-def main():
+def main() -> int:
     args_number = 2
 
     if len(sys.argv) != args_number:
