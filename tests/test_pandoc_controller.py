@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import zipfile
+from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -634,6 +635,32 @@ def test_convert_docx_with_ref_no_template():
         assert response.content == b"DOCX content"
 
 
+def test_convert_docx_to_pdf_with_custom_filename():
+    """Test DOCX to PDF conversion with custom filename and PDF engine."""
+    with patch("app.PandocController.run_pandoc_conversion", return_value=b"%PDF-test") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+        mock_response = Response(content=b"%PDF-test", media_type="application/pdf", status_code=200)
+        mock_postprocess.return_value = mock_response
+
+        test_client = TestClient(app)
+
+        with Path("tests/data/test-input.docx").open("rb") as file:
+            files = {"source": ("test-input.docx", file, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+
+            response = test_client.post("/convert/docx/to/pdf?file_name=custom.pdf", files=files)
+
+        mock_convert.assert_called_once()
+        args = mock_convert.call_args[0]
+        assert args[1] == "docx"
+        assert args[2] == "pdf"
+        assert "--pdf-engine=tectonic" in args[3]
+
+        mock_postprocess.assert_called_once_with(b"%PDF-test", "pdf", "custom.pdf")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.content == b"%PDF-test"
+
+
 def test_convert_docx_with_ref_exception(mock_test_client):
     """Test convert_docx_with_ref with an exception during conversion."""
     with (
@@ -805,9 +832,11 @@ def test_convert_endpoint_invalid_format():
         source_format = "invalid"
         target_format = "docx"
         test_content = b"# Test Markdown Content"
-
         # Send POST request
-        response = test_client.post(f"/convert/{source_format}/to/{target_format}", content=test_content)
+        response = test_client.post(
+            f"/convert/{source_format}/to/{target_format}",
+            files={"source": ("test.md", test_content, "text/markdown")},
+        )
 
     # Assertions
     assert response.status_code == 400
@@ -976,3 +1005,15 @@ def test_docx_with_template_encoding():
         # Verify the reference doc option was passed
         run_options = mock_run_conversion.call_args[0][3]
         assert any("--reference-doc=ref_1234567890.docx" in opt for opt in run_options)
+
+
+def test_request_body_too_large():
+    """Test that the middleware returns 413 when request body exceeds size limit."""
+    data_limit = 1024
+    large_body = "x" * (data_limit + 1)
+    with patch("app.PandocController.data_limit", data_limit):
+        client = TestClient(app)
+        response = client.post("/test-endpoint", content=large_body)
+
+        assert response.status_code == 413
+        assert response.text == "Request Body too large: Exception('Body Size 1025 > 1024')"

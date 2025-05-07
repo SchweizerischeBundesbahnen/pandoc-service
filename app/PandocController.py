@@ -26,6 +26,7 @@ ALLOWED_PANDOC_OPTIONS = [
     "--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
+    "--pdf-engine=tectonic",
 ]
 
 # Add other allowed formats as needed
@@ -358,11 +359,21 @@ async def convert_docx_with_ref(request: Request, source_format: str, encoding: 
 async def convert(request: Request, source_format: str, target_format: str, encoding: str | None = None, file_name: str | None = None) -> Response:
     try:
         file_name = file_name if file_name else "converted-document." + FILE_EXTENSIONS.get(target_format, "docx")
-        data = await request.body()
-        source = data if not encoding else data.decode(encoding)
+        if source_format in {"txt", "markdown", "html"}:
+            data = await request.body()
+            source = data if not encoding else data.decode(encoding)
+        else:
+            form = await request.form()
+            uploaded_file = form.get("source")
+
+            try:
+                source = await uploaded_file.read() # type: ignore
+            except AttributeError:
+                return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
         # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, target_format, DEFAULT_CONVERSION_OPTIONS)
+        options = ["--pdf-engine=tectonic"] if target_format == "pdf" else DEFAULT_CONVERSION_OPTIONS
+        output = run_pandoc_conversion(source, source_format, target_format, options)
 
         return postprocess_and_build_response(output, target_format, file_name)
 

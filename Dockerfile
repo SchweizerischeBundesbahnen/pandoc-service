@@ -13,6 +13,7 @@ RUN apk add --no-cache \
     tar \
     gzip \
     lua \
+    tectonic \
     && wget -q https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz -O /tmp/pandoc.tar.gz \
     && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
     && mv /tmp/pandoc-${PANDOC_VERSION}/bin/pandoc /usr/local/bin/ \

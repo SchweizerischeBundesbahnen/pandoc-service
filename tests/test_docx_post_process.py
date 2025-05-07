@@ -1,5 +1,7 @@
-from unittest.mock import MagicMock, patch
+import sys
+from unittest.mock import MagicMock, mock_open, patch
 
+import pytest
 from docx.table import Table, _Cell
 
 from app import DocxPostProcess
@@ -487,3 +489,32 @@ def test_process_table_with_nested_tables(mock_resize_images):
             # the actual call since it happens recursively. Instead, we verify that
             # the nested tables were accessed.
             pass
+
+
+@pytest.mark.parametrize(
+    "argv, expected_exit",
+    [
+        (["script.py"], True),
+        (["script.py", "test.docx"], False),
+    ],
+)
+def test_main_function(argv, expected_exit):
+    fake_docx_content = b"fake content"
+    modified_content = b"modified content"
+
+    with (
+        patch.object(sys, "argv", argv),
+        patch("pathlib.Path.open", mock_open(read_data=fake_docx_content)) as mock_file,
+        patch("app.DocxPostProcess.replace_table_properties", return_value=modified_content) as mock_replace,
+        patch("app.DocxPostProcess.logging") as mock_logging,
+    ):
+        result = DocxPostProcess.main()
+
+        if expected_exit:
+            assert result == 1
+        else:
+            assert result == 0
+            mock_replace.assert_called_once_with(fake_docx_content)
+            handle = mock_file()
+            handle.write.assert_called_once_with(modified_content)
+            mock_logging.debug.assert_called_once()

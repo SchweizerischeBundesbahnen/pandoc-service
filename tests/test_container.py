@@ -289,7 +289,8 @@ def test_convert_html_to_plain(test_parameters: TestParameters) -> None:
 def test_convert_docx_to_plain(test_parameters: TestParameters) -> None:
     with Path("tests/data/test-input.docx").open("rb") as source_file:
         expected_content = __load_test_file("tests/data/expected-docx-to-txt.txt")
-        response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="docx", target_format="plain", data=source_file.read())
+        data = ("test-input.docx", source_file.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="docx", target_format="plain", data=data)
         assert response.status_code == 200
         assert response.content.decode("utf-8") == expected_content
 
@@ -352,8 +353,16 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
 
 def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data) -> requests.Response:
     url = f"{base_url}/convert/{source_format}/to/{target_format}"
+    files = None
+    payload = None
+
+    if isinstance(data, tuple):
+        filename, file_content, content_type = data
+        files = {"source": (filename, file_content, content_type)}
+    else:
+        payload = data
     try:
-        response = request_session.request(method="POST", url=url, data=data, verify=True)
+        response = request_session.request(method="POST", url=url, data=payload, files=files, verify=True)
         if response.status_code // 100 != 2:
             logging.error(f"Error: Unexpected response: '{response}'")
             logging.error(f"Error: Response content: '{response.content}'")
