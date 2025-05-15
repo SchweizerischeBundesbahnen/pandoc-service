@@ -2,7 +2,7 @@ FROM python:3.13.3-alpine@sha256:452682e4648deafe431ad2f2391d726d7c52f0ff291be8b
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
-ARG PANDOC_VERSION=3.6.4
+ARG PANDOC_VERSION=3.7
 
 # Install pandoc and other dependencies
 # hadolint ignore=DL3018
