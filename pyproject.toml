@@ -24,7 +24,7 @@ requires-poetry = ">=2.0"
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.2.0"
 ruff = "0.11.12"
-mypy = "1.15.0"
+mypy = "1.16.0"
 pytest = "8.3.5"
 pytest-mock = "3.14.1"
 docker = "7.1.0"
