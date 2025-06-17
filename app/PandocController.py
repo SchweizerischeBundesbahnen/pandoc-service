@@ -169,20 +169,18 @@ async def get_docx_template():  # type: ignore
     path = Path(CUSTOM_REFERENCE_DOCX)
     try:
         # ruff: noqa: S603
-        try:
-            subprocess.run(
-                [
-                    PANDOC_PATH,
-                    "-o",
-                    "custom-reference.docx",
-                    "--print-default-data-file",
-                    "reference.docx",
-                ],
-                check=True,
-                shell=False,
-            )
-        except subprocess.SubprocessError as e:
-            return process_error(e, "An internal error has occurred while generating the template", 500)
+        proc = await anyio.run_process(
+            [
+                PANDOC_PATH,
+                "-o",
+                "custom-reference.docx",
+                "--print-default-data-file",
+                "reference.docx",
+            ],
+            check=True,
+        )
+        if proc.returncode != 0:
+            return process_error(Exception(f"Process failed with return code {proc.returncode}"), "An internal error has occurred while generating the template", 500)
 
         with path.open("rb") as f:
             doc_content = f.read()
