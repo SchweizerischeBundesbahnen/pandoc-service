@@ -378,7 +378,6 @@ def test_resize_images_in_cell_resizing_needed():
 
     # Find the wp:extent element to use with the real function
     extent_element = tree.find(".//wp:extent", {"wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"})
-    assert extent_element is not None
     assert extent_element.get("cx") == str(large_image_width)
     assert extent_element.get("cy") == str(large_image_height)
 

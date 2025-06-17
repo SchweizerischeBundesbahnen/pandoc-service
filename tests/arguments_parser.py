@@ -7,7 +7,7 @@ def get_cli_arguments():
     parser.add_argument("-l", "--app_url", type=str, help="Application URL")
     parser.add_argument("--tc_image_name", type=str, help="Docker image name")
     parser.add_argument("--flush_tmp_files", type=str, help="Write intermediate temporary files to disk")
-    args, unknown = parser.parse_known_args()
+    args, _ = parser.parse_known_args()
     return args
 
 
