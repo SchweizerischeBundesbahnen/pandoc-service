@@ -8,6 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import anyio
 import starlette.datastructures
 import uvicorn
 from fastapi import FastAPI, Request, Response
@@ -322,8 +323,8 @@ async def convert_docx_with_ref(request: Request, source_format: str, encoding: 
 
         if docx_template_file:
             temp_template_filename = f"ref_{int(time.time())}.docx"
-            with Path(temp_template_filename).open("wb") as f:
-                f.write(await docx_template_file.read())
+            async with await anyio.open_file(temp_template_filename, "wb") as f:
+                await f.write(await docx_template_file.read())
 
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
