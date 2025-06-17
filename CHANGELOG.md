@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.0.0...v1.1.0) (2025-06-17)
+
+
+### Features
+
+* add PDF generation ([#34](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/34)) ([2666ee0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2666ee0d8d5589fd169923fa4d0d1db8bac4d5f4)), closes [#33](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/33)
+* **deps:** update dependency jgm/pandoc to v3.7 ([9a16aa6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9a16aa6005b900281620c8c730848254ab955c8d))
+* replace tini with --init ([#32](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/32)) ([2ada8a1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2ada8a1ef65f7ee83034ff9217b60ffa3b77cb23))
+* use fastapi instead of flask ([#30](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/30)) ([f32ebe5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f32ebe5400d967dc90b9ea328ca5d1681dc88200))
+
+
+### Bug Fixes
+
+* **deps:** update dependency python-docx to v1.2.0 ([#37](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/37)) ([d7ba30f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d7ba30f2b36a55e0a40c7db26bd9483248aa09fa))
+* **deps:** update dependency uvicorn to v0.34.3 ([#36](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/36)) ([fc24c2d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/fc24c2d504cee2153446c139dcd4ca71d17e35e1))
+
 ## 1.0.0 (2025-04-10)
 
 
