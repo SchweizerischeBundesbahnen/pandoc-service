@@ -13,7 +13,8 @@
       "depNameTemplate": "jgm/pandoc",
       "matchStrings": [
         "PANDOC_VERSION=(?<currentValue>.*)"
-      ]
+      ],
+      "versioningTemplate": "loose"
     }
   ],
   "packageRules": [
