@@ -47,6 +47,21 @@
       "matchUpdateTypes": [
         "major"
       ]
+    },
+    {
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "github-releases"
+      ],
+      "matchDepNames": [
+        "jgm/pandoc"
+      ],
+      "semanticCommitType": "fix",
+      "matchUpdateTypes": [
+        "patch"
+      ]
     }
   ]
 }
