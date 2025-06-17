@@ -1,6 +1,6 @@
 [project]
 name = "pandoc-service"
-version = "0.0.0"  # the version is controll by the pipeline
+version = "0.0.0"  # the version is controlled by the pipeline
 description = "Service for https://pandoc.org/"
 authors = [
     { name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch" },
@@ -14,7 +14,8 @@ dependencies = [
     "uvicorn (==0.34.2)",
     "asgiref (==3.8.1)",
     "python-multipart (==0.0.20)",
-    "fastapi (==0.115.12)"
+    "fastapi (==0.115.12)",
+    "requests==2.32.4",
 ]
 
 [tool.poetry]
