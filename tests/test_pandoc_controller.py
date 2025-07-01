@@ -819,7 +819,7 @@ def test_run_pandoc_conversion_with_valid_reference_doc():
 
         # Ensure subprocess.run was called with the correct arguments
         mock_subprocess.assert_called_once()
-        args, kwargs = mock_subprocess.call_args
+        args, _ = mock_subprocess.call_args
         cmd = args[0]
         assert valid_option in cmd
 
@@ -912,12 +912,17 @@ def test_process_error_with_multiline_message():
 def test_get_docx_template_with_path_handling():
     """Test get_docx_template with path existence handling."""
     with (
-        patch("subprocess.run"),
+        patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", side_effect=[False, True]),  # False for initial check, True for finally
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("fastapi.responses.StreamingResponse") as mock_send_file,
     ):
+        # Mock the anyio.run_process to avoid calling the real pandoc
+        process_mock = MagicMock()
+        process_mock.returncode = 0
+        mock_run_process.return_value = process_mock
+
         # Mock file content
         mock_file = MagicMock()
         mock_file.read.return_value = b"Mock DOCX template content"

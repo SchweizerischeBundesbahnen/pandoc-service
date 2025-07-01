@@ -8,6 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import anyio
 import starlette.datastructures
 import uvicorn
 from fastapi import FastAPI, Request, Response
@@ -168,20 +169,18 @@ async def get_docx_template():  # type: ignore
     path = Path(CUSTOM_REFERENCE_DOCX)
     try:
         # ruff: noqa: S603
-        try:
-            subprocess.run(
-                [
-                    PANDOC_PATH,
-                    "-o",
-                    "custom-reference.docx",
-                    "--print-default-data-file",
-                    "reference.docx",
-                ],
-                check=True,
-                shell=False,
-            )
-        except subprocess.SubprocessError as e:
-            return process_error(e, "An internal error has occurred while generating the template", 500)
+        proc = await anyio.run_process(
+            [
+                PANDOC_PATH,
+                "-o",
+                "custom-reference.docx",
+                "--print-default-data-file",
+                "reference.docx",
+            ],
+            check=True,
+        )
+        if proc.returncode != 0:
+            return process_error(Exception(f"Process failed with return code {proc.returncode}"), "An internal error has occurred while generating the template", 500)
 
         with path.open("rb") as f:
             doc_content = f.read()
@@ -322,8 +321,8 @@ async def convert_docx_with_ref(request: Request, source_format: str, encoding: 
 
         if docx_template_file:
             temp_template_filename = f"ref_{int(time.time())}.docx"
-            with Path(temp_template_filename).open("wb") as f:
-                f.write(await docx_template_file.read())
+            async with await anyio.open_file(temp_template_filename, "wb") as f:
+                await f.write(await docx_template_file.read())
 
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
