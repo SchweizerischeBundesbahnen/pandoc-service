@@ -3,9 +3,10 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 from docx.table import Table, _Cell
+from lxml import etree
 
 from app import DocxPostProcess
-from app.DocxPostProcess import process_table
+from app.DocxPostProcess import SCHEMA, process_table
 
 WORD_PROCESSING_ML_MAIN_SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PROCESSING_ML_MAIN_SCHEMA_IN_BRACKETS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -370,7 +371,6 @@ def test_resize_images_in_cell_resizing_needed():
     '''
 
     # Set up the mock for lxml etree parsing - create elements that mimic the real ones
-    from lxml import etree
 
     # Parse the XML to create a real tree
     # ruff: noqa: S320
@@ -438,7 +438,6 @@ def test_resize_images_in_cell():
 @patch("app.DocxPostProcess.resize_images_in_cell")
 def test_process_table_with_nested_tables(mock_resize_images):
     """Test that nested tables are processed correctly."""
-    from app.DocxPostProcess import SCHEMA
 
     # Create mock tables and cells
     main_table = MagicMock()
