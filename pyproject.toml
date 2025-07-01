@@ -34,7 +34,7 @@ pytest-cov = "6.2.1"
 pytest-timeout = "2.4.0"
 
 [tool.poetry.group.test.dependencies]
-tox = "4.26.0"
+tox = "4.27.0"
 httpx = "0.28.1"
 
 [build-system]
