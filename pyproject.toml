@@ -14,7 +14,7 @@ dependencies = [
     "uvicorn (==0.34.3)",
     "asgiref (==3.8.1)",
     "python-multipart (==0.0.20)",
-    "fastapi (==0.115.12)",
+    "fastapi (==0.115.14)",
     "requests==2.32.4",
 ]
 
