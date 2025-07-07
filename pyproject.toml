@@ -33,7 +33,7 @@ fastapi = "0.115.14"
 uvicorn = "0.34.3"
 python-multipart = "0.0.20"
 defusedxml = "0.7.1"
-asgiref = "3.8.1"
+asgiref = "3.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.2.0"
