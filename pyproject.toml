@@ -29,7 +29,7 @@ packages = [{include = "app"}]
 # for more information check comments above
 [tool.poetry.dependencies]
 python-docx = "1.2.0"
-fastapi = "0.115.12"
+fastapi = "0.115.14"
 uvicorn = "0.34.3"
 python-multipart = "0.0.20"
 defusedxml = "0.7.1"
