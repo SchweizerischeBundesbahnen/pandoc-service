@@ -35,18 +35,18 @@ trio = ["trio (>=0.26.1)"]
 
 [[package]]
 name = "asgiref"
-version = "3.8.1"
+version = "3.9.0"
 description = "ASGI specs, helper code, and adapters"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "asgiref-3.8.1-py3-none-any.whl", hash = "sha256:3e1e3ecc849832fe52ccf2cb6686b7a55f82bb1d6aee72a58826471390335e47"},
-    {file = "asgiref-3.8.1.tar.gz", hash = "sha256:c343bd80a0bec947a9860adb4c432ffa7db769836c64238fc34bdc3fec84d590"},
+    {file = "asgiref-3.9.0-py3-none-any.whl", hash = "sha256:06a41250a0114d2b6f6a2cb3ab962147d355b53d1de15eebc34a9d04a7b79981"},
+    {file = "asgiref-3.9.0.tar.gz", hash = "sha256:3dd2556d0f08c4fab8a010d9ab05ef8c34565f6bf32381d17505f7ca5b273767"},
 ]
 
 [package.extras]
-tests = ["mypy (>=0.800)", "pytest", "pytest-asyncio"]
+tests = ["mypy (>=1.14.0)", "pytest", "pytest-asyncio"]
 
 [[package]]
 name = "cachetools"
@@ -1311,4 +1311,4 @@ test = ["covdefaults (>=2.3)", "coverage (>=7.2.7)", "coverage-enable-subprocess
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "0788a21f4b01e67fa013fd38eda89ca6f34bcce993f00192e540715b77357004"
+content-hash = "11223f4476498477ec2fa5e2d72fd871fd307475a29917aa5bd7e24cf878c863"
