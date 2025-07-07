@@ -3,39 +3,53 @@ name = "pandoc-service"
 version = "0.0.0"  # the version is controlled by the pipeline
 description = "Service for https://pandoc.org/"
 authors = [
-    { name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch" },
+    {name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch"},
 ]
 license = "Apache License 2.0"
 readme = "README.md"
 requires-python=">=3.13,<3.14"
-dependencies = [
-    "python-docx (==1.2.0)",
-    "defusedxml (==0.7.1)",
-    "uvicorn (==0.34.3)",
-    "asgiref (==3.8.1)",
-    "python-multipart (==0.0.20)",
-    "fastapi (==0.115.12)",
-    "requests==2.32.4",
-]
+dynamic = ["dependencies"]
+# Dependencies moved back to [tool.poetry.dependencies] for Renovate compatibility
+# See: https://github.com/renovatebot/renovate/issues/33509
+# TODO: Migrate back to [project.dependencies] when Renovate adds Poetry v2 support
+# dependencies = [
+#     "python-docx (==1.2.0)",
+#     "defusedxml (==0.7.1)",
+#     "uvicorn (==0.34.3)",
+#     "asgiref (==3.8.1)",
+#     "python-multipart (==0.0.20)",
+#     "fastapi (==0.115.12)",
+#     "requests==2.32.4",
+# ]
 
 [tool.poetry]
 packages = [{include = "app"}]
-requires-poetry = ">=2.0"
+
+# this duplication and legacy format must be kept until Renovate support is added for [project.dependencies] for poetry-lock updates
+# for more information check comments above
+[tool.poetry.dependencies]
+python-docx = "1.2.0"
+fastapi = "0.115.12"
+uvicorn = "0.34.3"
+python-multipart = "0.0.20"
+defusedxml = "0.7.1"
+asgiref = "3.8.1"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.2.0"
 ruff = "0.12.2"
 mypy = "1.16.1"
-pytest = "8.4.1"
-pytest-mock = "3.14.1"
-docker = "7.1.0"
-coverage = "7.9.2"
-pytest-cov = "6.2.1"
-pytest-timeout = "2.4.0"
 
 [tool.poetry.group.test.dependencies]
 tox = "4.27.0"
+# for debug source code for pytest --> see tox.ini section [testenv]
+docker = "7.1.0"
+pytest = "8.4.1"
+pytest-mock = "3.14.1"
+pytest-cov = "6.2.1"
+pytest-timeout = "2.4.0"
 httpx = "0.28.1"
+coverage = "7.9.2"
 
 [build-system]
 requires = ["poetry-core"]
@@ -45,6 +59,9 @@ build-backend = "poetry.core.masonry.api"
 line-length = 240
 fix = true
 show-fixes = true
+exclude = [
+    "tests/*"  # Exclude all test files from linting
+]
 
 [tool.ruff.lint]
 extend-select = [
@@ -66,7 +83,7 @@ extend-select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = [
+"tests/**" = [
     "S101", # No assert rule (bandit)
     "PLR2004", # No magic values (pylint)
 ]
