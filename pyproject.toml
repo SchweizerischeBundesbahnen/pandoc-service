@@ -37,7 +37,7 @@ asgiref = "3.9.1"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.2.0"
-ruff = "0.12.2"
+ruff = "0.12.3"
 mypy = "1.16.1"
 
 [tool.poetry.group.test.dependencies]
