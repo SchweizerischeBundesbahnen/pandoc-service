@@ -1221,14 +1221,14 @@ full = ["httpx (>=0.27.0,<0.29.0)", "itsdangerous", "jinja2", "python-multipart 
 
 [[package]]
 name = "tox"
-version = "4.28.2"
+version = "4.28.3"
 description = "tox is a generic virtualenv management and test command line tool"
 optional = false
 python-versions = ">=3.9"
 groups = ["test"]
 files = [
-    {file = "tox-4.28.2-py3-none-any.whl", hash = "sha256:9d8372a26cb4aad8f2671ebd4c46a8109cb51be7c8111965e7ae197312250658"},
-    {file = "tox-4.28.2.tar.gz", hash = "sha256:895c74a3857a9cff6f142363dbd3735f6d66a72c0c315e91b6c9a2980a842ce3"},
+    {file = "tox-4.28.3-py3-none-any.whl", hash = "sha256:1debe9daf0b7e64d425ef99a17292b0792385686b1d541df34c7298211e99269"},
+    {file = "tox-4.28.3.tar.gz", hash = "sha256:b91db7219e5242002cf4040a299c8852026d6af35fcd21274d456fb62dafee7b"},
 ]
 
 [package.dependencies]
@@ -1330,4 +1330,4 @@ test = ["covdefaults (>=2.3)", "coverage (>=7.2.7)", "coverage-enable-subprocess
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "d1b580fa0701acfd4182d3c2cbe88b19c680cf8f67d32943c93e60615e3241a6"
+content-hash = "a89befa7973bbba4e3a1416314c7317e9a279690a14f4868651c73d306b50e5a"
