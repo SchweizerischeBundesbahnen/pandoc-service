@@ -3,7 +3,7 @@ LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
 ARG PANDOC_VERSION=3.7.0.2
-ARG TARGETARCH
+ARG TARGETARCH=amd64
 
 # Install pandoc and other dependencies
 # hadolint ignore=DL3018
