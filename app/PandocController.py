@@ -370,8 +370,11 @@ async def convert(request: Request, source_format: str, target_format: str, enco
             except AttributeError:
                 return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
+        options = DEFAULT_CONVERSION_OPTIONS
+        if target_format == "pdf":
+            options.append("--pdf-engine=tectonic")
+
         # Convert using subprocess instead of pandoc module
-        options = ["--pdf-engine=tectonic"] if target_format == "pdf" else DEFAULT_CONVERSION_OPTIONS
         output = run_pandoc_conversion(source, source_format, target_format, options)
 
         return postprocess_and_build_response(output, target_format, file_name)
