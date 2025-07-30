@@ -3,7 +3,8 @@ LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
 ARG PANDOC_VERSION=3.7.0.2
-ARG TARGETARCH=amd64
+ARG TARGETARCH
+ENV ARCH=${TARGETARCH:-amd64}
 
 # Install pandoc and other dependencies
 # hadolint ignore=DL3018
@@ -15,7 +16,7 @@ RUN apk add --no-cache \
     gzip \
     lua \
     tectonic \
-    && wget -q https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${TARGETARCH}.tar.gz -O /tmp/pandoc.tar.gz \
+    && wget -q https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${ARCH}.tar.gz -O /tmp/pandoc.tar.gz \
     && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
     && mv /tmp/pandoc-${PANDOC_VERSION}/bin/pandoc /usr/local/bin/ \
     && mkdir -p /usr/local/share/pandoc/filters/ \
