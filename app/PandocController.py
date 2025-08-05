@@ -370,7 +370,7 @@ async def convert(request: Request, source_format: str, target_format: str, enco
             except AttributeError:
                 return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
-        options = DEFAULT_CONVERSION_OPTIONS
+        options = DEFAULT_CONVERSION_OPTIONS.copy()
         if target_format == "pdf":
             options.append("--pdf-engine=tectonic")
 
