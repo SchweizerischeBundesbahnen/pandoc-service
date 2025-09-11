@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.1.0...v1.2.0) (2025-09-11)
+
+
+### Features
+
+* **deps:** update dependency jgm/pandoc to v3.8 ([fb446b0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/fb446b0272dd4e70162506f10fa338504782e1af))
+
+
+### Bug Fixes
+
+* **deps:** update dependency starlette to v0.47.3 ([b5e384f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b5e384f7649e9549a662d78d26ed34732a4efd82))
+* set max_part_size for form data requests ([#65](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/65)) ([83659c3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/83659c3363ce8172d3ef4ce30ca47290d8b38fd4)), closes [#64](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/64)
+
 ## [1.1.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.0.0...v1.1.0) (2025-07-30)
 
 
