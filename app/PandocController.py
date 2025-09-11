@@ -307,7 +307,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
 async def convert_docx_with_ref(request: Request, source_format: str, encoding: str | None = None, file_name: str = "converted-document.docx"):  # type: ignore
     temp_template_filename = None
     try:
-        form = await request.form()
+        form = await request.form(max_part_size=data_limit)
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
@@ -362,7 +362,7 @@ async def convert(request: Request, source_format: str, target_format: str, enco
             data = await request.body()
             source = data if not encoding else data.decode(encoding)
         else:
-            form = await request.form()
+            form = await request.form(max_part_size=data_limit)
             uploaded_file = form.get("source")
 
             try:
