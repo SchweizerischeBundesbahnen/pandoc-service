@@ -39,7 +39,7 @@ starlette = "^0.48.0"
 [tool.poetry.group.dev.dependencies]
 pre-commit = "4.3.0"
 ruff = "0.13.1"
-mypy = "1.18.1"
+mypy = "1.18.2"
 
 [tool.poetry.group.test.dependencies]
 tox = "4.30.2"
