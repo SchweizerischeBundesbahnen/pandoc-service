@@ -33,7 +33,7 @@ fastapi = "0.117.1"
 uvicorn = "0.37.0"
 python-multipart = "0.0.20"
 defusedxml = "0.7.1"
-asgiref = "3.9.1"
+asgiref = "3.9.2"
 starlette = "^0.48.0"
 
 [tool.poetry.group.dev.dependencies]
