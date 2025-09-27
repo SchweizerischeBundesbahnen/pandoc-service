@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.2.0...v1.2.1) (2025-09-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency asgiref to v3.9.2 ([be8ee05](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/be8ee056d45a9de0e55816af673eb9f949aaa89b))
+* **deps:** update dependency fastapi to v0.116.2 ([10692ab](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/10692ab817a7fc0cb168edc3db9192bd1a66651a))
+* **deps:** update dependency fastapi to v0.117.1 ([b4b1ccb](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b4b1ccb99d81b5dca7d96628d8bbd3f314296fda))
+* **deps:** update dependency starlette to ^0.48.0 ([#66](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/66)) ([a2a2490](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a2a249014fee33c5ac2f2bd8576c839a7251f9c2))
+* **deps:** update dependency uvicorn to v0.36.0 ([815f3ea](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/815f3eadac3cb4deeebee2c59185030cba5d5346))
+* **deps:** update dependency uvicorn to v0.37.0 ([e84f0a4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e84f0a40701bc349fd4a044aa03dca87b5859e5f))
+
 ## [1.2.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.1.0...v1.2.0) (2025-09-11)
 
 
