@@ -2,7 +2,7 @@ FROM python:3.13.7-alpine@sha256:9ba6d8cbebf0fb6546ae71f2a1c14f6ffd2fdab83af7fa5
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
-ARG PANDOC_VERSION=3.8
+ARG PANDOC_VERSION=3.8.1
 ARG TARGETARCH
 ENV ARCH=${TARGETARCH:-amd64}
 
