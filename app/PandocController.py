@@ -28,6 +28,7 @@ ALLOWED_PANDOC_OPTIONS = [
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
+    "--toc",
 ]
 
 # Add other allowed formats as needed
@@ -326,6 +327,11 @@ async def convert_docx_with_ref(request: Request, source_format: str, encoding: 
 
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
+
+        extended_options = form.get("options")
+        if isinstance(extended_options, str):
+            options.append(extended_options)
+
         if temp_template_filename is not None:
             options.append(f"--reference-doc={temp_template_filename}")
 
