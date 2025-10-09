@@ -18,7 +18,7 @@ from app.PandocController import (
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
-    version,
+    version, convert_docx_with_ref,
 )
 
 
@@ -1022,3 +1022,46 @@ def test_request_body_too_large():
 
         assert response.status_code == 413
         assert response.text == "Request Body too large: Exception('Body Size 1025 > 1024')"
+
+
+def test_docx_with_extended_options():
+    """Test DOCX conversion with template and custom options."""
+    with (
+        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
+        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
+        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+        patch("time.time", return_value=1234567890),
+    ):
+        mock_run_conversion.return_value = b"Converted content"
+        mock_file = MagicMock()
+        mock_file.write = MagicMock()
+        mock_path_open.return_value.__enter__.return_value = mock_file
+
+        mock_response = MagicMock()
+        mock_response.mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        mock_response.status_code = 200
+        mock_postprocess.return_value = mock_response
+
+        test_client = TestClient(app)
+
+        source_file = File(
+            file=io.BytesIO(b"# Test Markdown content"),
+            filename="test.md",
+            content_type="text/markdown",
+        )
+
+        extended_options = "--pdf-engine=xelatex"
+
+        response = test_client.post(
+            "/convert/markdown/to/docx-with-template?encoding=utf-8&file_name=custom_name.docx",
+            data={"options": extended_options},
+            files={"source": source_file},
+        )
+
+        assert response.status_code == 200
+        mock_run_conversion.assert_called_once()
+        run_options = mock_run_conversion.call_args[0][3]
+        assert any(extended_options in opt for opt in run_options)
+
