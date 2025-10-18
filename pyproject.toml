@@ -30,7 +30,7 @@ packages = [{include = "app"}]
 [tool.poetry.dependencies]
 python-docx = "1.2.0"
 fastapi = "0.119.0"
-uvicorn = "0.37.0"
+uvicorn = "0.38.0"
 python-multipart = "0.0.20"
 defusedxml = "0.7.1"
 asgiref = "3.10.0"
