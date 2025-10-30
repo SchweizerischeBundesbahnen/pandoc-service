@@ -18,7 +18,7 @@ from app.PandocController import (
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
-    version, convert_docx_with_ref,
+    version, convert_docx_with_ref, get_validated_data_limit,
 )
 
 
@@ -1065,3 +1065,96 @@ def test_docx_with_extended_options():
         run_options = mock_run_conversion.call_args[0][3]
         assert any(extended_options in opt for opt in run_options)
 
+def test_get_validated_data_limit_default():
+    """Test get_validated_data_limit with no environment variable set."""
+    with patch.dict(os.environ, {}, clear=True):
+        result = get_validated_data_limit()
+        assert result == 500  # Default value
+
+def test_get_validated_data_limit_valid_value():
+    """Test get_validated_data_limit with valid environment variable."""
+    with patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "1000"}):
+        result = get_validated_data_limit()
+        assert result == 1000
+
+
+def test_get_validated_data_limit_negative():
+    """Test get_validated_data_limit with negative value (invalid)."""
+    with (
+        patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "-100"}),
+        patch("logging.warning") as mock_warning,
+    ):
+        result = get_validated_data_limit()
+        assert result == 500  # Should use default
+        mock_warning.assert_called_once()
+        assert "out of bounds" in mock_warning.call_args[0][0]
+
+
+def test_get_validated_data_limit_numeric_with_whitespace():
+    """Test get_validated_data_limit with numeric string containing whitespace."""
+    with (
+        patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": " 1000 "}),
+        patch("logging.warning") as mock_warning,
+    ):
+        result = get_validated_data_limit()
+        # int() in Python handles leading/trailing whitespace
+        assert result == 1000
+        mock_warning.assert_not_called()
+
+
+def test_get_validated_data_limit_special_characters():
+    """Test get_validated_data_limit with special characters."""
+    with (
+        patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "1000MB"}),
+        patch("logging.warning") as mock_warning,
+    ):
+        result = get_validated_data_limit()
+        assert result == 500  # Should use default
+        mock_warning.assert_called_once()
+        assert "not a valid integer" in mock_warning.call_args[0][0]
+
+
+def test_get_validated_data_limit_hex_string():
+    """Test get_validated_data_limit with hexadecimal string."""
+    with (
+        patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "0x100"}),
+        patch("logging.warning") as mock_warning,
+    ):
+        result = get_validated_data_limit()
+        assert result == 500  # Should use default
+        mock_warning.assert_called_once()
+        assert "not a valid integer" in mock_warning.call_args[0][0]
+
+
+def test_get_validated_data_limit_boundary_minus_one():
+    """Test get_validated_data_limit with maximum boundary minus one."""
+    with patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "9999"}):
+        result = get_validated_data_limit()
+        assert result == 9999
+
+
+def test_get_validated_data_limit_boundary_plus_one():
+    """Test get_validated_data_limit with maximum boundary plus one."""
+    with (
+        patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "10001"}),
+        patch("logging.warning") as mock_warning,
+    ):
+        result = get_validated_data_limit()
+        assert result == 500  # Should use default
+        mock_warning.assert_called_once()
+
+
+def test_get_validated_data_limit_logging_message_content():
+    """Test that logging messages contain appropriate information."""
+    with (
+        patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "20000"}),
+        patch("logging.warning") as mock_warning,
+    ):
+        result = get_validated_data_limit()
+        assert result == 500
+
+        warning_message = mock_warning.call_args[0][0]
+        assert "20000" in warning_message
+        assert "out of bounds" in warning_message
+        assert "1-10000" in warning_message
+        assert "500 MB" in warning_message
