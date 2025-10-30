@@ -92,27 +92,27 @@ app = FastAPI(
 )
 
 
-# Validate PANDOC_SERVICE_DATA_LIMIT environment variable
-def get_validated_data_limit() -> int:
+# Validate REQUEST_BODY_LIMIT_MB environment variable
+def get_request_body_limit_mb() -> int:
     default_limit_mb = 500
     max_limit_mb = 1000
-    env_value = os.environ.get("PANDOC_SERVICE_DATA_LIMIT", str(default_limit_mb))
+    env_value = os.environ.get("REQUEST_BODY_LIMIT_MB", str(default_limit_mb))
     try:
         value = int(env_value)
         if value <= 0 or value > max_limit_mb:
             logging.warning(
-                f"PANDOC_SERVICE_DATA_LIMIT value '{env_value}' is out of bounds (1-{max_limit_mb} MB). Using default {default_limit_mb} MB."
+                f"REQUEST_BODY_LIMIT_MB value '{env_value}' is out of bounds (1-{max_limit_mb} MB). Using default {default_limit_mb} MB."
             )
             value = default_limit_mb
     except ValueError:
         logging.warning(
-            f"PANDOC_SERVICE_DATA_LIMIT value '{env_value}' is not a valid integer. Using default {default_limit_mb} MB."
+            f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not a valid integer. Using default {default_limit_mb} MB."
         )
         value = default_limit_mb
     return value
 
 
-env_data_limit = get_validated_data_limit()
+env_data_limit = get_request_body_limit_mb()
 data_limit = env_data_limit * 1024 * 1024  # MB;
 
 
