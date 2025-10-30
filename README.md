@@ -39,10 +39,13 @@ To start the Pandoc service container, execute:
   docker run --init --detach \
     --publish 9082:9082 \
     --name pandoc-service \
+    --env PANDOC_SERVICE_DATA_LIMIT=500 \
     ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
 
 The service will be accessible on port 9082.
+
+The PANDOC_SERVICE_DATA_LIMIT environment variable sets the maximum allowed size (in megabytes) for uploaded files or request bodies processed by the Pandoc service.
 
 ### Using as a Base Image
 

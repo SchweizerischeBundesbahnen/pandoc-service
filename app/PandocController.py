@@ -90,7 +90,9 @@ app = FastAPI(
     openapi_url="/static/openapi.json",
     docs_url="/api/docs",
 )
-data_limit = 200 * 1024 * 1024  # 200MB;
+
+env_data_limit = int(os.environ.get("PANDOC_SERVICE_DATA_LIMIT", "500"))
+data_limit = env_data_limit * 1024 * 1024  # MB;
 
 
 # Set the maximum request body size to data_limit
