@@ -93,7 +93,7 @@ app = FastAPI(
 
 
 # Validate PANDOC_SERVICE_DATA_LIMIT environment variable
-def get_validated_data_limit():
+def get_validated_data_limit() -> int:
     default_limit_mb = 500
     max_limit_mb = 10000
     env_value = os.environ.get("PANDOC_SERVICE_DATA_LIMIT", str(default_limit_mb))
