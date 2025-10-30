@@ -90,7 +90,30 @@ app = FastAPI(
     openapi_url="/static/openapi.json",
     docs_url="/api/docs",
 )
-data_limit = 200 * 1024 * 1024  # 200MB;
+
+
+# Validate REQUEST_BODY_LIMIT_MB environment variable
+def get_request_body_limit_mb() -> int:
+    default_limit_mb = 500
+    max_limit_mb = 1000
+    env_value = os.environ.get("REQUEST_BODY_LIMIT_MB", str(default_limit_mb))
+    try:
+        value = int(env_value)
+        if value <= 0 or value > max_limit_mb:
+            logging.warning(
+                f"REQUEST_BODY_LIMIT_MB value '{env_value}' is out of bounds (1-{max_limit_mb} MB). Using default {default_limit_mb} MB."
+            )
+            value = default_limit_mb
+    except ValueError:
+        logging.warning(
+            f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not a valid integer. Using default {default_limit_mb} MB."
+        )
+        value = default_limit_mb
+    return value
+
+
+env_data_limit = get_request_body_limit_mb()
+data_limit = env_data_limit * 1024 * 1024  # MB;
 
 
 # Set the maximum request body size to data_limit
