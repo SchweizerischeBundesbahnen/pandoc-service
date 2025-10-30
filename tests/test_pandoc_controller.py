@@ -1128,9 +1128,9 @@ def test_get_validated_data_limit_hex_string():
 
 def test_get_validated_data_limit_boundary_minus_one():
     """Test get_validated_data_limit with maximum boundary minus one."""
-    with patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "9999"}):
+    with patch.dict(os.environ, {"PANDOC_SERVICE_DATA_LIMIT": "999"}):
         result = get_validated_data_limit()
-        assert result == 9999
+        assert result == 999
 
 
 def test_get_validated_data_limit_boundary_plus_one():
@@ -1156,5 +1156,5 @@ def test_get_validated_data_limit_logging_message_content():
         warning_message = mock_warning.call_args[0][0]
         assert "20000" in warning_message
         assert "out of bounds" in warning_message
-        assert "1-10000" in warning_message
+        assert "1-1000" in warning_message
         assert "500 MB" in warning_message
