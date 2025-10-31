@@ -211,6 +211,7 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
 def main() -> int:
     MIN_ARGS = 2  # script name + docx path
     MAX_ARGS = 4  # script name + docx path + page_size + orientation
+    DOCX_PATH_ARG_INDEX = 1
     PAGE_SIZE_ARG_INDEX = 2
     ORIENTATION_ARG_INDEX = 3
 
@@ -218,13 +219,9 @@ def main() -> int:
         logging.info("Usage: <path_to_docx> [page_size] [orientation]")
         return 1
 
-    docx_path = sys.argv[1]
+    docx_path = sys.argv[DOCX_PATH_ARG_INDEX]
     page_size = sys.argv[PAGE_SIZE_ARG_INDEX] if len(sys.argv) > PAGE_SIZE_ARG_INDEX and sys.argv[PAGE_SIZE_ARG_INDEX] != "None" else None
     orientation = sys.argv[ORIENTATION_ARG_INDEX] if len(sys.argv) > ORIENTATION_ARG_INDEX and sys.argv[ORIENTATION_ARG_INDEX] != "None" else None
-
-    docx_path = sys.argv[1]
-    page_size = None if sys.argv[2] == "None" else sys.argv[2]
-    orientation = None if sys.argv[3] == "None" else sys.argv[3]
 
     with Path(docx_path).open("rb") as docx_file_reader:
         result_bytes = process(docx_file_reader.read(), page_size, orientation)
