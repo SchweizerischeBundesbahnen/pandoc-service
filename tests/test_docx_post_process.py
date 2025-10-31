@@ -812,3 +812,107 @@ def test_main_function(argv, expected_exit, page_size, orientation):
             handle = mock_file()
             handle.write.assert_called_once_with(modified_content)
             mock_logging.debug.assert_called_once()
+
+
+# Integration tests for the process() function to ensure 100% coverage
+class TestProcessFunction:
+    """Integration tests that call the process() function directly."""
+
+    def test_process_with_no_parameters(self):
+        """Test process() with no page_size or orientation - should just process tables."""
+        # Create a minimal valid DOCX file
+        from docx import Document
+        import io
+
+        doc = Document()
+        doc.add_paragraph("Test content")
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+        input_bytes = docx_bytes.getvalue()
+
+        # Call process with no parameters
+        result = DocxPostProcess.process(input_bytes)
+
+        # Verify result is valid bytes
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    def test_process_with_page_size_only(self):
+        """Test process() with only page_size parameter."""
+        from docx import Document
+        import io
+
+        doc = Document()
+        doc.add_paragraph("Test content")
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+        input_bytes = docx_bytes.getvalue()
+
+        # Call process with page_size
+        result = DocxPostProcess.process(input_bytes, page_size="A4")
+
+        # Verify result is valid bytes
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    def test_process_with_orientation_only(self):
+        """Test process() with only orientation parameter."""
+        from docx import Document
+        import io
+
+        doc = Document()
+        doc.add_paragraph("Test content")
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+        input_bytes = docx_bytes.getvalue()
+
+        # Call process with orientation
+        result = DocxPostProcess.process(input_bytes, orientation="landscape")
+
+        # Verify result is valid bytes
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    def test_process_with_both_parameters(self):
+        """Test process() with both page_size and orientation parameters."""
+        from docx import Document
+        import io
+
+        doc = Document()
+        doc.add_paragraph("Test content")
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+        input_bytes = docx_bytes.getvalue()
+
+        # Call process with both parameters
+        result = DocxPostProcess.process(input_bytes, page_size="LETTER", orientation="portrait")
+
+        # Verify result is valid bytes
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    def test_process_returns_modified_document(self):
+        """Test that process() returns a modified valid DOCX document."""
+        from docx import Document
+        import io
+
+        # Create input document
+        doc = Document()
+        doc.add_paragraph("Test content")
+        doc.add_table(rows=2, cols=2)
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+        input_bytes = docx_bytes.getvalue()
+
+        # Process the document
+        result = DocxPostProcess.process(input_bytes, page_size="A4", orientation="landscape")
+
+        # Verify we can open the result as a valid DOCX
+        result_doc = Document(io.BytesIO(result))
+        assert len(result_doc.paragraphs) > 0
+        assert len(result_doc.tables) > 0
