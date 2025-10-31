@@ -95,13 +95,12 @@ app = FastAPI(
 # Validate REQUEST_BODY_LIMIT_MB environment variable
 def get_request_body_limit_mb() -> int:
     default_limit_mb = 500
-    max_limit_mb = 1000
     env_value = os.environ.get("REQUEST_BODY_LIMIT_MB", str(default_limit_mb))
     try:
         value = int(env_value)
-        if value <= 0 or value > max_limit_mb:
+        if value <= 0:
             logging.warning(
-                f"REQUEST_BODY_LIMIT_MB value '{env_value}' is out of bounds (1-{max_limit_mb} MB). Using default {default_limit_mb} MB."
+                f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not positive. Using default {default_limit_mb} MB."
             )
             value = default_limit_mb
     except ValueError:
@@ -113,7 +112,7 @@ def get_request_body_limit_mb() -> int:
 
 
 env_data_limit = get_request_body_limit_mb()
-data_limit = env_data_limit * 1024 * 1024  # MB;
+data_limit = env_data_limit * 1024 * 1024  # Convert MB to bytes
 
 
 # Set the maximum request body size to data_limit

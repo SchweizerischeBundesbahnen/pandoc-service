@@ -1087,7 +1087,7 @@ def test_get_request_body_limit_mb_negative():
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
         mock_warning.assert_called_once()
-        assert "out of bounds" in mock_warning.call_args[0][0]
+        assert "is not positive" in mock_warning.call_args[0][0]
 
 
 def test_get_request_body_limit_mb_numeric_with_whitespace():
@@ -1133,28 +1133,16 @@ def test_get_request_body_limit_mb_boundary_minus_one():
         assert result == 999
 
 
-def test_get_request_body_limit_mb_boundary_plus_one():
-    """Test get_request_body_limit_mb with maximum boundary plus one."""
-    with (
-        patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "10001"}),
-        patch("logging.warning") as mock_warning,
-    ):
-        result = get_request_body_limit_mb()
-        assert result == 500  # Should use default
-        mock_warning.assert_called_once()
-
-
 def test_get_request_body_limit_mb_logging_message_content():
     """Test that logging messages contain appropriate information."""
     with (
-        patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "20000"}),
+        patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "-1"}),
         patch("logging.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500
 
         warning_message = mock_warning.call_args[0][0]
-        assert "20000" in warning_message
-        assert "out of bounds" in warning_message
-        assert "1-1000" in warning_message
+        assert "-1" in warning_message
+        assert "is not positive" in warning_message
         assert "500 MB" in warning_message
