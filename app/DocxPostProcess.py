@@ -48,17 +48,17 @@ def _replace_size_and_orientation(doc: DocumentObject, page_size: str | None = N
         return
 
     for section in doc.sections:
-        sectPr = section._sectPr
-        pgSz = sectPr.find(".//w:pgSz", namespaces={"w": SCHEMA})
+        sect_pr = section._sectPr
+        pg_sz = sect_pr.find(".//w:pgSz", namespaces={"w": SCHEMA})
 
         if page_size is not None:
-            pgSz = _set_page_size(sectPr, pgSz, page_size, orientation)
+            pg_sz = _set_page_size(sect_pr, pg_sz, page_size, orientation)
 
         if orientation is not None:
-            _set_orientation(sectPr, pgSz, orientation)
+            _set_orientation(sect_pr, pg_sz, orientation)
 
 
-def _set_page_size(sectPr: Any, pgSz: Any, page_size: str, orientation: str | None) -> Any:
+def _set_page_size(sect_pr: Any, pg_sz: Any, page_size: str, orientation: str | None) -> Any:
     """Set the page size for a section."""
     # Normalize page_size to uppercase for case-insensitive lookup
     page_size_upper = page_size.upper()
@@ -72,40 +72,40 @@ def _set_page_size(sectPr: Any, pgSz: Any, page_size: str, orientation: str | No
     height = page_dims["height"]
 
     # Get existing orientation if present (to preserve it when changing page size)
-    existing_orientation = pgSz.get(f"{{{SCHEMA}}}orient") if pgSz is not None else None
+    existing_orientation = pg_sz.get(f"{{{SCHEMA}}}orient") if pg_sz is not None else None
 
     # Apply existing orientation if orientation parameter is not specified
     if orientation is None and existing_orientation == "landscape":
         width, height = height, width
 
-    # Create or update pgSz element
-    if pgSz is None:
-        pgSz = parse_xml(f'<w:pgSz {nsdecls("w")} w:w="{width}" w:h="{height}"/>')
-        sectPr.append(pgSz)
+    # Create or update pg_sz element
+    if pg_sz is None:
+        pg_sz = parse_xml(f'<w:pgSz {nsdecls("w")} w:w="{width}" w:h="{height}"/>')
+        sect_pr.append(pg_sz)
     else:
-        pgSz.set(f"{{{SCHEMA}}}w", str(width))
-        pgSz.set(f"{{{SCHEMA}}}h", str(height))
+        pg_sz.set(f"{{{SCHEMA}}}w", str(width))
+        pg_sz.set(f"{{{SCHEMA}}}h", str(height))
 
     # Preserve existing orientation attribute if present and orientation parameter not specified
     if orientation is None and existing_orientation is not None:
-        pgSz.set(f"{{{SCHEMA}}}orient", existing_orientation)
+        pg_sz.set(f"{{{SCHEMA}}}orient", existing_orientation)
 
-    return pgSz
+    return pg_sz
 
 
-def _set_orientation(sectPr: Any, pgSz: Any, orientation: str) -> None:
+def _set_orientation(sect_pr: Any, pg_sz: Any, orientation: str) -> None:
     """Set the orientation for a section."""
-    # Ensure pgSz exists (use LETTER as default if missing)
-    if pgSz is None:
+    # Ensure pg_sz exists (use LETTER as default if missing)
+    if pg_sz is None:
         page_dims = PAGE_SIZES["LETTER"]
         width = page_dims["width"]
         height = page_dims["height"]
-        pgSz = parse_xml(f'<w:pgSz {nsdecls("w")} w:w="{width}" w:h="{height}"/>')
-        sectPr.append(pgSz)
+        pg_sz = parse_xml(f'<w:pgSz {nsdecls("w")} w:w="{width}" w:h="{height}"/>')
+        sect_pr.append(pg_sz)
 
     # Get current dimensions
-    current_width = int(pgSz.get(f"{{{SCHEMA}}}w", "0"))
-    current_height = int(pgSz.get(f"{{{SCHEMA}}}h", "0"))
+    current_width = int(pg_sz.get(f"{{{SCHEMA}}}w", "0"))
+    current_height = int(pg_sz.get(f"{{{SCHEMA}}}h", "0"))
 
     # Determine current and desired orientation
     current_is_landscape = current_width > current_height
@@ -113,15 +113,15 @@ def _set_orientation(sectPr: Any, pgSz: Any, orientation: str) -> None:
 
     # Swap dimensions if orientations don't match
     if current_is_landscape != desired_is_landscape:
-        pgSz.set(f"{{{SCHEMA}}}w", str(current_height))
-        pgSz.set(f"{{{SCHEMA}}}h", str(current_width))
+        pg_sz.set(f"{{{SCHEMA}}}w", str(current_height))
+        pg_sz.set(f"{{{SCHEMA}}}h", str(current_width))
 
     # Set or remove the orient attribute
     if desired_is_landscape:
-        pgSz.set(f"{{{SCHEMA}}}orient", "landscape")
+        pg_sz.set(f"{{{SCHEMA}}}orient", "landscape")
     # Remove orient attribute for portrait (it's the default)
-    elif f"{{{SCHEMA}}}orient" in pgSz.attrib:
-        del pgSz.attrib[f"{{{SCHEMA}}}orient"]
+    elif f"{{{SCHEMA}}}orient" in pg_sz.attrib:
+        del pg_sz.attrib[f"{{{SCHEMA}}}orient"]
 
 
 def _replace_table_properties(doc: DocumentObject) -> None:
@@ -209,11 +209,18 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
 
 # Just for manual test purposes. Accepts path to docx to process.
 def main() -> int:
-    args_number = 4
+    MIN_ARGS = 2  # script name + docx path
+    MAX_ARGS = 4  # script name + docx path + page_size + orientation
+    PAGE_SIZE_ARG_INDEX = 2
+    ORIENTATION_ARG_INDEX = 3
 
-    if len(sys.argv) != args_number:
-        logging.info("Provide <path_to_docx>, <page_size> and <orientation> as arguments.")
+    if not (MIN_ARGS <= len(sys.argv) <= MAX_ARGS):
+        logging.info("Usage: <path_to_docx> [page_size] [orientation]")
         return 1
+
+    docx_path = sys.argv[1]
+    page_size = sys.argv[PAGE_SIZE_ARG_INDEX] if len(sys.argv) > PAGE_SIZE_ARG_INDEX and sys.argv[PAGE_SIZE_ARG_INDEX] != "None" else None
+    orientation = sys.argv[ORIENTATION_ARG_INDEX] if len(sys.argv) > ORIENTATION_ARG_INDEX and sys.argv[ORIENTATION_ARG_INDEX] != "None" else None
 
     docx_path = sys.argv[1]
     page_size = None if sys.argv[2] == "None" else sys.argv[2]

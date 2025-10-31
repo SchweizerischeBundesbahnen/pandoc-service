@@ -216,23 +216,71 @@ Pandoc Service provides the following endpoints:
 
 ##### Parameters
 
-> | Parameter name       | Type     | Data type | Description                                                          |
-> |----------------------|----------|-----------|----------------------------------------------------------------------|
-> | encoding             | optional | string    | Encoding of provided HTML (default: utf-8)                           |
-> | file_name            | optional | string    | Output filename (default: converted-document.pdf)                    |
+> | Parameter name       | Type     | Data type | Description                                                                                                    |
+> |----------------------|----------|-----------|----------------------------------------------------------------------------------------------------------------|
+> | encoding             | optional | string    | Encoding of provided HTML (default: utf-8)                                                                     |
+> | file_name            | optional | string    | Output filename (default: converted-document.pdf)                                                              |
+> | page_size            | optional | string    | Page size for the output document. Supported values: A5, A4, A3, B5, B4, JIS_B5, JIS_B4, LETTER, LEGAL, LEDGER |
+> | orientation          | optional | string    | Page orientation. Supported values: portrait, landscape                                                        |
 
 ##### Responses
 
-> | HTTP code | Content-Type      | Response                     |
-> |-----------|-------------------|------------------------------|
-> | `200`     | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | DOCX document (binary data)  |
-> | `400`     | `plain/text`      | Error message with exception |
-> | `500`     | `plain/text`      | Error message with exception |
+> | HTTP code | Content-Type                                                               | Response                     |
+> |-----------|----------------------------------------------------------------------------|------------------------------|
+> | `200`     | `application/vnd.openxmlformats-officedocument.wordprocessingml.document`  | DOCX document (binary data)  |
+> | `400`     | `plain/text`                                                               | Error message with exception |
+> | `500`     | `plain/text`                                                               | Error message with exception |
 
 ##### Example cURL
 
 > ```bash
 > curl -X POST -H "Content-Type: application/html" --data @input_html http://localhost:9082/convert/html/to/docx --output output.docx
+> ```
+>
+> With custom page size and orientation:
+> ```bash
+> curl -X POST -H "Content-Type: application/html" --data @input_html "http://localhost:9082/convert/html/to/docx?page_size=A4&orientation=landscape" --output output.docx
+> ```
+
+</details>
+
+------------------------------------------------------------------------------------------
+
+#### Convert HTML to DOCX with custom template
+
+<details>
+  <summary>
+    <code>POST</code> <code>/convert/html/to/docx-with-template</code>
+  </summary>
+
+##### Parameters
+
+> | Parameter name       | Type     | Data type | Description                                                                                                    |
+> |----------------------|----------|-----------|----------------------------------------------------------------------------------------------------------------|
+> | source               | required | file      | Source HTML content as multipart/form-data                                                                     |
+> | template             | optional | file      | Custom DOCX template file as multipart/form-data                                                               |
+> | encoding             | optional | string    | Encoding of provided HTML (default: utf-8)                                                                     |
+> | file_name            | optional | string    | Output filename (default: converted-document.docx)                                                             |
+> | page_size            | optional | string    | Page size for the output document. Supported values: A5, A4, A3, B5, B4, JIS_B5, JIS_B4, LETTER, LEGAL, LEDGER |
+> | orientation          | optional | string    | Page orientation. Supported values: portrait, landscape                                                        |
+
+##### Responses
+
+> | HTTP code | Content-Type                                                               | Response                     |
+> |-----------|----------------------------------------------------------------------------|------------------------------|
+> | `200`     | `application/vnd.openxmlformats-officedocument.wordprocessingml.document`  | DOCX document (binary data)  |
+> | `400`     | `plain/text`                                                               | Error message with exception |
+> | `500`     | `plain/text`                                                               | Error message with exception |
+
+##### Example cURL
+
+> ```bash
+> curl -X POST -F "source=@input.html" -F "template=@custom-template.docx" http://localhost:9082/convert/html/to/docx-with-template --output output.docx
+> ```
+>
+> With custom page size and orientation:
+> ```bash
+> curl -X POST -F "source=@input.html" -F "template=@custom-template.docx" "http://localhost:9082/convert/html/to/docx-with-template?page_size=A4&orientation=landscape" --output output.docx
 > ```
 
 </details>
