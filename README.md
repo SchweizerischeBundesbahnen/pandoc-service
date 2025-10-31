@@ -45,7 +45,7 @@ To start the Pandoc service container, execute:
 
 The service will be accessible on port 9082.
 
-The REQUEST_BODY_LIMIT_MB environment variable sets the maximum allowed size (in megabytes) for uploaded files or request bodies processed by the Pandoc service.
+The REQUEST_BODY_LIMIT_MB environment variable sets the maximum allowed size (in megabytes) for uploaded files or request bodies processed by the Pandoc service. The default is 500 MB.
 
 ### Using as a Base Image
 
