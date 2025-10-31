@@ -112,7 +112,7 @@ def get_request_body_limit_mb() -> int:
 
 
 env_data_limit = get_request_body_limit_mb()
-data_limit = env_data_limit * 1024 * 1024  # MB;
+data_limit = env_data_limit * 1024 * 1024  # Convert MB to bytes
 
 
 # Set the maximum request body size to data_limit
