@@ -96,3 +96,16 @@ line-ending = "lf"
 explicit_package_bases = true
 disallow_untyped_defs = true
 exclude = "tests/.*"
+
+[[tool.mypy.overrides]]
+module = "docx.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pydantic.*",
+    "starlette.*",
+    "uvicorn.*",
+    "fastapi.*"
+]
+ignore_missing_imports = true

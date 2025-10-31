@@ -162,7 +162,7 @@ def test_convert_endpoint(mock_test_client):
     with (
         patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
         patch("subprocess.run"),  # No need to assign to variable if not used
-        patch("app.DocxPostProcess.replace_table_properties", side_effect=lambda x: x),
+        patch("app.DocxPostProcess.process", side_effect=lambda x, y=None, z=None: x),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("pathlib.Path.exists", return_value=True),
@@ -203,7 +203,7 @@ def test_convert_endpoint_with_encoding(mock_test_client):
     with (
         patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
         patch("subprocess.run"),
-        patch("app.DocxPostProcess.replace_table_properties", side_effect=lambda x: x),
+        patch("app.DocxPostProcess.process", side_effect=lambda x, y=None, z=None: x),
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("pathlib.Path.exists", return_value=True),
@@ -392,13 +392,13 @@ def test_postprocess_and_build_response():
     """Test the postprocess_and_build_response function."""
     with (
         patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
-        patch("app.DocxPostProcess.replace_table_properties", return_value=b"Processed DOCX content"),
+        patch("app.DocxPostProcess.process", return_value=b"Processed DOCX content"),
         patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0"}),
     ):
         # Create test data
         docx_content = b"Test DOCX content"
 
-        # Test with DOCX format (should call replace_table_properties)
+        # Test with DOCX format (should call process)
         response = postprocess_and_build_response(docx_content, "docx", "test.docx")
 
         # Assertions
@@ -410,7 +410,7 @@ def test_postprocess_and_build_response():
         assert response.headers.get("Pandoc-Service-Version") == "1.0.0"
         assert response.body == b"Processed DOCX content"
 
-        # Test with non-DOCX format (should not call replace_table_properties)
+        # Test with non-DOCX format (should not call process)
         pdf_content = b"Test PDF content"
         response = postprocess_and_build_response(pdf_content, "pdf", "test.pdf")
 
@@ -538,7 +538,7 @@ def test_convert_with_encoding():
 
         # Assertions
         mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
-        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html")
+        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html", None, None)
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
         assert response.content == b"<html>Test</html>"
@@ -558,7 +558,7 @@ def test_convert_with_custom_filename():
 
         # Assertions
         mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
-        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html")
+        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html", None, None)
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
         assert response.content == b"<html>Test</html>"
@@ -588,7 +588,7 @@ def test_convert_docx_with_ref_source_text():
         assert call_args[2] == "docx"  # Target format
 
         # Check that postprocess_and_build_response was called
-        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx")
+        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None)
 
         # Check the response
         assert response.status_code == 200
@@ -627,7 +627,7 @@ def test_convert_docx_with_ref_no_template():
         assert not any("--reference-doc" in option for option in options)
 
         # Check that postprocess_and_build_response was called
-        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx")
+        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None)
 
         # Check the response
         assert response.status_code == 200
@@ -654,7 +654,7 @@ def test_convert_docx_to_pdf_with_custom_filename():
         assert args[2] == "pdf"
         assert "--pdf-engine=tectonic" in args[3]
 
-        mock_postprocess.assert_called_once_with(b"%PDF-test", "pdf", "custom.pdf")
+        mock_postprocess.assert_called_once_with(b"%PDF-test", "pdf", "custom.pdf", None, None)
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
@@ -862,7 +862,7 @@ def test_convert_docx_with_ref_no_source_file():
 def test_postprocess_and_build_response_with_headers():
     """Test postprocess_and_build_response with all headers."""
     with (
-        patch("app.DocxPostProcess.replace_table_properties", side_effect=lambda x: x),
+        patch("app.DocxPostProcess.process", side_effect=lambda x, y=None, z=None: x),
         patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
         patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0"}),
     ):
@@ -962,7 +962,7 @@ def test_convert_endpoint_with_custom_file_extension():
         assert response.status_code == 200
 
         # Verify the custom filename was passed to postprocess_and_build_response
-        mock_postprocess.assert_called_once_with(b"Converted content", "html", "custom_name.html")
+        mock_postprocess.assert_called_once_with(b"Converted content", "html", "custom_name.html", None, None)
 
 
 def test_docx_with_template_encoding():
