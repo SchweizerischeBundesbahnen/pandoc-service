@@ -6,7 +6,7 @@ from docx.table import Table, _Cell
 from lxml import etree
 
 from app import DocxPostProcess
-from app.DocxPostProcess import SCHEMA, process_table
+from app.DocxPostProcess import SCHEMA, _process_table
 
 WORD_PROCESSING_ML_MAIN_SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PROCESSING_ML_MAIN_SCHEMA_IN_BRACKETS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -180,47 +180,28 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
     return mock_doc
 
 
-@patch("app.PandocController.run_pandoc_conversion")
-@patch("app.DocxPostProcess.Document")
 @patch("app.DocxPostProcess.etree.fromstring")
-def test_replace_table_properties(mock_fromstring, mock_document_class, mock_run_pandoc):
+def test_replace_table_properties(mock_fromstring):
     # Create a mock document to return from our Document constructor
     mock_doc = create_mock_document_with_table()
-    mock_document_class.return_value = mock_doc
-
-    # Set up the pandoc conversion mock to return some dummy bytes
-    mock_run_pandoc.return_value = b"mock docx data"
 
     # Create a mock XML tree that will be returned from fromstring
     mock_tree = MagicMock()
-    # Set up mock extent elements that might be found
-    mock_extent = MagicMock()
-    mock_extent.attrib = {"cx": "1000000", "cy": "750000"}
     # Return empty list for extent elements to avoid image resizing
     mock_tree.findall.return_value = []
     mock_fromstring.return_value = mock_tree
 
-    # Call the function under test and store result (use the return value)
-    result = DocxPostProcess.replace_table_properties(mock_run_pandoc.return_value)
-    assert isinstance(result, bytes)
-
-    # Verify the Document was constructed
-    mock_document_class.assert_called_once()
+    # Call the function under test
+    DocxPostProcess._replace_table_properties(mock_doc)
 
     # Verify that table properties were accessed
     assert mock_doc.tables[0]._element.find.called
 
 
-@patch("app.PandocController.run_pandoc_conversion")
-@patch("app.DocxPostProcess.Document")
 @patch("app.DocxPostProcess.etree.fromstring")
-def test_nested_tables(mock_fromstring, mock_document_class, mock_run_pandoc):
+def test_nested_tables(mock_fromstring):
     # Create a mock document with nested tables
     mock_doc = create_mock_document_with_table(has_nested_table=True)
-    mock_document_class.return_value = mock_doc
-
-    # Set up the pandoc conversion mock to return some dummy bytes
-    mock_run_pandoc.return_value = b"mock docx data"
 
     # Create a mock XML tree that will be returned from fromstring
     mock_tree = MagicMock()
@@ -228,34 +209,26 @@ def test_nested_tables(mock_fromstring, mock_document_class, mock_run_pandoc):
     mock_tree.findall.return_value = []
     mock_fromstring.return_value = mock_tree
 
-    # Call the function under test and store result (use the return value)
-    result = DocxPostProcess.replace_table_properties(mock_run_pandoc.return_value)
-    assert isinstance(result, bytes)
-
-    # Verify the Document was constructed
-    mock_document_class.assert_called_once()
+    # Call the function under test
+    DocxPostProcess._replace_table_properties(mock_doc)
 
     # Verify we processed the nested table by checking if cell.tables was accessed
     assert len(mock_doc.tables[0].rows[0].cells[0].tables) > 0
 
 
-@patch("app.PandocController.run_pandoc_conversion")
-@patch("app.DocxPostProcess.Document")
-def test_document_without_tables(mock_document_class, mock_run_pandoc):
+def test_document_without_tables():
     # Create a mock document with no tables
     mock_doc = MagicMock()
     mock_doc.tables = []
-    mock_document_class.return_value = mock_doc
+    # Add sections for _get_available_content_width
+    mock_section = MagicMock()
+    mock_section.page_width = DocxPostProcess.DOCX_LETTER_WIDTH_EMU
+    mock_section.left_margin = DocxPostProcess.DOCX_LETTER_SIDE_MARGIN
+    mock_section.right_margin = DocxPostProcess.DOCX_LETTER_SIDE_MARGIN
+    mock_doc.sections = [mock_section]
 
-    # Set up the pandoc conversion mock to return some dummy bytes
-    mock_run_pandoc.return_value = b"mock docx data"
-
-    # Call the function under test and store result (use the return value)
-    result = DocxPostProcess.replace_table_properties(mock_run_pandoc.return_value)
-    assert isinstance(result, bytes)
-
-    # Verify the Document was constructed
-    mock_document_class.assert_called_once()
+    # Call the function under test
+    DocxPostProcess._replace_table_properties(mock_doc)
 
     # Verify we checked the tables collection
     assert len(mock_doc.tables) == 0
@@ -277,7 +250,7 @@ def test_get_available_content_width():
     expected_width = int(DocxPostProcess.EMU_1_INCH * 8)
 
     # Get actual content width
-    actual_width = DocxPostProcess.get_available_content_width(mock_doc)
+    actual_width = DocxPostProcess._get_available_content_width(mock_doc)
 
     # Assert they match
     assert actual_width == expected_width
@@ -299,7 +272,7 @@ def test_get_available_content_width_default_values():
     expected_width = int(DocxPostProcess.DOCX_LETTER_WIDTH_EMU - 2 * DocxPostProcess.DOCX_LETTER_SIDE_MARGIN)  # 8.5 - 2 = 6.5 inches
 
     # Get actual width
-    actual_width = DocxPostProcess.get_available_content_width(mock_doc)
+    actual_width = DocxPostProcess._get_available_content_width(mock_doc)
 
     # Assert it uses default values correctly
     assert actual_width == expected_width
@@ -339,7 +312,7 @@ def test_resize_images_in_cell_no_resizing_needed():
     max_width = 500000  # Larger than small_image_width
 
     # Call the function
-    DocxPostProcess.resize_images_in_cell(cell, max_width)
+    DocxPostProcess._resize_images_in_cell(cell, max_width)
 
     # Verify that clear_content was not called (which would indicate the image was modified)
     mock_tc.clear_content.assert_not_called()
@@ -391,7 +364,7 @@ def test_resize_images_in_cell_resizing_needed():
 
     # Call the function
     with patch("app.DocxPostProcess.etree.fromstring", return_value=tree):
-        DocxPostProcess.resize_images_in_cell(cell, max_width)
+        DocxPostProcess._resize_images_in_cell(cell, max_width)
 
     # Verify that clear_content was called (which indicates the image was modified)
     mock_tc.clear_content.assert_called_once()
@@ -425,7 +398,7 @@ def test_resize_images_in_cell():
         max_image_width = 4000.0  # Smaller than the image width
 
         # Call resize_images_in_cell directly
-        DocxPostProcess.resize_images_in_cell(cell, max_image_width)
+        DocxPostProcess._resize_images_in_cell(cell, max_image_width)
 
         # Verify that the image was resized
         assert mock_extent.set.call_count == 2  # cx and cy set
@@ -435,7 +408,7 @@ def test_resize_images_in_cell():
         mock_extent.set.assert_any_call("cy", "2400")  # New height (aspect ratio maintained)
 
 
-@patch("app.DocxPostProcess.resize_images_in_cell")
+@patch("app.DocxPostProcess._resize_images_in_cell")
 def test_process_table_with_nested_tables(mock_resize_images):
     """Test that nested tables are processed correctly."""
 
@@ -466,8 +439,8 @@ def test_process_table_with_nested_tables(mock_resize_images):
         # Set up max_width for testing
         max_width = 9144000  # 10 inches in EMU
 
-        # Call the actual process_table function
-        process_table(main_table, 0, max_width)
+        # Call the actual _process_table function
+        _process_table(main_table, 0, max_width)
 
         # Verify find was called with correct parameters
         main_table._element.find.assert_called_with(".//w:tblPr", namespaces={"w": SCHEMA})
@@ -478,7 +451,7 @@ def test_process_table_with_nested_tables(mock_resize_images):
         # Verify the table element was updated
         main_table._element.insert.assert_called_with(0, mock_tbl_props)
 
-        # Verify resize_images_in_cell was called with correct parameters
+        # Verify _resize_images_in_cell was called with correct parameters
         mock_resize_images.assert_called_with(cell, max_width / 2)
 
         # Verify that we processed any nested tables
@@ -489,21 +462,344 @@ def test_process_table_with_nested_tables(mock_resize_images):
             pass
 
 
+def test_replace_size_and_orientation_both_none():
+    """Test that no modifications are made when both parameters are None."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_doc.sections = [mock_section]
+
+    # Call with both None
+    DocxPostProcess._replace_size_and_orientation(mock_doc, None, None)
+
+    # Verify no modifications were attempted
+    mock_section._sectPr.find.assert_not_called()
+
+
+def test_replace_size_and_orientation_set_page_size_only():
+    """Test setting page size without changing orientation."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    # Set up existing page size element
+    mock_pgSz.get.return_value = None  # No existing orientation
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with page_size = A4
+    DocxPostProcess._replace_size_and_orientation(mock_doc, "A4", None)
+
+    # Verify pgSz was updated with A4 dimensions (portrait)
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "11906")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
+
+
+def test_replace_size_and_orientation_set_orientation_only():
+    """Test setting orientation without changing page size."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    # Set up existing page size element with portrait dimensions (width < height)
+    # The get method is called twice: once for width, once for height
+    mock_pgSz.get.side_effect = ["11906", "16838"]  # portrait: width=11906, height=16838
+    mock_pgSz.attrib = {}
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with orientation = landscape
+    DocxPostProcess._replace_size_and_orientation(mock_doc, None, "landscape")
+
+    # Verify dimensions were swapped (portrait to landscape)
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "16838")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "11906")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+
+
+def test_replace_size_and_orientation_both_parameters():
+    """Test setting both page size and orientation."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    # Need to provide return values for the get calls:
+    # 1. _set_page_size calls get() once for existing orient attribute -> None
+    # 2. _set_orientation calls get() for width -> "12240" (LETTER portrait width, set by _set_page_size)
+    # 3. _set_orientation calls get() for height -> "15840" (LETTER portrait height, set by _set_page_size)
+    mock_pgSz.get.side_effect = [None, "12240", "15840"]
+    mock_pgSz.attrib = {}
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with page_size = LETTER and orientation = landscape
+    DocxPostProcess._replace_size_and_orientation(mock_doc, "LETTER", "landscape")
+
+    # Verify LETTER portrait dimensions were set first by _set_page_size
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
+    # Then verify they were swapped for landscape by _set_orientation
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "15840")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "12240")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+
+
+def test_set_page_size_unsupported():
+    """Test that unsupported page size raises ValueError."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Test with unsupported page size
+    with pytest.raises(ValueError, match="Unsupported page size: TABLOID"):
+        DocxPostProcess._replace_size_and_orientation(mock_doc, "TABLOID", None)
+
+
+def test_set_page_size_case_insensitive():
+    """Test that page size is case-insensitive."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    mock_pgSz.get.return_value = None
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with lowercase page size
+    DocxPostProcess._replace_size_and_orientation(mock_doc, "a4", None)
+
+    # Verify A4 dimensions were set
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "11906")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
+
+
+def test_set_page_size_creates_pgSz_if_missing():
+    """Test that pgSz element is created if it doesn't exist."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+
+    # pgSz doesn't exist
+    mock_sectPr.find.return_value = None
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    with patch("app.DocxPostProcess.parse_xml") as mock_parse_xml:
+        mock_new_pgSz = MagicMock()
+        mock_new_pgSz.get.return_value = None
+        mock_parse_xml.return_value = mock_new_pgSz
+
+        # Call with page_size = A5
+        DocxPostProcess._replace_size_and_orientation(mock_doc, "A5", None)
+
+        # Verify parse_xml was called to create new pgSz
+        mock_parse_xml.assert_called_once()
+        # Verify the new pgSz was appended
+        mock_sectPr.append.assert_called_once_with(mock_new_pgSz)
+
+
+def test_set_page_size_preserves_landscape_orientation():
+    """Test that existing landscape orientation is preserved when changing page size."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    # Existing page has landscape orientation
+    mock_pgSz.get.return_value = "landscape"
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with new page_size but no orientation parameter
+    DocxPostProcess._replace_size_and_orientation(mock_doc, "A3", None)
+
+    # Verify A3 dimensions were set in landscape (swapped)
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "23811")  # height becomes width
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")  # width becomes height
+    # Verify landscape orientation was preserved
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+
+
+def test_set_orientation_creates_pgSz_if_missing():
+    """Test that pgSz element is created with LETTER default if missing."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+
+    # pgSz doesn't exist
+    mock_sectPr.find.return_value = None
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    with patch("app.DocxPostProcess.parse_xml") as mock_parse_xml:
+        mock_new_pgSz = MagicMock()
+        # Simulate getting width and height from the newly created element (LETTER portrait)
+        mock_new_pgSz.get.side_effect = ["12240", "15840"]  # width, then height
+        mock_new_pgSz.attrib = {}
+        mock_parse_xml.return_value = mock_new_pgSz
+
+        # Call with orientation only
+        DocxPostProcess._replace_size_and_orientation(mock_doc, None, "landscape")
+
+        # Verify parse_xml was called to create pgSz with LETTER dimensions
+        mock_parse_xml.assert_called_once()
+        # Verify the new pgSz was appended
+        mock_sectPr.append.assert_called_once_with(mock_new_pgSz)
+        # Verify dimensions were swapped for landscape
+        mock_new_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "15840")
+        mock_new_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "12240")
+
+
+def test_set_orientation_portrait_removes_orient_attribute():
+    """Test that orient attribute is removed for portrait orientation."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    # Set up existing landscape page (width > height)
+    mock_pgSz.get.side_effect = ["15840", "12240"]  # landscape: width=15840, height=12240
+    mock_pgSz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with orientation = portrait
+    DocxPostProcess._replace_size_and_orientation(mock_doc, None, "portrait")
+
+    # Verify dimensions were swapped back to portrait
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
+    # Verify orient attribute was removed
+    assert f"{{{SCHEMA}}}orient" not in mock_pgSz.attrib
+
+
+def test_set_orientation_no_swap_if_already_correct():
+    """Test that dimensions aren't swapped if orientation is already correct."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    # Set up existing landscape page (width > height)
+    width = "16838"
+    height = "11906"
+    call_count = [0]
+
+    def get_side_effect(attr, default="0"):
+        call_count[0] += 1
+        if call_count[0] == 1:  # First call for width
+            return width
+        else:  # Second call for height
+            return height
+
+    mock_pgSz.get.side_effect = get_side_effect
+    mock_pgSz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with orientation = landscape (already landscape)
+    DocxPostProcess._replace_size_and_orientation(mock_doc, None, "landscape")
+
+    # Verify dimensions were NOT swapped (set should not be called with swapped values)
+    # The orient attribute should still be set
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+
+
+def test_replace_size_and_orientation_multiple_sections():
+    """Test that all sections in a document are processed."""
+    mock_doc = MagicMock()
+    mock_section1 = MagicMock()
+    mock_section2 = MagicMock()
+    mock_sectPr1 = MagicMock()
+    mock_sectPr2 = MagicMock()
+    mock_pgSz1 = MagicMock()
+    mock_pgSz2 = MagicMock()
+
+    mock_pgSz1.get.return_value = None
+    mock_pgSz2.get.return_value = None
+    mock_sectPr1.find.return_value = mock_pgSz1
+    mock_sectPr2.find.return_value = mock_pgSz2
+    mock_section1._sectPr = mock_sectPr1
+    mock_section2._sectPr = mock_sectPr2
+    mock_doc.sections = [mock_section1, mock_section2]
+
+    # Call with page_size = B5
+    DocxPostProcess._replace_size_and_orientation(mock_doc, "B5", None)
+
+    # Verify both sections were updated
+    mock_pgSz1.set.assert_any_call(f"{{{SCHEMA}}}w", "9979")
+    mock_pgSz1.set.assert_any_call(f"{{{SCHEMA}}}h", "14144")
+    mock_pgSz2.set.assert_any_call(f"{{{SCHEMA}}}w", "9979")
+    mock_pgSz2.set.assert_any_call(f"{{{SCHEMA}}}h", "14144")
+
+
 @pytest.mark.parametrize(
-    "argv, expected_exit",
+    "page_size,expected_width,expected_height",
     [
-        (["script.py"], True),
-        (["script.py", "test.docx"], False),
+        ("A5", "8419", "11906"),
+        ("A4", "11906", "16838"),
+        ("A3", "16838", "23811"),
+        ("B5", "9979", "14144"),
+        ("B4", "14144", "20013"),
+        ("JIS_B5", "10319", "14572"),
+        ("JIS_B4", "14572", "20639"),
+        ("LETTER", "12240", "15840"),
+        ("LEGAL", "12240", "20160"),
+        ("LEDGER", "15840", "24480"),
     ],
 )
-def test_main_function(argv, expected_exit):
+def test_all_supported_page_sizes(page_size, expected_width, expected_height):
+    """Test that all supported page sizes are correctly applied."""
+    mock_doc = MagicMock()
+    mock_section = MagicMock()
+    mock_sectPr = MagicMock()
+    mock_pgSz = MagicMock()
+
+    mock_pgSz.get.return_value = None
+    mock_sectPr.find.return_value = mock_pgSz
+    mock_section._sectPr = mock_sectPr
+    mock_doc.sections = [mock_section]
+
+    # Call with the specified page_size
+    DocxPostProcess._replace_size_and_orientation(mock_doc, page_size, None)
+
+    # Verify the correct dimensions were set
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", expected_width)
+    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", expected_height)
+
+
+@pytest.mark.parametrize(
+    "argv, expected_exit, page_size, orientation",
+    [
+        (["script.py"], True, None, None),
+        (["script.py", "test.docx", "A4", "landscape"], False, "A4", "landscape"),
+        (["script.py", "test.docx", "None", "portrait"], False, None, "portrait"),
+        (["script.py", "test.docx", "LETTER", "None"], False, "LETTER", None),
+    ],
+)
+def test_main_function(argv, expected_exit, page_size, orientation):
     fake_docx_content = b"fake content"
     modified_content = b"modified content"
 
     with (
         patch.object(sys, "argv", argv),
         patch("pathlib.Path.open", mock_open(read_data=fake_docx_content)) as mock_file,
-        patch("app.DocxPostProcess.replace_table_properties", return_value=modified_content) as mock_replace,
+        patch("app.DocxPostProcess.process", return_value=modified_content) as mock_process,
         patch("app.DocxPostProcess.logging") as mock_logging,
     ):
         result = DocxPostProcess.main()
@@ -512,7 +808,7 @@ def test_main_function(argv, expected_exit):
             assert result == 1
         else:
             assert result == 0
-            mock_replace.assert_called_once_with(fake_docx_content)
+            mock_process.assert_called_once_with(fake_docx_content, page_size, orientation)
             handle = mock_file()
             handle.write.assert_called_once_with(modified_content)
             mock_logging.debug.assert_called_once()
