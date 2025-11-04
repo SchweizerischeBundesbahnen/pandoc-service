@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.4.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.3.0...v1.4.0) (2025-11-04)
+
+
+### Features
+
+* ability to set custom page size and orientation for docx files ([#80](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/80)) ([008e892](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/008e892cd3a9d1a9830843938c95948c61777628)), closes [#79](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/79)
+* make memory limit configurable ([#78](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/78)) ([95450d5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/95450d5c3ab05fac0bfe85d1be9bbf45e7d9bb08)), closes [#75](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/75)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.118.3 ([f7fcd11](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f7fcd1165189073b6c9f256a4d8802c4c669bb6a))
+* **deps:** update dependency fastapi to v0.119.0 ([3536dd2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3536dd233587ac57a05309b5ef18b0c9d0b219e3))
+* **deps:** update dependency fastapi to v0.119.1 ([498d52d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/498d52de679bf750a3cbc4007e5f31917819b9fb))
+* **deps:** update dependency fastapi to v0.120.0 ([1ee0d2f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1ee0d2f85a24a1773b83ee6ba578b4dd2ca8cb71))
+* **deps:** update dependency fastapi to v0.120.1 ([71a8592](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/71a8592cfce7daf7fa9fa9b460998a65d19f42f6))
+* **deps:** update dependency fastapi to v0.120.2 ([d923c23](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d923c23771a93ceb5c222d98de46512a42d3b5ab))
+* **deps:** update dependency fastapi to v0.120.3 ([db752b2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/db752b23221e7546f24473373e6ef82b3b5f7925))
+* **deps:** update dependency fastapi to v0.120.4 ([9f3e1d9](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9f3e1d9aa828222ae0579a1e5fbe2de8607b1d79))
+* **deps:** update dependency fastapi to v0.121.0 ([66c2abd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/66c2abddb759c54107b72bb8b70fb1eba9790ba0))
+* **deps:** update dependency jgm/pandoc to v3.8.2.1 ([6a88d67](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/6a88d67a678f5bf214f5e7dd4f13c8777f269833))
+* **deps:** update dependency starlette to ^0.49.0 [security] ([61b5860](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/61b5860544470dbd69e1ad53896e9989bb507173))
+* **deps:** update dependency starlette to v0.49.1 [security] ([e0a9b56](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e0a9b56644898be4cd6f35ffe624cecf8cc5a442))
+* **deps:** update dependency uvicorn to v0.38.0 ([3c28713](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3c28713681462160e43667c3d3ff903d05537cbd))
+
 ## [1.3.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.2.0...v1.3.0) (2025-10-09)
 
 
