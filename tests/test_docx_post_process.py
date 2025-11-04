@@ -475,20 +475,20 @@ def test_replace_size_and_orientation_both_none():
     mock_section._sectPr.find.assert_not_called()
 
 
-def test_replace_size_and_orientation_set_page_size_only():
-    """Test setting page size without changing orientation."""
+def test_replace_size_and_orientation_set_paper_size_only():
+    """Test setting paper size without changing orientation."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
     mock_pgSz = MagicMock()
 
-    # Set up existing page size element
+    # Set up existing paper size element
     mock_pgSz.get.return_value = None  # No existing orientation
     mock_sectPr.find.return_value = mock_pgSz
     mock_section._sectPr = mock_sectPr
     mock_doc.sections = [mock_section]
 
-    # Call with page_size = A4
+    # Call with paper_size = A4
     DocxPostProcess._replace_size_and_orientation(mock_doc, "A4", None)
 
     # Verify pgSz was updated with A4 dimensions (portrait)
@@ -497,13 +497,13 @@ def test_replace_size_and_orientation_set_page_size_only():
 
 
 def test_replace_size_and_orientation_set_orientation_only():
-    """Test setting orientation without changing page size."""
+    """Test setting orientation without changing paper size."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
     mock_pgSz = MagicMock()
 
-    # Set up existing page size element with portrait dimensions (width < height)
+    # Set up existing paper size element with portrait dimensions (width < height)
     # The get method is called twice: once for width, once for height
     mock_pgSz.get.side_effect = ["11906", "16838"]  # portrait: width=11906, height=16838
     mock_pgSz.attrib = {}
@@ -521,26 +521,26 @@ def test_replace_size_and_orientation_set_orientation_only():
 
 
 def test_replace_size_and_orientation_both_parameters():
-    """Test setting both page size and orientation."""
+    """Test setting both paper size and orientation."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
     mock_pgSz = MagicMock()
 
     # Need to provide return values for the get calls:
-    # 1. _set_page_size calls get() once for existing orient attribute -> None
-    # 2. _set_orientation calls get() for width -> "12240" (LETTER portrait width, set by _set_page_size)
-    # 3. _set_orientation calls get() for height -> "15840" (LETTER portrait height, set by _set_page_size)
+    # 1. _set_paper_size calls get() once for existing orient attribute -> None
+    # 2. _set_orientation calls get() for width -> "12240" (LETTER portrait width, set by _set_paper_size)
+    # 3. _set_orientation calls get() for height -> "15840" (LETTER portrait height, set by _set_paper_size)
     mock_pgSz.get.side_effect = [None, "12240", "15840"]
     mock_pgSz.attrib = {}
     mock_sectPr.find.return_value = mock_pgSz
     mock_section._sectPr = mock_sectPr
     mock_doc.sections = [mock_section]
 
-    # Call with page_size = LETTER and orientation = landscape
+    # Call with paper_size = LETTER and orientation = landscape
     DocxPostProcess._replace_size_and_orientation(mock_doc, "LETTER", "landscape")
 
-    # Verify LETTER portrait dimensions were set first by _set_page_size
+    # Verify LETTER portrait dimensions were set first by _set_paper_size
     mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
     mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
     # Then verify they were swapped for landscape by _set_orientation
@@ -549,8 +549,8 @@ def test_replace_size_and_orientation_both_parameters():
     mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
 
 
-def test_set_page_size_unsupported():
-    """Test that unsupported page size raises ValueError."""
+def test_set_paper_size_unsupported():
+    """Test that unsupported paper size raises ValueError."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
@@ -560,13 +560,13 @@ def test_set_page_size_unsupported():
     mock_section._sectPr = mock_sectPr
     mock_doc.sections = [mock_section]
 
-    # Test with unsupported page size
-    with pytest.raises(ValueError, match="Unsupported page size: TABLOID"):
+    # Test with unsupported paper size
+    with pytest.raises(ValueError, match="Unsupported paper size: TABLOID"):
         DocxPostProcess._replace_size_and_orientation(mock_doc, "TABLOID", None)
 
 
-def test_set_page_size_case_insensitive():
-    """Test that page size is case-insensitive."""
+def test_set_paper_size_case_insensitive():
+    """Test that paper size is case-insensitive."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
@@ -577,7 +577,7 @@ def test_set_page_size_case_insensitive():
     mock_section._sectPr = mock_sectPr
     mock_doc.sections = [mock_section]
 
-    # Call with lowercase page size
+    # Call with lowercase paper size
     DocxPostProcess._replace_size_and_orientation(mock_doc, "a4", None)
 
     # Verify A4 dimensions were set
@@ -585,7 +585,7 @@ def test_set_page_size_case_insensitive():
     mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
 
 
-def test_set_page_size_creates_pgSz_if_missing():
+def test_set_paper_size_creates_pgSz_if_missing():
     """Test that pgSz element is created if it doesn't exist."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
@@ -601,7 +601,7 @@ def test_set_page_size_creates_pgSz_if_missing():
         mock_new_pgSz.get.return_value = None
         mock_parse_xml.return_value = mock_new_pgSz
 
-        # Call with page_size = A5
+        # Call with paper_size = A5
         DocxPostProcess._replace_size_and_orientation(mock_doc, "A5", None)
 
         # Verify parse_xml was called to create new pgSz
@@ -610,8 +610,8 @@ def test_set_page_size_creates_pgSz_if_missing():
         mock_sectPr.append.assert_called_once_with(mock_new_pgSz)
 
 
-def test_set_page_size_preserves_landscape_orientation():
-    """Test that existing landscape orientation is preserved when changing page size."""
+def test_set_paper_size_preserves_landscape_orientation():
+    """Test that existing landscape orientation is preserved when changing paper size."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
@@ -623,7 +623,7 @@ def test_set_page_size_preserves_landscape_orientation():
     mock_section._sectPr = mock_sectPr
     mock_doc.sections = [mock_section]
 
-    # Call with new page_size but no orientation parameter
+    # Call with new paper_size but no orientation parameter
     DocxPostProcess._replace_size_and_orientation(mock_doc, "A3", None)
 
     # Verify A3 dimensions were set in landscape (swapped)
@@ -738,7 +738,7 @@ def test_replace_size_and_orientation_multiple_sections():
     mock_section2._sectPr = mock_sectPr2
     mock_doc.sections = [mock_section1, mock_section2]
 
-    # Call with page_size = B5
+    # Call with paper_size = B5
     DocxPostProcess._replace_size_and_orientation(mock_doc, "B5", None)
 
     # Verify both sections were updated
@@ -749,7 +749,7 @@ def test_replace_size_and_orientation_multiple_sections():
 
 
 @pytest.mark.parametrize(
-    "page_size,expected_width,expected_height",
+    "paper_size,expected_width,expected_height",
     [
         ("A5", "8419", "11906"),
         ("A4", "11906", "16838"),
@@ -763,8 +763,8 @@ def test_replace_size_and_orientation_multiple_sections():
         ("LEDGER", "15840", "24480"),
     ],
 )
-def test_all_supported_page_sizes(page_size, expected_width, expected_height):
-    """Test that all supported page sizes are correctly applied."""
+def test_all_supported_paper_sizes(paper_size, expected_width, expected_height):
+    """Test that all supported paper sizes are correctly applied."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
     mock_sectPr = MagicMock()
@@ -775,8 +775,8 @@ def test_all_supported_page_sizes(page_size, expected_width, expected_height):
     mock_section._sectPr = mock_sectPr
     mock_doc.sections = [mock_section]
 
-    # Call with the specified page_size
-    DocxPostProcess._replace_size_and_orientation(mock_doc, page_size, None)
+    # Call with the specified paper_size
+    DocxPostProcess._replace_size_and_orientation(mock_doc, paper_size, None)
 
     # Verify the correct dimensions were set
     mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", expected_width)
@@ -784,7 +784,7 @@ def test_all_supported_page_sizes(page_size, expected_width, expected_height):
 
 
 @pytest.mark.parametrize(
-    "argv, expected_exit, page_size, orientation",
+    "argv, expected_exit, paper_size, orientation",
     [
         (["script.py"], True, None, None),
         (["script.py", "test.docx", "A4", "landscape"], False, "A4", "landscape"),
@@ -792,7 +792,7 @@ def test_all_supported_page_sizes(page_size, expected_width, expected_height):
         (["script.py", "test.docx", "LETTER", "None"], False, "LETTER", None),
     ],
 )
-def test_main_function(argv, expected_exit, page_size, orientation):
+def test_main_function(argv, expected_exit, paper_size, orientation):
     fake_docx_content = b"fake content"
     modified_content = b"modified content"
 
@@ -808,7 +808,7 @@ def test_main_function(argv, expected_exit, page_size, orientation):
             assert result == 1
         else:
             assert result == 0
-            mock_process.assert_called_once_with(fake_docx_content, page_size, orientation)
+            mock_process.assert_called_once_with(fake_docx_content, paper_size, orientation)
             handle = mock_file()
             handle.write.assert_called_once_with(modified_content)
             mock_logging.debug.assert_called_once()
@@ -819,7 +819,7 @@ class TestProcessFunction:
     """Integration tests that call the process() function directly."""
 
     def test_process_with_no_parameters(self):
-        """Test process() with no page_size or orientation - should just process tables."""
+        """Test process() with no paper_size or orientation - should just process tables."""
         # Create a minimal valid DOCX file
         from docx import Document
         import io
@@ -838,8 +838,8 @@ class TestProcessFunction:
         assert isinstance(result, bytes)
         assert len(result) > 0
 
-    def test_process_with_page_size_only(self):
-        """Test process() with only page_size parameter."""
+    def test_process_with_paper_size_only(self):
+        """Test process() with only paper_size parameter."""
         from docx import Document
         import io
 
@@ -850,8 +850,8 @@ class TestProcessFunction:
         docx_bytes.seek(0)
         input_bytes = docx_bytes.getvalue()
 
-        # Call process with page_size
-        result = DocxPostProcess.process(input_bytes, page_size="A4")
+        # Call process with paper_size
+        result = DocxPostProcess.process(input_bytes, paper_size="A4")
 
         # Verify result is valid bytes
         assert isinstance(result, bytes)
@@ -877,7 +877,7 @@ class TestProcessFunction:
         assert len(result) > 0
 
     def test_process_with_both_parameters(self):
-        """Test process() with both page_size and orientation parameters."""
+        """Test process() with both paper_size and orientation parameters."""
         from docx import Document
         import io
 
@@ -889,7 +889,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Call process with both parameters
-        result = DocxPostProcess.process(input_bytes, page_size="LETTER", orientation="portrait")
+        result = DocxPostProcess.process(input_bytes, paper_size="LETTER", orientation="portrait")
 
         # Verify result is valid bytes
         assert isinstance(result, bytes)
@@ -910,7 +910,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Process the document
-        result = DocxPostProcess.process(input_bytes, page_size="A4", orientation="landscape")
+        result = DocxPostProcess.process(input_bytes, paper_size="A4", orientation="landscape")
 
         # Verify we can open the result as a valid DOCX
         result_doc = Document(io.BytesIO(result))
