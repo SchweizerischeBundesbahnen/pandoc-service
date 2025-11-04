@@ -18,8 +18,8 @@ TWIPS_1_INCH = 1440  # 1 inch in docx in Twips (Twentieth of a Point)
 DOCX_LETTER_WIDTH_EMU = 8.5 * EMU_1_INCH  # docx LETTER width = 8.5 inch
 DOCX_LETTER_SIDE_MARGIN = EMU_1_INCH  # docx left & right margins = 1 inch
 
-# Page sizes in TWIPS (portrait orientation: width x height)
-PAGE_SIZES = {
+# Paper sizes in TWIPS (portrait orientation: width x height)
+PAPER_SIZES = {
     "A5": {"width": 8419, "height": 11906},
     "A4": {"width": 11906, "height": 16838},
     "A3": {"width": 16838, "height": 23811},
@@ -33,45 +33,45 @@ PAGE_SIZES = {
 }
 
 
-def process(docx_bytes: bytes, page_size: str | None = None, orientation: str | None = None) -> bytes:
+def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
-    _replace_size_and_orientation(doc, page_size, orientation)
+    _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc)
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
 
 
-def _replace_size_and_orientation(doc: DocumentObject, page_size: str | None = None, orientation: str | None = None) -> None:
+def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:
     # If both parameters are None, no modifications needed
-    if page_size is None and orientation is None:
+    if paper_size is None and orientation is None:
         return
 
     for section in doc.sections:
         sect_pr = section._sectPr
         pg_sz = sect_pr.find(".//w:pgSz", namespaces={"w": SCHEMA})
 
-        if page_size is not None:
-            pg_sz = _set_page_size(sect_pr, pg_sz, page_size, orientation)
+        if paper_size is not None:
+            pg_sz = _set_paper_size(sect_pr, pg_sz, paper_size, orientation)
 
         if orientation is not None:
             _set_orientation(sect_pr, pg_sz, orientation)
 
 
-def _set_page_size(sect_pr: Any, pg_sz: Any, page_size: str, orientation: str | None) -> Any:
-    """Set the page size for a section."""
-    # Normalize page_size to uppercase for case-insensitive lookup
-    page_size_upper = page_size.upper()
+def _set_paper_size(sect_pr: Any, pg_sz: Any, paper_size: str, orientation: str | None) -> Any:
+    """Set the paper size for a section."""
+    # Normalize paper_size to uppercase for case-insensitive lookup
+    paper_size_upper = paper_size.upper()
 
-    # Get dimensions for the specified page size
-    if page_size_upper not in PAGE_SIZES:
-        raise ValueError(f"Unsupported page size: {page_size}. Supported sizes: {', '.join(PAGE_SIZES.keys())}")
+    # Get dimensions for the specified paper size
+    if paper_size_upper not in PAPER_SIZES:
+        raise ValueError(f"Unsupported paper size: {paper_size}. Supported sizes: {', '.join(PAPER_SIZES.keys())}")
 
-    page_dims = PAGE_SIZES[page_size_upper]
+    page_dims = PAPER_SIZES[paper_size_upper]
     width = page_dims["width"]
     height = page_dims["height"]
 
-    # Get existing orientation if present (to preserve it when changing page size)
+    # Get existing orientation if present (to preserve it when changing paper size)
     existing_orientation = pg_sz.get(f"{{{SCHEMA}}}orient") if pg_sz is not None else None
 
     # Apply existing orientation if orientation parameter is not specified
@@ -97,7 +97,7 @@ def _set_orientation(sect_pr: Any, pg_sz: Any, orientation: str) -> None:
     """Set the orientation for a section."""
     # Ensure pg_sz exists (use LETTER as default if missing)
     if pg_sz is None:
-        page_dims = PAGE_SIZES["LETTER"]
+        page_dims = PAPER_SIZES["LETTER"]
         width = page_dims["width"]
         height = page_dims["height"]
         pg_sz = parse_xml(f'<w:pgSz {nsdecls("w")} w:w="{width}" w:h="{height}"/>')
@@ -210,21 +210,21 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
 # Just for manual test purposes. Accepts path to docx to process.
 def main() -> int:
     MIN_ARGS = 2  # script name + docx path
-    MAX_ARGS = 4  # script name + docx path + page_size + orientation
+    MAX_ARGS = 4  # script name + docx path + paper_size + orientation
     DOCX_PATH_ARG_INDEX = 1
-    PAGE_SIZE_ARG_INDEX = 2
+    PAPER_SIZE_ARG_INDEX = 2
     ORIENTATION_ARG_INDEX = 3
 
     if not (MIN_ARGS <= len(sys.argv) <= MAX_ARGS):
-        logging.info("Usage: <path_to_docx> [page_size] [orientation]")
+        logging.info("Usage: <path_to_docx> [paper_size] [orientation]")
         return 1
 
     docx_path = sys.argv[DOCX_PATH_ARG_INDEX]
-    page_size = sys.argv[PAGE_SIZE_ARG_INDEX] if len(sys.argv) > PAGE_SIZE_ARG_INDEX and sys.argv[PAGE_SIZE_ARG_INDEX] != "None" else None
+    paper_size = sys.argv[PAPER_SIZE_ARG_INDEX] if len(sys.argv) > PAPER_SIZE_ARG_INDEX and sys.argv[PAPER_SIZE_ARG_INDEX] != "None" else None
     orientation = sys.argv[ORIENTATION_ARG_INDEX] if len(sys.argv) > ORIENTATION_ARG_INDEX and sys.argv[ORIENTATION_ARG_INDEX] != "None" else None
 
     with Path(docx_path).open("rb") as docx_file_reader:
-        result_bytes = process(docx_file_reader.read(), page_size, orientation)
+        result_bytes = process(docx_file_reader.read(), paper_size, orientation)
 
     with Path(docx_path).open("wb") as docx_file_writer:
         docx_file_writer.write(result_bytes)
