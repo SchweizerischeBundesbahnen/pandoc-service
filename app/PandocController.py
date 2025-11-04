@@ -328,7 +328,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913
     source_format: str,
     encoding: str | None = None,
     file_name: str = "converted-document.docx",
-    page_size: str | None = None,
+    paper_size: str | None = None,
     orientation: str | None = None,
 ) -> Response:
     temp_template_filename = None
@@ -363,7 +363,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, "docx", options)
 
-        return postprocess_and_build_response(output, "docx", file_name, page_size, orientation)
+        return postprocess_and_build_response(output, "docx", file_name, paper_size, orientation)
 
     except Exception as e:
         return process_error(e, "Bad request", 400)
@@ -392,7 +392,7 @@ async def convert(  # noqa: PLR0913
     target_format: str,
     encoding: str | None = None,
     file_name: str | None = None,
-    page_size: str | None = None,
+    paper_size: str | None = None,
     orientation: str | None = None,
 ) -> Response:
     try:
@@ -416,7 +416,7 @@ async def convert(  # noqa: PLR0913
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, target_format, options)
 
-        return postprocess_and_build_response(output, target_format, file_name, page_size, orientation)
+        return postprocess_and_build_response(output, target_format, file_name, paper_size, orientation)
 
     except Exception as e:
         return process_error(e, "Bad request", 400)
@@ -431,9 +431,9 @@ async def get_docx_source_data(source_content: starlette.datastructures.UploadFi
     return source_content
 
 
-def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, page_size: str | None = None, orientation: str | None = None) -> Response:
+def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None) -> Response:
     if target_format == "docx":
-        output = DocxPostProcess.process(output, page_size, orientation)
+        output = DocxPostProcess.process(output, paper_size, orientation)
     mime_type = MIME_TYPES.get(target_format, DEFAULT_MIME_TYPE)
 
     response = Response(output, media_type=mime_type, status_code=200)
