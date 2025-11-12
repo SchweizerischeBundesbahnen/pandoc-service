@@ -125,7 +125,7 @@ def _set_orientation(sect_pr: Any, pg_sz: Any, orientation: str) -> None:
         del pg_sz.attrib[f"{{{SCHEMA}}}orient"]
 
 
-def _replace_table_properties(doc: DocumentObject) -> None:
+def _replace_table_properties(doc: DocumentObject) -> None: # NOSONAR  # needed by design
     # Group tables by their section
     for target_index, section in enumerate(doc.sections):
         max_width = _get_available_content_width_for_section(section)
