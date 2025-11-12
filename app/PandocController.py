@@ -25,6 +25,7 @@ PANDOC_PATH = "/usr/local/bin/pandoc"
 # List of allowed pandoc options for security
 ALLOWED_PANDOC_OPTIONS = [
     "--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua",
+    "--lua-filter=/usr/local/share/pandoc/filters/page_orientation.lua",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -84,7 +85,7 @@ FILE_EXTENSIONS = {
     "plain": "txt",
 }
 
-DEFAULT_CONVERSION_OPTIONS = ["--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua", "--track-changes=all"]
+DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all"]
 
 app = FastAPI(
     openapi_url="/static/openapi.json",
@@ -352,6 +353,8 @@ async def convert_docx_with_ref(  # noqa: PLR0913
 
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
+        # Use a custom filter for conversion from Polarion
+        options.append("--lua-filter=/usr/local/share/pandoc/filters/page_orientation.lua")
 
         extended_options = form.get("options")
         if isinstance(extended_options, str):
@@ -410,6 +413,8 @@ async def convert(  # noqa: PLR0913
                 return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
         options = DEFAULT_CONVERSION_OPTIONS.copy()
+        options.append("--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua")
+
         if target_format == "pdf":
             options.append("--pdf-engine=tectonic")
 

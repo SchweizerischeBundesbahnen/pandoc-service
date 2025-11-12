@@ -8,6 +8,7 @@ from docx import Document
 from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+from docx.section import Section
 from docx.table import Table, _Cell
 from lxml import etree  # type: ignore
 
@@ -125,11 +126,28 @@ def _set_orientation(sect_pr: Any, pg_sz: Any, orientation: str) -> None:
 
 
 def _replace_table_properties(doc: DocumentObject) -> None:
-    max_width = _get_available_content_width(doc)
+    # Group tables by their section
+    for target_index, section in enumerate(doc.sections):
+        max_width = _get_available_content_width_for_section(section)
 
-    # Process each table in the document
-    for table in doc.tables:
-        _process_table(table, 0, max_width)
+        tables_in_section = []
+        current_section_index = 0
+
+        for element in doc.element.body:
+            # Section break
+            if element.tag.endswith('sectPr'):
+                current_section_index += 1
+
+            # Table element
+            elif element.tag.endswith('tbl') and current_section_index == target_index:
+                for table in doc.tables:
+                    if table._element == element:
+                        tables_in_section.append(table)
+                        break
+
+        # Note: This gets all tables in the document section
+        for table in tables_in_section:
+            _process_table(table, 0, max_width)
 
 
 def _process_table(table: Table, parent_columns_count: int, max_width: int) -> None:
@@ -167,6 +185,38 @@ def _get_available_content_width(doc: DocumentObject) -> int:
     section = doc.sections[0]
     # Provide alternative 'Letter' paper size params in case if they were not set explicitly in the document
     return int((section.page_width or DOCX_LETTER_WIDTH_EMU) - (section.left_margin or DOCX_LETTER_SIDE_MARGIN) - (section.right_margin or DOCX_LETTER_SIDE_MARGIN))
+
+
+def _get_tables_in_section(doc: DocumentObject, target_section) -> list:
+    tables_in_section = []
+
+    try:
+        target_index = list(doc.sections).index(target_section)
+    except ValueError:
+        return tables_in_section  # section not found
+
+    current_section_index = 0
+
+    for element in doc.element.body:
+        # Section break
+        if element.tag.endswith('sectPr'):
+            current_section_index += 1
+
+        # Table element
+        elif element.tag.endswith('tbl') and current_section_index == target_index:
+            for table in doc.tables:
+                if table._element == element:
+                    tables_in_section.append(table)
+                    break
+
+    return tables_in_section
+
+
+def _get_available_content_width_for_section(section: Section) -> int:
+    # Provide alternative 'Letter' paper size params in case if they were not set explicitly in the document
+    return int((section.page_width or DOCX_LETTER_WIDTH_EMU) -
+               (section.left_margin or DOCX_LETTER_SIDE_MARGIN) -
+               (section.right_margin or DOCX_LETTER_SIDE_MARGIN))
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:

@@ -47,5 +47,7 @@ RUN pip3 install --no-cache-dir -r "${WORKING_DIR}/requirements.txt" && poetry i
 COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
 
+COPY page_orientation.lua "/usr/local/share/pandoc/filters/page_orientation.lua"
+
 # Use Tini as entrypoint with security options
 ENTRYPOINT ["./entrypoint.sh"]

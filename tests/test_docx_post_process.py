@@ -6,7 +6,7 @@ from docx.table import Table, _Cell
 from lxml import etree
 
 from app import DocxPostProcess
-from app.DocxPostProcess import SCHEMA, _process_table
+from app.DocxPostProcess import SCHEMA, _process_table, _replace_table_properties
 
 WORD_PROCESSING_ML_MAIN_SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PROCESSING_ML_MAIN_SCHEMA_IN_BRACKETS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -461,6 +461,52 @@ def test_process_table_with_nested_tables(mock_resize_images):
             # the nested tables were accessed.
             pass
 
+
+@patch("app.DocxPostProcess._process_table")
+@patch("app.DocxPostProcess._get_available_content_width_for_section")
+def test_replace_table_properties(mock_get_width, mock_process_table):
+    """Test that _replace_table_properties processes tables by section correctly."""
+
+    # Create mock document and sections
+    doc = MagicMock()
+    section1 = MagicMock()
+    section2 = MagicMock()
+    doc.sections = [section1, section2]
+
+    # Set up mock tables
+    table1 = MagicMock()
+    table2 = MagicMock()
+    doc.tables = [table1, table2]
+
+    # Set up table elements
+    tbl_element1 = MagicMock()
+    tbl_element1.tag = "w:tbl"
+    tbl_element2 = MagicMock()
+    tbl_element2.tag = "w:tbl"
+
+    table1._element = tbl_element1
+    table2._element = tbl_element2
+
+    # Set up document body with table and section break elements
+    section_break = MagicMock()
+    section_break.tag = "w:sectPr"
+
+    doc.element.body = [tbl_element1, section_break, tbl_element2]
+
+    # Set up available width
+    max_width = 9144000
+    mock_get_width.return_value = max_width
+
+    # Call the function
+    _replace_table_properties(doc)
+
+    # Verify _get_available_content_width_for_section was called for each section
+    assert mock_get_width.call_count == 2
+
+    # Verify _process_table was called for tables in correct sections
+    assert mock_process_table.call_count == 2
+    mock_process_table.assert_any_call(table1, 0, max_width)
+    mock_process_table.assert_any_call(table2, 0, max_width)
 
 def test_replace_size_and_orientation_both_none():
     """Test that no modifications are made when both parameters are None."""
