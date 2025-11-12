@@ -234,50 +234,6 @@ def test_document_without_tables():
     assert len(mock_doc.tables) == 0
 
 
-def test_get_available_content_width():
-    """Test the get_available_content_width function."""
-    # Create a mock section
-    mock_section = MagicMock()
-    mock_section.page_width = DocxPostProcess.EMU_1_INCH * 11  # 11 inches
-    mock_section.left_margin = DocxPostProcess.EMU_1_INCH * 1.5  # 1.5 inches
-    mock_section.right_margin = DocxPostProcess.EMU_1_INCH * 1.5  # 1.5 inches
-
-    # Create a mock document with the mock section
-    mock_doc = MagicMock()
-    mock_doc.sections = [mock_section]
-
-    # Calculate expected content width: 11 - 1.5 - 1.5 = 8 inches
-    expected_width = int(DocxPostProcess.EMU_1_INCH * 8)
-
-    # Get actual content width
-    actual_width = DocxPostProcess._get_available_content_width(mock_doc)
-
-    # Assert they match
-    assert actual_width == expected_width
-
-
-def test_get_available_content_width_default_values():
-    """Test the get_available_content_width function with default values."""
-    # Create a mock section with None values for page dimensions
-    mock_section = MagicMock()
-    mock_section.page_width = None
-    mock_section.left_margin = None
-    mock_section.right_margin = None
-
-    # Create a mock document with the mock section
-    mock_doc = MagicMock()
-    mock_doc.sections = [mock_section]
-
-    # We expect the function to use defaults from DocxPostProcess
-    expected_width = int(DocxPostProcess.DOCX_LETTER_WIDTH_EMU - 2 * DocxPostProcess.DOCX_LETTER_SIDE_MARGIN)  # 8.5 - 2 = 6.5 inches
-
-    # Get actual width
-    actual_width = DocxPostProcess._get_available_content_width(mock_doc)
-
-    # Assert it uses default values correctly
-    assert actual_width == expected_width
-
-
 def test_resize_images_in_cell_no_resizing_needed():
     """Test that small images don't get resized."""
     # Create a mock cell

@@ -353,7 +353,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913
 
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
-        # Use a custom filter for conversion from Polarion
+        # Add page orientation filter for handling landscape/portrait commands
         options.append("--lua-filter=/usr/local/share/pandoc/filters/page_orientation.lua")
 
         extended_options = form.get("options")
