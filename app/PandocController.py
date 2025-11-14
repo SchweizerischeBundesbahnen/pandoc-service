@@ -21,10 +21,17 @@ from . import DocxPostProcess
 
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
+FILTER_BASE_PATH = "/usr/local/share/pandoc/filters"
+
+FILTERS = {
+    "page_break": f"{FILTER_BASE_PATH}/pagebreak.lua",
+    "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
+}
 
 # List of allowed pandoc options for security
 ALLOWED_PANDOC_OPTIONS = [
-    "--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua",
+    f"--lua-filter={FILTERS['page_break']}",
+    f"--lua-filter={FILTERS['page_orientation']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -84,7 +91,11 @@ FILE_EXTENSIONS = {
     "plain": "txt",
 }
 
-DEFAULT_CONVERSION_OPTIONS = ["--lua-filter=/usr/local/share/pandoc/filters/pagebreak.lua", "--track-changes=all"]
+# Build default options dynamically
+DEFAULT_CONVERSION_OPTIONS = [
+    "--track-changes=all",
+    f"--lua-filter={FILTERS['page_break']}"
+]
 
 app = FastAPI(
     openapi_url="/static/openapi.json",
@@ -353,6 +364,11 @@ async def convert_docx_with_ref(  # noqa: PLR0913
         # Build conversion options including template if provided
         options = DEFAULT_CONVERSION_OPTIONS.copy()
 
+        # Add page orientation filter if not already present
+        page_orientation_filter = f"--lua-filter={FILTERS['page_orientation']}"
+        if page_orientation_filter not in options:
+            options.append(page_orientation_filter)
+
         extended_options = form.get("options")
         if isinstance(extended_options, str):
             options.append(extended_options)
@@ -410,6 +426,7 @@ async def convert(  # noqa: PLR0913
                 return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
 
         options = DEFAULT_CONVERSION_OPTIONS.copy()
+
         if target_format == "pdf":
             options.append("--pdf-engine=tectonic")
 

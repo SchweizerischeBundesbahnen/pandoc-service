@@ -6,7 +6,7 @@ from docx.table import Table, _Cell
 from lxml import etree
 
 from app import DocxPostProcess
-from app.DocxPostProcess import SCHEMA, _process_table
+from app.DocxPostProcess import SCHEMA, _process_table, _replace_table_properties
 
 WORD_PROCESSING_ML_MAIN_SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PROCESSING_ML_MAIN_SCHEMA_IN_BRACKETS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -234,50 +234,6 @@ def test_document_without_tables():
     assert len(mock_doc.tables) == 0
 
 
-def test_get_available_content_width():
-    """Test the get_available_content_width function."""
-    # Create a mock section
-    mock_section = MagicMock()
-    mock_section.page_width = DocxPostProcess.EMU_1_INCH * 11  # 11 inches
-    mock_section.left_margin = DocxPostProcess.EMU_1_INCH * 1.5  # 1.5 inches
-    mock_section.right_margin = DocxPostProcess.EMU_1_INCH * 1.5  # 1.5 inches
-
-    # Create a mock document with the mock section
-    mock_doc = MagicMock()
-    mock_doc.sections = [mock_section]
-
-    # Calculate expected content width: 11 - 1.5 - 1.5 = 8 inches
-    expected_width = int(DocxPostProcess.EMU_1_INCH * 8)
-
-    # Get actual content width
-    actual_width = DocxPostProcess._get_available_content_width(mock_doc)
-
-    # Assert they match
-    assert actual_width == expected_width
-
-
-def test_get_available_content_width_default_values():
-    """Test the get_available_content_width function with default values."""
-    # Create a mock section with None values for page dimensions
-    mock_section = MagicMock()
-    mock_section.page_width = None
-    mock_section.left_margin = None
-    mock_section.right_margin = None
-
-    # Create a mock document with the mock section
-    mock_doc = MagicMock()
-    mock_doc.sections = [mock_section]
-
-    # We expect the function to use defaults from DocxPostProcess
-    expected_width = int(DocxPostProcess.DOCX_LETTER_WIDTH_EMU - 2 * DocxPostProcess.DOCX_LETTER_SIDE_MARGIN)  # 8.5 - 2 = 6.5 inches
-
-    # Get actual width
-    actual_width = DocxPostProcess._get_available_content_width(mock_doc)
-
-    # Assert it uses default values correctly
-    assert actual_width == expected_width
-
-
 def test_resize_images_in_cell_no_resizing_needed():
     """Test that small images don't get resized."""
     # Create a mock cell
@@ -461,6 +417,52 @@ def test_process_table_with_nested_tables(mock_resize_images):
             # the nested tables were accessed.
             pass
 
+
+@patch("app.DocxPostProcess._process_table")
+@patch("app.DocxPostProcess._get_available_content_width_for_section")
+def test_replace_table_properties(mock_get_width, mock_process_table):
+    """Test that _replace_table_properties processes tables by section correctly."""
+
+    # Create mock document and sections
+    doc = MagicMock()
+    section1 = MagicMock()
+    section2 = MagicMock()
+    doc.sections = [section1, section2]
+
+    # Set up mock tables
+    table1 = MagicMock()
+    table2 = MagicMock()
+    doc.tables = [table1, table2]
+
+    # Set up table elements
+    tbl_element1 = MagicMock()
+    tbl_element1.tag = "w:tbl"
+    tbl_element2 = MagicMock()
+    tbl_element2.tag = "w:tbl"
+
+    table1._element = tbl_element1
+    table2._element = tbl_element2
+
+    # Set up document body with table and section break elements
+    section_break = MagicMock()
+    section_break.tag = "w:sectPr"
+
+    doc.element.body = [tbl_element1, section_break, tbl_element2]
+
+    # Set up available width
+    max_width = 9144000
+    mock_get_width.return_value = max_width
+
+    # Call the function
+    _replace_table_properties(doc)
+
+    # Verify _get_available_content_width_for_section was called for each section
+    assert mock_get_width.call_count == 2
+
+    # Verify _process_table was called for tables in correct sections
+    assert mock_process_table.call_count == 2
+    mock_process_table.assert_any_call(table1, 0, max_width)
+    mock_process_table.assert_any_call(table2, 0, max_width)
 
 def test_replace_size_and_orientation_both_none():
     """Test that no modifications are made when both parameters are None."""
