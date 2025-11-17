@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.4.0...v1.5.0) (2025-11-17)
+
+
+### Features
+
+* export landscape page ([#85](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/85)) ([6a06b40](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/6a06b40b97bb547e042f87adcbdbc50dabd994e6)), closes [#84](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/84)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.121.1 ([db1473b](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/db1473be6159594db50e3c0fee39444e9e1a13b8))
+* **deps:** update dependency fastapi to v0.121.2 ([b914095](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b91409535294f8507d2ba0049dad6e220e6197c7))
+
 ## [1.4.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.3.0...v1.4.0) (2025-11-04)
 
 
