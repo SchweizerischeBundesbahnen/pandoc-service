@@ -8,7 +8,8 @@ from pptx.util import Inches
 
 # Standard slide sizes (width x height in inches)
 SLIDE_SIZES = {
-    "16:9": {"width": 10, "height": 5.625},      # Widescreen
+    "16:9": {"width": 10, "height": 5.63},       # 16:9 aspect ratio
+    "WIDESCREEN": {"width": 13.33, "height": 7.5},  # Widescreen
     "4:3": {"width": 10, "height": 7.5},         # Standard
     "LETTER": {"width": 10, "height": 7.5},      # Letter (same as 4:3)
     "LEDGER": {"width": 13.333, "height": 10},   # Ledger/Tabloid

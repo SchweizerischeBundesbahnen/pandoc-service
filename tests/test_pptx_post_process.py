@@ -116,6 +116,20 @@ def test_process_with_a3_slide_size():
     assert result_prs.slide_height == expected_height
 
 
+def test_process_with_widescreen_slide_size():
+    """Test processing PPTX with WIDESCREEN slide size."""
+    pptx_bytes = create_test_pptx()
+
+    result_bytes = process(pptx_bytes, slide_size="WIDESCREEN")
+    result_prs = Presentation(io.BytesIO(result_bytes))
+
+    expected_width = Inches(SLIDE_SIZES["WIDESCREEN"]["width"])
+    expected_height = Inches(SLIDE_SIZES["WIDESCREEN"]["height"])
+
+    assert result_prs.slide_width == expected_width
+    assert result_prs.slide_height == expected_height
+
+
 def test_apply_slide_size_none():
     """Test _apply_slide_size with None does nothing."""
     prs = Presentation()
@@ -152,7 +166,7 @@ def test_apply_slide_size_with_invalid_size():
 
 def test_slide_sizes_constant():
     """Test that SLIDE_SIZES constant has expected entries."""
-    expected_sizes = ["16:9", "4:3", "LETTER", "LEDGER", "A4", "A3"]
+    expected_sizes = ["16:9", "WIDESCREEN", "4:3", "LETTER", "LEDGER", "A4", "A3"]
 
     for size in expected_sizes:
         assert size in SLIDE_SIZES

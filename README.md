@@ -325,7 +325,7 @@ Pandoc Service provides the following endpoints:
 > | template             | optional | file      | Custom PPTX template file as multipart/form-data                                                     |
 > | encoding             | optional | string    | Encoding of provided source content (default: utf-8)                                                 |
 > | file_name            | optional | string    | Output filename (default: converted-document.pptx)                                                   |
-> | slide_size           | optional | string    | Slide size for the presentation. Supported values: 16:9, 4:3, A3, A4, LETTER, LEDGER                |
+> | slide_size           | optional | string    | Slide size for the presentation. Supported values: 16:9, WIDESCREEN, 4:3, A3, A4, LETTER, LEDGER   |
 
 ##### Responses
 
