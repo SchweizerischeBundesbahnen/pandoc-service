@@ -18,7 +18,7 @@ from app.PandocController import (
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
-    version, convert_docx_with_ref, get_request_body_limit_mb,
+    version, convert_docx_with_ref, convert_pptx_with_ref, get_request_body_limit_mb,
 )
 
 
@@ -1146,3 +1146,182 @@ def test_get_request_body_limit_mb_logging_message_content():
         assert "-1" in warning_message
         assert "is not positive" in warning_message
         assert "500 MB" in warning_message
+
+
+def create_mock_pptx() -> bytes:
+    """
+    Create a minimal valid PPTX file for testing.
+
+    :return: Bytes representing a valid PPTX file
+    """
+    files = {
+        "[Content_Types].xml": b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+    <Default Extension="xml" ContentType="application/xml"/>
+    <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+    <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>""",
+        "_rels/.rels": b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>""",
+        "ppt/presentation.xml": b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+    <p:sldIdLst>
+        <p:sldId id="256" r:id="rId1"/>
+    </p:sldIdLst>
+    <p:sldSz cx="9144000" cy="6858000"/>
+</p:presentation>""",
+        "ppt/_rels/presentation.xml.rels": b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>""",
+        "ppt/slides/slide1.xml": b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+    <p:cSld>
+        <p:spTree>
+            <p:nvGrpSpPr>
+                <p:cNvPr id="1" name=""/>
+                <p:cNvGrpSpPr/>
+                <p:nvPr/>
+            </p:nvGrpSpPr>
+            <p:grpSpPr/>
+        </p:spTree>
+    </p:cSld>
+</p:sld>""",
+    }
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename, content in files.items():
+            zf.writestr(filename, content)
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def test_get_pptx_template(mock_test_client):
+    """Test the pptx template retrieval endpoint."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
+    ):
+        # Mock file content and handling
+        mock_pptx_content = create_mock_pptx()
+        mock_file = MagicMock()
+        mock_file.read.return_value = mock_pptx_content
+        mock_path_open.return_value.__enter__.return_value = mock_file
+        mock_subprocess.return_value = MagicMock()
+
+        test_client = TestClient(app)
+        # Create test client and send request
+        response = test_client.get("/pptx-template")
+
+        # Assertions
+        assert response.status_code == 200
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+
+def test_convert_pptx_with_template(mock_test_client):
+    """Test conversion to PPTX with a template."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("time.time", return_value=1234567890),
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
+    ):
+        # Setup mocks for tempfile
+        mock_source_file = MagicMock()
+        mock_source_file.name = "source_file"
+        mock_output_file = MagicMock()
+        mock_output_file.name = "output_file"
+        # Return different mock file objects on successive calls
+        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
+
+        # Setup mock for file reading
+        mock_file = MagicMock()
+        mock_file.read.return_value = create_mock_pptx()
+        mock_path_open.return_value.__enter__.return_value = mock_file
+
+        # Prepare test data
+        source_format = "markdown"
+        source_content = b"# Test Markdown Content"
+        source_file = File(file=io.BytesIO(source_content), filename="source.md", content_type="text/markdown")
+
+        # Create a mock template file
+        template_file = File(file=io.BytesIO(create_mock_pptx()), filename="template.pptx", content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+        test_client = TestClient(app)
+        # Send POST request with source as file
+        response = test_client.post(f"/convert/{source_format}/to/pptx-with-template", files={"source": source_file, "template": template_file})
+
+        # Assertions
+        assert response.status_code == 200
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        assert response is mock_test_client.post.return_value
+
+
+def test_convert_pptx_without_template(mock_test_client):
+    """Test conversion to PPTX without a template."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("time.time", return_value=1234567890),
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
+    ):
+        # Setup mocks for tempfile
+        mock_source_file = MagicMock()
+        mock_source_file.name = "source_file"
+        mock_output_file = MagicMock()
+        mock_output_file.name = "output_file"
+        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
+
+        # Setup mock for file reading
+        mock_file = MagicMock()
+        mock_file.read.return_value = create_mock_pptx()
+        mock_path_open.return_value.__enter__.return_value = mock_file
+
+        # Prepare test data
+        source_format = "markdown"
+        source_content = b"# Test Markdown Content"
+        source_file = File(file=io.BytesIO(source_content), filename="source.md", content_type="text/markdown")
+
+        test_client = TestClient(app)
+        # Send POST request with source as file (no template)
+        response = test_client.post(f"/convert/{source_format}/to/pptx-with-template", files={"source": source_file})
+
+        # Assertions
+        assert response.status_code == 200
+        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        assert response is mock_test_client.post.return_value
+
+
+def test_postprocess_and_build_response_pptx():
+    """Test postprocess_and_build_response with PPTX format."""
+    with patch("app.PptxPostProcess.process") as mock_pptx_process:
+        mock_pptx_process.return_value = b"processed_pptx_content"
+
+        output = b"raw_pptx_content"
+        target_format = "pptx"
+        file_name = "test.pptx"
+        slide_size = "16:9"
+
+        response = postprocess_and_build_response(output, target_format, file_name, slide_size, None)
+
+        # Verify PptxPostProcess.process was called
+        mock_pptx_process.assert_called_once_with(output, slide_size)
+
+        # Verify response properties
+        assert response.status_code == 200
+        assert response.media_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        assert "attachment; filename=test.pptx" in response.headers.get("content-disposition")
