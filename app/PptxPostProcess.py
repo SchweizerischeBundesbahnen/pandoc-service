@@ -1,5 +1,6 @@
 import io
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -68,8 +69,6 @@ def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
 
 # Just for manual test purposes. Accepts path to pptx to process.
 def main() -> int:
-    import sys
-
     MIN_ARGS = 2  # script name + pptx path
     MAX_ARGS = 3  # script name + pptx path + slide_size
     PPTX_PATH_ARG_INDEX = 1

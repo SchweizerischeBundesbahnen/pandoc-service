@@ -468,7 +468,7 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
         pptx_template_file = form.get("template")
 
         if isinstance(pptx_template_file, str):
-            return process_error(Exception("Pptx template must be a File"), "Invalid template file", 400)
+            return process_error(Exception("PPTX template must be a File"), "Invalid template file", 400)
 
         if pptx_template_file:
             temp_template_filename = f"ref_{int(time.time())}.pptx"

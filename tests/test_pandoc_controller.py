@@ -1201,14 +1201,13 @@ def create_mock_pptx() -> bytes:
     return buffer.getvalue()
 
 
-def test_get_pptx_template(mock_test_client):
+def test_get_pptx_template():
     """Test the pptx template retrieval endpoint."""
     with (
         patch("subprocess.run") as mock_subprocess,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Mock file content and handling
         mock_pptx_content = create_mock_pptx()
@@ -1226,7 +1225,7 @@ def test_get_pptx_template(mock_test_client):
         assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
-def test_convert_pptx_with_template(mock_test_client):
+def test_convert_pptx_with_template():
     """Test conversion to PPTX with a template."""
     with (
         patch("subprocess.run") as mock_subprocess,
@@ -1235,7 +1234,6 @@ def test_convert_pptx_with_template(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -1265,10 +1263,9 @@ def test_convert_pptx_with_template(mock_test_client):
         # Assertions
         assert response.status_code == 200
         assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        assert response is mock_test_client.post.return_value
 
 
-def test_convert_pptx_without_template(mock_test_client):
+def test_convert_pptx_without_template():
     """Test conversion to PPTX without a template."""
     with (
         patch("subprocess.run") as mock_subprocess,
@@ -1277,7 +1274,6 @@ def test_convert_pptx_without_template(mock_test_client):
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -1303,7 +1299,6 @@ def test_convert_pptx_without_template(mock_test_client):
         # Assertions
         assert response.status_code == 200
         assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        assert response is mock_test_client.post.return_value
 
 
 def test_postprocess_and_build_response_pptx():
