@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.0...v1.5.1) (2025-11-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency asgiref to v3.11.0 ([29b1c20](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/29b1c208293ec3adb40f95f72f3437eb76c6b638))
+* **deps:** update dependency fastapi to v0.121.3 ([1ddadaa](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1ddadaa1b10a74688a8e6b15f8a1a747a3e71b6f))
+
 ## [1.5.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.4.0...v1.5.0) (2025-11-17)
 
 
