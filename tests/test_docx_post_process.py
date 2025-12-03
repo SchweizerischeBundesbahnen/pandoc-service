@@ -918,3 +918,65 @@ class TestProcessFunction:
         result_doc = Document(io.BytesIO(result))
         assert len(result_doc.paragraphs) > 0
         assert len(result_doc.tables) > 0
+
+
+def test_parser_supports_large_xml_documents():
+    """Test that the XML parser is configured to handle large documents (XML_PARSE_HUGE).
+
+    This test verifies that the parser patch in DocxPostProcess enables huge_tree=True,
+    which is required to parse DOCX files with XML content exceeding 10MB.
+    Without this patch, lxml raises 'Buffer size limit exceeded' errors.
+    """
+    from docx.oxml import parser as docx_parser
+
+    # Create large XML content that would exceed the default 10MB buffer limit
+    large_content = "x" * (11 * 1024 * 1024)  # 11MB of content
+    large_xml = f'<root><data>{large_content}</data></root>'.encode("utf-8")
+
+    # Parse using the patched python-docx parser - should not raise XMLSyntaxError
+    # This would fail with "Buffer size limit exceeded" if huge_tree is not enabled
+    result = etree.fromstring(large_xml, docx_parser.oxml_parser)
+    assert result is not None
+    assert result.tag == "root"
+
+
+def test_process_document_with_large_content():
+    """Test that process() can handle documents with large content.
+
+    This is an integration test that creates a DOCX with substantial content
+    and verifies it can be processed without XML buffer errors.
+    """
+    from docx import Document
+    import io
+
+    # Create a document with a lot of content (multiple paragraphs)
+    doc = Document()
+
+    # Add many paragraphs to create a larger document
+    large_text = "Lorem ipsum dolor sit amet. " * 1000  # ~30KB per paragraph
+    for _ in range(10):
+        doc.add_paragraph(large_text)
+
+    # Add a table with content
+    table = doc.add_table(rows=5, cols=5)
+    for row in table.rows:
+        for cell in row.cells:
+            cell.text = "Cell content " * 100
+
+    # Save to bytes
+    docx_bytes = io.BytesIO()
+    doc.save(docx_bytes)
+    docx_bytes.seek(0)
+    input_bytes = docx_bytes.getvalue()
+
+    # Process should succeed without raising XMLSyntaxError
+    result = DocxPostProcess.process(input_bytes, paper_size="A4")
+
+    # Verify result is valid
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+
+    # Verify the result can be opened as a valid DOCX
+    result_doc = Document(io.BytesIO(result))
+    assert len(result_doc.paragraphs) >= 10
+    assert len(result_doc.tables) >= 1

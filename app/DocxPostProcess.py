@@ -7,10 +7,18 @@ from typing import Any
 from docx import Document
 from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
+from docx.oxml import parser as docx_parser
 from docx.oxml.ns import nsdecls
 from docx.section import Section
 from docx.table import Table, _Cell
 from lxml import etree  # type: ignore
+
+# Patch the python-docx parser to handle large XML documents (> 10MB)
+# This enables the XML_PARSE_HUGE flag to avoid "Buffer size limit exceeded" errors
+# when processing documents with large embedded content (e.g., base64-encoded images)
+_huge_tree_parser = etree.XMLParser(remove_blank_text=True, resolve_entities=False, huge_tree=True)
+_huge_tree_parser.set_element_class_lookup(docx_parser.element_class_lookup)
+docx_parser.oxml_parser = _huge_tree_parser
 
 SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -125,7 +133,7 @@ def _set_orientation(sect_pr: Any, pg_sz: Any, orientation: str) -> None:
         del pg_sz.attrib[f"{{{SCHEMA}}}orient"]
 
 
-def _replace_table_properties(doc: DocumentObject) -> None: # NOSONAR  # needed by design
+def _replace_table_properties(doc: DocumentObject) -> None:  # NOSONAR  # needed by design
     # Group tables by their section
     for target_index, section in enumerate(doc.sections):
         max_width = _get_available_content_width_for_section(section)
@@ -135,11 +143,11 @@ def _replace_table_properties(doc: DocumentObject) -> None: # NOSONAR  # needed 
 
         for element in doc.element.body:
             # Section break
-            if element.tag.endswith('sectPr'):
+            if element.tag.endswith("sectPr"):
                 current_section_index += 1
 
             # Table element
-            elif element.tag.endswith('tbl') and current_section_index == target_index:
+            elif element.tag.endswith("tbl") and current_section_index == target_index:
                 for table in doc.tables:
                     if table._element == element:
                         tables_in_section.append(table)
@@ -182,9 +190,7 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int) -> N
 
 def _get_available_content_width_for_section(section: Section) -> int:
     # Provide alternative 'Letter' paper size params in case if they were not set explicitly in the document
-    return int((section.page_width or DOCX_LETTER_WIDTH_EMU) -
-               (section.left_margin or DOCX_LETTER_SIDE_MARGIN) -
-               (section.right_margin or DOCX_LETTER_SIDE_MARGIN))
+    return int((section.page_width or DOCX_LETTER_WIDTH_EMU) - (section.left_margin or DOCX_LETTER_SIDE_MARGIN) - (section.right_margin or DOCX_LETTER_SIDE_MARGIN))
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
