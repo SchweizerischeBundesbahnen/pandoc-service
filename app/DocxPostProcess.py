@@ -190,7 +190,10 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int) -> N
 
 def _get_available_content_width_for_section(section: Section) -> int:
     # Provide alternative 'Letter' paper size params in case if they were not set explicitly in the document
-    return int((section.page_width or DOCX_LETTER_WIDTH_EMU) - (section.left_margin or DOCX_LETTER_SIDE_MARGIN) - (section.right_margin or DOCX_LETTER_SIDE_MARGIN))
+    page_width = section.page_width or DOCX_LETTER_WIDTH_EMU
+    left_margin = section.left_margin or DOCX_LETTER_SIDE_MARGIN
+    right_margin = section.right_margin or DOCX_LETTER_SIDE_MARGIN
+    return int(page_width - left_margin - right_margin)
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
