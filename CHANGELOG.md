@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.5.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.0...v1.5.1) (2025-12-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency asgiref to v3.11.0 ([29b1c20](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/29b1c208293ec3adb40f95f72f3437eb76c6b638))
+* **deps:** update dependency fastapi to v0.121.3 ([1ddadaa](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1ddadaa1b10a74688a8e6b15f8a1a747a3e71b6f))
+* **deps:** update dependency fastapi to v0.122.0 ([e4e6991](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e4e69917813ba5df30e4aca464253e055006c3fa))
+* **deps:** update dependency fastapi to v0.123.0 ([3ade322](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3ade322e50fd49812db82f4dc74fa172e12d2ead))
+* **deps:** update dependency fastapi to v0.123.10 ([8ddd56c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/8ddd56cbb970dadd844e7158cb9d8abe27f7804b))
+* **deps:** update dependency fastapi to v0.123.4 ([25de981](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/25de9813e486100b832979c4d613935f1b0c3cf0))
+* **deps:** update dependency fastapi to v0.123.5 ([9d36ac7](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9d36ac70e949db566b5d05af85933ed271a93bbc))
+* **deps:** update dependency fastapi to v0.123.7 ([2246d51](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2246d5163eebab9b90168b0123567cf590f220ed))
+* **deps:** update dependency fastapi to v0.123.9 ([da58329](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/da58329877a6f309b4714889c89a47134992fcb7))
+* **deps:** update dependency fastapi to v0.124.0 ([3980c4d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3980c4d33332e43bd9f02a1f8aa5468c9f406825))
+* **deps:** update dependency jgm/pandoc to v3.8.3 ([261f875](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/261f8751b3d3188558179d206b3b34eee0cce539))
+* patch XML parser to handle large documents ([#90](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/90)) ([e71bd8d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e71bd8d425e02e8a9825e6f7823d7c29fea8798d)), closes [#89](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/89)
+
 ## [1.5.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.4.0...v1.5.0) (2025-11-17)
 
 
