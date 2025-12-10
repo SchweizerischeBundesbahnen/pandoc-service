@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.1...v1.5.2) (2025-12-10)
+
+
+### Bug Fixes
+
+* patch XML parser to handle large documents ([#92](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/92)) ([d5f9b0e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d5f9b0e22167e76286ddd386b7ee601ba8f9f82b)), closes [#91](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/91)
+
 ## [1.5.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.0...v1.5.1) (2025-12-08)
 
 
