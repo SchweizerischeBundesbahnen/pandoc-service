@@ -980,3 +980,74 @@ def test_process_document_with_large_content():
     result_doc = Document(io.BytesIO(result))
     assert len(result_doc.paragraphs) >= 10
     assert len(result_doc.tables) >= 1
+
+
+def test_resize_images_in_cell_handles_large_xml():
+    """Test that _resize_images_in_cell uses huge_tree parser for large XML content.
+
+    This test verifies that the function can handle cells with XML content
+    exceeding the default 10MB buffer limit (e.g., large base64-encoded images).
+    Without the huge_tree parser, lxml raises 'Buffer size limit exceeded' errors.
+    """
+    # Create a mock cell with very large XML content (simulating a large base64 image)
+    cell = MagicMock(spec=_Cell)
+
+    # Create large content that exceeds 10MB default buffer limit
+    # Using ~11MB of base64-like data to trigger the buffer limit
+    large_base64_data = "A" * (11 * 1024 * 1024)  # 11MB of data
+
+    large_cell_xml = f'''
+    <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
+          xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+          xmlns:a="{DRAWING_ML_MAIN_SCHEMA}"
+          xmlns:pic="{DRAWING_ML_PICTURE_SCHEMA}"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <w:tcPr/>
+        <w:p>
+            <w:r>
+                <w:drawing>
+                    <wp:inline>
+                        <wp:extent cx="1000000" cy="750000"/>
+                        <a:graphic>
+                            <a:graphicData>
+                                <pic:pic>
+                                    <pic:blipFill>
+                                        <a:blip r:embed="rId5"/>
+                                        <a:srcRect/>
+                                        <a:stretch>
+                                            <a:fillRect/>
+                                        </a:stretch>
+                                    </pic:blipFill>
+                                    <pic:spPr>
+                                        <a:xfrm>
+                                            <a:ext cx="1000000" cy="750000"/>
+                                        </a:xfrm>
+                                    </pic:spPr>
+                                </pic:pic>
+                            </a:graphicData>
+                        </a:graphic>
+                    </wp:inline>
+                </w:drawing>
+                <!-- Large embedded data simulating base64 image content -->
+                <w:t>{large_base64_data}</w:t>
+            </w:r>
+        </w:p>
+    </w:tc>
+    '''
+
+    # Set up the mock cell
+    mock_tc = MagicMock()
+    mock_tc.xml = large_cell_xml
+    cell._tc = mock_tc
+
+    # Set a max width that won't trigger resizing (larger than image)
+    max_width = 2000000
+
+    # This should NOT raise XMLSyntaxError: Buffer size limit exceeded
+    # If _huge_tree_parser is not used, this would fail with:
+    # lxml.etree.XMLSyntaxError: Resource limit exceeded: Buffer size limit exceeded
+    DocxPostProcess._resize_images_in_cell(cell, max_width)
+
+    # Verify the function completed without raising an exception
+    # (no resizing needed since image width < max_width, so clear_content not called)
+    mock_tc.clear_content.assert_not_called()

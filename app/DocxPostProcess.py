@@ -199,7 +199,8 @@ def _get_available_content_width_for_section(section: Section) -> int:
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
     cell_xml = cell._tc.xml
     # ruff: noqa: S320
-    tree = etree.fromstring(cell_xml)
+    # Use huge_tree parser to handle cells with large content (e.g., base64-encoded images > 10MB)
+    tree = etree.fromstring(cell_xml, docx_parser.oxml_parser)
 
     # Find all <wp:extent> elements that define image size
     extent_elements = tree.findall(
