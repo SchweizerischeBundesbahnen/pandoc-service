@@ -103,6 +103,10 @@ module = "docx.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "pptx.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = [
     "pydantic.*",
     "starlette.*",

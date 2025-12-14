@@ -36,7 +36,7 @@ def process(pptx_bytes: bytes, slide_size: str | None = None) -> bytes:
     return out.getvalue()
 
 
-def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
+def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:  # type: ignore[valid-type]
     """
     Apply slide size to a presentation.
 
@@ -60,8 +60,8 @@ def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
     height = Inches(slide_dims["height"])
 
     # Apply the slide size to the presentation
-    prs.slide_width = width
-    prs.slide_height = height
+    prs.slide_width = width  # type: ignore[attr-defined]
+    prs.slide_height = height  # type: ignore[attr-defined]
 
     logging.debug(f'Applied slide size {slide_size_upper}: {slide_dims["width"]}" x {slide_dims["height"]}"')
 
