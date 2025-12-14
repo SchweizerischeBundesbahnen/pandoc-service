@@ -918,3 +918,136 @@ class TestProcessFunction:
         result_doc = Document(io.BytesIO(result))
         assert len(result_doc.paragraphs) > 0
         assert len(result_doc.tables) > 0
+
+
+def test_parser_supports_large_xml_documents():
+    """Test that the XML parser is configured to handle large documents (XML_PARSE_HUGE).
+
+    This test verifies that the parser patch in DocxPostProcess enables huge_tree=True,
+    which is required to parse DOCX files with XML content exceeding 10MB.
+    Without this patch, lxml raises 'Buffer size limit exceeded' errors.
+    """
+    from docx.oxml import parser as docx_parser
+
+    # Create large XML content that would exceed the default 10MB buffer limit
+    large_content = "x" * (11 * 1024 * 1024)  # 11MB of content
+    large_xml = f'<root><data>{large_content}</data></root>'.encode("utf-8")
+
+    # Parse using the patched python-docx parser - should not raise XMLSyntaxError
+    # This would fail with "Buffer size limit exceeded" if huge_tree is not enabled
+    result = etree.fromstring(large_xml, docx_parser.oxml_parser)
+    assert result is not None
+    assert result.tag == "root"
+
+
+def test_process_document_with_large_content():
+    """Test that process() can handle documents with large content.
+
+    This is an integration test that creates a DOCX with substantial content
+    and verifies it can be processed without XML buffer errors.
+    """
+    from docx import Document
+    import io
+
+    # Create a document with a lot of content (multiple paragraphs)
+    doc = Document()
+
+    # Add many paragraphs to create a larger document
+    large_text = "Lorem ipsum dolor sit amet. " * 1000  # ~30KB per paragraph
+    for _ in range(10):
+        doc.add_paragraph(large_text)
+
+    # Add a table with content
+    table = doc.add_table(rows=5, cols=5)
+    for row in table.rows:
+        for cell in row.cells:
+            cell.text = "Cell content " * 100
+
+    # Save to bytes
+    docx_bytes = io.BytesIO()
+    doc.save(docx_bytes)
+    docx_bytes.seek(0)
+    input_bytes = docx_bytes.getvalue()
+
+    # Process should succeed without raising XMLSyntaxError
+    result = DocxPostProcess.process(input_bytes, paper_size="A4")
+
+    # Verify result is valid
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+
+    # Verify the result can be opened as a valid DOCX
+    result_doc = Document(io.BytesIO(result))
+    assert len(result_doc.paragraphs) >= 10
+    assert len(result_doc.tables) >= 1
+
+
+def test_resize_images_in_cell_handles_large_xml():
+    """Test that _resize_images_in_cell uses huge_tree parser for large XML content.
+
+    This test verifies that the function can handle cells with XML content
+    exceeding the default 10MB buffer limit (e.g., large base64-encoded images).
+    Without the huge_tree parser, lxml raises 'Buffer size limit exceeded' errors.
+    """
+    # Create a mock cell with very large XML content (simulating a large base64 image)
+    cell = MagicMock(spec=_Cell)
+
+    # Create large content that exceeds 10MB default buffer limit
+    # Using ~11MB of base64-like data to trigger the buffer limit
+    large_base64_data = "A" * (11 * 1024 * 1024)  # 11MB of data
+
+    large_cell_xml = f'''
+    <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
+          xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+          xmlns:a="{DRAWING_ML_MAIN_SCHEMA}"
+          xmlns:pic="{DRAWING_ML_PICTURE_SCHEMA}"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <w:tcPr/>
+        <w:p>
+            <w:r>
+                <w:drawing>
+                    <wp:inline>
+                        <wp:extent cx="1000000" cy="750000"/>
+                        <a:graphic>
+                            <a:graphicData>
+                                <pic:pic>
+                                    <pic:blipFill>
+                                        <a:blip r:embed="rId5"/>
+                                        <a:srcRect/>
+                                        <a:stretch>
+                                            <a:fillRect/>
+                                        </a:stretch>
+                                    </pic:blipFill>
+                                    <pic:spPr>
+                                        <a:xfrm>
+                                            <a:ext cx="1000000" cy="750000"/>
+                                        </a:xfrm>
+                                    </pic:spPr>
+                                </pic:pic>
+                            </a:graphicData>
+                        </a:graphic>
+                    </wp:inline>
+                </w:drawing>
+                <!-- Large embedded data simulating base64 image content -->
+                <w:t>{large_base64_data}</w:t>
+            </w:r>
+        </w:p>
+    </w:tc>
+    '''
+
+    # Set up the mock cell
+    mock_tc = MagicMock()
+    mock_tc.xml = large_cell_xml
+    cell._tc = mock_tc
+
+    # Set a max width that won't trigger resizing (larger than image)
+    max_width = 2000000
+
+    # This should NOT raise XMLSyntaxError: Buffer size limit exceeded
+    # If _huge_tree_parser is not used, this would fail with:
+    # lxml.etree.XMLSyntaxError: Resource limit exceeded: Buffer size limit exceeded
+    DocxPostProcess._resize_images_in_cell(cell, max_width)
+
+    # Verify the function completed without raising an exception
+    # (no resizing needed since image width < max_width, so clear_content not called)
+    mock_tc.clear_content.assert_not_called()

@@ -5,7 +5,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 from typing import NamedTuple
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 from starlette.responses import Response
@@ -245,6 +245,7 @@ def test_convert_docx_with_template(mock_test_client):
         patch("time.time", return_value=1234567890),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("anyio.open_file") as mock_anyio_open,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
@@ -256,6 +257,11 @@ def test_convert_docx_with_template(mock_test_client):
         mock_output_file.name = "output_file"  # Removed /tmp prefix for security
         # Return different mock file objects on successive calls
         mock_tempfile.side_effect = [mock_source_file, mock_output_file]
+
+        # Setup mock for anyio.open_file (used for template file)
+        mock_anyio_file = MagicMock()
+        mock_anyio_file.write = AsyncMock()
+        mock_anyio_open.return_value.__aenter__.return_value = mock_anyio_file
 
         # Setup mock for file reading
         mock_file = MagicMock()
@@ -290,6 +296,7 @@ def test_convert_docx_with_template_using_file(mock_test_client):
         patch("time.time", return_value=1234567890),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("anyio.open_file") as mock_anyio_open,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
@@ -301,6 +308,11 @@ def test_convert_docx_with_template_using_file(mock_test_client):
         mock_output_file.name = "output_file"
         # Return different mock file objects on successive calls
         mock_tempfile.side_effect = [mock_source_file, mock_output_file]
+
+        # Setup mock for anyio.open_file (used for template file)
+        mock_anyio_file = MagicMock()
+        mock_anyio_file.write = AsyncMock()
+        mock_anyio_open.return_value.__aenter__.return_value = mock_anyio_file
 
         # Setup mock for file reading
         mock_file = MagicMock()
@@ -970,7 +982,7 @@ def test_docx_with_template_encoding():
     with (
         patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
         patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
-        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("anyio.open_file") as mock_anyio_open,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("time.time", return_value=1234567890),
@@ -978,8 +990,8 @@ def test_docx_with_template_encoding():
         # Set up mocks
         mock_run_conversion.return_value = b"Converted content"
         mock_file = MagicMock()
-        mock_file.write = MagicMock()
-        mock_path_open.return_value.__enter__.return_value = mock_file
+        mock_file.write = AsyncMock()
+        mock_anyio_open.return_value.__aenter__.return_value = mock_file
 
         # Create mock response
         mock_response = MagicMock()
