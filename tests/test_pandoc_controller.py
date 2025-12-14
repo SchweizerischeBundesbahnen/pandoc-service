@@ -1216,17 +1216,22 @@ def create_mock_pptx() -> bytes:
 def test_get_pptx_template():
     """Test the pptx template retrieval endpoint."""
     with (
-        patch("subprocess.run") as mock_subprocess,
+        patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
     ):
+        # Mock the anyio.run_process to avoid calling the real pandoc
+        process_mock = MagicMock()
+        process_mock.returncode = 0
+        mock_run_process.return_value = process_mock
+
         # Mock file content and handling
         mock_pptx_content = create_mock_pptx()
         mock_file = MagicMock()
         mock_file.read.return_value = mock_pptx_content
         mock_path_open.return_value.__enter__.return_value = mock_file
-        mock_subprocess.return_value = MagicMock()
 
         test_client = TestClient(app)
         # Create test client and send request
@@ -1246,6 +1251,7 @@ def test_convert_pptx_with_template():
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -1286,6 +1292,7 @@ def test_convert_pptx_without_template():
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()

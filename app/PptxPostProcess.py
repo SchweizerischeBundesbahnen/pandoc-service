@@ -2,20 +2,19 @@ import io
 import logging
 import sys
 from pathlib import Path
-from typing import Any
 
 from pptx import Presentation
 from pptx.util import Inches
 
 # Standard slide sizes (width x height in inches)
 SLIDE_SIZES = {
-    "16:9": {"width": 10, "height": 5.63},       # 16:9 aspect ratio
+    "16:9": {"width": 10, "height": 5.63},  # 16:9 aspect ratio
     "WIDESCREEN": {"width": 13.33, "height": 7.5},  # Widescreen
-    "4:3": {"width": 10, "height": 7.5},         # Standard
-    "LETTER": {"width": 10, "height": 7.5},      # Letter (same as 4:3)
-    "LEDGER": {"width": 13.333, "height": 10},   # Ledger/Tabloid
-    "A4": {"width": 10.833, "height": 7.5},      # A4
-    "A3": {"width": 14, "height": 10.5},         # A3
+    "4:3": {"width": 10, "height": 7.5},  # Standard
+    "LETTER": {"width": 10, "height": 7.5},  # Letter (same as 4:3)
+    "LEDGER": {"width": 13.333, "height": 10},  # Ledger/Tabloid
+    "A4": {"width": 10.833, "height": 7.5},  # A4
+    "A3": {"width": 14, "height": 10.5},  # A3
 }
 
 
@@ -64,7 +63,7 @@ def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
     prs.slide_width = width
     prs.slide_height = height
 
-    logging.debug(f"Applied slide size {slide_size_upper}: {slide_dims['width']}\" x {slide_dims['height']}\"")
+    logging.debug(f'Applied slide size {slide_size_upper}: {slide_dims["width"]}" x {slide_dims["height"]}"')
 
 
 # Just for manual test purposes. Accepts path to pptx to process.

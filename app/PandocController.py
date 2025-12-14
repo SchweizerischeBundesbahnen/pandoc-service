@@ -17,8 +17,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app.schema import VersionSchema
 
-from . import DocxPostProcess
-from . import PptxPostProcess
+from . import DocxPostProcess, PptxPostProcess
 
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 CUSTOM_REFERENCE_PPTX = "custom-reference.pptx"
@@ -95,10 +94,7 @@ FILE_EXTENSIONS = {
 }
 
 # Build default options dynamically
-DEFAULT_CONVERSION_OPTIONS = [
-    "--track-changes=all",
-    f"--lua-filter={FILTERS['page_break']}"
-]
+DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all", f"--lua-filter={FILTERS['page_break']}"]
 
 app = FastAPI(
     openapi_url="/static/openapi.json",
