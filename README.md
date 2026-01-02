@@ -284,3 +284,76 @@ Pandoc Service provides the following endpoints:
 > ```
 
 </details>
+
+------------------------------------------------------------------------------------------
+
+#### Getting pptx template
+
+<details>
+  <summary>
+    <code>GET</code> <code>/pptx-template</code>
+  </summary>
+
+##### Responses
+
+> | HTTP code | Content-Type                                                                   | Response                      |
+> |-----------|--------------------------------------------------------------------------------|-------------------------------|
+> | `200`     | `application/vnd.openxmlformats-officedocument.presentationml.presentation`    | binary presentation content   |
+
+##### Example cURL
+
+> ```bash
+>  curl -X GET http://localhost:9082/pptx-template --output reference.pptx
+> ```
+
+</details>
+
+------------------------------------------------------------------------------------------
+
+#### Convert to PPTX with custom template
+
+<details>
+  <summary>
+    <code>POST</code> <code>/convert/{source_format}/to/pptx-with-template</code>
+  </summary>
+
+##### Parameters
+
+> | Parameter name       | Type     | Data type | Description                                                                                          |
+> |----------------------|----------|-----------|------------------------------------------------------------------------------------------------------|
+> | source               | required | file      | Source content as multipart/form-data                                                                |
+> | template             | optional | file      | Custom PPTX template file as multipart/form-data                                                     |
+> | encoding             | optional | string    | Encoding of provided source content (default: utf-8)                                                 |
+> | file_name            | optional | string    | Output filename (default: converted-document.pptx)                                                   |
+> | slide_size           | optional | string    | Slide size for the presentation. Supported values: 16:9, WIDESCREEN, 4:3, A3, A4, LETTER, LEDGER   |
+
+##### Responses
+
+> | HTTP code | Content-Type                                                                   | Response                      |
+> |-----------|--------------------------------------------------------------------------------|-------------------------------|
+> | `200`     | `application/vnd.openxmlformats-officedocument.presentationml.presentation`    | PPTX presentation (binary)    |
+> | `400`     | `plain/text`                                                                   | Error message with exception  |
+> | `500`     | `plain/text`                                                                   | Error message with exception  |
+
+##### Example cURL
+
+> ```bash
+> curl -X POST -F "source=@input.html" http://localhost:9082/convert/html/to/pptx-with-template --output output.pptx
+> ```
+>
+> With custom template:
+> ```bash
+> curl -X POST -F "source=@input.md" -F "template=@custom-template.pptx" http://localhost:9082/convert/markdown/to/pptx-with-template --output output.pptx
+> ```
+>
+> With custom slide size:
+> ```bash
+> curl -X POST -F "source=@input.html" "http://localhost:9082/convert/html/to/pptx-with-template?slide_size=16:9" --output output.pptx
+> ```
+>
+> With both template and slide size:
+> ```bash
+> curl -X POST -F "source=@input.md" -F "template=@custom-template.pptx" "http://localhost:9082/convert/markdown/to/pptx-with-template?slide_size=4:3" --output output.pptx
+> ```
+
+</details>
