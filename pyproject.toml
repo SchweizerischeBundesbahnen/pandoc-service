@@ -29,6 +29,7 @@ packages = [{include = "app"}]
 # for more information check comments above
 [tool.poetry.dependencies]
 python-docx = "1.2.0"
+python-pptx = "1.0.2"
 fastapi = "0.128.0"
 uvicorn = "0.40.0"
 python-multipart = "0.0.21"
@@ -99,6 +100,10 @@ exclude = "tests/.*"
 
 [[tool.mypy.overrides]]
 module = "docx.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pptx.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
