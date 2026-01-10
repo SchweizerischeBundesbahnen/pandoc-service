@@ -13,18 +13,12 @@ commandTests:
     command: poetry
     args: [--version]
     expectedOutput: [version 2.*.*]
-  - name: Tini installation - check that the tini binary is in the correct location
-    command: which
-    args: [tini]
-    expectedOutput: [/sbin/tini]
-  - name: Tini version is correct
-    command: tini
-    args: [--version]
-    expectedOutput: [tini version 0.19.*]
+  # Note: Tini was replaced with Docker's --init flag (see issue #32)
+  # Use 'docker run --init' or 'init: true' in docker-compose.yaml
   - name: Pandoc version is correct
     command: poetry
     args: [run, pandoc, --version]
-    expectedOutput: [2.*.*]
+    expectedOutput: [pandoc 3.*.*]
   - name: Tox should not be installed
     command: poetry
     args: [run, tox, --version]
