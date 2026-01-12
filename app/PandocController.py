@@ -430,7 +430,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913
         return postprocess_and_build_response(output, "docx", file_name, paper_size, orientation)
 
     except Exception as e:
-        return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST)
+        return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
     finally:
         if temp_template_filename is not None and Path(temp_template_filename).exists():
             Path(temp_template_filename).unlink()
@@ -546,7 +546,7 @@ async def convert(  # noqa: PLR0913
         return postprocess_and_build_response(output, target_format, file_name, paper_size, orientation)
 
     except Exception as e:
-        return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST)
+        return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
 
 
 async def get_docx_source_data(source_content: starlette.datastructures.UploadFile | str | None, encoding: str | None) -> bytes | str | None:
