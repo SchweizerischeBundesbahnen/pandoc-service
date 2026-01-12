@@ -57,7 +57,9 @@ repos:
     rev: 2.2.1
     hooks:
       - id: poetry-lock
+        language_version: python3.13
       - id: poetry-check
+        language_version: python3.13
   - repo: https://github.com/zricethezav/gitleaks
     rev: v8.30.0
     hooks:
