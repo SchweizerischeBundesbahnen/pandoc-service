@@ -61,4 +61,6 @@ def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
     prs.slide_width = width  # type: ignore[attr-defined]
     prs.slide_height = height  # type: ignore[attr-defined]
 
-    logging.debug(f'Applied slide size {slide_size_upper}: {slide_dims["width"]}" x {slide_dims["height"]}"')
+    # Sanitize user input for logging to prevent log injection (CWE-117)
+    safe_slide_size = slide_size_upper.replace("\r\n", "").replace("\n", "")
+    logging.debug(f'Applied slide size {safe_slide_size}: {slide_dims["width"]}" x {slide_dims["height"]}"')
