@@ -18,9 +18,10 @@ from starlette.formparsers import MultiPartParser
 
 from app.schema import VersionSchema
 
-from . import DocxPostProcess
+from . import DocxPostProcess, PptxPostProcess
 
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
+CUSTOM_REFERENCE_PPTX = "custom-reference.pptx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
 FILTER_BASE_PATH = "/usr/local/share/pandoc/filters"
 
@@ -41,13 +42,14 @@ ALLOWED_PANDOC_OPTIONS = [
 
 # Add other allowed formats as needed
 ALLOWED_SOURCE_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile"]
-ALLOWED_TARGET_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "odt", "pdf", "plain", "rtf", "textile"]
+ALLOWED_TARGET_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "odt", "pdf", "plain", "pptx", "rtf", "textile"]
 
 MIME_TYPES = {
     "html": "text/html",
     "html5": "text/html",
     "pdf": "application/pdf",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "odt": "application/vnd.oasis.opendocument.text",
     "epub": "application/epub+zip",
     "markdown": "text/markdown",
@@ -227,6 +229,50 @@ async def get_docx_template():  # type: ignore
             Path.unlink(path)
 
 
+@app.get(
+    "/pptx-template",
+    summary="Download PPTX template",
+    description="Get the default PPTX template for presentation conversion",
+    responses={
+        200: {
+            "description": "Success",
+            "content": {MIME_TYPES["pptx"]: {}},
+        },
+        422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
+        500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
+    },
+)
+async def get_pptx_template():  # type: ignore
+    path = Path(CUSTOM_REFERENCE_PPTX)
+    try:
+        # ruff: noqa: S603
+        proc = await anyio.run_process(
+            [
+                PANDOC_PATH,
+                "-o",
+                "custom-reference.pptx",
+                "--print-default-data-file",
+                "reference.pptx",
+            ],
+            check=True,
+        )
+        if proc.returncode != 0:
+            return process_error(Exception(f"Process failed with return code {proc.returncode}"), "An internal error has occurred while generating the template", 500)
+
+        async with await anyio.open_file(path, "rb") as f:
+            pptx_content = await f.read()
+
+        response = StreamingResponse(
+            io.BytesIO(pptx_content),
+            headers={"Content-Disposition": "attachment; filename=reference.pptx"},
+            media_type=MIME_TYPES["pptx"],
+        )
+        return response
+    finally:
+        if Path.exists(path):
+            Path.unlink(path)
+
+
 def _validate_pandoc_options(options: list[str]) -> list[str]:
     """
     Validate pandoc options against the whitelist to prevent command injection.
@@ -390,6 +436,68 @@ async def convert_docx_with_ref(  # noqa: PLR0913
 
 
 @app.post(
+    "/convert/{source_format}/to/pptx-with-template",
+    summary="Convert to PPTX with a template",
+    description="Converts a source document to PPTX format with an optional template file.",
+    responses={
+        200: {
+            "description": "Success",
+            "content": {MIME_TYPES["pptx"]: {}},
+        },
+        400: {"description": "Bad request.", "content": {MIME_TYPES["txt"]: {}}},
+        413: {"description": "Request body too large.", "content": {MIME_TYPES["txt"]: {}}},
+        422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
+    },
+)
+async def convert_pptx_with_ref(  # noqa: PLR0913
+    request: Request,
+    source_format: str,
+    encoding: str | None = None,
+    file_name: str = "converted-document.pptx",
+    slide_size: str | None = None,
+) -> Response:
+    temp_template_filename = None
+    try:
+        form = await request.form(max_part_size=data_limit)
+        source_content = form.get("source")
+        source = await get_docx_source_data(source_content, encoding)
+        if not source:
+            return process_error(Exception("No source file"), "No data or file provided using key 'source'", 400)
+
+        # Optional pptx template file
+        pptx_template_file = form.get("template")
+
+        if isinstance(pptx_template_file, str):
+            return process_error(Exception("PPTX template must be a File"), "Invalid template file", 400)
+
+        if pptx_template_file:
+            temp_template_filename = f"ref_{int(time.time())}.pptx"
+            async with await anyio.open_file(temp_template_filename, "wb") as f:
+                await f.write(await pptx_template_file.read())
+
+        # Build conversion options including template if provided
+        options = DEFAULT_CONVERSION_OPTIONS.copy()
+
+        extended_options = form.get("options")
+        if isinstance(extended_options, str):
+            options.append(extended_options)
+
+        if temp_template_filename is not None:
+            options.append(f"--reference-doc={temp_template_filename}")
+
+        # Convert using subprocess instead of pandoc module
+        output = run_pandoc_conversion(source, source_format, "pptx", options)
+
+        return postprocess_and_build_response(output, "pptx", file_name, slide_size, None)
+
+    except Exception as e:
+        return process_error(e, "Bad request", 400)
+    finally:
+        if temp_template_filename is not None and Path(temp_template_filename).exists():
+            Path(temp_template_filename).unlink()
+
+
+@app.post(
     "/convert/{source_format}/to/{target_format}",
     summary="Convert document between formats",
     description="Converts document from source format to target format",
@@ -452,6 +560,9 @@ async def get_docx_source_data(source_content: starlette.datastructures.UploadFi
 def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None) -> Response:
     if target_format == "docx":
         output = DocxPostProcess.process(output, paper_size, orientation)
+    elif target_format == "pptx":
+        # For PPTX, paper_size parameter is repurposed as slide_size
+        output = PptxPostProcess.process(output, paper_size)
     mime_type = MIME_TYPES.get(target_format, DEFAULT_MIME_TYPE)
 
     response = Response(output, media_type=mime_type, status_code=200)
