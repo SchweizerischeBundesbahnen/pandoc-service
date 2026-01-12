@@ -1,7 +1,5 @@
 import io
 import logging
-import sys
-from pathlib import Path
 
 from pptx import Presentation
 from pptx.util import Inches
@@ -64,31 +62,3 @@ def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
     prs.slide_height = height  # type: ignore[attr-defined]
 
     logging.debug(f'Applied slide size {slide_size_upper}: {slide_dims["width"]}" x {slide_dims["height"]}"')
-
-
-# Just for manual test purposes. Accepts path to pptx to process.
-def main() -> int:
-    MIN_ARGS = 2  # script name + pptx path
-    MAX_ARGS = 3  # script name + pptx path + slide_size
-    PPTX_PATH_ARG_INDEX = 1
-    SLIDE_SIZE_ARG_INDEX = 2
-
-    if not (MIN_ARGS <= len(sys.argv) <= MAX_ARGS):
-        logging.info("Usage: <path_to_pptx> [slide_size]")
-        return 1
-
-    pptx_path = sys.argv[PPTX_PATH_ARG_INDEX]
-    slide_size = sys.argv[SLIDE_SIZE_ARG_INDEX] if len(sys.argv) > SLIDE_SIZE_ARG_INDEX and sys.argv[SLIDE_SIZE_ARG_INDEX] != "None" else None
-
-    with Path(pptx_path).open("rb") as pptx_file_reader:
-        result_bytes = process(pptx_file_reader.read(), slide_size)
-
-    with Path(pptx_path).open("wb") as pptx_file_writer:
-        pptx_file_writer.write(result_bytes)
-
-    logging.debug(f"Successfully modified slide size in {pptx_path}")
-    return 0
-
-
-if __name__ == "__main__":
-    main()

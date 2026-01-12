@@ -18,7 +18,7 @@ from app.PandocController import (
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
-    version, convert_docx_with_ref, convert_pptx_with_ref, get_request_body_limit_mb,
+    version, convert_docx_with_ref, get_request_body_limit_mb,
 )
 
 
@@ -923,22 +923,25 @@ def test_process_error_with_multiline_message():
 
 def test_get_docx_template_with_path_handling():
     """Test get_docx_template with path existence handling."""
+    # Create async mock for anyio.open_file
+    mock_file = AsyncMock()
+    mock_file.read = AsyncMock(return_value=b"Mock DOCX template content")
+
+    async_context_manager = AsyncMock()
+    async_context_manager.__aenter__ = AsyncMock(return_value=mock_file)
+    async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
     with (
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", side_effect=[False, True]),  # False for initial check, True for finally
         patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("app.PandocController.anyio.open_file", return_value=async_context_manager) as mock_open_file,
         patch("fastapi.responses.StreamingResponse") as mock_send_file,
     ):
         # Mock the anyio.run_process to avoid calling the real pandoc
         process_mock = MagicMock()
         process_mock.returncode = 0
         mock_run_process.return_value = process_mock
-
-        # Mock file content
-        mock_file = MagicMock()
-        mock_file.read.return_value = b"Mock DOCX template content"
-        mock_path_open.return_value.__enter__.return_value = mock_file
 
         # Mock send_file to return a response
         mock_response = Response(b"Mock DOCX template content", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status_code=200)
@@ -1160,6 +1163,172 @@ def test_get_request_body_limit_mb_logging_message_content():
         assert "500 MB" in warning_message
 
 
+# Tests for MultiPartParser global configuration
+def test_multipart_parser_max_part_size_configured():
+    """Test that MultiPartParser.max_part_size is set to data_limit on module import."""
+    from starlette.formparsers import MultiPartParser
+
+    from app.PandocController import data_limit
+
+    assert MultiPartParser.max_part_size == data_limit
+
+
+def test_multipart_parser_respects_environment_variable():
+    """Test that MultiPartParser.max_part_size respects REQUEST_BODY_LIMIT_MB environment variable."""
+    from starlette.formparsers import MultiPartParser
+
+    # The module is already loaded, so we check the current configuration
+    # matches the expected calculation based on env var
+    from app.PandocController import data_limit, env_data_limit
+
+    expected_bytes = env_data_limit * 1024 * 1024
+    assert data_limit == expected_bytes
+    assert MultiPartParser.max_part_size == expected_bytes
+
+
+# Tests for async file I/O in get_docx_template
+def test_get_docx_template_uses_async_file_io():
+    """Test that get_docx_template uses async file I/O with anyio.open_file."""
+    mock_file = AsyncMock()
+    mock_file.read = AsyncMock(return_value=b"Mock DOCX template content")
+
+    async_context_manager = AsyncMock()
+    async_context_manager.__aenter__ = AsyncMock(return_value=mock_file)
+    async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("anyio.run_process") as mock_run_process,
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+        patch("app.PandocController.anyio.open_file", return_value=async_context_manager) as mock_open_file,
+    ):
+        process_mock = MagicMock()
+        process_mock.returncode = 0
+        mock_run_process.return_value = process_mock
+
+        test_client = TestClient(app)
+        response = test_client.get("/docx-template")
+
+        assert response.status_code == 200
+        # Verify anyio.open_file was called with correct arguments
+        mock_open_file.assert_called_once()
+        call_args = mock_open_file.call_args
+        assert str(call_args[0][0]) == "custom-reference.docx"
+        assert call_args[0][1] == "rb"
+
+
+def test_get_docx_template_async_file_read():
+    """Test that get_docx_template correctly reads file content asynchronously."""
+    expected_content = b"Test DOCX binary content with special chars: \x00\x01\x02"
+
+    mock_file = AsyncMock()
+    mock_file.read = AsyncMock(return_value=expected_content)
+
+    async_context_manager = AsyncMock()
+    async_context_manager.__aenter__ = AsyncMock(return_value=mock_file)
+    async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("anyio.run_process") as mock_run_process,
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+        patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
+    ):
+        process_mock = MagicMock()
+        process_mock.returncode = 0
+        mock_run_process.return_value = process_mock
+
+        test_client = TestClient(app)
+        response = test_client.get("/docx-template")
+
+        assert response.status_code == 200
+        assert response.content == expected_content
+        # Verify async read was called
+        mock_file.read.assert_called_once()
+
+
+def test_get_docx_template_cleanup_on_success():
+    """Test that temporary file is cleaned up after successful template generation."""
+    mock_file = AsyncMock()
+    mock_file.read = AsyncMock(return_value=b"Mock content")
+
+    async_context_manager = AsyncMock()
+    async_context_manager.__aenter__ = AsyncMock(return_value=mock_file)
+    async_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("anyio.run_process") as mock_run_process,
+        patch("pathlib.Path.exists", return_value=True) as mock_exists,
+        patch("pathlib.Path.unlink") as mock_unlink,
+        patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
+    ):
+        process_mock = MagicMock()
+        process_mock.returncode = 0
+        mock_run_process.return_value = process_mock
+
+        test_client = TestClient(app)
+        response = test_client.get("/docx-template")
+
+        assert response.status_code == 200
+        # Verify cleanup was performed
+        mock_unlink.assert_called_once()
+
+
+def test_convert_docx_with_ref_form_data_without_max_part_size():
+    """Test that convert_docx_with_ref endpoint uses form() without max_part_size argument."""
+    with (
+        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
+        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
+        patch("pathlib.Path.exists", return_value=False),
+    ):
+        mock_run_conversion.return_value = b"Converted content"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_postprocess.return_value = mock_response
+
+        test_client = TestClient(app)
+        source_file = File(
+            filename="test.md",
+            file=io.BytesIO(b"# Test content"),
+            content_type="text/markdown",
+        )
+
+        response = test_client.post(
+            "/convert/markdown/to/docx-with-template",
+            files={"source": source_file},
+        )
+
+        # Should succeed without errors related to max_part_size
+        assert response.status_code == 200
+
+
+def test_convert_endpoint_form_data_without_max_part_size():
+    """Test that convert endpoint uses form() without max_part_size argument."""
+    with (
+        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
+        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
+    ):
+        mock_run_conversion.return_value = b"Converted content"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_postprocess.return_value = mock_response
+
+        test_client = TestClient(app)
+        source_file = File(
+            filename="test.docx",
+            file=io.BytesIO(b"DOCX content"),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+        response = test_client.post(
+            "/convert/docx/to/html",
+            files={"source": source_file},
+        )
+
+        # Should succeed without errors related to max_part_size
+        assert response.status_code == 200
+
+
 def create_mock_pptx() -> bytes:
     """
     Create a minimal valid PPTX file for testing.
@@ -1219,7 +1388,7 @@ def test_get_pptx_template():
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.open", create=True) as mock_path_open,
+        patch("anyio.open_file") as mock_open_file,
         patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
     ):
         # Mock the anyio.run_process to avoid calling the real pandoc
@@ -1227,14 +1396,15 @@ def test_get_pptx_template():
         process_mock.returncode = 0
         mock_run_process.return_value = process_mock
 
-        # Mock file content and handling
-        mock_pptx_content = create_mock_pptx()
-        mock_file = MagicMock()
-        mock_file.read.return_value = mock_pptx_content
-        mock_path_open.return_value.__enter__.return_value = mock_file
+        # Mock async file context manager
+        mock_file = AsyncMock()
+        mock_file.read = AsyncMock(return_value=create_mock_pptx())
+        mock_async_cm = AsyncMock()
+        mock_async_cm.__aenter__ = AsyncMock(return_value=mock_file)
+        mock_async_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_open_file.return_value = mock_async_cm
 
         test_client = TestClient(app)
-        # Create test client and send request
         response = test_client.get("/pptx-template")
 
         # Assertions
@@ -1249,6 +1419,7 @@ def test_convert_pptx_with_template():
         patch("time.time", return_value=1234567890),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.exists", return_value=True),
+        patch("anyio.open_file") as mock_anyio_open,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
         patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
@@ -1258,10 +1429,14 @@ def test_convert_pptx_with_template():
         mock_source_file.name = "source_file"
         mock_output_file = MagicMock()
         mock_output_file.name = "output_file"
-        # Return different mock file objects on successive calls
         mock_tempfile.side_effect = [mock_source_file, mock_output_file]
 
-        # Setup mock for file reading
+        # Setup mock for anyio.open_file (used for template file)
+        mock_anyio_file = MagicMock()
+        mock_anyio_file.write = AsyncMock()
+        mock_anyio_open.return_value.__aenter__.return_value = mock_anyio_file
+
+        # Setup mock for file reading (Path.open for run_pandoc_conversion output)
         mock_file = MagicMock()
         mock_file.read.return_value = create_mock_pptx()
         mock_path_open.return_value.__enter__.return_value = mock_file
@@ -1275,7 +1450,6 @@ def test_convert_pptx_with_template():
         template_file = File(file=io.BytesIO(create_mock_pptx()), filename="template.pptx", content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
         test_client = TestClient(app)
-        # Send POST request with source as file
         response = test_client.post(f"/convert/{source_format}/to/pptx-with-template", files={"source": source_file, "template": template_file})
 
         # Assertions
@@ -1301,7 +1475,7 @@ def test_convert_pptx_without_template():
         mock_output_file.name = "output_file"
         mock_tempfile.side_effect = [mock_source_file, mock_output_file]
 
-        # Setup mock for file reading
+        # Setup mock for file reading (Path.open for run_pandoc_conversion output)
         mock_file = MagicMock()
         mock_file.read.return_value = create_mock_pptx()
         mock_path_open.return_value.__enter__.return_value = mock_file
@@ -1312,7 +1486,6 @@ def test_convert_pptx_without_template():
         source_file = File(file=io.BytesIO(source_content), filename="source.md", content_type="text/markdown")
 
         test_client = TestClient(app)
-        # Send POST request with source as file (no template)
         response = test_client.post(f"/convert/{source_format}/to/pptx-with-template", files={"source": source_file})
 
         # Assertions
