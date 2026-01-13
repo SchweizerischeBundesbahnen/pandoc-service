@@ -202,8 +202,8 @@ def wait_for_container_ready(container: Container, max_wait_time: int = 60) -> N
             if response.status_code == 200:
                 logging.info("Container is ready")
                 return
-        except requests.exceptions.RequestException:
-            pass
+        except requests.exceptions.RequestException as e:
+            logging.debug(f"Container not ready yet, retrying: {e}")
         time.sleep(1)
 
     # Timeout reached, print logs for debugging
@@ -528,10 +528,10 @@ def test_convert_markdown_to_pptx(test_parameters: TestParameters) -> None:
     )
     assert response.status_code == 200
 
-    # Verify it's a valid PPTX
+    # Verify it's a valid PPTX with expected slide count
     presentation = Presentation(io.BytesIO(response.content))
     assert presentation is not None
-    assert len(presentation.slides) >= 1
+    assert len(presentation.slides) == 2, "Expected 2 slides from markdown with slide separator"
 
     # Check response headers
     assert "Pandoc-Version" in response.headers
