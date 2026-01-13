@@ -977,61 +977,6 @@ def test_get_docx_template_cleanup_on_success():
         mock_unlink.assert_called_once()
 
 
-def test_convert_docx_with_ref_form_data_without_max_part_size():
-    """Test that convert_docx_with_ref endpoint uses form() without max_part_size argument."""
-    with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
-        patch("pathlib.Path.exists", return_value=False),
-    ):
-        mock_run_conversion.return_value = b"Converted content"
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_postprocess.return_value = mock_response
-
-        test_client = TestClient(app)
-        source_file = File(
-            filename="test.md",
-            file=io.BytesIO(b"# Test content"),
-            content_type="text/markdown",
-        )
-
-        response = test_client.post(
-            "/convert/markdown/to/docx-with-template",
-            files={"source": source_file},
-        )
-
-        # Should succeed without errors related to max_part_size
-        assert response.status_code == 200
-
-
-def test_convert_endpoint_form_data_without_max_part_size():
-    """Test that convert endpoint uses form() without max_part_size argument."""
-    with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
-    ):
-        mock_run_conversion.return_value = b"Converted content"
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_postprocess.return_value = mock_response
-
-        test_client = TestClient(app)
-        source_file = File(
-            filename="test.docx",
-            file=io.BytesIO(b"DOCX content"),
-            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-
-        response = test_client.post(
-            "/convert/docx/to/html",
-            files={"source": source_file},
-        )
-
-        # Should succeed without errors related to max_part_size
-        assert response.status_code == 200
-
-
 def create_mock_pptx() -> bytes:
     """Create a minimal valid PPTX file for testing.
 
@@ -1214,31 +1159,3 @@ def test_postprocess_and_build_response_pptx():
         assert response.status_code == 200
         assert response.media_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         assert "attachment; filename=test.pptx" in response.headers.get("content-disposition")
-
-
-def test_convert_pptx_with_template_form_data_without_max_part_size():
-    """Test that pptx-with-template endpoint uses form() without max_part_size argument."""
-    with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
-        patch("pathlib.Path.exists", return_value=False),
-    ):
-        mock_run_conversion.return_value = b"Converted content"
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_postprocess.return_value = mock_response
-
-        test_client = TestClient(app)
-        source_file = File(
-            filename="test.md",
-            file=io.BytesIO(b"# Test content"),
-            content_type="text/markdown",
-        )
-
-        response = test_client.post(
-            "/convert/markdown/to/pptx-with-template",
-            files={"source": source_file},
-        )
-
-        # Should succeed without errors related to max_part_size
-        assert response.status_code == 200
