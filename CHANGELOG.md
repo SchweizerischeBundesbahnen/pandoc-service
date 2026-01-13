@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.6.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.2...v1.6.0) (2026-01-13)
+
+
+### Features
+
+* add PPTX and template endpoint tests to container integration tests ([#110](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/110)) ([97a59c6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/97a59c6785f89f761f42d5449cd0071d5b6f1eaa)), closes [#109](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/109)
+* add PPTX conversion endpoint with template support ([#86](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/86)) ([9c35958](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9c35958665ee18ea4196f6a0a415ef8020203dc4))
+* migrate pyproject.toml to PEP 621/735 standard format ([#108](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/108)) ([771d99a](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/771d99adb2669edcf10e5e49c00c47ab1763827c)), closes [#100](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/100)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.124.2 ([5bc9607](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5bc9607a82c69bc58e94b9f9599d81482ee80ebe))
+* **deps:** update dependency fastapi to v0.124.4 ([52c27ba](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/52c27ba1d35095de4c8ffdcb5b34eecd6787cdd1))
+* **deps:** update dependency fastapi to v0.125.0 ([d1a97ef](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d1a97ef570aa73a35c5386216cc9e0db2a366f57))
+* **deps:** update dependency fastapi to v0.126.0 ([6ab25ba](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/6ab25ba73f404c30e785af23276300d120427624))
+* **deps:** update dependency fastapi to v0.127.0 ([034106c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/034106c0e541efb1bf0c975f8aeca91603a59194))
+* **deps:** update dependency fastapi to v0.127.1 ([28d21b1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/28d21b177a8800aae64e945c832f9eb1b72a7b08))
+* **deps:** update dependency fastapi to v0.128.0 ([601f0ed](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/601f0edda525e70b4937263da165ac361d4869c7))
+* **deps:** update dependency python-multipart to v0.0.21 ([c414c16](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c414c16a532820ea4bcbbcba899707524aebe406))
+* **deps:** update dependency uvicorn to v0.40.0 ([b01a603](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b01a60342e09a9cce7f57cfd1ec8b834e519d644))
+* remove max_part_size from pptx endpoint and improve test quality ([#107](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/107)) ([0d4109e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/0d4109e5ac4d695020806e87d8c05214206ecc5b))
+* resolve SonarCloud quality gate failures ([#96](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/96)) ([a446fb1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a446fb1c007360ec08a961772748356cf09bcd84)), closes [#95](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/95)
+* resolve SonarCloud quality gate failures ([#99](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/99)) ([4028fc8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4028fc83f707b2be319a4614b0a0749089ca6b57))
+
 ## [1.5.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.1...v1.5.2) (2025-12-10)
 
 
