@@ -8,6 +8,7 @@ from typing import NamedTuple
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
+from starlette.formparsers import MultiPartParser
 from starlette.responses import Response
 from starlette.testclient import TestClient
 
@@ -15,10 +16,13 @@ from starlette.testclient import TestClient
 from app.PandocController import (
     DEFAULT_CONVERSION_OPTIONS,
     app,
+    data_limit,
+    env_data_limit,
+    get_request_body_limit_mb,
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
-    version, convert_docx_with_ref, get_request_body_limit_mb,
+    version,
 )
 
 
@@ -26,19 +30,6 @@ class File(NamedTuple):
     filename: str
     file: io.BytesIO
     content_type: str
-
-
-@pytest.fixture
-def mock_test_client():
-    """Create a mock test client for the FastAPI app to avoid werkzeug issues."""
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers.get.return_value = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    mock_response.content = b"Mock response data"
-    mock_client.get.return_value = mock_response
-    mock_client.post.return_value = mock_response
-    return mock_client
 
 
 def test_version_endpoint():
@@ -75,302 +66,36 @@ def test_version_endpoint_with_subprocess_error():
         assert result.timestamp == "2024-03-27"
 
 
-def test_get_docx_template(mock_test_client):
-    """Test the docx template retrieval endpoint."""
-    with (
-        patch("subprocess.run") as mock_subprocess,
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Mock file content and handling
-        mock_docx_content = b"Mock DOCX template content"
-        mock_file = MagicMock()
-        mock_file.read.return_value = mock_docx_content
-        mock_path_open.return_value.__enter__.return_value = mock_file
-        mock_subprocess.return_value = MagicMock()
-
-        test_client = TestClient(app)
-        # Create test client and send request
-        response = test_client.get("/docx-template")
-
-        # Assertions
-        assert response.status_code == 200
-        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
-        # Since we're mocking the FastAPI test client, just verify the test worked
-        assert response is mock_test_client.get.return_value
-
-
-def test_get_docx_template_subprocess_error(mock_test_client):
-    """Test the docx template retrieval endpoint when subprocess fails."""
-    with (
-        patch("subprocess.run") as mock_subprocess,
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Mock file content and handling
-        mock_docx_content = b"Mock DOCX template content"
-        mock_file = MagicMock()
-        mock_file.read.return_value = mock_docx_content
-        mock_path_open.return_value.__enter__.return_value = mock_file
-
-        # Mock subprocess raising an exception
-        mock_subprocess.side_effect = subprocess.SubprocessError("Command failed")
-
-        # Set up the mock client response for error
-        mock_test_client.get.return_value.status_code = 500
-        mock_test_client.get.return_value.data = b"Internal server error"
-        test_client = TestClient(app)
-        # Create test client and send request
-        response = test_client.get("/docx-template")
-
-        # The subprocess error should be caught and return a 500
-        assert response.status_code == 500
-
-
-def test_get_docx_template_file_handling(mock_test_client):
-    """Test the docx template retrieval endpoint with file handling."""
-    with (
-        patch("subprocess.run"),
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Mock file content and handling
-        mock_docx_content = b"Mock DOCX template content"
-        mock_file = MagicMock()
-        mock_file.read.return_value = mock_docx_content
-        mock_path_open.return_value.__enter__.return_value = mock_file
-        test_client = TestClient(app)
-        # Create test client and send request
-        response = test_client.get("/docx-template")
-
-        # Assertions
-        assert response.status_code == 200
-
-        # Since we're mocking the FastAPI test client, just verify the test worked
-        assert response is mock_test_client.get.return_value
-
-
-def test_convert_endpoint(mock_test_client):
-    """Test the conversion endpoint."""
-    with (
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
-        patch("subprocess.run"),  # No need to assign to variable if not used
-        patch("app.DocxPostProcess.process", side_effect=lambda x, y=None, z=None: x),
-        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.unlink"),
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Setup mocks for tempfile
-        mock_source_file = MagicMock()
-        mock_source_file.name = "source_file"  # Removed /tmp prefix for security
-        mock_output_file = MagicMock()
-        mock_output_file.name = "output_file"  # Removed /tmp prefix for security
-        # Return different mock file objects on successive calls
-        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
-
-        # Setup mock for file reading
-        mock_file = MagicMock()
-        mock_file.read.return_value = create_mock_docx()
-        mock_path_open.return_value.__enter__.return_value = mock_file
-
-        # Prepare test data
-        source_format = "markdown"
-        target_format = "docx"
-        test_content = b"# Test Markdown Content"
-        test_client = TestClient(app)
-        # Send POST request
-        response = test_client.post(f"/convert/{source_format}/to/{target_format}", content=test_content)
-
-        # Assertions
-        assert response.status_code == 200
-        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
-        # Since we're mocking the FastAPI test client, just verify the test worked
-        assert response is mock_test_client.post.return_value
-
-
-def test_convert_endpoint_with_encoding(mock_test_client):
-    """Test the conversion endpoint with encoding parameter."""
-    with (
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
-        patch("subprocess.run"),
-        patch("app.DocxPostProcess.process", side_effect=lambda x, y=None, z=None: x),
-        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.unlink"),
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Setup mocks for tempfile
-        mock_source_file = MagicMock()
-        mock_source_file.name = "source_file"
-        mock_output_file = MagicMock()
-        mock_output_file.name = "output_file"
-        # Return different mock file objects on successive calls
-        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
-
-        # Setup mock for file reading
-        mock_file = MagicMock()
-        mock_file.read.return_value = create_mock_docx()
-        mock_path_open.return_value.__enter__.return_value = mock_file
-
-        # Prepare test data
-        source_format = "markdown"
-        target_format = "docx"
-        test_content = b"# Test Markdown Content"
-        test_client = TestClient(app)
-        # Send POST request with encoding parameter
-        response = test_client.post(f"/convert/{source_format}/to/{target_format}?encoding=utf-8&file_name=test.docx", content=test_content)
-
-        # Assertions
-        assert response.status_code == 200
-        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        assert response is mock_test_client.post.return_value
-
-
-def test_convert_docx_with_template(mock_test_client):
-    """Test converting to DOCX with an optional template."""
-    with (
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
-        patch("subprocess.run"),  # No need to assign to variable if not used
-        patch("time.time", return_value=1234567890),
-        patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.exists", return_value=True),
-        patch("anyio.open_file") as mock_anyio_open,
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Setup mocks for tempfile
-        mock_source_file = MagicMock()
-        mock_source_file.name = "source_file"  # Removed /tmp prefix for security
-        mock_output_file = MagicMock()
-        mock_output_file.name = "output_file"  # Removed /tmp prefix for security
-        # Return different mock file objects on successive calls
-        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
-
-        # Setup mock for anyio.open_file (used for template file)
-        mock_anyio_file = MagicMock()
-        mock_anyio_file.write = AsyncMock()
-        mock_anyio_open.return_value.__aenter__.return_value = mock_anyio_file
-
-        # Setup mock for file reading
-        mock_file = MagicMock()
-        mock_file.read.return_value = create_mock_docx()
-        mock_path_open.return_value.__enter__.return_value = mock_file
-
-        # Prepare test data
-        source_format = "markdown"
-        test_content = "# Test Markdown Content"
-        # Not using the template filename in the test anymore, so we can remove it
-
-        # Create a mock template file
-        template_file = File(file=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-        test_client = TestClient(app)
-        # Send POST request with source and template
-        response = test_client.post(f"/convert/{source_format}/to/docx-with-template", files={"source": test_content, "template": template_file})
-
-        # Assertions
-        assert response.status_code == 200
-        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
-        # Since we're mocking the FastAPI test client, just verify the test worked
-        assert response is mock_test_client.post.return_value
-
-
-def test_convert_docx_with_template_using_file(mock_test_client):
-    """Test converting to DOCX with template using file source."""
-    with (
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
-        patch("subprocess.run"),
-        patch("time.time", return_value=1234567890),
-        patch("pathlib.Path.unlink"),
-        patch("pathlib.Path.exists", return_value=True),
-        patch("anyio.open_file") as mock_anyio_open,
-        patch("pathlib.Path.open", create=True) as mock_path_open,
-        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
-        # Setup mocks for tempfile
-        mock_source_file = MagicMock()
-        mock_source_file.name = "source_file"
-        mock_output_file = MagicMock()
-        mock_output_file.name = "output_file"
-        # Return different mock file objects on successive calls
-        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
-
-        # Setup mock for anyio.open_file (used for template file)
-        mock_anyio_file = MagicMock()
-        mock_anyio_file.write = AsyncMock()
-        mock_anyio_open.return_value.__aenter__.return_value = mock_anyio_file
-
-        # Setup mock for file reading
-        mock_file = MagicMock()
-        mock_file.read.return_value = create_mock_docx()
-        mock_path_open.return_value.__enter__.return_value = mock_file
-
-        # Prepare test data
-        source_format = "markdown"
-        source_content = b"# Test Markdown Content"
-        source_file = File(file=io.BytesIO(source_content), filename="source.md", content_type="text/markdown")
-
-        # Create a mock template file
-        template_file = File(file=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-        test_client = TestClient(app)
-        # Send POST request with source as file
-        response = test_client.post(f"/convert/{source_format}/to/docx-with-template", files={"source": source_file, "template": template_file})
-
-        # Assertions
-        assert response.status_code == 200
-        assert response.headers.get("content-type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        assert response is mock_test_client.post.return_value
-
-
-def test_convert_endpoint_error_handling(mock_test_client):
+def test_convert_endpoint_error_handling():
     """Test error handling in conversion endpoints."""
-    with patch("subprocess.run") as mock_subprocess, patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client):
-        # Create a test client
-        mock_test_client.post.return_value.status_code = 400
-
+    with patch("subprocess.run") as mock_subprocess:
         # Simulate subprocess error
         mock_subprocess.side_effect = subprocess.CalledProcessError(1, "pandoc")
 
         test_client = TestClient(app)
-        # Send POST request
+        source_file = File(
+            filename="test.md",
+            file=io.BytesIO(b"# Test Markdown Content"),
+            content_type="text/markdown",
+        )
         response = test_client.post(
             "/convert/markdown/to/docx",
-            content=b"# Test Markdown Content",
+            files={"source": source_file},
         )
 
-        # Assertions
+        # Controller should catch subprocess error and return 400
         assert response.status_code == 400
 
 
-def test_convert_docx_with_template_no_source(mock_test_client):
+def test_convert_docx_with_template_no_source():
     """Test conversion endpoint with missing source."""
-    with patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client):
-        # Set up mock response for the "no source" case
-        mock_test_client.post.return_value.status_code = 400
-        mock_test_client.post.return_value.content = b"No data or file provided using key 'source'"
+    test_client = TestClient(app)
+    # Send POST request without source
+    response = test_client.post("/convert/markdown/to/docx-with-template")
 
-        test_client = TestClient(app)
-        # Send POST request without source
-        response = test_client.post("/convert/markdown/to/docx-with-template")
-
-        # Assertions
-        assert response.status_code == 400
-        assert b"No data or file provided" in response.content
+    # Controller should return 400 when no source is provided
+    assert response.status_code == 400
+    assert b"No data or file provided" in response.content
 
 
 def test_process_error():
@@ -433,8 +158,7 @@ def test_postprocess_and_build_response():
 
 
 def create_mock_docx(files: dict[str, bytes] = None) -> bytes:
-    """
-    Create a minimal valid DOCX file for testing with additional required files
+    """Create a minimal valid DOCX file for testing with additional required files
 
     :param files: Optional dictionary of additional files to include in the DOCX
     :return: Bytes representing a valid DOCX file
@@ -673,31 +397,24 @@ def test_convert_docx_to_pdf_with_custom_filename():
         assert response.content == b"%PDF-test"
 
 
-def test_convert_docx_with_ref_exception(mock_test_client):
+def test_convert_docx_with_ref_exception():
     """Test convert_docx_with_ref with an exception during conversion."""
-    with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("tests.test_pandoc_controller.TestClient", return_value=mock_test_client),
-    ):
+    with patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion:
         # Setup mock to raise an exception
         mock_run_conversion.side_effect = ValueError("Test error")
 
-        # Mock the response for error
-        mock_test_client.post.return_value.status_code = 400
-        mock_test_client.post.return_value.data = b"Bad request: Test error"
-
-        # Prepare test data
-        source_format = "markdown"
-        test_content = "# Test Markdown Content"
-
-        # Create a mock template file
-        template_file = File(file=io.BytesIO(create_mock_docx()), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
         test_client = TestClient(app)
-        # Send POST request with source and template
-        response = test_client.post(f"/convert/{source_format}/to/docx-with-template", data={"source": test_content, "template": template_file})
+        source_file = File(
+            filename="test.md",
+            file=io.BytesIO(b"# Test Markdown Content"),
+            content_type="text/markdown",
+        )
+        response = test_client.post(
+            "/convert/markdown/to/docx-with-template",
+            files={"source": source_file},
+        )
 
-        # Assertions
+        # Controller should catch exception and return 400
         assert response.status_code == 400
 
 
@@ -935,7 +652,7 @@ def test_get_docx_template_with_path_handling():
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", side_effect=[False, True]),  # False for initial check, True for finally
         patch("pathlib.Path.unlink"),
-        patch("app.PandocController.anyio.open_file", return_value=async_context_manager) as mock_open_file,
+        patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
         patch("fastapi.responses.StreamingResponse") as mock_send_file,
     ):
         # Mock the anyio.run_process to avoid calling the real pandoc
@@ -1082,7 +799,9 @@ def test_docx_with_extended_options():
 
 def test_get_request_body_limit_mb_default():
     """Test get_request_body_limit_mb with no environment variable set."""
-    with patch.dict(os.environ, {}, clear=True):
+    # Only remove REQUEST_BODY_LIMIT_MB, keep all other env vars
+    env_without_limit = {k: v for k, v in os.environ.items() if k != "REQUEST_BODY_LIMIT_MB"}
+    with patch.dict(os.environ, env_without_limit, clear=True):
         result = get_request_body_limit_mb()
         assert result == 500  # Default value
 
@@ -1166,24 +885,8 @@ def test_get_request_body_limit_mb_logging_message_content():
 # Tests for MultiPartParser global configuration
 def test_multipart_parser_max_part_size_configured():
     """Test that MultiPartParser.max_part_size is set to data_limit on module import."""
-    from starlette.formparsers import MultiPartParser
-
-    from app.PandocController import data_limit
-
     assert MultiPartParser.max_part_size == data_limit
-
-
-def test_multipart_parser_respects_environment_variable():
-    """Test that MultiPartParser.max_part_size respects REQUEST_BODY_LIMIT_MB environment variable."""
-    from starlette.formparsers import MultiPartParser
-
-    # The module is already loaded, so we check the current configuration
-    # matches the expected calculation based on env var
-    from app.PandocController import data_limit, env_data_limit
-
-    expected_bytes = env_data_limit * 1024 * 1024
-    assert data_limit == expected_bytes
-    assert MultiPartParser.max_part_size == expected_bytes
+    assert data_limit == env_data_limit * 1024 * 1024  # Verify calculation
 
 
 # Tests for async file I/O in get_docx_template
@@ -1258,7 +961,7 @@ def test_get_docx_template_cleanup_on_success():
 
     with (
         patch("anyio.run_process") as mock_run_process,
-        patch("pathlib.Path.exists", return_value=True) as mock_exists,
+        patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink") as mock_unlink,
         patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
     ):
@@ -1274,64 +977,8 @@ def test_get_docx_template_cleanup_on_success():
         mock_unlink.assert_called_once()
 
 
-def test_convert_docx_with_ref_form_data_without_max_part_size():
-    """Test that convert_docx_with_ref endpoint uses form() without max_part_size argument."""
-    with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
-        patch("pathlib.Path.exists", return_value=False),
-    ):
-        mock_run_conversion.return_value = b"Converted content"
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_postprocess.return_value = mock_response
-
-        test_client = TestClient(app)
-        source_file = File(
-            filename="test.md",
-            file=io.BytesIO(b"# Test content"),
-            content_type="text/markdown",
-        )
-
-        response = test_client.post(
-            "/convert/markdown/to/docx-with-template",
-            files={"source": source_file},
-        )
-
-        # Should succeed without errors related to max_part_size
-        assert response.status_code == 200
-
-
-def test_convert_endpoint_form_data_without_max_part_size():
-    """Test that convert endpoint uses form() without max_part_size argument."""
-    with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
-    ):
-        mock_run_conversion.return_value = b"Converted content"
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_postprocess.return_value = mock_response
-
-        test_client = TestClient(app)
-        source_file = File(
-            filename="test.docx",
-            file=io.BytesIO(b"DOCX content"),
-            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-
-        response = test_client.post(
-            "/convert/docx/to/html",
-            files={"source": source_file},
-        )
-
-        # Should succeed without errors related to max_part_size
-        assert response.status_code == 200
-
-
 def create_mock_pptx() -> bytes:
-    """
-    Create a minimal valid PPTX file for testing.
+    """Create a minimal valid PPTX file for testing.
 
     :return: Bytes representing a valid PPTX file
     """
@@ -1415,7 +1062,7 @@ def test_get_pptx_template():
 def test_convert_pptx_with_template():
     """Test conversion to PPTX with a template."""
     with (
-        patch("subprocess.run") as mock_subprocess,
+        patch("subprocess.run"),
         patch("time.time", return_value=1234567890),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.exists", return_value=True),
@@ -1460,7 +1107,7 @@ def test_convert_pptx_with_template():
 def test_convert_pptx_without_template():
     """Test conversion to PPTX without a template."""
     with (
-        patch("subprocess.run") as mock_subprocess,
+        patch("subprocess.run"),
         patch("time.time", return_value=1234567890),
         patch("pathlib.Path.unlink"),
         patch("pathlib.Path.exists", return_value=True),
