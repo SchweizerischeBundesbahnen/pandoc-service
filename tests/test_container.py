@@ -10,6 +10,7 @@ import requests
 from docker.models.containers import Container
 from docx import Document
 from docx.shared import RGBColor
+from pptx import Presentation
 
 # Constants for Docker resources
 TEST_IMAGE_NAME = "pandoc-service-test"
@@ -46,6 +47,24 @@ SOURCE_HTML_WITH_HEADINGS = """
                 </body>
             </html>
         """
+
+SOURCE_MARKDOWN_FOR_PPTX = """
+# Slide 1 Title
+
+First slide content with bullet points:
+
+- Item 1
+- Item 2
+- Item 3
+
+---
+
+# Slide 2 Title
+
+Second slide with more content.
+
+Some **bold** and *italic* text.
+"""
 
 
 class TestParameters(NamedTuple):
@@ -163,6 +182,35 @@ def cleanup_docker_resources():
     _verify_images(client)
 
 
+def wait_for_container_ready(container: Container, max_wait_time: int = 60) -> None:
+    """
+    Wait for container to become ready by checking the /version endpoint.
+
+    Args:
+        container: Docker container to wait for
+        max_wait_time: Maximum time to wait in seconds (default: 60)
+
+    Raises:
+        TimeoutError: If container does not become ready within max_wait_time
+    """
+    start_time = time.time()
+    base_url = "http://localhost:9082"
+
+    while time.time() - start_time < max_wait_time:
+        try:
+            response = requests.get(f"{base_url}/version", timeout=2)
+            if response.status_code == 200:
+                logging.info("Container is ready")
+                return
+        except requests.exceptions.RequestException as e:
+            logging.debug(f"Container not ready yet, retrying: {e}")
+        time.sleep(1)
+
+    # Timeout reached, print logs for debugging
+    logs = container.logs().decode("utf-8")
+    raise TimeoutError(f"Container did not become ready within {max_wait_time} seconds. Logs:\n{logs}")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_session():
     """
@@ -206,8 +254,8 @@ def pandoc_container():
         # Run the container with test-specific name
         container = client.containers.run(image=image, detach=True, name=TEST_CONTAINER_NAME, ports={"9082": 9082}, init=True)
 
-        # Wait for container to be ready
-        time.sleep(5)
+        # Wait for container to be ready using health check
+        wait_for_container_ready(container)
 
         yield container
 
@@ -410,3 +458,129 @@ def __load_test_file(file_path: str) -> str:
     with Path(file_path).open(encoding="utf-8") as file:
         file_content = file.read()
         return file_content
+
+
+def __send_pptx_with_template_request(base_url: str, request_session: requests.Session, source_format: str, data, template=None) -> requests.Response:
+    url = f"{base_url}/convert/{source_format}/to/pptx-with-template"
+    files = {"source": ("file.md", data)}
+    if template:
+        files["template"] = ("template.pptx", template)
+    try:
+        response = request_session.request(method="POST", url=url, files=files, verify=True)
+        if response.status_code // 100 != 2:
+            logging.error(f"Error: Unexpected response: '{response}'")
+            logging.error(f"Error: Response content: '{response.content}'")
+        return response
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error: {e}")
+        raise
+
+
+def test_container_no_error_logs(test_parameters: TestParameters) -> None:
+    """Verify container logs contain expected startup messages and no errors."""
+    logs = test_parameters.container.logs().decode("utf-8")
+    log_lines = logs.splitlines()
+
+    # Check for critical errors (should not contain ERROR or CRITICAL level messages)
+    errors = [line for line in log_lines if " - ERROR - " in line or " - CRITICAL - " in line]
+    assert not errors, f"Found error logs: {errors}"
+
+    # Check for expected startup message
+    assert any("Pandoc service listening port: 9082" in line for line in log_lines), "Expected startup message not found in logs"
+
+
+def test_docx_template_endpoint(test_parameters: TestParameters) -> None:
+    """Test that the /docx-template endpoint returns a valid DOCX file."""
+    url = f"{test_parameters.base_url}/docx-template"
+    response = test_parameters.request_session.get(url)
+
+    assert response.status_code == 200
+    assert response.headers.get("Content-Type") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert response.headers.get("Content-Disposition") == "attachment; filename=reference.docx"
+
+    # Verify it's a valid DOCX by loading it
+    document = Document(io.BytesIO(response.content))
+    assert document is not None
+
+
+def test_pptx_template_endpoint(test_parameters: TestParameters) -> None:
+    """Test that the /pptx-template endpoint returns a valid PPTX file."""
+    url = f"{test_parameters.base_url}/pptx-template"
+    response = test_parameters.request_session.get(url)
+
+    assert response.status_code == 200
+    assert response.headers.get("Content-Type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    assert response.headers.get("Content-Disposition") == "attachment; filename=reference.pptx"
+
+    # Verify it's a valid PPTX by loading it
+    presentation = Presentation(io.BytesIO(response.content))
+    assert presentation is not None
+
+
+def test_convert_markdown_to_pptx(test_parameters: TestParameters) -> None:
+    """Test converting markdown to PPTX format."""
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="markdown",
+        target_format="pptx",
+        data=SOURCE_MARKDOWN_FOR_PPTX,
+    )
+    assert response.status_code == 200
+
+    # Verify it's a valid PPTX with expected slide count
+    presentation = Presentation(io.BytesIO(response.content))
+    assert presentation is not None
+    assert len(presentation.slides) == 2, "Expected 2 slides from markdown with slide separator"
+
+    # Check response headers
+    assert "Pandoc-Version" in response.headers
+    assert "Python-Version" in response.headers
+
+
+def test_convert_with_pptx_template(test_parameters: TestParameters) -> None:
+    """Test PPTX conversion with custom template."""
+    # First, get the default template from the endpoint
+    template_url = f"{test_parameters.base_url}/pptx-template"
+    template_response = test_parameters.request_session.get(template_url)
+    assert template_response.status_code == 200
+    template = template_response.content
+
+    # Test with template
+    response = __send_pptx_with_template_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="markdown",
+        data=SOURCE_MARKDOWN_FOR_PPTX,
+        template=template,
+    )
+    assert response.status_code == 200
+
+    # Verify it's a valid PPTX
+    presentation = Presentation(io.BytesIO(response.content))
+    assert presentation is not None
+    assert len(presentation.slides) >= 1
+
+
+def test_convert_invalid_source_format(test_parameters: TestParameters) -> None:
+    """Test that invalid source format returns proper error."""
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="invalid_format",
+        target_format="html",
+        data="test content",
+    )
+    assert response.status_code == 400
+
+
+def test_convert_invalid_target_format(test_parameters: TestParameters) -> None:
+    """Test that invalid target format returns proper error."""
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="markdown",
+        target_format="invalid_format",
+        data="test content",
+    )
+    assert response.status_code == 400
