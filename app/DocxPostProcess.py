@@ -13,6 +13,8 @@ from docx.section import Section
 from docx.table import Table, _Cell
 from lxml import etree  # type: ignore
 
+from app.DocxReferencesPostProcess import add_table_of_contents_entries, enable_auto_update_fields
+
 # Patch the python-docx parser to handle large XML documents (> 10MB)
 # This enables the XML_PARSE_HUGE flag to avoid "Buffer size limit exceeded" errors
 # when processing documents with large embedded content (e.g., base64-encoded images)
@@ -46,6 +48,8 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     doc = Document(io.BytesIO(docx_bytes))
     _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc)
+    add_table_of_contents_entries(doc)
+    enable_auto_update_fields(doc)
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
