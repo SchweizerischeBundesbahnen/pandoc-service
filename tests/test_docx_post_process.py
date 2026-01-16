@@ -1051,3 +1051,254 @@ def test_resize_images_in_cell_handles_large_xml():
     # Verify the function completed without raising an exception
     # (no resizing needed since image width < max_width, so clear_content not called)
     mock_tc.clear_content.assert_not_called()
+
+
+class TestMoveHeaderFooterReferencesToFirstSection:
+    """Tests for _move_header_footer_references_to_first_section function."""
+
+    def test_single_section_no_changes(self):
+        """Test that single-section documents are not modified."""
+        mock_doc = MagicMock()
+        mock_section = MagicMock()
+        mock_doc.sections = [mock_section]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Should return early without accessing sectPr
+        mock_section._sectPr.findall.assert_not_called()
+
+    def test_first_section_already_has_header_refs(self):
+        """Test that no changes are made if first section already has header refs."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section already has header references
+        mock_header_ref = MagicMock()
+        mock_sectPr1.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Should not remove anything from last section
+        mock_sectPr2.remove.assert_not_called()
+
+    def test_first_section_already_has_footer_refs(self):
+        """Test that no changes are made if first section already has footer refs."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section already has footer references
+        mock_footer_ref = MagicMock()
+        mock_sectPr1.findall.side_effect = lambda tag, namespaces: [mock_footer_ref] if "footer" in tag else []
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Should not remove anything from last section
+        mock_sectPr2.remove.assert_not_called()
+
+    def test_moves_header_refs_from_last_to_first(self):
+        """Test that header references are moved from last to first section."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section has no refs
+        mock_sectPr1.findall.return_value = []
+        mock_sectPr1.find.return_value = None
+
+        # Last section has header refs
+        mock_header_ref = MagicMock()
+        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_sectPr2.find.return_value = None
+
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Verify header ref was removed from last section and inserted into first
+        mock_sectPr2.remove.assert_called_with(mock_header_ref)
+        mock_sectPr1.insert.assert_called_with(0, mock_header_ref)
+
+    def test_moves_footer_refs_from_last_to_first(self):
+        """Test that footer references are moved from last to first section."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section has no refs
+        mock_sectPr1.findall.return_value = []
+        mock_sectPr1.find.return_value = None
+
+        # Last section has footer refs
+        mock_footer_ref = MagicMock()
+        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_footer_ref] if "footer" in tag else []
+        mock_sectPr2.find.return_value = None
+
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Verify footer ref was removed from last section and inserted into first
+        mock_sectPr2.remove.assert_called_with(mock_footer_ref)
+        mock_sectPr1.insert.assert_called_with(0, mock_footer_ref)
+
+    def test_moves_title_pg_from_last_to_first(self):
+        """Test that titlePg element is moved from last to first section."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section has no refs
+        mock_sectPr1.findall.return_value = []
+
+        # Last section has header refs and titlePg
+        mock_header_ref = MagicMock()
+        mock_title_pg = MagicMock()
+        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_sectPr2.find.side_effect = lambda tag, namespaces: mock_title_pg if "titlePg" in tag else None
+
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Verify titlePg was removed from last section and appended to first
+        mock_sectPr2.remove.assert_any_call(mock_title_pg)
+        mock_sectPr1.append.assert_called_with(mock_title_pg)
+
+    def test_no_title_pg_to_move(self):
+        """Test that function handles missing titlePg gracefully."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section has no refs
+        mock_sectPr1.findall.return_value = []
+
+        # Last section has header refs but no titlePg
+        mock_header_ref = MagicMock()
+        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_sectPr2.find.return_value = None  # No titlePg
+
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Should not call append for titlePg
+        mock_sectPr1.append.assert_not_called()
+
+    def test_no_refs_in_last_section(self):
+        """Test that function handles empty refs gracefully."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # Both sections have no refs
+        mock_sectPr1.findall.return_value = []
+        mock_sectPr2.findall.return_value = []
+        mock_sectPr2.find.return_value = None
+
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Should not modify anything
+        mock_sectPr1.insert.assert_not_called()
+        mock_sectPr2.remove.assert_not_called()
+
+    def test_multiple_header_footer_refs(self):
+        """Test moving multiple header/footer refs (first, default, even types)."""
+        mock_doc = MagicMock()
+        mock_section1 = MagicMock()
+        mock_section2 = MagicMock()
+        mock_sectPr1 = MagicMock()
+        mock_sectPr2 = MagicMock()
+
+        # First section has no refs
+        mock_sectPr1.findall.return_value = []
+        mock_sectPr1.find.return_value = None
+
+        # Last section has multiple header and footer refs
+        mock_header_first = MagicMock()
+        mock_header_default = MagicMock()
+        mock_header_even = MagicMock()
+        mock_footer_first = MagicMock()
+        mock_footer_default = MagicMock()
+
+        def findall_side_effect(tag, namespaces):
+            if "header" in tag:
+                return [mock_header_first, mock_header_default, mock_header_even]
+            elif "footer" in tag:
+                return [mock_footer_first, mock_footer_default]
+            return []
+
+        mock_sectPr2.findall.side_effect = findall_side_effect
+        mock_sectPr2.find.return_value = None
+
+        mock_section1._sectPr = mock_sectPr1
+        mock_section2._sectPr = mock_sectPr2
+        mock_doc.sections = [mock_section1, mock_section2]
+
+        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+
+        # Verify all refs were moved
+        assert mock_sectPr2.remove.call_count == 5  # 3 headers + 2 footers
+        assert mock_sectPr1.insert.call_count == 5
+
+    def test_integration_with_real_docx(self):
+        """Integration test with real DOCX document having multiple sections."""
+        from docx import Document
+        from docx.oxml import parse_xml
+        from docx.oxml.ns import qn
+        import io
+
+        # Create a document with two sections
+        doc = Document()
+        doc.add_paragraph("First section content")
+
+        # Add a section break by adding a new section
+        doc.add_section()
+        doc.add_paragraph("Second section content")
+
+        # Save and reload to ensure proper structure
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+
+        # Process the document
+        result = DocxPostProcess.process(docx_bytes.getvalue())
+
+        # Verify result is valid
+        assert isinstance(result, bytes)
+        result_doc = Document(io.BytesIO(result))
+        assert len(result_doc.sections) == 2
