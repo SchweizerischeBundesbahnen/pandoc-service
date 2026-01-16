@@ -5,7 +5,8 @@ from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
-SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+# XML namespace identifier, not an actual HTTP URL
+SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main" # NOSONAR
 
 
 def add_table_of_contents_entries(doc: DocumentObject) -> None:
