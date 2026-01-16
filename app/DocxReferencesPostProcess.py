@@ -8,6 +8,10 @@ from docx.oxml.ns import nsdecls
 # XML namespace identifier, not an actual HTTP URL
 SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main" # NOSONAR
 
+# Common XPath expressions
+XPATH_P_PR = ".//w:pPr"
+XPATH_P_STYLE = ".//w:pStyle"
+
 
 def add_table_of_contents_entries(doc: DocumentObject) -> None:
     """
@@ -27,7 +31,7 @@ def add_table_of_contents_entries(doc: DocumentObject) -> None:
     figure_paragraphs, table_paragraphs = _find_and_process_captions(body)
 
     # Step 3: Find elements to replace
-    elements_to_replace = _find_elements_to_replace(body, figure_paragraphs, table_paragraphs)
+    elements_to_replace = _find_elements_to_replace(body)
 
     # Step 4: Replace elements with Word fields
     _replace_elements_with_fields(body, elements_to_replace, figure_paragraphs, table_paragraphs)
@@ -55,7 +59,7 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:
     return figure_paragraphs, table_paragraphs
 
 
-def _find_elements_to_replace(body: Any, figure_paragraphs: list, table_paragraphs: list) -> list:
+def _find_elements_to_replace(body: Any) -> list:
     """Find all elements that need to be replaced with Word fields."""
     elements_to_replace: list = []
 
@@ -150,9 +154,9 @@ def _process_headings(body: Any) -> int:
     heading_count = 0
 
     for para in body.findall(".//w:p", namespaces={"w": SCHEMA}):
-        p_pr = para.find(".//w:pPr", namespaces={"w": SCHEMA})
+        p_pr = para.find(XPATH_P_PR, namespaces={"w": SCHEMA})
         if p_pr is not None:
-            p_style = p_pr.find(".//w:pStyle", namespaces={"w": SCHEMA})
+            p_style = p_pr.find(XPATH_P_STYLE, namespaces={"w": SCHEMA})
             if p_style is not None:
                 style_val = p_style.get(f"{{{SCHEMA}}}val", "")
 
@@ -202,26 +206,43 @@ def _find_toc_placeholder(body: Any) -> int | None:
     Returns the index of the placeholder paragraph, or None if not found.
     """
     for idx, element in enumerate(body):
-        if element.tag.endswith("}p"):
-            text = _get_paragraph_text(element)
+        if not element.tag.endswith("}p"):
+            continue
 
-            # Check paragraph style
-            p_pr = element.find(".//w:pPr", namespaces={"w": SCHEMA})
-            style = None
-            if p_pr is not None:
-                p_style = p_pr.find(".//w:pStyle", namespaces={"w": SCHEMA})
-                if p_style is not None:
-                    style = p_style.get(f"{{{SCHEMA}}}val")
-
-            # Check for TOC_PLACEHOLDER marker
-            # Only in body text paragraphs, not in titles or headings
-            if style in ["BodyText", "FirstParagraph", None]:
-                text_stripped = text.strip()
-                if text_stripped == "TOC_PLACEHOLDER":
-                    logging.info(f"Found TOC_PLACEHOLDER marker at index {idx}")
-                    return idx
+        if _is_toc_placeholder_paragraph(element, idx):
+            return idx
 
     return None
+
+
+def _is_toc_placeholder_paragraph(element: Any, idx: int) -> bool:
+    """Check if a paragraph element is a TOC_PLACEHOLDER."""
+    text = _get_paragraph_text(element)
+    text_stripped = text.strip()
+
+    if text_stripped != "TOC_PLACEHOLDER":
+        return False
+
+    # Only accept placeholder in body text paragraphs, not in titles or headings
+    style = _get_paragraph_style(element)
+    if style not in ["BodyText", "FirstParagraph", None]:
+        return False
+
+    logging.info(f"Found TOC_PLACEHOLDER marker at index {idx}")
+    return True
+
+
+def _get_paragraph_style(element: Any) -> str | None:
+    """Extract the style name from a paragraph element."""
+    p_pr = element.find(XPATH_P_PR, namespaces={"w": SCHEMA})
+    if p_pr is None:
+        return None
+
+    p_style = p_pr.find(XPATH_P_STYLE, namespaces={"w": SCHEMA})
+    if p_style is None:
+        return None
+
+    return p_style.get(f"{{{SCHEMA}}}val")
 
 
 def create_toc_field() -> list[Any]:
@@ -255,12 +276,12 @@ def create_toc_field() -> list[Any]:
 def _add_caption_style_and_tc_field(para: Any, caption_text: str, field_flag: str) -> None:
     """Add Caption style and TC field to a paragraph."""
     # Add or update paragraph style to Caption
-    p_pr = para.find(".//w:pPr", namespaces={"w": SCHEMA})
+    p_pr = para.find(XPATH_P_PR, namespaces={"w": SCHEMA})
     if p_pr is None:
         p_pr = parse_xml(f'<w:pPr {nsdecls("w")}><w:pStyle w:val="Caption"/></w:pPr>')
         para.insert(0, p_pr)
     else:
-        p_style = p_pr.find(".//w:pStyle", namespaces={"w": SCHEMA})
+        p_style = p_pr.find(XPATH_P_STYLE, namespaces={"w": SCHEMA})
         if p_style is None:
             p_style = parse_xml(f'<w:pStyle {nsdecls("w")} w:val="Caption"/>')
             p_pr.insert(0, p_style)
