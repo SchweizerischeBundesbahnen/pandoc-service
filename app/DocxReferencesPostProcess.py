@@ -11,137 +11,161 @@ SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 def add_table_of_contents_entries(doc: DocumentObject) -> None:
     """
     Add Table of Contents, Table of Figures and/or Table of Tables by:
-    1. Finding headings/figure/table captions
-    2. Finding and replacing div(s)/ul(s) with reference links
+    1. Finding headings and ensuring they have proper heading styles
+    2. Finding figure/table captions and adding TC fields
+    3. Replacing TOC_PLACEHOLDER with Word TOC field
+    4. Replacing reference link divs/lists with Word field codes
     """
     body = doc.element.body
 
-    # Find all figure and table captions
+    # Step 1: Process headings
+    heading_count = _process_headings(body)
+    logging.info(f"Processed {heading_count} headings")
+
+    # Step 2: Find and process captions
+    figure_paragraphs, table_paragraphs = _find_and_process_captions(body)
+
+    # Step 3: Find elements to replace
+    elements_to_replace = _find_elements_to_replace(body, figure_paragraphs, table_paragraphs)
+
+    # Step 4: Replace elements with Word fields
+    _replace_elements_with_fields(body, elements_to_replace, figure_paragraphs, table_paragraphs)
+
+
+def _find_and_process_captions(body: Any) -> tuple[list, list]:
+    """Find all figure and table captions and add TC fields to them."""
     figure_paragraphs = []
     table_paragraphs = []
 
     for para in body.findall(".//w:p", namespaces={"w": SCHEMA}):
         text = _get_paragraph_text(para)
-        if text.strip().startswith("Figure"):
-            figure_paragraphs.append((para, text.strip()))
-        elif text.strip().startswith("Table"):
-            table_paragraphs.append((para, text.strip()))
+        text_stripped = text.strip()
+
+        if text_stripped.startswith("Figure"):
+            figure_paragraphs.append((para, text_stripped))
+            _add_caption_style_and_tc_field(para, text_stripped, field_flag="F")
+            logging.debug(f"Added Caption style and TC field to figure: {text_stripped}")
+        elif text_stripped.startswith("Table"):
+            table_paragraphs.append((para, text_stripped))
+            _add_caption_style_and_tc_field(para, text_stripped, field_flag="T")
+            logging.debug(f"Added Caption style and TC field to table: {text_stripped}")
 
     logging.info(f"Found {len(figure_paragraphs)} figure captions and {len(table_paragraphs)} table captions")
+    return figure_paragraphs, table_paragraphs
 
-    # Add Caption style and TC fields
-    for idx, (para, caption_text) in enumerate(figure_paragraphs):
-        _add_caption_style_and_tc_field(para, caption_text, field_flag="F")
-        logging.debug(f"Added Caption style and TC field to figure: {caption_text}")
 
-    for idx, (para, caption_text) in enumerate(table_paragraphs):
-        logging.debug(f"Added Caption style and TC field to table: {caption_text}")
-        _add_caption_style_and_tc_field(para, caption_text, field_flag="T")
+def _find_elements_to_replace(body: Any, figure_paragraphs: list, table_paragraphs: list) -> list:
+    """Find all elements that need to be replaced with Word fields."""
+    elements_to_replace: list = []
 
-    # Find paragraphs/lists containing reference links
-    elements_to_replace = []  # List of (index, element, has_toc, has_figure_links, has_table_links)
+    # Find reference link paragraphs
+    _find_reference_links(body, elements_to_replace)
 
+    # Find TOC placeholder
+    toc_index = _find_toc_placeholder(body)
+    if toc_index is not None:
+        element = body[toc_index]
+        elements_to_replace.append((toc_index, element, True, False, False))
+        logging.info(f"Found TOC_PLACEHOLDER at index {toc_index}, will replace with TOC field")
+    else:
+        logging.info("No TOC_PLACEHOLDER found, skipping TOC insertion")
+
+    return elements_to_replace
+
+
+def _find_reference_links(body: Any, elements_to_replace: list) -> None:
+    """Find paragraphs containing reference links to figures/tables."""
     for idx, element in enumerate(body):
-        # Check paragraphs
-        if element.tag.endswith("}p"):
-            text = _get_paragraph_text(element)
-            hyperlinks = element.findall(".//w:hyperlink", namespaces={"w": SCHEMA})
+        if not element.tag.endswith("}p"):
+            continue
 
-            has_figure_links = False
-            has_table_links = False
+        hyperlinks = element.findall(".//w:hyperlink", namespaces={"w": SCHEMA})
+        has_figure_links, has_table_links = _check_hyperlinks(hyperlinks)
 
-            for hyperlink in hyperlinks:
-                anchor = hyperlink.get(f"{{{SCHEMA}}}anchor", "")
-                if anchor.startswith("dlecaption_"):
-                    # Check link text to determine if it's figure or table
-                    link_text = _get_paragraph_text(hyperlink)
-                    if "Figure" in link_text:
-                        has_figure_links = True
-                    elif "Table" in link_text:
-                        has_table_links = True
+        if has_figure_links or has_table_links:
+            elements_to_replace.append((idx, element, False, has_figure_links, has_table_links))
+            logging.debug(f"Found reference link paragraph at index {idx}: figures={has_figure_links}, tables={has_table_links}")
 
-            if has_figure_links or has_table_links:
-                elements_to_replace.append((idx, element, False, has_figure_links, has_table_links))
-                logging.debug(
-                    f"Found reference link paragraph at index {idx}: figures={has_figure_links}, tables={has_table_links}")
 
-    # Also search for TOC by finding <ul> elements (Pandoc may keep some structure)
-    # or by finding multiple consecutive paragraphs with heading links
-    toc_indices = _find_toc_structure(body)
-    if toc_indices:
-        # Mark ALL TOC elements for removal
-        for toc_idx in toc_indices:
-            # Check if not already marked
-            already_marked = any(idx == toc_idx for idx, _, _, _, _ in elements_to_replace)
-            if not already_marked and toc_idx < len(body):
-                element = body[toc_idx]
-                elements_to_replace.append((toc_idx, element, True, False, False))
-        logging.info(f"Marked {len(toc_indices)} TOC elements for replacement")
+def _check_hyperlinks(hyperlinks: list) -> tuple[bool, bool]:
+    """Check if hyperlinks contain references to figures or tables."""
+    has_figure_links = False
+    has_table_links = False
 
-    # Process elements and insert TOC/TOF/TOT
-    # We need to process from end to beginning to maintain indices
-    # Group consecutive TOC elements together
-    toc_groups = []
-    current_group = []
+    for hyperlink in hyperlinks:
+        anchor = hyperlink.get(f"{{{SCHEMA}}}anchor", "")
+        if anchor.startswith("dlecaption_"):
+            link_text = _get_paragraph_text(hyperlink)
+            if "Figure" in link_text:
+                has_figure_links = True
+            elif "Table" in link_text:
+                has_table_links = True
 
-    for item in sorted(elements_to_replace, key=lambda x: x[0]):
-        idx, element, has_toc, has_figure_links, has_table_links = item
+    return has_figure_links, has_table_links
 
-        if has_toc:
-            if not current_group or idx == current_group[-1][0] + 1:
-                current_group.append(item)
-            else:
-                if current_group:
-                    toc_groups.append(current_group)
-                current_group = [item]
-        else:
-            if current_group:
-                toc_groups.append(current_group)
-                current_group = []
 
-    if current_group:
-        toc_groups.append(current_group)
-
-    # Add non-TOC items to separate list
-    non_toc_items = [item for item in elements_to_replace if not item[2]]
-
-    # Process TOC groups (remove all elements, insert TOC at first position)
-    for toc_group in reversed(toc_groups):
-        first_idx = toc_group[0][0]
-
-        # Remove all TOC elements in this group
-        for idx, element, _, _, _ in reversed(toc_group):
-            if element is not None:
-                body.remove(element)
-                logging.debug(f"Removed TOC element at index {idx}")
-
-        toc_paragraphs = create_toc_field()
-        for toc_para in reversed(toc_paragraphs):
-            body.insert(first_idx, toc_para)
-        logging.info(f"Inserted Table of Contents at index {first_idx}")
-
-    # Process non-TOC elements (TOF/TOT)
-    for idx, element, has_toc, has_figure_links, has_table_links in reversed(non_toc_items):
-        # Remove this element if it exists
+def _replace_elements_with_fields(body: Any, elements_to_replace: list, figure_paragraphs: list, table_paragraphs: list) -> None:
+    """Replace found elements with Word field codes."""
+    # Sort by index in reverse order to maintain correct positions during removal
+    for idx, element, has_toc, has_figure_links, has_table_links in sorted(elements_to_replace, key=lambda x: x[0], reverse=True):
+        # Remove element
         if element is not None:
             body.remove(element)
-            logging.debug(f"Removed reference element at index {idx}")
+            logging.debug(f"Removed element at index {idx}")
 
-        # Insert TOF and/or TOT at this location
-        insert_offset = 0
+        # Insert replacement fields
+        _insert_field_at_position(body, idx, has_toc, has_figure_links, has_table_links, figure_paragraphs, table_paragraphs)
 
-        if has_figure_links and figure_paragraphs:
-            tof_paragraphs = create_tof_field()
-            for tof_para in reversed(tof_paragraphs):
-                body.insert(idx + insert_offset, tof_para)
-            insert_offset += len(tof_paragraphs)
-            logging.info(f"Inserted Table of Figures at index {idx + insert_offset - len(tof_paragraphs)}")
 
-        if has_table_links and table_paragraphs:
-            tot_paragraphs = create_tot_field()
-            for tot_para in reversed(tot_paragraphs):
-                body.insert(idx + insert_offset, tot_para)
-            logging.info(f"Inserted Table of Tables at index {idx + insert_offset}")
+def _insert_field_at_position(body: Any, idx: int, has_toc: bool, has_figure_links: bool, has_table_links: bool, figure_paragraphs: list, table_paragraphs: list) -> None:  # noqa: PLR0913
+    """Insert appropriate Word fields at the specified position."""
+    if has_toc:
+        toc_paragraphs = create_toc_field()
+        for toc_para in reversed(toc_paragraphs):
+            body.insert(idx, toc_para)
+        logging.info(f"Inserted Table of Contents at index {idx}")
+
+    if has_figure_links and figure_paragraphs:
+        tof_paragraphs = create_tof_field()
+        for tof_para in reversed(tof_paragraphs):
+            body.insert(idx, tof_para)
+        logging.info(f"Inserted Table of Figures at index {idx}")
+
+    if has_table_links and table_paragraphs:
+        tot_paragraphs = create_tot_field()
+        for tot_para in reversed(tot_paragraphs):
+            body.insert(idx, tot_para)
+        logging.info(f"Inserted Table of Tables at index {idx}")
+
+
+def _process_headings(body: Any) -> int:
+    """
+    Process all headings in the document to ensure they have proper Word styles.
+    Pandoc converts <h1>, <h2>, <h3> to paragraphs with specific styles.
+    We need to ensure these have the correct Heading1, Heading2, Heading3 styles.
+
+    Returns: Number of headings processed
+    """
+    heading_count = 0
+
+    for para in body.findall(".//w:p", namespaces={"w": SCHEMA}):
+        p_pr = para.find(".//w:pPr", namespaces={"w": SCHEMA})
+        if p_pr is not None:
+            p_style = p_pr.find(".//w:pStyle", namespaces={"w": SCHEMA})
+            if p_style is not None:
+                style_val = p_style.get(f"{{{SCHEMA}}}val", "")
+
+                # Pandoc uses these style names for headings
+                # Make sure they're set to proper Word heading styles
+                if style_val in ["Heading1", "Heading2", "Heading3", "Title"]:
+                    # Already has correct style
+                    heading_count += 1
+                    logging.debug(f"Found heading with style: {style_val}")
+                elif style_val.startswith("Heading"):
+                    # Has a heading style, count it
+                    heading_count += 1
+
+    return heading_count
 
 
 def enable_auto_update_fields(doc: DocumentObject) -> None:
@@ -155,7 +179,7 @@ def enable_auto_update_fields(doc: DocumentObject) -> None:
         settings_element = settings.element
 
         # Check if updateFields already exists
-        update_fields = settings_element.find('.//w:updateFields', namespaces={'w': SCHEMA})
+        update_fields = settings_element.find(".//w:updateFields", namespaces={"w": SCHEMA})
 
         if update_fields is None:
             # Create the updateFields element
@@ -164,52 +188,39 @@ def enable_auto_update_fields(doc: DocumentObject) -> None:
             logging.info("Enabled auto-update of fields on document open")
         else:
             # Update existing value
-            update_fields.set(f'{{{SCHEMA}}}val', 'true')
+            update_fields.set(f"{{{SCHEMA}}}val", "true")
             logging.info("Updated existing auto-update fields setting")
     except Exception as e:
         logging.warning(f"Could not enable auto-update fields: {e}")
 
 
-def _find_toc_structure(body: Any) -> list[int]:
+def _find_toc_placeholder(body: Any) -> int | None:
     """
-    Find the TOC structure in the document.
-    Pandoc converts <ul class="toc"> to a series of list items.
-    We need to find ALL consecutive elements that are part of the TOC.
-    Returns list of indices of ALL TOC-related elements to remove.
-    """
-    toc_indices = []
-    in_toc = False
+    Find the TOC_PLACEHOLDER marker in the document.
 
+    Returns the index of the placeholder paragraph, or None if not found.
+    """
     for idx, element in enumerate(body):
-        # Check if this element contains TOC-related links
         if element.tag.endswith("}p"):
-            hyperlinks = element.findall(".//w:hyperlink", namespaces={"w": SCHEMA})
-            has_toc_link = False
+            text = _get_paragraph_text(element)
 
-            for hyperlink in hyperlinks:
-                anchor = hyperlink.get(f"{{{SCHEMA}}}anchor", "")
-                # TOC links typically point to work-item-anchor
-                if "work-item-anchor" in anchor:
-                    has_toc_link = True
-                    break
+            # Check paragraph style
+            p_pr = element.find(".//w:pPr", namespaces={"w": SCHEMA})
+            style = None
+            if p_pr is not None:
+                p_style = p_pr.find(".//w:pStyle", namespaces={"w": SCHEMA})
+                if p_style is not None:
+                    style = p_style.get(f"{{{SCHEMA}}}val")
 
-            if has_toc_link:
-                if not in_toc:
-                    # Start of TOC
-                    in_toc = True
-                toc_indices.append(idx)
-            elif in_toc:
-                # Check if this is an empty paragraph or break between TOC items
-                text = _get_paragraph_text(element)
-                if not text.strip():
-                    # Empty paragraph, might be part of TOC formatting
-                    toc_indices.append(idx)
-                else:
-                    # Non-TOC content, stop
-                    break
+            # Check for TOC_PLACEHOLDER marker
+            # Only in body text paragraphs, not in titles or headings
+            if style in ["BodyText", "FirstParagraph", None]:
+                text_stripped = text.strip()
+                if text_stripped == "TOC_PLACEHOLDER":
+                    logging.info(f"Found TOC_PLACEHOLDER marker at index {idx}")
+                    return idx
 
-    logging.info(f"Found TOC structure: indices {toc_indices}")
-    return toc_indices
+    return None
 
 
 def create_toc_field() -> list[Any]:

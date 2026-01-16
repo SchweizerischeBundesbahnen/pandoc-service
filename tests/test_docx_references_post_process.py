@@ -8,7 +8,7 @@ from app.DocxReferencesPostProcess import (
     SCHEMA,
     _add_caption_style_and_tc_field,
     _create_tc_field_runs,
-    _find_toc_structure,
+    _find_toc_placeholder,
     _get_paragraph_text,
     add_table_of_contents_entries,
     create_toc_field,
@@ -244,73 +244,69 @@ def test_create_tot_field_structure():
     assert "\\z" in instr.text
 
 
-def test_find_toc_structure_empty_body():
-    """Test finding TOC structure in empty document body."""
+def test_find_toc_placeholder_empty_body():
+    """Test finding TOC placeholder in empty document body."""
     body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"/>')
-    result = _find_toc_structure(body)
-    assert result == []
+    result = _find_toc_placeholder(body)
+    assert result is None
 
 
-def test_find_toc_structure_with_toc_links():
-    """Test finding TOC structure with work-item-anchor links."""
+def test_find_toc_placeholder_with_marker():
+    """Test finding TOC_PLACEHOLDER marker."""
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>Heading 1</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-2">
-                <w:r><w:t>Heading 2</w:t></w:r>
-            </w:hyperlink>
+            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
         </w:p>
     </w:body>
     ''')
-    result = _find_toc_structure(body)
-    assert len(result) == 2
-    assert 0 in result
-    assert 1 in result
+    result = _find_toc_placeholder(body)
+    assert result == 0
 
 
-def test_find_toc_structure_stops_at_non_toc_content():
-    """Test that TOC detection stops at non-TOC content."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>TOC Item</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-        <w:p/>
-        <w:p>
-            <w:r><w:t>Regular content</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    result = _find_toc_structure(body)
-    # Should include TOC link and empty paragraph, but stop before regular content
-    assert 0 in result  # TOC link
-    assert 1 in result  # Empty paragraph
-    assert 2 not in result  # Regular content
-
-
-def test_find_toc_structure_without_toc():
-    """Test finding TOC structure in document without TOC."""
+def test_find_toc_placeholder_not_found():
+    """Test finding TOC placeholder in document without placeholder."""
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
             <w:r><w:t>Regular paragraph</w:t></w:r>
         </w:p>
+    </w:body>
+    ''')
+    result = _find_toc_placeholder(body)
+    assert result is None
+
+
+def test_find_toc_placeholder_in_heading_ignored():
+    """Test that TOC_PLACEHOLDER in heading is ignored."""
+    body = parse_xml(f'''
+    <w:body xmlns:w="{SCHEMA}">
         <w:p>
-            <w:hyperlink w:anchor="some-other-anchor">
-                <w:r><w:t>Non-TOC link</w:t></w:r>
-            </w:hyperlink>
+            <w:pPr>
+                <w:pStyle w:val="Heading1"/>
+            </w:pPr>
+            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
         </w:p>
     </w:body>
     ''')
-    result = _find_toc_structure(body)
-    assert result == []
+    result = _find_toc_placeholder(body)
+    assert result is None
+
+
+def test_find_toc_placeholder_in_body_text():
+    """Test finding TOC_PLACEHOLDER in BodyText style."""
+    body = parse_xml(f'''
+    <w:body xmlns:w="{SCHEMA}">
+        <w:p>
+            <w:pPr>
+                <w:pStyle w:val="BodyText"/>
+            </w:pPr>
+            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
+        </w:p>
+    </w:body>
+    ''')
+    result = _find_toc_placeholder(body)
+    assert result == 0
 
 
 def test_enable_auto_update_fields_when_not_present():
@@ -452,23 +448,16 @@ def test_add_toc_entries_processes_table_reference_links():
     assert len(body) >= initial_element_count
 
 
-def test_add_toc_entries_inserts_toc_field(caplog):
-    """Test that TOC field is inserted when TOC structure is found."""
+def test_add_toc_entries_inserts_toc_field_with_placeholder(caplog):
+    """Test that TOC field is inserted when TOC_PLACEHOLDER is found."""
     mock_doc = MagicMock(spec=DocumentObject)
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>Heading 1</w:t></w:r>
-            </w:hyperlink>
+            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
         </w:p>
         <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-2">
-                <w:r><w:t>Heading 2</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-        <w:p>
-            <w:r><w:t>Content after TOC</w:t></w:r>
+            <w:r><w:t>Content after placeholder</w:t></w:r>
         </w:p>
     </w:body>
     ''')
@@ -481,35 +470,13 @@ def test_add_toc_entries_inserts_toc_field(caplog):
     assert "Inserted Table of Contents" in caplog.text
 
 
-def test_add_toc_entries_handles_empty_document():
-    """Test that empty document is handled without errors."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"/>')
-    mock_doc.element.body = body
-
-    # Should not raise any exceptions
-    add_table_of_contents_entries(mock_doc)
-
-
-def test_add_toc_entries_handles_consecutive_toc_elements(caplog):
-    """Test that consecutive TOC elements are all removed and replaced with single TOC."""
+def test_add_toc_entries_skips_toc_without_placeholder(caplog):
+    """Test that TOC is NOT inserted when no placeholder is found."""
     mock_doc = MagicMock(spec=DocumentObject)
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>TOC Item 1</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-2">
-                <w:r><w:t>TOC Item 2</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-3">
-                <w:r><w:t>TOC Item 3</w:t></w:r>
-            </w:hyperlink>
+            <w:r><w:t>Regular content</w:t></w:r>
         </w:p>
     </w:body>
     ''')
@@ -518,8 +485,19 @@ def test_add_toc_entries_handles_consecutive_toc_elements(caplog):
     with caplog.at_level(logging.INFO):
         add_table_of_contents_entries(mock_doc)
 
-    # All TOC elements should be marked and replaced
-    assert "Marked 3 TOC elements for replacement" in caplog.text
+    # Verify TOC was NOT inserted
+    assert "No TOC_PLACEHOLDER found, skipping TOC insertion" in caplog.text
+    assert "Inserted Table of Contents" not in caplog.text
+
+
+def test_add_toc_entries_handles_empty_document():
+    """Test that empty document is handled without errors."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"/>')
+    mock_doc.element.body = body
+
+    # Should not raise any exceptions
+    add_table_of_contents_entries(mock_doc)
 
 
 def test_add_toc_entries_processes_both_figures_and_tables(caplog):
@@ -555,15 +533,13 @@ def test_add_toc_entries_processes_both_figures_and_tables(caplog):
     assert "Found 2 figure captions and 2 table captions" in caplog.text
 
 
-def test_add_toc_entries_handles_mixed_toc_and_reference_links():
-    """Test document with both TOC structure and figure/table reference links."""
+def test_add_toc_entries_handles_mixed_placeholder_and_reference_links():
+    """Test document with TOC_PLACEHOLDER and figure/table reference links."""
     mock_doc = MagicMock(spec=DocumentObject)
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>TOC Heading</w:t></w:r>
-            </w:hyperlink>
+            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
         </w:p>
         <w:p>
             <w:r><w:t>Figure 1: Test</w:t></w:r>
@@ -587,9 +563,7 @@ def test_add_toc_entries_preserves_non_toc_content():
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>TOC Item</w:t></w:r>
-            </w:hyperlink>
+            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
         </w:p>
         <w:p>
             <w:r><w:t>Regular content that should be preserved</w:t></w:r>
@@ -610,32 +584,20 @@ def test_add_toc_entries_preserves_non_toc_content():
 
 
 def test_full_workflow_with_figures_and_toc():
-    """Integration test: document with figures and TOC structure."""
+    """Integration test: document with figures and TOC_PLACEHOLDER."""
     from docx import Document
-    import io
 
     # Create a real document
     doc = Document()
+    doc.add_paragraph("TOC_PLACEHOLDER")
     doc.add_paragraph("Figure 1: Test figure caption")
     doc.add_paragraph("Figure 2: Another figure")
-
-    # Get the body
-    body = doc.element.body
-
-    # Add mock TOC structure
-    toc_para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:hyperlink w:anchor="work-item-anchor-1">
-            <w:r><w:t>Section 1</w:t></w:r>
-        </w:hyperlink>
-    </w:p>
-    ''')
-    body.insert(0, toc_para)
 
     # Run the function
     add_table_of_contents_entries(doc)
 
     # Verify Caption styles were added to figure paragraphs
+    body = doc.element.body
     paras = body.findall(".//w:p", namespaces={"w": SCHEMA})
     figure_paras = [p for p in paras if "Figure" in _get_paragraph_text(p)]
 
@@ -741,32 +703,6 @@ def test_caption_starting_with_whitespace():
     add_table_of_contents_entries(mock_doc)
 
 
-def test_multiple_toc_groups_in_document():
-    """Test document with multiple separate TOC structures."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>TOC 1 Item 1</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-        <w:p>
-            <w:r><w:t>Content between TOCs</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-2">
-                <w:r><w:t>TOC 2 Item 1</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    # Should handle multiple TOC groups
-    add_table_of_contents_entries(mock_doc)
-
-
 def test_figure_and_table_with_same_number():
     """Test handling when figure and table have same number."""
     mock_doc = MagicMock(spec=DocumentObject)
@@ -809,86 +745,3 @@ def test_paragraph_with_multiple_hyperlinks():
 
     # Should handle paragraph with multiple links
     add_table_of_contents_entries(mock_doc)
-
-
-def test_logging_for_figure_caption_processing(caplog):
-    """Test that figure caption processing is logged at debug level."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>Figure 1: Test</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    with caplog.at_level(logging.DEBUG):
-        add_table_of_contents_entries(mock_doc)
-
-    # Verify debug logging for caption processing
-    assert "Added Caption style and TC field to figure" in caplog.text
-
-
-def test_logging_for_table_caption_processing(caplog):
-    """Test that table caption processing is logged at debug level."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>Table 1: Test</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    with caplog.at_level(logging.DEBUG):
-        add_table_of_contents_entries(mock_doc)
-
-    # Verify debug logging for caption processing
-    assert "Added Caption style and TC field to table" in caplog.text
-
-
-def test_logging_for_toc_insertion(caplog):
-    """Test that TOC insertion is logged at info level."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:hyperlink w:anchor="work-item-anchor-1">
-                <w:r><w:t>Heading</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    with caplog.at_level(logging.INFO):
-        add_table_of_contents_entries(mock_doc)
-
-    # Verify info logging for TOC insertion
-    assert "Inserted Table of Contents" in caplog.text
-
-
-def test_logging_for_reference_link_removal(caplog):
-    """Test that reference link removal is logged at debug level."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>Figure 1: Test</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:hyperlink w:anchor="dlecaption_fig1">
-                <w:r><w:t>Figure 1</w:t></w:r>
-            </w:hyperlink>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    with caplog.at_level(logging.DEBUG):
-        add_table_of_contents_entries(mock_doc)
-
-    # Verify debug logging for element removal
-    assert "Removed reference element" in caplog.text or "Removed TOC element" in caplog.text
