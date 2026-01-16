@@ -46,6 +46,7 @@ PAPER_SIZES = {
 
 def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
+    _move_header_footer_references_to_first_section(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc)
     add_table_of_contents_entries(doc)
@@ -135,6 +136,56 @@ def _set_orientation(sect_pr: Any, pg_sz: Any, orientation: str) -> None:
     # Remove orient attribute for portrait (it's the default)
     elif f"{{{SCHEMA}}}orient" in pg_sz.attrib:
         del pg_sz.attrib[f"{{{SCHEMA}}}orient"]
+
+
+def _move_header_footer_references_to_first_section(doc: DocumentObject) -> None:
+    """
+    Move header/footer references from the last section to the first section.
+
+    When Lua filters insert section breaks (e.g., for page orientation changes),
+    they create new sections without header/footer references. The template's
+    header/footer refs end up only in the last section.
+
+    In OOXML, sections without explicit header/footer refs inherit from previous
+    sections. By moving the refs to the first section, all subsequent sections
+    will inherit them automatically. This also properly handles first/odd/even
+    page header/footer configurations.
+
+    Additionally, the <w:titlePg/> element is moved along with the references.
+    This element controls the "different first page" header/footer feature in Word.
+    If left in the last section while refs are in the first, Word would incorrectly
+    apply "first page" headers/footers to the wrong pages.
+    """
+    if len(doc.sections) <= 1:
+        return  # Nothing to fix if there's only one section
+
+    first_sect_pr = doc.sections[0]._sectPr
+    last_sect_pr = doc.sections[-1]._sectPr
+
+    # Check if first section already has header/footer references
+    existing_headers = first_sect_pr.findall("w:headerReference", namespaces={"w": SCHEMA})
+    existing_footers = first_sect_pr.findall("w:footerReference", namespaces={"w": SCHEMA})
+
+    if existing_headers or existing_footers:
+        return  # First section already has refs, nothing to do
+
+    # Find and move header references from last to first section
+    header_refs = last_sect_pr.findall("w:headerReference", namespaces={"w": SCHEMA})
+    for ref in header_refs:
+        last_sect_pr.remove(ref)
+        first_sect_pr.insert(0, ref)
+
+    # Find and move footer references from last to first section
+    footer_refs = last_sect_pr.findall("w:footerReference", namespaces={"w": SCHEMA})
+    for ref in footer_refs:
+        last_sect_pr.remove(ref)
+        first_sect_pr.insert(0, ref)
+
+    # Move titlePg element if present (controls "different first page" header/footer)
+    title_pg = last_sect_pr.find("w:titlePg", namespaces={"w": SCHEMA})
+    if title_pg is not None:
+        last_sect_pr.remove(title_pg)
+        first_sect_pr.append(title_pg)
 
 
 def _replace_table_properties(doc: DocumentObject) -> None:  # NOSONAR  # needed by design
