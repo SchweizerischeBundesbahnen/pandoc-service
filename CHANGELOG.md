@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.6.0...v1.7.0) (2026-01-18)
+
+
+### Features
+
+* Replace generated hyperlinks for ToC, ToF, and ToT with macros ([#114](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/114)) ([8bc34b3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/8bc34b39098d2a71aae103e5c914058b37a2497f)), closes [#113](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/113)
+
+
+### Bug Fixes
+
+* headers/footers from template are missing in all document segments ([#116](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/116)) ([d36dea2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d36dea229259166205c808c9367946c301d715a5)), closes [#115](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/115)
+
 ## [1.6.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.5.2...v1.6.0) (2026-01-13)
 
 
