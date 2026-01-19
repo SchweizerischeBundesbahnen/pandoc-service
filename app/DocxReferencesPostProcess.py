@@ -211,7 +211,7 @@ def _create_toc_field() -> list[Any]:
     return _create_field('TOC \\o "1-3" \\h \\z \\u')
 
 
-def _create_toc_based_field(field_type: str) -> list[Any]:
+def _create_table_listing_field(field_type: str) -> list[Any]:
     """Create TOC-based field paragraphs (TOF or TOT).
 
     Args:
@@ -225,12 +225,12 @@ def _create_toc_based_field(field_type: str) -> list[Any]:
 
 def _create_tof_field() -> list[Any]:
     """Create Table of Figures field paragraphs."""
-    return _create_toc_based_field("F")
+    return _create_table_listing_field("F")
 
 
 def _create_tot_field() -> list[Any]:
     """Create Table of Tables field paragraphs."""
-    return _create_toc_based_field("T")
+    return _create_table_listing_field("T")
 
 
 def _create_tc_field_runs(caption_text: str, field_flag: str = "F") -> list[Any]:
