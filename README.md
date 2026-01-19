@@ -357,3 +357,13 @@ Pandoc Service provides the following endpoints:
 > ```
 
 </details>
+
+### Supported Special Variables
+
+The document processor recognizes several special placeholder variables that can be automatically replaced with dynamic Word fields during HTML to DOCX conversion:
+
+#### Table of Contents Placeholders
+
+- **TOC_PLACEHOLDER** - Automatically replaced with a Word Table of Contents (TOC) field that lists all headings in your document
+- **TOF_PLACEHOLDER** - Automatically replaced with a Word Table of Figures (TOF) field that lists all figure captions
+- **TOT_PLACEHOLDER** - Automatically replaced with a Word Table of Tables (TOT) field that lists all table captions
