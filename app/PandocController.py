@@ -15,7 +15,6 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from starlette.formparsers import MultiPartParser
 
 from app.schema import VersionSchema
 
