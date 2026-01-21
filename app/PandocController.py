@@ -455,7 +455,7 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
 ) -> Response:
     temp_template_filename = None
     try:
-        form = await request.form(max_part_size=data_limit) # NOSONAR type: ignore[call-arg]
+        form = await request.form(max_part_size=data_limit)
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
