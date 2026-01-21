@@ -15,7 +15,6 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from starlette.formparsers import MultiPartParser
 
 from app.schema import VersionSchema
 
@@ -121,9 +120,6 @@ def get_request_body_limit_mb() -> int:
 
 env_data_limit = get_request_body_limit_mb()
 data_limit = env_data_limit * 1024 * 1024  # Convert MB to bytes
-
-# Configure global multipart form limits
-MultiPartParser.max_part_size = data_limit
 
 
 # Set the maximum request body size to data_limit
@@ -392,7 +388,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913
 ) -> Response:
     temp_template_filename = None
     try:
-        form = await request.form()
+        form = await request.form(max_part_size=data_limit) # NOSONAR False positive - max_part_size is valid parameter
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
@@ -459,7 +455,7 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
 ) -> Response:
     temp_template_filename = None
     try:
-        form = await request.form()
+        form = await request.form(max_part_size=data_limit) # NOSONAR False positive - max_part_size is valid parameter
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
@@ -527,7 +523,7 @@ async def convert(  # noqa: PLR0913
             data = await request.body()
             source = data if not encoding else data.decode(encoding)
         else:
-            form = await request.form()
+            form = await request.form(max_part_size=data_limit) # NOSONAR False positive - max_part_size is valid parameter
             uploaded_file = form.get("source")
 
             try:
