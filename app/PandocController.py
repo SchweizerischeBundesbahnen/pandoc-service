@@ -388,7 +388,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913
 ) -> Response:
     temp_template_filename = None
     try:
-        form = await request.form(max_part_size=data_limit)
+        form = await request.form(max_part_size=data_limit) # NOSONAR False positive - max_part_size is valid parameter
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
@@ -455,7 +455,7 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
 ) -> Response:
     temp_template_filename = None
     try:
-        form = await request.form(max_part_size=data_limit)
+        form = await request.form(max_part_size=data_limit) # NOSONAR False positive - max_part_size is valid parameter
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
@@ -523,7 +523,7 @@ async def convert(  # noqa: PLR0913
             data = await request.body()
             source = data if not encoding else data.decode(encoding)
         else:
-            form = await request.form(max_part_size=data_limit)
+            form = await request.form(max_part_size=data_limit) # NOSONAR False positive - max_part_size is valid parameter
             uploaded_file = form.get("source")
 
             try:
