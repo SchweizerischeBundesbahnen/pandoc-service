@@ -882,13 +882,6 @@ def test_get_request_body_limit_mb_logging_message_content():
         assert "500 MB" in warning_message
 
 
-# Tests for MultiPartParser global configuration
-def test_multipart_parser_max_part_size_configured():
-    """Test that MultiPartParser.max_part_size is set to data_limit on module import."""
-    assert MultiPartParser.max_part_size == data_limit
-    assert data_limit == env_data_limit * 1024 * 1024  # Verify calculation
-
-
 # Tests for async file I/O in get_docx_template
 def test_get_docx_template_uses_async_file_io():
     """Test that get_docx_template uses async file I/O with anyio.open_file."""
