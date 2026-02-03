@@ -15,7 +15,7 @@ dependencies = [
     "uvicorn==0.40.0",
     "python-multipart==0.0.22",
     "defusedxml==0.7.1",
-    "asgiref==3.11.0",
+    "asgiref==3.11.1",
 ]
 
 [dependency-groups]
