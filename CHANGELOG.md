@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.7.0...v1.8.0) (2026-02-07)
+
+
+### Features
+
+* **deps:** update dependency jgm/pandoc to v3.9 ([4e5f444](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4e5f444c7ddadeb06da25e27ecd570d11b0db066))
+
 ## [1.7.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.6.0...v1.7.0) (2026-01-22)
 
 
