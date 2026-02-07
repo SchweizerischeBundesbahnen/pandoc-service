@@ -410,14 +410,14 @@ websockets = ["websocket-client (>=1.3.0)"]
 
 [[package]]
 name = "fastapi"
-version = "0.128.3"
+version = "0.128.4"
 description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "fastapi-0.128.3-py3-none-any.whl", hash = "sha256:c8cdf7c2182c9a06bf9cfa3329819913c189dc86389b90d5709892053582db29"},
-    {file = "fastapi-0.128.3.tar.gz", hash = "sha256:ed99383fd96063447597d5aa2a9ec3973be198e3b4fc10c55f15c62efdb21c60"},
+    {file = "fastapi-0.128.4-py3-none-any.whl", hash = "sha256:9321282cee605fd2075ccbc95c0f2e549d675c59de4a952bba202cd1730ac66b"},
+    {file = "fastapi-0.128.4.tar.gz", hash = "sha256:d6a2cc4c0edfbb2499f3fdec55ba62e751ee58a6354c50f85ed0dabdfbcfeb60"},
 ]
 
 [package.dependencies]
@@ -1680,4 +1680,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "1de552ebc537833a0138a90dcaf024dcbc08ab5c9955c49c4452305539a1b380"
+content-hash = "f4033fee0ff1099b72d58fd04ef0b758e51e9225782e73e380cf0f7537e704c1"
