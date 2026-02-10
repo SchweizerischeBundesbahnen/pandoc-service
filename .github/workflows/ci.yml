@@ -26,17 +26,19 @@ jobs:
           persist-credentials: false
       - name: Install Pandoc
         run: sudo apt-get install pandoc
-      - name: 🧱 Install Poetry
-        run: curl -sSL https://install.python-poetry.org | python3 -
+      - name: Install uv
+        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b  # v7.3.0
+        with:
+          python-version: '3.13'
+          cache-python: true
       - name: 🧱 Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.13'
-          cache: poetry
       - name: 🧱 Install dependencies
-        run: poetry install --all-extras
+        run: uv sync --group dev --group test
       - name: 🧪 Run tests
-        run: poetry run tox
+        run: uv run tox
       - name: SonarCloud scan for PR
         uses: sonarsource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9  # v7.0.0
         if: github.event_name == 'pull_request'
