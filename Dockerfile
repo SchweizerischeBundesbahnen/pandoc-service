@@ -1,4 +1,4 @@
-FROM python:3.13.7-alpine@sha256:9ba6d8cbebf0fb6546ae71f2a1c14f6ffd2fdab83af7fa5669734ef30ad48844
+FROM ghcr.io/astral-sh/uv:alpine3.23@sha256:d9c3fc83933cc9f6eafdef606c79aabd933b9f87e6d04d8b6d3cd2270ceb99ab
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
@@ -33,16 +33,23 @@ RUN mkdir -p ${WORKING_DIR}/logs && \
 
 WORKDIR "${WORKING_DIR}"
 
+# Copy Python version file and dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install Python via uv to /opt/python
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN PYTHON_VERSION="3.13.7" && \
+    uv python install "${PYTHON_VERSION}"
+
+# Install dependencies with cache mount
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen
+
 RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
     echo "${BUILD_TIMESTAMP}" > "${WORKING_DIR}/.build_timestamp"
 
-COPY requirements.txt "${WORKING_DIR}/requirements.txt"
-
 COPY ./app/*.py "${WORKING_DIR}/app/"
-COPY ./pyproject.toml ${WORKING_DIR}/pyproject.toml
-COPY ./poetry.lock ${WORKING_DIR}/poetry.lock
-
-RUN pip3 install --no-cache-dir -r "${WORKING_DIR}/requirements.txt" && poetry install --no-root --only main
 
 COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
