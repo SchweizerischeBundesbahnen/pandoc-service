@@ -108,27 +108,27 @@ This script builds the image, starts a container, and performs tests on all endp
 #### Python Tests
 ```bash
 # Prepare testing
-poetry install
+uv sync --group dev --group test
 ```
 
 ```bash
 # Run all Python tests
-poetry run pytest -v
+uv run pytest -v
 ```
 ```bash
 # Run a specific test
-poetry run pytest tests/test_docx_post_process.py -v
+uv run pytest tests/test_docx_post_process.py -v
 ```
 
 #### Tox
 ```bash
 # Run all test pytest and linting
-poetry run tox
+uv run tox
 ```
 
 #### Pre-commit
 ```bash
-poetry run pre-commit run --all
+uv run pre-commit run --all
 ```
 
 For more detailed testing information, see the [tests README](tests/README.md).
