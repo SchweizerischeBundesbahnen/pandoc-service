@@ -381,7 +381,6 @@ name = "pandoc-service"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "anyio" },
     { name = "asgiref" },
     { name = "defusedxml" },
     { name = "fastapi" },
@@ -393,6 +392,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "anyio" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "ruff" },
@@ -410,7 +410,6 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = "==4.12.1" },
     { name = "asgiref", specifier = "==3.11.1" },
     { name = "defusedxml", specifier = "==0.7.1" },
     { name = "fastapi", specifier = "==0.128.6" },
@@ -422,6 +421,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "anyio", specifier = "==4.12.1" },
     { name = "mypy", specifier = "==1.19.1" },
     { name = "pre-commit", specifier = "==4.5.1" },
     { name = "ruff", specifier = "==0.15.0" },

@@ -16,7 +16,6 @@ dependencies = [
     "python-multipart==0.0.22",
     "defusedxml==0.7.1",
     "asgiref==3.11.1",
-    "anyio==4.12.1",  # Explicit for mypy type checking (transitive from starlette)
 ]
 
 [dependency-groups]
@@ -24,6 +23,7 @@ dev = [
     "pre-commit==4.5.1",
     "ruff==0.15.0",
     "mypy==1.19.1",
+    "anyio==4.12.1",  # Explicit for mypy type checking (transitive from starlette)
 ]
 test = [
     "tox==4.34.1",
