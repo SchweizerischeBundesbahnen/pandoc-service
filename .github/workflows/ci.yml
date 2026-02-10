@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: 🧱 Install dependencies
-        run: uv sync --group dev --group test
+        run: uv sync --group dev --group test --frozen
       - name: 🧪 Run tests
         run: uv run tox
       - name: SonarCloud scan for PR
