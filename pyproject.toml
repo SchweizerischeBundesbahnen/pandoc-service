@@ -5,7 +5,7 @@ description = "Service for https://pandoc.org/"
 authors = [
     {name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch"},
 ]
-license = "Apache License 2.0"
+license = {text = "Apache License 2.0"}
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
@@ -27,7 +27,8 @@ dev = [
 ]
 test = [
     "tox==4.34.1",
-    "docker==7.1.0",  # for debug source code for pytest --> see tox.ini section [testenv]
+    # for debug source code for pytest --> see tox.ini section [testenv]
+    "docker==7.1.0",
     "pytest==9.0.2",
     "pytest-mock==3.15.1",
     "pytest-cov==7.0.0",
@@ -36,12 +37,9 @@ test = [
     "coverage==7.13.4",
 ]
 
-[tool.poetry]
-packages = [{include = "app"}]
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+# Set to false because this project is an application, not a library
+package = false
 
 [tool.ruff]
 line-length = 240
