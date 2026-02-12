@@ -28,14 +28,14 @@ This directory contains all tests for the pandoc-service project. The testing is
 To run Python tests:
 
 ```bash
-poetry run tox
-poetry run pytest
+uv run tox
+uv run pytest
 ```
 
 For a specific test file:
 
 ```bash
-poetry run pytest tests/test_pandoc_controller.py
+uv run pytest tests/test_pandoc_controller.py
 ```
 
 ### Docker Container Tests
