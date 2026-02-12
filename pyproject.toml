@@ -5,13 +5,13 @@ description = "Service for https://pandoc.org/"
 authors = [
     {name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch"},
 ]
-license = "Apache License 2.0"
+license = {text = "Apache License 2.0"}
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "python-docx==1.2.0",
     "python-pptx==1.0.2",
-    "fastapi==0.128.6",
+    "fastapi==0.128.7",
     "uvicorn==0.40.0",
     "python-multipart==0.0.22",
     "defusedxml==0.7.1",
@@ -27,7 +27,8 @@ dev = [
 ]
 test = [
     "tox==4.34.1",
-    "docker==7.1.0",  # for debug source code for pytest --> see tox.ini section [testenv]
+    # for debug source code for pytest --> see tox.ini section [testenv]
+    "docker==7.1.0",
     "pytest==9.0.2",
     "pytest-mock==3.15.1",
     "pytest-cov==7.0.0",
