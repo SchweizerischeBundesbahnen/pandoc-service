@@ -36,14 +36,11 @@ WORKDIR "${WORKING_DIR}"
 # Copy Python version file and dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install Python via uv to /opt/python
+# Install Python via uv to /opt/python and dependencies
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN PYTHON_VERSION="3.13.7" && \
-    uv python install "${PYTHON_VERSION}"
-
-# Install dependencies with cache mount
-RUN --mount=type=cache,target=/root/.cache/uv \
+    uv python install "${PYTHON_VERSION}" && \
     uv sync --frozen
 
 RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
