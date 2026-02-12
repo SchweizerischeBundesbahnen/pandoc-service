@@ -34,12 +34,12 @@ RUN mkdir -p ${WORKING_DIR}/logs && \
 WORKDIR "${WORKING_DIR}"
 
 # Copy Python version file and dependency files
-COPY pyproject.toml uv.lock ./
+COPY .tool-versions pyproject.toml uv.lock ./
 
-# Install Python via uv to /opt/python
+# Install Python via uv to /opt/python (version from .tool-versions file)
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN PYTHON_VERSION="3.13.7" && \
+RUN PYTHON_VERSION=$(awk '/^python / {print $2}' .tool-versions) && \
     uv python install "${PYTHON_VERSION}"
 
 # Install dependencies with cache mount
