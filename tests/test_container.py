@@ -248,6 +248,10 @@ def pandoc_container():
         # Clean up any existing resources first
         cleanup_docker_resources()
 
+        # Enable BuildKit via environment variable
+        import os
+        os.environ["DOCKER_BUILDKIT"] = "1"
+
         # Build the image with test-specific tag
         image, _ = client.images.build(path=".", tag=TEST_IMAGE_FULL, buildargs={"APP_IMAGE_VERSION": "1.0.0"})
 
