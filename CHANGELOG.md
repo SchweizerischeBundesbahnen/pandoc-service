@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.7.0...v2.0.0) (2026-02-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate ci workflow from poetry to uv ([#123](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/123))
+
+### Features
+
+* **deps:** update dependency jgm/pandoc to v3.9 ([4e5f444](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4e5f444c7ddadeb06da25e27ecd570d11b0db066))
+* migrate ci workflow from poetry to uv ([#123](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/123)) ([72f4d94](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/72f4d94027b8bfb4c403e6ea5d7198c4d118e361))
+* migrate dockerfile from poetry to uv ([#124](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/124)) ([5d1748a](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5d1748a1f2a78e03e9390423de3076367251f688))
+
+
+### Bug Fixes
+
+* complete poetry-to-uv migration for CI and local tooling ([b69cfae](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b69cfae37a9dd974ccec919ecb96e9729982af1e))
+* **deps:** update dependency fastapi to v0.129.0 ([#125](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/125)) ([557a056](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/557a056efe321be6d6e00103038d51c89a76f13b))
+
 ## [1.7.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.6.0...v1.7.0) (2026-01-22)
 
 
