@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:alpine3.23@sha256:ef3858e840277d176cdb9ec033e3f4868650d93e82a7449d0b9ce97c1a844ab5
+FROM ghcr.io/astral-sh/uv:alpine3.23@sha256:5f33761e2777b3190a41fbe478c4796c29ef798cf1e69d4e7ce295609643a47b
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
