@@ -2,16 +2,18 @@ import io
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from docx import Document
-from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
 from docx.oxml import parser as docx_parser
 from docx.oxml.ns import nsdecls
-from docx.section import Section
-from docx.table import Table, _Cell
 from lxml import etree  # type: ignore
+
+if TYPE_CHECKING:
+    from docx.document import Document as DocumentObject
+    from docx.section import Section
+    from docx.table import Table, _Cell
 
 from app.DocxReferencesPostProcess import add_table_of_contents_entries, enable_auto_update_fields
 
