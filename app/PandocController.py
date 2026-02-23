@@ -174,7 +174,6 @@ def get_pandoc_version() -> str | None:
     "/version",
     summary="Get service version information",
     description="Get version information for python, pandoc executable and pandoc service",
-    response_model=VersionSchema,
     responses={200: {"description": "Success", "content": {MIME_TYPES["txt"]: {}}}, 422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}}},
 )
 def version() -> VersionSchema:
