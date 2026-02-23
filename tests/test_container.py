@@ -107,7 +107,7 @@ def _is_test_related_container(container: Container) -> bool:
         container.name == TEST_CONTAINER_NAME
         or (container.image.tags and TEST_IMAGE_FULL in str(container.image.tags))
         or not container.image.tags  # Intermediate containers
-        or (container.image.tags and "python:3.13-alpine" in str(container.image.tags))  # Base image containers
+        or (container.image.tags and "python:3.14-alpine" in str(container.image.tags))  # Base image containers
     )
 
 

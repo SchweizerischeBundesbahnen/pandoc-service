@@ -5,9 +5,9 @@ import platform
 import subprocess
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anyio
 import starlette.datastructures
@@ -19,6 +19,10 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from app.schema import VersionSchema
 
 from . import DocxPostProcess, PptxPostProcess
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
 
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 CUSTOM_REFERENCE_PPTX = "custom-reference.pptx"

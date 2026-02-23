@@ -1,9 +1,11 @@
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+
+if TYPE_CHECKING:
+    from docx.document import Document as DocumentObject
 
 # XML namespace identifier, not an actual HTTP URL
 SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR
