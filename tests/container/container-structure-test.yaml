@@ -8,24 +8,24 @@ commandTests:
   - name: Python version is correct
     command: python3
     args: [--version]
-    expectedOutput: [Python 3.13.*]
-  - name: Poetry version is correct
-    command: poetry
+    expectedOutput: [Python 3.14.*]
+  - name: uv  version is correct
+    command: uv
     args: [--version]
-    expectedOutput: [version 2.*.*]
+    expectedOutput: [version 0.9.*]
   # Note: Tini was replaced with Docker's --init flag (see issue #32)
   # Use 'docker run --init' or 'init: true' in docker-compose.yaml
   - name: Pandoc version is correct
-    command: poetry
+    command: uv
     args: [run, pandoc, --version]
     expectedOutput: [pandoc 3.*.*]
   - name: Tox should not be installed
-    command: poetry
+    command: uv
     args: [run, tox, --version]
     exitCode: 1
     expectedError: ['Command not found: tox']
   - name: Pytest should not be installed
-    command: poetry
+    command: uv
     args: [run, pytest, --version]
     exitCode: 1
     expectedError: ['Command not found: pytest']

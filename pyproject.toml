@@ -11,7 +11,7 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "python-docx==1.2.0",
     "python-pptx==1.0.2",
-    "fastapi==0.129.0",
+    "fastapi==0.131.0",
     "uvicorn==0.41.0",
     "python-multipart==0.0.22",
     "defusedxml==0.7.1",
@@ -21,12 +21,12 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit==4.5.1",
-    "ruff==0.15.1",
+    "ruff==0.15.2",
     "mypy==1.19.1",
     "anyio==4.12.1",  # Explicit for mypy type checking (transitive from starlette)
 ]
 test = [
-    "tox==4.40.0",
+    "tox==4.44.0",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.1.0",
     "pytest==9.0.2",
