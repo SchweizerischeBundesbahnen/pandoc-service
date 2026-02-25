@@ -190,8 +190,7 @@ To start the Docker container with your custom-built image:
 docker run --init --detach \
   --publish 9082:9082 \
   --publish 9182:9182 \
-  --network weasyprint_network \
-  --name pandoc \
+  --name pandoc-service \
   pandoc-service:0.0.0
 ```
 

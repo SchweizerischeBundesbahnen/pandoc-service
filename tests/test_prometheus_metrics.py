@@ -14,13 +14,6 @@ from app.prometheus_metrics import (
     observe_request_body_size,
     observe_response_body_size,
     observe_subprocess_duration,
-    pandoc_conversion_failures_total,
-    pandoc_conversions_total,
-    pandoc_post_processing_duration_seconds,
-    pandoc_request_body_bytes,
-    pandoc_response_body_bytes,
-    pandoc_subprocess_duration_seconds,
-    pandoc_template_conversions_total,
     update_gauges_from_pandoc_metrics,
 )
 
