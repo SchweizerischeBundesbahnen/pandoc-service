@@ -11,6 +11,9 @@ def test_main_runs(monkeypatch, tmp_path):
     log_dir = tmp_path / "logs"
     monkeypatch.setenv("LOG_DIR", str(log_dir))
 
+    # Disable metrics server to avoid port conflicts during tests
+    monkeypatch.setenv("METRICS_SERVER_ENABLED", "false")
+
     # Mock command line arguments
     monkeypatch.setattr(sys, "argv", ["PandocServiceApplication.py", "--port", "9999"])
 

@@ -18,6 +18,7 @@ from one format into another.
 
 - Simple REST API to access [Pandoc](https://pandoc.org/)
 - Direct subprocess calls to the pandoc binary (no Python module dependency)
+- Prometheus metrics endpoint on dedicated port (9182) for monitoring and Grafana integration
 - Compatible with amd64 and arm64 architectures
 - Easily deployable via Docker
 
@@ -36,14 +37,15 @@ docker pull ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 To start the Pandoc service container, execute:
 
 ```bash
-  docker run --init --detach \
-    --publish 9082:9082 \
-    --name pandoc-service \
-    --env REQUEST_BODY_LIMIT_MB=500 \
-    ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+docker run --init --detach \
+  --publish 9082:9082 \
+  --publish 9182:9182 \
+  --name pandoc-service \
+  --env REQUEST_BODY_LIMIT_MB=500 \
+  ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
 
-The service will be accessible on port 9082.
+The service will be accessible on port 9082, and Prometheus metrics on port 9182.
 
 The REQUEST_BODY_LIMIT_MB environment variable sets the maximum allowed size (in megabytes) for uploaded files or request bodies processed by the Pandoc service. The default is 500 MB.
 
@@ -54,6 +56,116 @@ To extend or customize the service, use it as a base image in the Dockerfile:
 ```Dockerfile
 FROM ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
+
+### Prometheus & Grafana Integration
+
+The service exposes Prometheus-compatible metrics for comprehensive monitoring and observability through Grafana dashboards.
+
+**Metrics Endpoint:** `/metrics` on port 9182 (dedicated metrics port)
+
+> **Security:** The metrics endpoint is served on a separate port (9182) from the main API (9082). This allows network-level isolation using security groups or firewall rules to restrict metrics access to your Prometheus server only.
+
+**Available Metrics:**
+
+**Conversion Metrics:**
+- `pandoc_conversions_total` - Total successful conversions (labeled by source/target format)
+- `pandoc_conversion_failures_total` - Total failed conversions (labeled by source/target format)
+- `pandoc_conversion_error_rate_percent` - Conversion error rate as percentage
+- `pandoc_template_conversions_total` - Total conversions using custom templates
+
+**Performance Metrics:**
+- `pandoc_conversion_duration_seconds` - Conversion time histogram (labeled by format)
+- `pandoc_subprocess_duration_seconds` - Pandoc subprocess execution time histogram
+- `pandoc_post_processing_duration_seconds` - DOCX/PPTX post-processing time histogram
+- `avg_pandoc_conversion_time_seconds` - Average conversion time
+
+**Size Metrics:**
+- `pandoc_request_body_bytes` - Input document size histogram
+- `pandoc_response_body_bytes` - Output document size histogram
+
+**Service Metrics:**
+- `uptime_seconds` - Service uptime
+- `active_conversions` - Current active conversion count
+- `pandoc_info` - Service and pandoc version information
+
+**HTTP Metrics (via prometheus-fastapi-instrumentator):**
+- `http_request_duration_seconds` - HTTP request duration histogram
+- `http_requests_inprogress` - Current in-flight requests
+- `http_requests_total` - Total HTTP requests
+
+**Prometheus Configuration Example:**
+
+```yaml
+scrape_configs:
+  - job_name: 'pandoc-service'
+    static_configs:
+      - targets: ['pandoc-service:9182']  # Metrics on dedicated port
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+```
+
+**Grafana Dashboard Queries:**
+
+```promql
+# Conversion rate (requests per second)
+rate(pandoc_conversions_total[5m])
+
+# Error rate percentage
+sum(rate(pandoc_conversion_failures_total[5m])) / sum(rate(pandoc_conversions_total[5m])) * 100
+
+# 95th percentile conversion duration
+histogram_quantile(0.95, rate(pandoc_conversion_duration_seconds_bucket[5m]))
+
+# Conversions by format
+sum by (source_format, target_format) (pandoc_conversions_total)
+```
+
+**Docker Compose Example with Prometheus & Grafana:**
+
+```yaml
+services:
+  pandoc-service:
+    image: ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+    init: true
+    ports:
+      - "9082:9082"   # Main API
+      - "9182:9182"   # Metrics endpoint
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+volumes:
+  prometheus-data:
+  grafana-data:
+```
+
+**Pre-configured Monitoring Stack:**
+
+For a complete, production-ready monitoring setup with pre-configured Prometheus, Grafana, and dashboards:
+
+```bash
+cd monitoring
+./start-monitoring.sh
+```
+
+This will start the Pandoc service, Prometheus, and Grafana with a pre-built dashboard. Access Grafana at http://localhost:3000 (admin/admin) and view the dashboard at http://localhost:3000/d/pandoc-service.
+
+For detailed setup instructions and configuration options, see [monitoring/README.md](monitoring/README.md).
 
 ## Development
 
@@ -75,10 +187,12 @@ Replace 0.0.0 with the desired version number.
 To start the Docker container with your custom-built image:
 
 ```bash
-  docker run --init --detach \
-    --publish 9082:9082 \
-    --name pandoc-service \
-    pandoc-service:0.0.0
+docker run --init --detach \
+  --publish 9082:9082 \
+  --publish 9182:9182 \
+  --network weasyprint_network \
+  --name pandoc \
+  pandoc-service:0.0.0
 ```
 
 ### Stopping the Container
