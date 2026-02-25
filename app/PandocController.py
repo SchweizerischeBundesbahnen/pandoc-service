@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import contextlib
 import io
 import logging
 import os
@@ -15,13 +18,25 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse, StreamingResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
 from . import DocxPostProcess, PptxPostProcess
+from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
+from .pandoc_metrics import get_pandoc_metrics
+from .prometheus_metrics import (
+    increment_conversion_failure,
+    increment_conversion_success,
+    increment_template_conversion,
+    observe_post_processing_duration,
+    observe_request_body_size,
+    observe_response_body_size,
+    observe_subprocess_duration,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import AsyncGenerator, Awaitable, Callable
 
 
 CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
@@ -101,10 +116,60 @@ FILE_EXTENSIONS = {
 # Build default options dynamically
 DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all", f"--lua-filter={FILTERS['page_break']}"]
 
+logger = logging.getLogger(__name__)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001
+    """
+    Manage the lifecycle of the metrics server.
+
+    This ensures the metrics server is started when the FastAPI application
+    starts and properly cleaned up on shutdown.
+
+    The metrics server is started on a dedicated port (default: 9182) for
+    security isolation from the main application API.
+    """
+    # Initialize metrics and cache pandoc version
+    pandoc_metrics = get_pandoc_metrics()
+    pandoc_version = get_pandoc_version()
+    pandoc_metrics.set_pandoc_version(pandoc_version)
+    logger.info("Pandoc version: %s", pandoc_version)
+
+    # Start metrics server if enabled
+    metrics_server: MetricsServer | None = None
+    if is_metrics_server_enabled():
+        metrics_port = get_metrics_port()
+        metrics_server = MetricsServer(port=metrics_port)
+        await metrics_server.start()
+
+    yield  # Application runs here
+
+    # Stop metrics server
+    if metrics_server:
+        try:
+            await metrics_server.stop()
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error stopping metrics server: %s", e)
+
+
 app = FastAPI(
     openapi_url="/static/openapi.json",
     docs_url="/api/docs",
+    lifespan=lifespan,
 )
+
+# Initialize Prometheus Instrumentator for automatic HTTP metrics
+# Note: We instrument but don't expose() - metrics are served on a dedicated port via metrics_server
+Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_respect_env_var=True,
+    should_instrument_requests_inprogress=True,
+    env_var_name="ENABLE_METRICS",
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+).instrument(app)
 
 
 # Validate REQUEST_BODY_LIMIT_MB environment variable
@@ -353,8 +418,11 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             if validated_options:
                 cmd.extend(validated_options)
 
-            # Run pandoc with validated parameters
+            # Run pandoc with validated parameters and measure duration
+            subprocess_start_time = time.time()
             subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE)
+            subprocess_duration = time.time() - subprocess_start_time
+            observe_subprocess_duration(subprocess_duration)
 
             # Read output
             with Path(output_file.name).open("rb") as f:
@@ -390,19 +458,32 @@ async def convert_docx_with_ref(  # noqa: PLR0913
     orientation: str | None = None,
 ) -> Response:
     temp_template_filename = None
+    pandoc_metrics = get_pandoc_metrics()
+    conversion_start_time = time.time()
+    pandoc_metrics.record_conversion_start()
+
     try:
         form = await request.form(max_part_size=data_limit)  # NOSONAR False positive - max_part_size is valid parameter
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
+            pandoc_metrics.record_conversion_failure()
+            increment_conversion_failure(source_format, "docx")
             return process_error(Exception("No source file"), "No data or file provided using key 'source'", 400)
+
+        # Record input size
+        input_size = len(source) if isinstance(source, bytes) else len(source.encode("utf-8"))
+        observe_request_body_size(input_size)
 
         # Optional docx template file
         docx_template_file = form.get("template")
 
         if isinstance(docx_template_file, str):
+            pandoc_metrics.record_conversion_failure()
+            increment_conversion_failure(source_format, "docx")
             return process_error(Exception("Docx template must be a File"), "Invalid template file", 400)
 
+        has_template = bool(docx_template_file)
         if docx_template_file:
             temp_template_filename = f"ref_{int(time.time())}.docx"
             async with await anyio.open_file(temp_template_filename, "wb") as f:
@@ -426,9 +507,20 @@ async def convert_docx_with_ref(  # noqa: PLR0913
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, "docx", options)
 
-        return postprocess_and_build_response(output, "docx", file_name, paper_size, orientation)
+        response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation)
+
+        # Record success metrics
+        duration_seconds = time.time() - conversion_start_time
+        pandoc_metrics.record_conversion_success(duration_seconds * 1000)
+        increment_conversion_success(source_format, "docx", duration_seconds)
+        if has_template:
+            increment_template_conversion("docx")
+
+        return response
 
     except Exception as e:
+        pandoc_metrics.record_conversion_failure()
+        increment_conversion_failure(source_format, "docx")
         return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
     finally:
         if temp_template_filename is not None and Path(temp_template_filename).exists():
@@ -457,19 +549,32 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
     slide_size: str | None = None,
 ) -> Response:
     temp_template_filename = None
+    pandoc_metrics = get_pandoc_metrics()
+    conversion_start_time = time.time()
+    pandoc_metrics.record_conversion_start()
+
     try:
         form = await request.form(max_part_size=data_limit)  # NOSONAR False positive - max_part_size is valid parameter
         source_content = form.get("source")
         source = await get_docx_source_data(source_content, encoding)
         if not source:
+            pandoc_metrics.record_conversion_failure()
+            increment_conversion_failure(source_format, "pptx")
             return process_error(Exception("No source file"), "No data or file provided using key 'source'", 400)
+
+        # Record input size
+        input_size = len(source) if isinstance(source, bytes) else len(source.encode("utf-8"))
+        observe_request_body_size(input_size)
 
         # Optional pptx template file
         pptx_template_file = form.get("template")
 
         if isinstance(pptx_template_file, str):
+            pandoc_metrics.record_conversion_failure()
+            increment_conversion_failure(source_format, "pptx")
             return process_error(Exception("PPTX template must be a File"), "Invalid template file", 400)
 
+        has_template = bool(pptx_template_file)
         if pptx_template_file:
             temp_template_filename = f"ref_{int(time.time())}.pptx"
             async with await anyio.open_file(temp_template_filename, "wb") as f:
@@ -488,9 +593,20 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, "pptx", options)
 
-        return postprocess_and_build_response(output, "pptx", file_name, slide_size, None)
+        response = postprocess_and_build_response(output, "pptx", file_name, slide_size, None)
+
+        # Record success metrics
+        duration_seconds = time.time() - conversion_start_time
+        pandoc_metrics.record_conversion_success(duration_seconds * 1000)
+        increment_conversion_success(source_format, "pptx", duration_seconds)
+        if has_template:
+            increment_template_conversion("pptx")
+
+        return response
 
     except Exception as e:
+        pandoc_metrics.record_conversion_failure()
+        increment_conversion_failure(source_format, "pptx")
         return process_error(e, "Bad request", 400)
     finally:
         if temp_template_filename is not None and Path(temp_template_filename).exists():
@@ -520,6 +636,10 @@ async def convert(  # noqa: PLR0913
     paper_size: str | None = None,
     orientation: str | None = None,
 ) -> Response:
+    pandoc_metrics = get_pandoc_metrics()
+    conversion_start_time = time.time()
+    pandoc_metrics.record_conversion_start()
+
     try:
         file_name = file_name if file_name else "converted-document." + FILE_EXTENSIONS.get(target_format, "docx")
         if source_format in {"txt", "markdown", "html"}:
@@ -532,7 +652,13 @@ async def convert(  # noqa: PLR0913
             try:
                 source = await uploaded_file.read()  # type: ignore
             except AttributeError:
+                pandoc_metrics.record_conversion_failure()
+                increment_conversion_failure(source_format, target_format)
                 return process_error(Exception("Expected file-like object"), "Invalid uploaded file", 400)
+
+        # Record input size
+        input_size = len(source) if isinstance(source, bytes) else len(source.encode("utf-8"))
+        observe_request_body_size(input_size)
 
         options = DEFAULT_CONVERSION_OPTIONS.copy()
 
@@ -542,9 +668,18 @@ async def convert(  # noqa: PLR0913
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, target_format, options)
 
-        return postprocess_and_build_response(output, target_format, file_name, paper_size, orientation)
+        response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation)
+
+        # Record success metrics
+        duration_seconds = time.time() - conversion_start_time
+        pandoc_metrics.record_conversion_success(duration_seconds * 1000)
+        increment_conversion_success(source_format, target_format, duration_seconds)
+
+        return response
 
     except Exception as e:
+        pandoc_metrics.record_conversion_failure()
+        increment_conversion_failure(source_format, target_format)
         return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
 
 
@@ -559,10 +694,17 @@ async def get_docx_source_data(source_content: starlette.datastructures.UploadFi
 
 def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None) -> Response:
     if target_format == "docx":
+        post_process_start = time.time()
         output = DocxPostProcess.process(output, paper_size, orientation)
+        observe_post_processing_duration("docx", time.time() - post_process_start)
     elif target_format == "pptx":
         # For PPTX, paper_size parameter is repurposed as slide_size
+        post_process_start = time.time()
         output = PptxPostProcess.process(output, paper_size)
+        observe_post_processing_duration("pptx", time.time() - post_process_start)
+
+    # Record final response size after post-processing
+    observe_response_body_size(len(output))
     mime_type = MIME_TYPES.get(target_format, DEFAULT_MIME_TYPE)
 
     response = Response(output, media_type=mime_type, status_code=200)
