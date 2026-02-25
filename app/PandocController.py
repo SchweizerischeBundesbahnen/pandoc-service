@@ -513,7 +513,6 @@ async def convert_docx_with_ref(  # noqa: PLR0913
         duration_seconds = time.time() - conversion_start_time
         pandoc_metrics.record_conversion_success(duration_seconds * 1000)
         increment_conversion_success(source_format, "docx", duration_seconds)
-        observe_response_body_size(len(output))
         if has_template:
             increment_template_conversion("docx")
 
@@ -600,7 +599,6 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
         duration_seconds = time.time() - conversion_start_time
         pandoc_metrics.record_conversion_success(duration_seconds * 1000)
         increment_conversion_success(source_format, "pptx", duration_seconds)
-        observe_response_body_size(len(output))
         if has_template:
             increment_template_conversion("pptx")
 
@@ -676,7 +674,6 @@ async def convert(  # noqa: PLR0913
         duration_seconds = time.time() - conversion_start_time
         pandoc_metrics.record_conversion_success(duration_seconds * 1000)
         increment_conversion_success(source_format, target_format, duration_seconds)
-        observe_response_body_size(len(output))
 
         return response
 
@@ -705,6 +702,9 @@ def postprocess_and_build_response(output: bytes, target_format: str, file_name:
         post_process_start = time.time()
         output = PptxPostProcess.process(output, paper_size)
         observe_post_processing_duration("pptx", time.time() - post_process_start)
+
+    # Record final response size after post-processing
+    observe_response_body_size(len(output))
     mime_type = MIME_TYPES.get(target_format, DEFAULT_MIME_TYPE)
 
     response = Response(output, media_type=mime_type, status_code=200)

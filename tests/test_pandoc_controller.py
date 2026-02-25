@@ -555,8 +555,8 @@ def test_run_pandoc_conversion_with_valid_reference_doc():
 
 def test_convert_endpoint_invalid_format():
     """Test the conversion endpoint with invalid format."""
-    # Create a test client with metrics server disabled to avoid port conflicts
-    with patch.dict(os.environ, {"METRICS_SERVER_ENABLED": "false"}), TestClient(app) as test_client:
+    # Create a test client
+    with TestClient(app) as test_client:
         # Prepare test data with invalid format
         source_format = "invalid"
         target_format = "docx"
