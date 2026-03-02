@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.0.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.7.0...v2.0.0) (2026-03-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate ci workflow from poetry to uv ([#123](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/123))
+
+### Features
+
+* **deps:** update dependency jgm/pandoc to v3.9 ([4e5f444](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4e5f444c7ddadeb06da25e27ecd570d11b0db066))
+* migrate ci workflow from poetry to uv ([#123](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/123)) ([72f4d94](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/72f4d94027b8bfb4c403e6ea5d7198c4d118e361))
+* migrate dockerfile from poetry to uv ([#124](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/124)) ([5d1748a](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5d1748a1f2a78e03e9390423de3076367251f688))
+* switch to python 3.14 ([#127](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/127)) ([e77c55d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e77c55dbbb32e8604dca542a5b35e94cddfdf61e))
+
+
+### Bug Fixes
+
+* complete poetry-to-uv migration for CI and local tooling ([b69cfae](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b69cfae37a9dd974ccec919ecb96e9729982af1e))
+* **deps:** update dependency fastapi to v0.129.0 ([#125](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/125)) ([557a056](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/557a056efe321be6d6e00103038d51c89a76f13b))
+* **deps:** update dependency fastapi to v0.129.2 ([d809eaf](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d809eaf95c2c81bb95a4b28afb99f6af4e1dd85b))
+* **deps:** update dependency fastapi to v0.131.0 ([a0313f8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a0313f80c95b24a20ee771e5bab6b2bf1706903b))
+* **deps:** update dependency fastapi to v0.132.0 ([5a21382](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5a213829b3f738e75e187522e05c8bda62420787))
+* **deps:** update dependency fastapi to v0.133.0 ([87ccccd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/87ccccdb83b5e7008c0c454f74c487e63a700e37))
+* **deps:** update dependency fastapi to v0.133.1 ([cce45f7](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/cce45f76b1b628afdef33fb75313933d16903c74))
+* **deps:** update dependency uvicorn to v0.41.0 ([566071d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/566071d05c2f732f8c7f86bd8736736d7e07db47))
+* remove redundant response_model ([#130](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/130)) ([f01a765](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f01a765ff07409ac7993076df5b70a5671968c79))
+* update tox envlist to py314 after Python 3.14 migration ([#128](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/128)) ([c400640](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c400640386eb8af5db1e7fe277c59325f2466d9a))
+
 ## [1.7.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.6.0...v1.7.0) (2026-01-22)
 
 
