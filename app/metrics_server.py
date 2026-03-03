@@ -125,9 +125,9 @@ class MetricsServer:
         self._task = asyncio.create_task(self._server.serve())
 
         # Wait for server to be ready before returning (with timeout)
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         while not self._server.started:
-            if asyncio.get_event_loop().time() - start_time > STARTUP_TIMEOUT_SECONDS:
+            if asyncio.get_running_loop().time() - start_time > STARTUP_TIMEOUT_SECONDS:
                 logger.error("Metrics server failed to start within %s seconds", STARTUP_TIMEOUT_SECONDS)
                 # Cancel the task directly since self._started is still False and stop() would return early
                 if self._task:
@@ -153,6 +153,8 @@ class MetricsServer:
                 await asyncio.wait_for(self._task, timeout=5.0)
             except TimeoutError:
                 self._task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._task
 
         self._started = False
         logger.info("Metrics server stopped")
