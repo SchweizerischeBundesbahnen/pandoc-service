@@ -105,6 +105,25 @@ pandoc_info = Info(
 )
 
 
+def initialize_pandoc_info(pandoc_version: str, service_version: str) -> None:
+    """
+    Initialize pandoc service info metric once at startup.
+
+    This must be called once during application startup. prometheus_client.Info.info()
+    raises ValueError if called more than once with different values.
+
+    Args:
+        pandoc_version: Version of pandoc binary
+        service_version: Version of the service application
+    """
+    pandoc_info.info(
+        {
+            "version": pandoc_version if pandoc_version else "unknown",
+            "service_version": service_version if service_version else "unknown",
+        }
+    )
+
+
 # Helper functions to increment counters (called when events occur)
 def increment_conversion_success(source_format: str, target_format: str, duration_seconds: float) -> None:
     """Increment successful conversion counter and record duration."""
@@ -171,16 +190,6 @@ def update_gauges_from_pandoc_metrics(pandoc_metrics: PandocMetrics) -> None:
             active_conversions.set(float(active))
         if isinstance(avg_time, (int, float)):
             avg_pandoc_conversion_time_seconds.set(float(avg_time) / 1000.0)
-
-        # Update service info
-        version = metrics.get("pandoc_version")
-        service_ver = metrics.get("service_version")
-        pandoc_info.info(
-            {
-                "version": str(version) if version else "unknown",
-                "service_version": str(service_ver) if service_ver else "unknown",
-            }
-        )
 
         logger.debug("Prometheus gauges updated from PandocMetrics")
 

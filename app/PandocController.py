@@ -29,6 +29,7 @@ from .prometheus_metrics import (
     increment_conversion_failure,
     increment_conversion_success,
     increment_template_conversion,
+    initialize_pandoc_info,
     observe_post_processing_duration,
     observe_request_body_size,
     observe_response_body_size,
@@ -135,6 +136,10 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
     pandoc_version = get_pandoc_version()
     pandoc_metrics.set_pandoc_version(pandoc_version)
     logger.info("Pandoc version: %s", pandoc_version)
+
+    # Initialize Prometheus info metric once at startup
+    service_version = os.environ.get("PANDOC_SERVICE_VERSION", "unknown")
+    initialize_pandoc_info(pandoc_version or "unknown", service_version)
 
     # Start metrics server if enabled
     metrics_server: MetricsServer | None = None
