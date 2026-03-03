@@ -138,8 +138,12 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
     logger.info("Pandoc version: %s", pandoc_version)
 
     # Initialize Prometheus info metric once at startup
+    # Guard against repeated lifespan execution (e.g., uvicorn --reload, TestClient)
     service_version = os.environ.get("PANDOC_SERVICE_VERSION", "unknown")
-    initialize_pandoc_info(pandoc_version or "unknown", service_version)
+    try:
+        initialize_pandoc_info(pandoc_version or "unknown", service_version)
+    except ValueError:
+        logger.debug("Prometheus info metric already initialized (lifespan re-executed)")
 
     # Start metrics server if enabled
     metrics_server: MetricsServer | None = None

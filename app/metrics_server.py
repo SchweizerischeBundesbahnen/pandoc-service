@@ -9,6 +9,7 @@ isolation between the main application API and the metrics endpoint.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 
@@ -116,7 +117,7 @@ class MetricsServer:
 
         config = uvicorn.Config(
             app=metrics_app,
-            host="",
+            host="0.0.0.0",  # noqa: S104
             port=self.port,
             log_level="warning",
         )
@@ -128,7 +129,11 @@ class MetricsServer:
         while not self._server.started:
             if asyncio.get_event_loop().time() - start_time > STARTUP_TIMEOUT_SECONDS:
                 logger.error("Metrics server failed to start within %s seconds", STARTUP_TIMEOUT_SECONDS)
-                await self.stop()
+                # Cancel the task directly since self._started is still False and stop() would return early
+                if self._task:
+                    self._task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await self._task
                 raise TimeoutError(f"Metrics server failed to start within {STARTUP_TIMEOUT_SECONDS} seconds")
             await asyncio.sleep(0.01)
 
