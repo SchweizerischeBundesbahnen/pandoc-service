@@ -10,12 +10,11 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "python-docx==1.2.0",
-    "python-pptx==1.0.2",
     "fastapi==0.132.0",
     "uvicorn==0.41.0",
     "python-multipart==0.0.22",
     "defusedxml==0.7.1",
-    "asgiref==3.11.1",
+    "asgiref==3.11.1"
 ]
 
 [dependency-groups]
@@ -24,6 +23,7 @@ dev = [
     "ruff==0.15.2",
     "mypy==1.19.1",
     "anyio==4.12.1",  # Explicit for mypy type checking (transitive from starlette)
+    "types-defusedxml>=0.7.0.20250822",
 ]
 test = [
     "tox==4.45.0",
