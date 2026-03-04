@@ -16,7 +16,7 @@ dependencies = [
     "python-multipart==0.0.22",
     "defusedxml==0.7.1",
     "asgiref==3.11.1",
-    "prometheus-client==0.22.1",
+    "prometheus-client==0.24.1",
     "prometheus-fastapi-instrumentator==7.1.0",
 ]
 
