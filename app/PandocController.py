@@ -150,7 +150,11 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
     if is_metrics_server_enabled():
         metrics_port = get_metrics_port()
         metrics_server = MetricsServer(port=metrics_port)
-        await metrics_server.start()
+        try:
+            await metrics_server.start()
+        except Exception as e:  # noqa: BLE001
+            logger.error("Failed to start metrics server: %s", e)
+            metrics_server = None
 
     yield  # Application runs here
 

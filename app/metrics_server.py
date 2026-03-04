@@ -152,7 +152,7 @@ class MetricsServer:
             try:
                 await asyncio.wait_for(self._task, timeout=5.0)
             except TimeoutError:
-                self._task.cancel()
+                _ = self._task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._task
 
