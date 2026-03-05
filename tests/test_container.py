@@ -12,7 +12,7 @@ import requests
 from docker.models.containers import Container
 from docx import Document
 from docx.shared import RGBColor
-from pptx import Presentation
+from test_pptx_post_process import find_first_text_box_content, find_presentation_information
 
 # Constants for Docker resources
 TEST_IMAGE_NAME = "pandoc-service-test"
@@ -519,9 +519,10 @@ def test_pptx_template_endpoint(test_parameters: TestParameters) -> None:
     assert response.headers.get("Content-Type") == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     assert response.headers.get("Content-Disposition") == "attachment; filename=reference.pptx"
 
-    # Verify it's a valid PPTX by loading it
-    presentation = Presentation(io.BytesIO(response.content))
-    assert presentation is not None
+    # Verify it's a valid PPTX by loading it and parsing its information
+    presentation = io.BytesIO(response.content)
+    assert presentation is not None and len(presentation)
+    find_presentation_information(presentation)
 
 
 def test_convert_markdown_to_pptx(test_parameters: TestParameters) -> None:
@@ -536,9 +537,11 @@ def test_convert_markdown_to_pptx(test_parameters: TestParameters) -> None:
     assert response.status_code == 200
 
     # Verify it's a valid PPTX with expected slide count
-    presentation = Presentation(io.BytesIO(response.content))
-    assert presentation is not None
-    assert len(presentation.slides) == 2, "Expected 2 slides from markdown with slide separator"
+
+    presentation = io.BytesIO(response.content)
+    assert presentation is not None and len(presentation)
+    _, _, num_slides = find_presentation_information(presentation)
+    assert num_slides == 2, "Expected 2 slides from markdown with slide separator"
 
     # Check response headers
     assert "Pandoc-Version" in response.headers
@@ -564,9 +567,10 @@ def test_convert_with_pptx_template(test_parameters: TestParameters) -> None:
     assert response.status_code == 200
 
     # Verify it's a valid PPTX
-    presentation = Presentation(io.BytesIO(response.content))
-    assert presentation is not None
-    assert len(presentation.slides) >= 1
+    presentation = io.BytesIO(response.content)
+    assert presentation is not None and len(presentation)
+    _, _, num_slides = find_presentation_information(presentation)
+    assert num_slides >= 1
 
 
 def test_convert_invalid_source_format(test_parameters: TestParameters) -> None:
