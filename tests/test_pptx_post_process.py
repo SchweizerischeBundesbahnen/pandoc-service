@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from app.PptxPostProcess import SLIDE_SIZES, _apply_slide_size, process, PPTX_NAMESPACE, inches_to_emu, Dimensions
+from app.PptxPostProcess import SLIDE_SIZES, _apply_slide_size, process, PPTX_NAMESPACE, inches_to_emu
 
 SLIDE_PATH_PATTERN = re.compile(r"ppt/slides/[a-zA-Z0-9]+.xml")
 
@@ -34,6 +34,7 @@ def find_presentation_information(prs: io.BytesIO) -> tuple[int, int, int]:
             sld_id_lst = list(root.find("p:sldIdLst", PPTX_NAMESPACE).iter())[1:] # Remove first element since list includes sld_id_lst
             num_slides = len(sld_id_lst)
             return (int(sld_sz.get("cx")), int(sld_sz.get("cy")), num_slides)
+        raise ValueError("Invalid Presentation")
 
 def find_first_text_box_content(prs: io.BytesIO) -> str:
     """Read and return the text content of the first text box in the first slide"""
@@ -48,6 +49,7 @@ def find_first_text_box_content(prs: io.BytesIO) -> str:
             # Find first text box element
             text_box = root.find(".//a:t", PPTX_NAMESPACE) #.// XPath prefix for recursive search
             return text_box.text
+        raise ValueError("Invalid Presentation")
 
 
 def test_process_with_no_slide_size():

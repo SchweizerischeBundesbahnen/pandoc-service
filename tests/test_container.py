@@ -12,7 +12,7 @@ import requests
 from docker.models.containers import Container
 from docx import Document
 from docx.shared import RGBColor
-from test_pptx_post_process import find_first_text_box_content, find_presentation_information
+from test_pptx_post_process import find_presentation_information
 
 # Constants for Docker resources
 TEST_IMAGE_NAME = "pandoc-service-test"
