@@ -521,7 +521,7 @@ def test_pptx_template_endpoint(test_parameters: TestParameters) -> None:
 
     # Verify it's a valid PPTX by loading it and parsing its information
     presentation = io.BytesIO(response.content)
-    assert presentation is not None and len(presentation)
+    assert presentation is not None and presentation.getbuffer().nbytes > 0
     find_presentation_information(presentation)
 
 
@@ -539,7 +539,7 @@ def test_convert_markdown_to_pptx(test_parameters: TestParameters) -> None:
     # Verify it's a valid PPTX with expected slide count
 
     presentation = io.BytesIO(response.content)
-    assert presentation is not None and len(presentation)
+    assert presentation is not None and presentation.getbuffer().nbytes > 0
     _, _, num_slides = find_presentation_information(presentation)
     assert num_slides == 2, "Expected 2 slides from markdown with slide separator"
 
@@ -568,7 +568,7 @@ def test_convert_with_pptx_template(test_parameters: TestParameters) -> None:
 
     # Verify it's a valid PPTX
     presentation = io.BytesIO(response.content)
-    assert presentation is not None and len(presentation)
+    assert presentation is not None and presentation.getbuffer().nbytes > 0
     _, _, num_slides = find_presentation_information(presentation)
     assert num_slides >= 1
 
