@@ -28,7 +28,7 @@ dev = [
     "anyio==4.12.1",  # Explicit for mypy type checking (transitive from starlette)
 ]
 test = [
-    "tox==4.47.3",
+    "tox==4.48.1",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.1.0",
     "pytest==9.0.2",
