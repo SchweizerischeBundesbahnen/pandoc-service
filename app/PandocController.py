@@ -252,6 +252,7 @@ def get_tectonic_availability() -> str:
     try:
         subprocess.run(
             ["/usr/bin/tectonic", "--version"],
+            capture_output=True,
             check=True,
         )
         return "available"
