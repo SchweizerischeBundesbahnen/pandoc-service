@@ -73,7 +73,7 @@ def test_get_tectonic_availability_available():
         result = get_tectonic_availability()
 
         assert result == "available"
-        mock_subprocess.assert_called_once_with(["/usr/bin/tectonic", "--version"], check=True)
+        mock_subprocess.assert_called_once_with(["/usr/bin/tectonic", "--version"], capture_output=True, check=True)
 
 def test_get_tectonic_availability_unavailable():
     """Return unavailable when subprocess error occurs."""
