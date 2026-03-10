@@ -17,7 +17,7 @@ import starlette.datastructures
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
@@ -248,6 +248,31 @@ def get_pandoc_version() -> str | None:
         return None
 
 
+def get_tectonic_availability() -> str:
+    try:
+        subprocess.run(
+            ["/usr/bin/tectonic", "--version"],
+            check=True,
+        )
+        return "available"
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        logger.warning(f"Tectonic check failed: {e}")
+        return "unavailable"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Tectonic check error: {e}")
+        return "unknown"
+
+
+def get_temp_directory_writability() -> str:
+    with tempfile.NamedTemporaryFile("w") as probe_file:
+        try:
+            probe_file.write("ok")
+            return "writable"
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Log directory is not writable: {e}")
+            return "unwritable"
+
+
 @app.get(
     "/version",
     summary="Get service version information",
@@ -261,6 +286,42 @@ def version() -> VersionSchema:
         pandocService=os.environ.get("PANDOC_SERVICE_VERSION"),
         timestamp=os.environ.get("PANDOC_SERVICE_BUILD_TIMESTAMP"),
     )
+
+
+@app.get(
+    "/health",
+    summary="Health check endpoint",
+    description="Returns service health status",
+    operation_id="healthCheck",
+    tags=["meta"],
+    responses={
+        200: {
+            "description": "Service healthy",
+            "content": {MIME_TYPES["json"]: {}},
+        },
+        503: {"description": "Service unavailable", "content": {MIME_TYPES["txt"]: {}}},
+    },
+)
+async def health() -> JSONResponse:
+    """
+    Health check endpoint for monitoring.
+
+    Returns:
+        JSONResponse: {status, pandoc, tectonic, filesystem}
+    """
+    logger.debug("Health check endpoint called")
+
+    # Basic health check - service is running
+    health_status = {"status": "healthy", "pandoc": "available" if get_pandoc_version() else "unavailable", "tectonic": get_tectonic_availability(), "filesystem": get_temp_directory_writability()}
+
+    # Optional: Add dependency checks here
+    # Memory/resource status
+
+    if any(key in ["unavailable", "unwritable"] for key in health_status.values()):
+        health_status["status"] = "unhealthy"
+        return JSONResponse(health_status, status_code=503)
+
+    return JSONResponse(health_status)
 
 
 @app.get(
