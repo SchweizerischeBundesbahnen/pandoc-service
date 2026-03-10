@@ -93,8 +93,7 @@ def test_get_tectonic_availability_unknown_on_unexpected_error():
 
 def test_get_logs_directory_writability_writable(tmp_path: Path):
     """Return writable when probe file can be created and removed."""
-    with patch.dict(os.environ, {"LOG_DIR": str(tmp_path)}):
-        result = get_temp_directory_writability()
+    result = get_temp_directory_writability()
 
     assert result == "writable"
 

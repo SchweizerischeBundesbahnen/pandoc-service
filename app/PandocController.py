@@ -264,13 +264,13 @@ def get_tectonic_availability() -> str:
 
 
 def get_temp_directory_writability() -> str:
-    with tempfile.NamedTemporaryFile("w") as probe_file:
-        try:
+    try:
+        with tempfile.NamedTemporaryFile("w") as probe_file:
             probe_file.write("ok")
             return "writable"
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Log directory is not writable: {e}")
-            return "unwritable"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Log directory is not writable: {e}")
+        return "unwritable"
 
 
 @app.get(
@@ -317,7 +317,7 @@ async def health() -> JSONResponse:
     # Optional: Add dependency checks here
     # Memory/resource status
 
-    if any(key in ["unavailable", "unwritable"] for key in health_status.values()):
+    if any(key in ["unavailable", "unwritable", "unkown"] for key in health_status.values()):
         health_status["status"] = "unhealthy"
         return JSONResponse(health_status, status_code=503)
 
