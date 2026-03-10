@@ -299,7 +299,7 @@ def version() -> VersionSchema:
             "description": "Service healthy",
             "content": {MIME_TYPES["json"]: {}},
         },
-        503: {"description": "Service unavailable", "content": {MIME_TYPES["txt"]: {}}},
+        503: {"description": "Service unavailable", "content": {MIME_TYPES["json"]: {}}},
     },
 )
 async def health() -> JSONResponse:
