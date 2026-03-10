@@ -317,7 +317,7 @@ async def health() -> JSONResponse:
     # Optional: Add dependency checks here
     # Memory/resource status
 
-    if any(key in ["unavailable", "unwritable", "unkown"] for key in health_status.values()):
+    if any(key in ["unavailable", "unwritable", "unknown"] for key in health_status.values()):
         health_status["status"] = "unhealthy"
         return JSONResponse(health_status, status_code=503)
 

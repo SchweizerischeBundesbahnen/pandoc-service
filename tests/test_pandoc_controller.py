@@ -148,6 +148,24 @@ def test_health_endpoint_unhealthy():
         assert response_json["tectonic"] == "unavailable"
         assert response_json["filesystem"] == "unwritable"
 
+def test_health_endpoint_unhealthy_unknown_tectonic_error():
+    """Test health endpoint directly. Two unhealthy outputs"""
+    with (
+        patch("app.PandocController.get_temp_directory_writability", return_value="unwritable"),
+        patch("app.PandocController.get_tectonic_availability", return_value="unknown"),
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+    ):
+        test_client = TestClient(app)
+        response = test_client.get(
+            "/health"
+        )
+        response_json = response.json()
+        assert response.status_code == 503
+        assert response_json["status"] == "unhealthy"
+        assert response_json["pandoc"] == "available"
+        assert response_json["tectonic"] == "unknown"
+        assert response_json["filesystem"] == "unwritable"
+
 
 def test_convert_endpoint_error_handling():
     """Test error handling in conversion endpoints."""
