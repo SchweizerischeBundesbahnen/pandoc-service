@@ -270,7 +270,7 @@ def get_temp_directory_writability() -> str:
             probe_file.write("ok")
             return "writable"
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"Log directory is not writable: {e}")
+        logger.warning(f"Temp directory is not writable: {e}")
         return "unwritable"
 
 
@@ -303,7 +303,7 @@ def version() -> VersionSchema:
         503: {"description": "Service unavailable", "content": {MIME_TYPES["json"]: {}}},
     },
 )
-async def health() -> JSONResponse:
+def health() -> JSONResponse:
     """
     Health check endpoint for monitoring.
 

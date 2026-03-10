@@ -91,14 +91,14 @@ def test_get_tectonic_availability_unknown_on_unexpected_error():
         assert result == "unknown"
 
 
-def test_get_logs_directory_writability_writable(tmp_path: Path):
+def test_get_temp_directory_writability_writable(tmp_path: Path):
     """Return writable when probe file can be created and removed."""
     result = get_temp_directory_writability()
 
     assert result == "writable"
 
 
-def test_get_logs_directory_writability_unwritable(tmp_path: Path):
+def test_get_temp_directory_writability_unwritable(tmp_path: Path):
     """Return unwritable when writing probe file fails."""
     mock_probe = MagicMock()
     mock_probe.write.side_effect = PermissionError("denied")
