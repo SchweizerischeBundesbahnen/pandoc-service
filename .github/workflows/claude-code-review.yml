@@ -8,15 +8,7 @@ on:
       - ready_for_review
       - reopened
     # Only run on code, config, and infrastructure changes
-    paths:
-      - app/**/*.py
-      - tests/**/*.py
-      - Dockerfile
-      - docker-compose.yml
-      - tox.ini
-      - pyproject.toml
-      - uv.lock
-      - '!**/*.md'
+    paths: [app/**/*.py, tests/**/*.py, Dockerfile, docker-compose.yml, tox.ini, pyproject.toml]
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -26,6 +18,7 @@ jobs:
     if: |
       github.event.pull_request.user.login != 'renovate[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'release-please[bot]' &&
       github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     permissions:
@@ -48,9 +41,17 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
             STEP 1: Read CLAUDE.md and any files it references to learn project
             conventions, architecture decisions, and review standards.
-            STEP 2: Review the PR diff. Report ONLY actual problems in changed lines.
+            STEP 2: Gather context for the review:
+            a) Get the full PR diff: `gh pr diff --repo ${{ github.repository }} ${{ github.event.pull_request.number }}`
+            b) Fetch existing review comments from previous runs:
+               `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.user.login == "claude[bot]") | {path, line, body}'`
+            Review the full PR diff but DO NOT re-report issues that were already
+            flagged in previous review comments. If a previously flagged issue has
+            been fixed, do not mention it again. Only report NEW issues not already
+            covered by existing comments.
             CONFIDENCE RULE: For each potential issue, assess confidence 0-100.
             Only report issues scoring >= 80. If uncertain, do not flag it.
             False positives waste reviewer time.
@@ -72,15 +73,92 @@ jobs:
             GUIDELINES:
             - Use Read/Grep/Glob to search the codebase for context
             - The PR branch is already checked out
-            - Cite issues using GitHub links: https://github.com/${{ github.repository }}/blob/FULL_GIT_SHA/path/to/file#L1-L2
-            - Post the full review with `gh pr comment --repo ${{ github.repository }} --body "..."`
-            - Only post GitHub comments — don't submit review text as messages
-            FORMAT (be TERSE):
-            If issues found:
-            ## ❌ Issues Found
-            1. [link] - Problem [CLAUDE.md: "rule" if applicable] - Fix: specific solution
-            2. [link] - Issue - Suggestion: specific fix
-            If NO issues found: "## ✅ No issues found. Checked for bugs and CLAUDE.md compliance."
+            STEP 3: Submit your review as INLINE COMMENTS on the specific lines where
+            issues are found, using the GitHub Pull Request Review API.
+            To submit, pipe JSON via stdin to `gh api --input -`:
+            ```
+            echo '{
+              "commit_id": "${{ github.event.pull_request.head.sha }}",
+              "event": "COMMENT",
+              "body": "",
+              "comments": [
+                {"path": "path/to/file.py", "line": 42, "body": "comment body here"}
+              ]
+            }' | gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
+              --method POST --input -
+            ```
+            IMPORTANT: The `line` field must refer to a line number in the NEW version of
+            the file (the + side of the diff). Only comment on lines that appear in the diff.
+            For multi-line issues, use `start_line` and `line` to span a range (both on the
+            same side, i.e. `side: "RIGHT"` and `start_side: "RIGHT"`).
+            Each inline comment MUST use this format:
+            - First line: severity emoji + concise one-sentence summary + fix suggestion
+            - Then a collapsible details block with extended reasoning
+            Severity emojis:
+            🔴 Bug / will break at runtime
+            🟠 Security vulnerability
+            🟡 Likely bug / risky pattern
+            🔵 CLAUDE.md violation
+            Example comment body:
+            ```
+            🔴 Variable `data` is used before assignment on the else branch. Fix: initialize `data = {}` before the if/else block.
+            <details>
+            <summary>Extended reasoning...</summary>
+
+            ## What the bug is
+            ...detailed explanation...
+
+            ## Step-by-step proof
+            1. ...
+            2. ...
+
+            ## Impact
+            ...
+
+            ## How to fix
+            ...code example...
+            </details>
+            ```
+            AFTER submitting inline review comments (or if no inline issues found),
+            post a PR comment summary using `gh pr comment`:
+            If issues were found:
+            ```
+            gh pr comment --repo ${{ github.repository }} ${{ github.event.pull_request.number }} --body "$(cat <<'EOF'
+            ## Claude Code Review Summary
+            Found **N** issue(s) as inline review comments.
+            <details><summary><h3>Confidence Score: X/5</h3></summary>
+            - Brief overall assessment of the PR safety/quality
+            - Note any files that require special attention
+            </details>
+            <details><summary><h3>Important Files Changed</h3></summary>
+            | Filename | Overview |
+            |----------|----------|
+            | `path/to/file.py` | Brief description of changes |
+            </details>
+            EOF
+            )"
+            ```
+            If NO issues found:
+            ```
+            gh pr comment --repo ${{ github.repository }} ${{ github.event.pull_request.number }} --body "$(cat <<'EOF'
+            ## ✅ No issues found
+            Checked for bugs, security vulnerabilities, and CLAUDE.md compliance.
+            <details><summary><h3>Confidence Score: X/5</h3></summary>
+            - Brief overall assessment of the PR safety/quality
+            - This PR is safe to merge (or note any minor observations)
+            </details>
+            <details><summary><h3>Important Files Changed</h3></summary>
+            | Filename | Overview |
+            |----------|----------|
+            | `path/to/file.py` | Brief description of changes |
+            </details>
+            EOF
+            )"
+            ```
+            The overall confidence score reflects how thoroughly the changes could be
+            reviewed (5/5 = simple/clear changes fully understood, 3/5 = complex changes
+            with areas that need human judgment).
+            Only post GitHub comments — don't submit review text as messages.
           settings: |
             {
               "permissions": {
@@ -93,4 +171,4 @@ jobs:
                 ]
               }
             }
-          claude_args: --max-turns 30 --debug
+          claude_args: --max-turns 30

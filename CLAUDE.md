@@ -81,20 +81,28 @@ bash tests/shell/test_pandoc_service.sh
 
 ### Supported Formats
 - **Source**: docx, epub, fb2, html, json, latex, markdown, rtf, textile
-- **Target**: docx, epub, fb2, html, json, latex, markdown, odt, pdf, plain, rtf, textile
+- **Target**: docx, epub, fb2, html, json, latex, markdown, odt, pdf, plain, pptx, rtf, textile
 
 ### Key Configuration
-- **Python 3.14** required
-- **uv** for dependency management
+- **Python 3.14** required (see `.tool-versions` for exact patch version)
+- **uv** for dependency management (`--frozen` flag used in CI)
 - **Ruff** for linting (line length: 240, TCH rule enforces `if TYPE_CHECKING:` import guards)
 - **Mypy** for type checking (strict mode)
 - **Pytest** with >=90% coverage requirement
-- **Pandoc v3.7.0.2** binary in container
+- **Pandoc v3.9** binary in container
 
 ## API Endpoints
+- `GET /health` - Health check (pandoc, tectonic, filesystem status)
 - `GET /version` - Service version information
 - `GET /docx-template` - Download default DOCX template
+- `GET /pptx-template` - Download default PPTX template
 - `POST /convert/{source_format}/to/{target_format}` - General conversion
 - `POST /convert/{source_format}/to/docx-with-template` - DOCX with custom template
+- `POST /convert/{source_format}/to/pptx-with-template` - PPTX with custom template
 
 Service runs on port 9082 with health checks and comprehensive logging.
+
+## CI/CD Workflows
+- **Build & Release** (`.github/workflows/ci.yml`): Tests with tox, SonarCloud analysis, Hadolint, release-please, Docker build & publish to GHCR
+- **Claude Code Review** (`.github/workflows/claude-code-review.yml`): Automated PR review (skips bot/fork PRs)
+- **Add Issue to Project** (`.github/workflows/add-issue-to-project.yml`): Auto-adds new issues to GitHub project board
