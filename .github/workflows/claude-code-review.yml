@@ -24,8 +24,8 @@ jobs:
     permissions:
       contents: read  # Security: read-only sufficient for reviews
       pull-requests: write
-      issues: write
-      id-token: write
+      issues: write  # Required for gh pr comment (PRs are issues)
+      id-token: write  # Required for claude-code-action OIDC auth
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -46,8 +46,25 @@ jobs:
             conventions, architecture decisions, and review standards.
             STEP 2: Gather context for the review:
             a) Get the full PR diff: `gh pr diff --repo ${{ github.repository }} ${{ github.event.pull_request.number }}`
-            b) Fetch existing review comments from previous runs:
-               `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.user.login == "claude[bot]") | {path, line, body}'`
+            b) Fetch existing review comments AND review threads from previous runs:
+               `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.user.login == "claude[bot]") | {id, node_id, path, line, body}'`
+               ```
+               gh api graphql -f query='query {
+                 repository(owner: "${{ github.repository_owner }}", name: "${{ github.event.repository.name }}") {
+                   pullRequest(number: ${{ github.event.pull_request.number }}) {
+                     reviewThreads(first: 100) {
+                       nodes {
+                         id
+                         isResolved
+                         comments(first: 1) {
+                           nodes { author { login } body path line }
+                         }
+                       }
+                     }
+                   }
+                 }
+               }'
+               ```
             Review the full PR diff but DO NOT re-report issues that were already
             flagged in previous review comments. If a previously flagged issue has
             been fixed, do not mention it again. Only report NEW issues not already
@@ -73,7 +90,17 @@ jobs:
             GUIDELINES:
             - Use Read/Grep/Glob to search the codebase for context
             - The PR branch is already checked out
-            STEP 3: Submit your review as INLINE COMMENTS on the specific lines where
+            STEP 3: Resolve outdated comments.
+            For any previously flagged issue (from step 2b) that has been FIXED in
+            the current diff, resolve the review thread AND minimize the comment:
+            ```
+            gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'
+            gh api graphql -f query='mutation { minimizeComment(input: {subjectId: "COMMENT_NODE_ID", classifier: OUTDATED}) { minimizedComment { isMinimized } } }'
+            ```
+            Use the thread `id` from the reviewThreads query and the `node_id` from
+            the comments REST API response fetched in step 2b.
+            Skip threads that are already resolved.
+            STEP 4: Submit your review as INLINE COMMENTS on the specific lines where
             issues are found, using the GitHub Pull Request Review API.
             To submit, pipe JSON via stdin to `gh api --input -`:
             ```
@@ -119,8 +146,7 @@ jobs:
             ...code example...
             </details>
             ```
-            AFTER submitting inline review comments (or if no inline issues found),
-            post a PR comment summary using `gh pr comment`:
+            STEP 5: Post a PR comment summary using `gh pr comment`.
             If issues were found:
             ```
             gh pr comment --repo ${{ github.repository }} ${{ github.event.pull_request.number }} --body "$(cat <<'EOF'
@@ -158,6 +184,8 @@ jobs:
             The overall confidence score reflects how thoroughly the changes could be
             reviewed (5/5 = simple/clear changes fully understood, 3/5 = complex changes
             with areas that need human judgment).
+            IMPORTANT: Do NOT post test, placeholder, or dry-run comments.
+            Every API call you make is permanent. Only post your final review.
             Only post GitHub comments — don't submit review text as messages.
           settings: |
             {
