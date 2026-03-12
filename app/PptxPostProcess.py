@@ -43,7 +43,7 @@ def process(pptx_bytes: bytes, slide_size: str | None = None) -> bytes:
     return _apply_slide_size(prs, slide_size)
 
 
-def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:  # type: ignore[valid-type]
+def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:
     """
     Apply slide size to a presentation.
 
@@ -81,7 +81,7 @@ def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:  # 
             root = tree.getroot()
             if root is None:
                 zip_out.writestr(item, data)
-                continue
+                raise ValueError("Invalid pptx: Root node not found")
             # Find slide size element
             sld_sz = root.find("p:sldSz", PPTX_NAMESPACE)
             if sld_sz is not None:
