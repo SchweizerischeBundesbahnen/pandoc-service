@@ -84,10 +84,11 @@ def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:
                 raise ValueError("Invalid pptx: Root node not found")
             # Find slide size element
             sld_sz = root.find("p:sldSz", PPTX_NAMESPACE)
-            if sld_sz is not None:
-                # Apply slide sizes
-                sld_sz.set("cx", str(width))
-                sld_sz.set("cy", str(height))
+            if sld_sz is None:
+                raise ValueError("Invalid pptx: SldSz not found")
+            # Apply slide sizes
+            sld_sz.set("cx", str(width))
+            sld_sz.set("cy", str(height))
             data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
             # Write to out buffer
             zip_out.writestr(item, data)
