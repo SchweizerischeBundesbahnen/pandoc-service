@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:alpine3.23@sha256:40b4b624e6f8e674a038507efbbaa97f7535536808e75c8e3161602dc2ac8024
+FROM ghcr.io/astral-sh/uv:alpine3.23@sha256:2a254515e70aac0ffce073735d76babbbcfb61fddf61a865f687982c2518fb87
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
@@ -55,6 +55,9 @@ COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
 
 COPY page_orientation.lua "/usr/local/share/pandoc/filters/page_orientation.lua"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:9082/health || exit 1
 
 # Use Tini as entrypoint with security options
 ENTRYPOINT ["./entrypoint.sh"]
