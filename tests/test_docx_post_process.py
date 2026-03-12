@@ -464,6 +464,7 @@ def test_replace_table_properties(mock_get_width, mock_process_table):
     mock_process_table.assert_any_call(table1, 0, max_width)
     mock_process_table.assert_any_call(table2, 0, max_width)
 
+
 def test_replace_size_and_orientation_both_none():
     """Test that no modifications are made when both parameters are None."""
     mock_doc = MagicMock()
@@ -823,8 +824,9 @@ class TestProcessFunction:
     def test_process_with_no_parameters(self):
         """Test process() with no paper_size or orientation - should just process tables."""
         # Create a minimal valid DOCX file
-        from docx import Document
         import io
+
+        from docx import Document
 
         doc = Document()
         doc.add_paragraph("Test content")
@@ -842,8 +844,9 @@ class TestProcessFunction:
 
     def test_process_with_paper_size_only(self):
         """Test process() with only paper_size parameter."""
-        from docx import Document
         import io
+
+        from docx import Document
 
         doc = Document()
         doc.add_paragraph("Test content")
@@ -861,8 +864,9 @@ class TestProcessFunction:
 
     def test_process_with_orientation_only(self):
         """Test process() with only orientation parameter."""
-        from docx import Document
         import io
+
+        from docx import Document
 
         doc = Document()
         doc.add_paragraph("Test content")
@@ -880,8 +884,9 @@ class TestProcessFunction:
 
     def test_process_with_both_parameters(self):
         """Test process() with both paper_size and orientation parameters."""
-        from docx import Document
         import io
+
+        from docx import Document
 
         doc = Document()
         doc.add_paragraph("Test content")
@@ -899,8 +904,9 @@ class TestProcessFunction:
 
     def test_process_returns_modified_document(self):
         """Test that process() returns a modified valid DOCX document."""
-        from docx import Document
         import io
+
+        from docx import Document
 
         # Create input document
         doc = Document()
@@ -931,7 +937,7 @@ def test_parser_supports_large_xml_documents():
 
     # Create large XML content that would exceed the default 10MB buffer limit
     large_content = "x" * (11 * 1024 * 1024)  # 11MB of content
-    large_xml = f'<root><data>{large_content}</data></root>'.encode("utf-8")
+    large_xml = f"<root><data>{large_content}</data></root>".encode()
 
     # Parse using the patched python-docx parser - should not raise XMLSyntaxError
     # This would fail with "Buffer size limit exceeded" if huge_tree is not enabled
@@ -946,8 +952,9 @@ def test_process_document_with_large_content():
     This is an integration test that creates a DOCX with substantial content
     and verifies it can be processed without XML buffer errors.
     """
-    from docx import Document
     import io
+
+    from docx import Document
 
     # Create a document with a lot of content (multiple paragraphs)
     doc = Document()
@@ -1277,10 +1284,9 @@ class TestMoveHeaderFooterReferencesToFirstSection:
 
     def test_integration_with_real_docx(self):
         """Integration test with real DOCX document having multiple sections."""
-        from docx import Document
-        from docx.oxml import parse_xml
-        from docx.oxml.ns import qn
         import io
+
+        from docx import Document
 
         # Create a document with two sections
         doc = Document()

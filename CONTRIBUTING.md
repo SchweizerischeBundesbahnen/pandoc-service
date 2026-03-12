@@ -24,15 +24,6 @@ This project and everyone participating in it are governed by our [Code of Condu
 ## <a id="asking-questions"></a>Asking questions
 Do not know how something in this project works? Curious if this project can achieve your desired functionality? Please ask questions in this project discussions [here](../../discussions)
 
-## <a id="what-should-i-know-before-i-get-started"></a>What should I know before I get started?
-
-### <a id="tools-and-packages"></a>Tools and Packages
-All extensions provided by SBB Polarion Team can be built, tested and packaged using Maven.
-It is only possible when the dependencies are extract from Polarion installer. The process must be performed by each contributor. Please consider to use https://github.com/SchweizerischeBundesbahnen/polarion-artifacts-deployer to extract the dependencies for your own Polarion installer version.
-
-### <a id="design-decisions"></a>Design Decisions
-The generic implementation for extensions provided by SBB Polarion Team is located in [ch.sbb.polarion.extension.generic](https://github.com/SchweizerischeBundesbahnen/ch.sbb.polarion.extension.generic)
-
 ## <a id="how-can-i-contribute"></a>How Can I Contribute?
 
 ### <a id="reporting-bugs"></a>Reporting Bugs
@@ -81,7 +72,7 @@ Before you submit your Pull Request (PR) consider the following guidelines:
      ```
   Note: The optional commit `-a` command line option will automatically "add" and "rm" edited files.
 
-  Note: The command line option `-S/--gpg-sign` generates a signed commit, which is required to make a contribution (See [Developer Certificate of Origin](./LICENSES/DCO.txt))
+  Note: The command line option `-S/--gpg-sign` generates a signed commit, which is required to make a contribution (See [Developer Certificate of Origin](./DCO))
 
 * Push your branch to GitHub:
 

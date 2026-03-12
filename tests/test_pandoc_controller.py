@@ -15,9 +15,9 @@ from starlette.testclient import TestClient
 from app.PandocController import (
     DEFAULT_CONVERSION_OPTIONS,
     app,
-    get_temp_directory_writability,
     get_request_body_limit_mb,
     get_tectonic_availability,
+    get_temp_directory_writability,
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
@@ -75,6 +75,7 @@ def test_get_tectonic_availability_available():
         assert result == "available"
         mock_subprocess.assert_called_once_with(["/usr/bin/tectonic", "--version"], capture_output=True, check=True)
 
+
 def test_get_tectonic_availability_unavailable():
     """Return unavailable when subprocess error occurs."""
     with patch("app.PandocController.subprocess.run", side_effect=FileNotFoundError("not found")):
@@ -112,17 +113,16 @@ def test_get_temp_directory_writability_unwritable(tmp_path: Path):
 
     assert result == "unwritable"
 
+
 def test_health_endpoint_healthy():
     """Test health endpoint directly. All healthy outputs"""
     with (
         patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
         patch("app.PandocController.get_tectonic_availability", return_value="available"),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
     ):
         test_client = TestClient(app)
-        response = test_client.get(
-            "/health"
-        )
+        response = test_client.get("/health")
         response_json = response.json()
         assert response.status_code == 200
         assert response_json["status"] == "healthy"
@@ -130,17 +130,16 @@ def test_health_endpoint_healthy():
         assert response_json["tectonic"] == "available"
         assert response_json["filesystem"] == "writable"
 
+
 def test_health_endpoint_unhealthy_temp_unwritable():
     """Test health endpoint directly. Two unhealthy outputs"""
     with (
         patch("app.PandocController.get_temp_directory_writability", return_value="unwritable"),
         patch("app.PandocController.get_tectonic_availability", return_value="available"),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
     ):
         test_client = TestClient(app)
-        response = test_client.get(
-            "/health"
-        )
+        response = test_client.get("/health")
         response_json = response.json()
         assert response.status_code == 503
         assert response_json["status"] == "unhealthy"
@@ -148,17 +147,16 @@ def test_health_endpoint_unhealthy_temp_unwritable():
         assert response_json["tectonic"] == "available"
         assert response_json["filesystem"] == "unwritable"
 
+
 def test_health_endpoint_unhealthy_unknown_tectonic_error():
     """Test health endpoint directly. Two unhealthy outputs"""
     with (
         patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
         patch("app.PandocController.get_tectonic_availability", return_value="unknown"),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
     ):
         test_client = TestClient(app)
-        response = test_client.get(
-            "/health"
-        )
+        response = test_client.get("/health")
         response_json = response.json()
         assert response.status_code == 503
         assert response_json["status"] == "unhealthy"
@@ -166,17 +164,16 @@ def test_health_endpoint_unhealthy_unknown_tectonic_error():
         assert response_json["tectonic"] == "unknown"
         assert response_json["filesystem"] == "writable"
 
+
 def test_health_endpoint_unhealthy_pandoc_unavailable():
     """Test health endpoint directly. Two unhealthy outputs"""
     with (
         patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
         patch("app.PandocController.get_tectonic_availability", return_value="available"),
-        patch("app.PandocController.get_pandoc_version", return_value=None)
+        patch("app.PandocController.get_pandoc_version", return_value=None),
     ):
         test_client = TestClient(app)
-        response = test_client.get(
-            "/health"
-        )
+        response = test_client.get("/health")
         response_json = response.json()
         assert response.status_code == 503
         assert response_json["status"] == "unhealthy"
@@ -916,6 +913,7 @@ def test_docx_with_extended_options():
         run_options = mock_run_conversion.call_args[0][3]
         assert any(extended_options in opt for opt in run_options)
 
+
 def test_get_request_body_limit_mb_default():
     """Test get_request_body_limit_mb with no environment variable set."""
     # Only remove REQUEST_BODY_LIMIT_MB, keep all other env vars
@@ -923,6 +921,7 @@ def test_get_request_body_limit_mb_default():
     with patch.dict(os.environ, env_without_limit, clear=True):
         result = get_request_body_limit_mb()
         assert result == 500  # Default value
+
 
 def test_get_request_body_limit_mb_valid_value():
     """Test get_request_body_limit_mb with valid environment variable."""

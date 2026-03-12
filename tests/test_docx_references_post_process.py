@@ -1,5 +1,5 @@
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
@@ -12,8 +12,8 @@ from app.DocxReferencesPostProcess import (
     _create_tof_field,
     _create_tot_field,
     _find_placeholder_paragraphs,
-    _get_paragraph_text,
     _get_paragraph_style,
+    _get_paragraph_text,
     add_table_of_contents_entries,
     enable_auto_update_fields,
 )
@@ -422,7 +422,7 @@ def test_enable_auto_update_fields_when_present():
     enable_auto_update_fields(mock_doc)
 
     # Verify existing element was updated
-    mock_update_fields.set.assert_called_once_with(f'{{{SCHEMA}}}val', 'true')
+    mock_update_fields.set.assert_called_once_with(f"{{{SCHEMA}}}val", "true")
 
 
 def test_enable_auto_update_fields_handles_exception(caplog):
@@ -600,14 +600,14 @@ def test_enable_auto_update_on_real_document():
 
     # Verify updateFields element was added
     settings_element = doc.settings.element
-    update_fields = settings_element.find('.//w:updateFields', namespaces={'w': SCHEMA})
+    update_fields = settings_element.find(".//w:updateFields", namespaces={"w": SCHEMA})
     assert update_fields is not None
-    assert update_fields.get(f'{{{SCHEMA}}}val') == 'true'
+    assert update_fields.get(f"{{{SCHEMA}}}val") == "true"
 
 
 def test_caption_text_with_special_characters():
     """Test that caption text with special characters is handled correctly."""
-    caption_text = 'Figure 1: Test - Special (Characters) with [brackets]'
+    caption_text = "Figure 1: Test - Special (Characters) with [brackets]"
     runs = _create_tc_field_runs(caption_text, field_flag="F")
 
     # Verify runs were created without errors
