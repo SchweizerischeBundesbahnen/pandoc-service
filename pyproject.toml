@@ -5,7 +5,7 @@ description = "Service for https://pandoc.org/"
 authors = [
     {name = "SBB Polarion Team", email = "polarion-opensource@sbb.ch"},
 ]
-license = {text = "Apache License 2.0"}
+license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [

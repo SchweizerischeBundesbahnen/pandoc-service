@@ -1,12 +1,9 @@
 import io
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 from pptx import Presentation
 from pptx.util import Inches
 
-from app import PptxPostProcess
 from app.PptxPostProcess import SLIDE_SIZES, _apply_slide_size, process
 
 
