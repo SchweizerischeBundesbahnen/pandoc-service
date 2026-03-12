@@ -8,7 +8,6 @@ from typing import NamedTuple
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
-from starlette.formparsers import MultiPartParser
 from starlette.responses import Response
 from starlette.testclient import TestClient
 
@@ -16,9 +15,9 @@ from starlette.testclient import TestClient
 from app.PandocController import (
     DEFAULT_CONVERSION_OPTIONS,
     app,
-    data_limit,
-    env_data_limit,
+    get_temp_directory_writability,
     get_request_body_limit_mb,
+    get_tectonic_availability,
     postprocess_and_build_response,
     process_error,
     run_pandoc_conversion,
@@ -64,6 +63,126 @@ def test_version_endpoint_with_subprocess_error():
         assert result.pandoc is None  # Should be None when subprocess fails
         assert result.pandocService == "1.0.0"
         assert result.timestamp == "2024-03-27"
+
+
+def test_get_tectonic_availability_available():
+    """Return available when tectonic command succeeds."""
+    with patch("app.PandocController.subprocess.run") as mock_subprocess:
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        result = get_tectonic_availability()
+
+        assert result == "available"
+        mock_subprocess.assert_called_once_with(["/usr/bin/tectonic", "--version"], capture_output=True, check=True)
+
+def test_get_tectonic_availability_unavailable():
+    """Return unavailable when subprocess error occurs."""
+    with patch("app.PandocController.subprocess.run", side_effect=FileNotFoundError("not found")):
+        result = get_tectonic_availability()
+
+        assert result == "unavailable"
+
+
+def test_get_tectonic_availability_unknown_on_unexpected_error():
+    """Return unknown when an unexpected error occurs."""
+    with patch("app.PandocController.subprocess.run", side_effect=RuntimeError("not found")):
+        result = get_tectonic_availability()
+
+        assert result == "unknown"
+
+
+def test_get_temp_directory_writability_writable(tmp_path: Path):
+    """Return writable when probe file can be created and removed."""
+    result = get_temp_directory_writability()
+
+    assert result == "writable"
+
+
+def test_get_temp_directory_writability_unwritable(tmp_path: Path):
+    """Return unwritable when writing probe file fails."""
+    mock_probe = MagicMock()
+    mock_probe.write.side_effect = PermissionError("denied")
+
+    mock_cm = MagicMock()
+    mock_cm.__enter__.return_value = mock_probe
+    mock_cm.__exit__.return_value = None
+
+    with patch("app.PandocController.tempfile.NamedTemporaryFile", return_value=mock_cm):
+        result = get_temp_directory_writability()
+
+    assert result == "unwritable"
+
+def test_health_endpoint_healthy():
+    """Test health endpoint directly. All healthy outputs"""
+    with (
+        patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
+        patch("app.PandocController.get_tectonic_availability", return_value="available"),
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+    ):
+        test_client = TestClient(app)
+        response = test_client.get(
+            "/health"
+        )
+        response_json = response.json()
+        assert response.status_code == 200
+        assert response_json["status"] == "healthy"
+        assert response_json["pandoc"] == "available"
+        assert response_json["tectonic"] == "available"
+        assert response_json["filesystem"] == "writable"
+
+def test_health_endpoint_unhealthy_temp_unwritable():
+    """Test health endpoint directly. Two unhealthy outputs"""
+    with (
+        patch("app.PandocController.get_temp_directory_writability", return_value="unwritable"),
+        patch("app.PandocController.get_tectonic_availability", return_value="available"),
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+    ):
+        test_client = TestClient(app)
+        response = test_client.get(
+            "/health"
+        )
+        response_json = response.json()
+        assert response.status_code == 503
+        assert response_json["status"] == "unhealthy"
+        assert response_json["pandoc"] == "available"
+        assert response_json["tectonic"] == "available"
+        assert response_json["filesystem"] == "unwritable"
+
+def test_health_endpoint_unhealthy_unknown_tectonic_error():
+    """Test health endpoint directly. Two unhealthy outputs"""
+    with (
+        patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
+        patch("app.PandocController.get_tectonic_availability", return_value="unknown"),
+        patch("app.PandocController.get_pandoc_version", return_value="3.1.9")
+    ):
+        test_client = TestClient(app)
+        response = test_client.get(
+            "/health"
+        )
+        response_json = response.json()
+        assert response.status_code == 503
+        assert response_json["status"] == "unhealthy"
+        assert response_json["pandoc"] == "available"
+        assert response_json["tectonic"] == "unknown"
+        assert response_json["filesystem"] == "writable"
+
+def test_health_endpoint_unhealthy_pandoc_unavailable():
+    """Test health endpoint directly. Two unhealthy outputs"""
+    with (
+        patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
+        patch("app.PandocController.get_tectonic_availability", return_value="available"),
+        patch("app.PandocController.get_pandoc_version", return_value=None)
+    ):
+        test_client = TestClient(app)
+        response = test_client.get(
+            "/health"
+        )
+        response_json = response.json()
+        assert response.status_code == 503
+        assert response_json["status"] == "unhealthy"
+        assert response_json["pandoc"] == "unavailable"
+        assert response_json["tectonic"] == "available"
+        assert response_json["filesystem"] == "writable"
 
 
 def test_convert_endpoint_error_handling():
