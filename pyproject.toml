@@ -25,7 +25,8 @@ dev = [
     "pre-commit==4.5.1",
     "ruff==0.15.5",
     "mypy==1.19.1",
-    "anyio==4.12.1",  # Explicit for mypy type checking (transitive from starlette)
+    "anyio==4.12.1", # Explicit for mypy type checking (transitive from starlette)
+    "ty>=0.0.21",
 ]
 test = [
     "tox==4.49.0",
@@ -68,6 +69,7 @@ extend-select = [
     "SIM",    # flake8-simplify
     "T20",    # flake8-print
     "ERA",    # eradicate
+    "ANN",    # flake8-annotations
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -75,9 +77,19 @@ extend-select = [
     "S101", # No assert rule (bandit)
     "PLR2004", # No magic values (pylint)
 ]
+"app/DocxPostProcess.py" = [
+    "ANN401", # Dynamically typed expressions are disallowed (annotations)
+]
+"app/DocxReferencesPostProcess.py" = [
+    "ANN401", # Dynamically typed expressions are disallowed (annotations)
+]
 
 [tool.ruff.format]
 line-ending = "lf"
+
+[tool.ty.src]
+include = ["app"]
+exclude = ["tests"]
 
 [tool.mypy]
 explicit_package_bases = true

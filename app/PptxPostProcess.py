@@ -1,8 +1,13 @@
 import io
 import logging
+from typing import TYPE_CHECKING
 
 from pptx import Presentation
 from pptx.util import Inches
+
+if TYPE_CHECKING:
+    from pptx.presentation import Presentation as PresentationCls
+
 
 # Standard slide sizes (width x height in inches)
 SLIDE_SIZES = {
@@ -34,7 +39,7 @@ def process(pptx_bytes: bytes, slide_size: str | None = None) -> bytes:
     return out.getvalue()
 
 
-def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:  # type: ignore[valid-type]
+def _apply_slide_size(prs: PresentationCls, slide_size: str | None = None) -> None:
     """
     Apply slide size to a presentation.
 
@@ -58,8 +63,8 @@ def _apply_slide_size(prs: Presentation, slide_size: str | None = None) -> None:
     height = Inches(slide_dims["height"])
 
     # Apply the slide size to the presentation
-    prs.slide_width = width  # type: ignore[attr-defined]
-    prs.slide_height = height  # type: ignore[attr-defined]
+    prs.slide_width = width
+    prs.slide_height = height
 
     # Sanitize user input for logging to prevent log injection (CWE-117)
     safe_slide_size = slide_size_upper.replace("\r\n", "").replace("\n", "")

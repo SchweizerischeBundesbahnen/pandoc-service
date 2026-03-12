@@ -276,7 +276,7 @@ def version() -> VersionSchema:
         500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def get_docx_template():  # type: ignore
+async def get_docx_template() -> PlainTextResponse | StreamingResponse:
     path = Path(CUSTOM_REFERENCE_DOCX)
     try:
         # ruff: noqa: S603
@@ -320,7 +320,7 @@ async def get_docx_template():  # type: ignore
         500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def get_pptx_template():  # type: ignore
+async def get_pptx_template() -> PlainTextResponse | StreamingResponse:
     path = Path(CUSTOM_REFERENCE_PPTX)
     try:
         # ruff: noqa: S603
