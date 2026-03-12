@@ -80,6 +80,7 @@ def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:  # 
             tree = ElementTree.parse(BytesIO(data))
             root = tree.getroot()
             if root is None:
+                zip_out.writestr(item, data)
                 continue
             # Find slide size element
             sld_sz = root.find("p:sldSz", PPTX_NAMESPACE)

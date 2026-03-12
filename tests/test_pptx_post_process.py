@@ -231,5 +231,5 @@ def test_process_preserves_content():
     # Check that content is preserved
     assert num_slides == 1
     # Find the textbox in the result
-    text_box_content = find_first_text_box_content(io.BytesIO(prs))
+    text_box_content = find_first_text_box_content(io.BytesIO(result_bytes))
     assert text_box_content == "Test Content"
