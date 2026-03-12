@@ -35,7 +35,7 @@ jobs:
         with:
           enable-cache: true
       - name: 🧱 Install dependencies
-        run: uv sync --all-groups
+        run: uv sync --all-groups --frozen
       - name: 🧪 Run tests
         run: uv run tox
       - name: SonarCloud scan for PR
@@ -57,7 +57,7 @@ jobs:
           args: |
             -Dsonar.branch.name=${{ github.head_ref }}
       - name: Docker Hadolint
-        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5  # v3.3.0
         with:
           format: tty
   release-please:
@@ -81,6 +81,7 @@ jobs:
   docker-build-and-publish:
     needs: release-please
     runs-on: ubuntu-latest
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
       contents: read
       packages: write
