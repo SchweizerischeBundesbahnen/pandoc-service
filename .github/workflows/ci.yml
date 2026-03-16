@@ -61,25 +61,16 @@ jobs:
         with:
           format: tty
   release-please:
-    needs: verify-with-tox
-    runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && github.ref_name == 'main'
+    uses: SchweizerischeBundesbahnen/github-workflows-polarion/.github/workflows/reusable-release-please.yml@main  # zizmor: ignore[unpinned-uses]
     permissions:
       contents: write
       pull-requests: write
-      issues: write
-    steps:
-      - name: 🚀 release-please
-        id: release
-        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38  # v4.4.0
-        with:
-          release-type: simple
-          include-v-in-tag: false
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      version: ${{ steps.release.outputs.version }}
+    with:
+      release-type: simple
+      include-v-in-tag: false
   docker-build-and-publish:
-    needs: release-please
+    needs: [verify-with-tox, release-please]
     runs-on: ubuntu-latest
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
