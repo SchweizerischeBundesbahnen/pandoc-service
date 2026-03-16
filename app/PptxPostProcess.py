@@ -80,7 +80,6 @@ def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:
             tree = ElementTree.parse(BytesIO(data))
             root = tree.getroot()
             if root is None:
-                zip_out.writestr(item, data)
                 raise ValueError("Invalid pptx: Root node not found")
             # Find slide size element
             sld_sz = root.find("p:sldSz", PPTX_NAMESPACE)
@@ -94,6 +93,6 @@ def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:
             zip_out.writestr(item, data)
 
     # Sanitize user input for logging to prevent log injection (CWE-117)
-    safe_slide_size = slide_size_upper.replace("\r\n", "").replace("\n", "")
+    safe_slide_size = slide_size_upper.replace("\r\n", "").replace("\n", "").replace("\r", "")
     logging.debug(f'Applied slide size {safe_slide_size}: {slide_dims["width"]}" x {slide_dims["height"]}"')
     return buf.getvalue()
