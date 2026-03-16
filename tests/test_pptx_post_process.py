@@ -19,6 +19,7 @@ def create_test_pptx() -> bytes:
     with open("tests/default.pptx", "rb") as default_pres:
         return default_pres.read()
 
+
 def find_presentation_information(prs: io.BytesIO) -> tuple[int, int, int]:
     """Read slide dimensions from presentation.xml"""
     with ZipFile(prs, "r") as zip_in:
@@ -31,10 +32,11 @@ def find_presentation_information(prs: io.BytesIO) -> tuple[int, int, int]:
             root = tree.getroot()
             # Find slide size element
             sld_sz = root.find("p:sldSz", PPTX_NAMESPACE)
-            sld_id_lst = list(root.find("p:sldIdLst", PPTX_NAMESPACE).iter())[1:] # Remove first element since list includes sld_id_lst
+            sld_id_lst = list(root.find("p:sldIdLst", PPTX_NAMESPACE).iter())[1:]  # Remove first element since list includes sld_id_lst
             num_slides = len(sld_id_lst)
             return (int(sld_sz.get("cx")), int(sld_sz.get("cy")), num_slides)
         raise ValueError("Invalid Presentation")
+
 
 def find_first_text_box_content(prs: io.BytesIO) -> str:
     """Read and return the text content of the first text box in the first slide"""
@@ -47,7 +49,7 @@ def find_first_text_box_content(prs: io.BytesIO) -> str:
             tree = ElementTree.parse(io.BytesIO(data))
             root = tree.getroot()
             # Find first text box element
-            text_box = root.find(".//a:t", PPTX_NAMESPACE) #.// XPath prefix for recursive search
+            text_box = root.find(".//a:t", PPTX_NAMESPACE)  # .// XPath prefix for recursive search
             return text_box.text
         raise ValueError("Invalid Presentation")
 
@@ -178,7 +180,6 @@ def test_apply_slide_size_with_valid_size():
     buf = io.BytesIO(prs)
     result_bytes = _apply_slide_size(buf, slide_size="16:9")
     result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
-
 
     expected_width = inches_to_emu(SLIDE_SIZES["16:9"]["width"])
     expected_height = inches_to_emu(SLIDE_SIZES["16:9"]["height"])

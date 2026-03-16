@@ -1,10 +1,10 @@
 import io
 import logging
+import os
+import subprocess
 import time
 from pathlib import Path
 from typing import NamedTuple
-import subprocess
-import os
 
 import docker
 import pytest
@@ -251,12 +251,7 @@ def pandoc_container():
         cleanup_docker_resources()
 
         # Build the image with test-specific tag
-        subprocess.run(
-            ["docker", "build", "-t", TEST_IMAGE_FULL, "."],
-            env={**os.environ, "DOCKER_BUILDKIT": "1"},
-            timeout=300,
-            check=True
-        )
+        subprocess.run(["docker", "build", "-t", TEST_IMAGE_FULL, "."], env={**os.environ, "DOCKER_BUILDKIT": "1"}, timeout=300, check=True)
 
         # Run the container with test-specific name
         container = client.containers.run(image=TEST_IMAGE_FULL, detach=True, name=TEST_CONTAINER_NAME, ports={"9082": 9082}, init=True)

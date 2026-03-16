@@ -65,7 +65,9 @@ bash tests/shell/test_pandoc_service.sh
 - **app/PandocServiceApplication.py**: Application entry point with logging setup
 - **app/DocxPostProcess.py**: DOCX-specific post-processing (tables, images)
 - **app/DocxReferencesPostProcess.py**: DOCX table-of-contents and field update post-processing
+- **app/PptxPostProcess.py**: PPTX slide size post-processing
 - **app/schema.py**: Pydantic models for API responses
+- **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation
 
 ### Security Model
 - Uses allowlisted pandoc options to prevent command injection
@@ -84,12 +86,12 @@ bash tests/shell/test_pandoc_service.sh
 - **Target**: docx, epub, fb2, html, json, latex, markdown, odt, pdf, plain, pptx, rtf, textile
 
 ### Key Configuration
-- **Python 3.14** required (see `.tool-versions` for exact patch version)
+- **Python** required (see `.tool-versions` for exact version)
 - **uv** for dependency management (`--frozen` flag used in CI)
 - **Ruff** for linting (line length: 240, TCH rule enforces `if TYPE_CHECKING:` import guards)
 - **Mypy** for type checking (strict mode)
 - **Pytest** with >=90% coverage requirement
-- **Pandoc v3.9** binary in container
+- **Pandoc** binary in container (see Dockerfile for version)
 
 ## API Endpoints
 - `GET /health` - Health check (pandoc, tectonic, filesystem status)
