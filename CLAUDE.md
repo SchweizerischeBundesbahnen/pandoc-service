@@ -65,7 +65,9 @@ bash tests/shell/test_pandoc_service.sh
 - **app/PandocServiceApplication.py**: Application entry point with logging setup
 - **app/DocxPostProcess.py**: DOCX-specific post-processing (tables, images)
 - **app/DocxReferencesPostProcess.py**: DOCX table-of-contents and field update post-processing
+- **app/PptxPostProcess.py**: PPTX slide size post-processing
 - **app/schema.py**: Pydantic models for API responses
+- **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation
 
 ### Security Model
 - Uses allowlisted pandoc options to prevent command injection

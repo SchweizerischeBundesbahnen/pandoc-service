@@ -1,6 +1,22 @@
 ---
 default_install_hook_types: [pre-commit, commit-msg]
 repos:
+  - repo: local
+    hooks:
+      # Run the formatter
+      - id: ruff-format
+        name: ruff formatter
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      # Run the linter (inherits config from pyproject.toml)
+      - id: ruff-check
+        name: ruff linter
+        entry: uv run ruff check
+        language: system
+        types: [python]
+        args: [--fix]
+        exclude: ^tests/
   - repo: https://github.com/lyz-code/yamlfix
     rev: 1.19.1
     hooks:
@@ -11,9 +27,11 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
+        args: [--maxkb=5120]
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: trailing-whitespace
+        exclude_types: [markdown]  # Avoid conflicts with markdown formatting
       - id: check-xml
       - id: check-json
       - id: check-toml
@@ -48,16 +66,14 @@ repos:
         exclude: (^tests/)
         args: [--config-file, pyproject.toml]
         require_serial: true  # Serial processing is required for mypy (better performance and error reporting)
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.5
-    hooks:
-      - id: ruff-check
-        args: [--fix]
-      - id: ruff-format
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.9
+  - repo: local
     hooks:
       - id: uv-lock
+        name: uv-lock
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
   - repo: https://github.com/zricethezav/gitleaks
     rev: v8.30.1
     hooks:
