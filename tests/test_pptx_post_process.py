@@ -1,37 +1,70 @@
 import io
+from defusedxml import ElementTree
+from zipfile import ZipFile
+import re
 
 import pytest
-from pptx import Presentation
-from pptx.util import Inches
 
-from app.PptxPostProcess import SLIDE_SIZES, _apply_slide_size, process
+from app.PptxPostProcess import SLIDE_SIZES, _apply_slide_size, process, PPTX_NAMESPACE, inches_to_emu
+
+SLIDE_PATH_PATTERN = re.compile(r"ppt/slides/[a-zA-Z0-9]+.xml")
 
 
 def create_test_pptx() -> bytes:
-    """Create a minimal test PPTX file."""
-    prs = Presentation()
-    # Add a blank slide
-    blank_slide_layout = prs.slide_layouts[6]
-    prs.slides.add_slide(blank_slide_layout)
+    """
+    Read a minimal test PPTX file.
+    Test PPTX includes one slide and one text box reading "Test Content"
 
-    out = io.BytesIO()
-    prs.save(out)
-    return out.getvalue()
+    """
+    with open("tests/default.pptx", "rb") as default_pres:
+        return default_pres.read()
+
+
+def find_presentation_information(prs: io.BytesIO) -> tuple[int, int, int]:
+    """Read slide dimensions from presentation.xml"""
+    with ZipFile(prs, "r") as zip_in:
+        for item in zip_in.infolist():
+            if item.filename != "ppt/presentation.xml":
+                continue
+            # Read data
+            data = zip_in.read(item.filename)
+            tree = ElementTree.parse(io.BytesIO(data))
+            root = tree.getroot()
+            # Find slide size element
+            sld_sz = root.find("p:sldSz", PPTX_NAMESPACE)
+            sld_id_lst = list(root.find("p:sldIdLst", PPTX_NAMESPACE).iter())[1:]  # Remove first element since list includes sld_id_lst
+            num_slides = len(sld_id_lst)
+            return (int(sld_sz.get("cx")), int(sld_sz.get("cy")), num_slides)
+        raise ValueError("Invalid Presentation")
+
+
+def find_first_text_box_content(prs: io.BytesIO) -> str:
+    """Read and return the text content of the first text box in the first slide"""
+    with ZipFile(prs, "r") as zip_in:
+        for item in zip_in.infolist():
+            if re.match(SLIDE_PATH_PATTERN, item.filename) is None:
+                continue
+            # Read data
+            data = zip_in.read(item.filename)
+            tree = ElementTree.parse(io.BytesIO(data))
+            root = tree.getroot()
+            # Find first text box element
+            text_box = root.find(".//a:t", PPTX_NAMESPACE)  # .// XPath prefix for recursive search
+            return text_box.text
+        raise ValueError("Invalid Presentation")
 
 
 def test_process_with_no_slide_size():
     """Test processing PPTX without specifying slide size (no modifications)."""
     pptx_bytes = create_test_pptx()
-    original_prs = Presentation(io.BytesIO(pptx_bytes))
-    original_width = original_prs.slide_width
-    original_height = original_prs.slide_height
+    original_width, original_height, _ = find_presentation_information(io.BytesIO(pptx_bytes))
 
     result_bytes = process(pptx_bytes, slide_size=None)
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
     # Dimensions should remain unchanged
-    assert result_prs.slide_width == original_width
-    assert result_prs.slide_height == original_height
+    assert result_width == original_width
+    assert result_height == original_height
 
 
 def test_process_with_16_9_slide_size():
@@ -39,13 +72,13 @@ def test_process_with_16_9_slide_size():
     pptx_bytes = create_test_pptx()
 
     result_bytes = process(pptx_bytes, slide_size="16:9")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    expected_width = Inches(SLIDE_SIZES["16:9"]["width"])
-    expected_height = Inches(SLIDE_SIZES["16:9"]["height"])
+    expected_width = inches_to_emu(SLIDE_SIZES["16:9"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["16:9"]["height"])
 
-    assert result_prs.slide_width == expected_width
-    assert result_prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_process_with_4_3_slide_size():
@@ -53,13 +86,13 @@ def test_process_with_4_3_slide_size():
     pptx_bytes = create_test_pptx()
 
     result_bytes = process(pptx_bytes, slide_size="4:3")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    expected_width = Inches(SLIDE_SIZES["4:3"]["width"])
-    expected_height = Inches(SLIDE_SIZES["4:3"]["height"])
+    expected_width = inches_to_emu(SLIDE_SIZES["4:3"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["4:3"]["height"])
 
-    assert result_prs.slide_width == expected_width
-    assert result_prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_process_with_case_insensitive_slide_size():
@@ -68,13 +101,13 @@ def test_process_with_case_insensitive_slide_size():
 
     # Test lowercase
     result_bytes = process(pptx_bytes, slide_size="a4")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    expected_width = Inches(SLIDE_SIZES["A4"]["width"])
-    expected_height = Inches(SLIDE_SIZES["A4"]["height"])
+    expected_width = inches_to_emu(SLIDE_SIZES["A4"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["A4"]["height"])
 
-    assert result_prs.slide_width == expected_width
-    assert result_prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_process_with_invalid_slide_size():
@@ -90,13 +123,13 @@ def test_process_with_letter_slide_size():
     pptx_bytes = create_test_pptx()
 
     result_bytes = process(pptx_bytes, slide_size="LETTER")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    expected_width = Inches(SLIDE_SIZES["LETTER"]["width"])
-    expected_height = Inches(SLIDE_SIZES["LETTER"]["height"])
+    expected_width = inches_to_emu(SLIDE_SIZES["LETTER"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["LETTER"]["height"])
 
-    assert result_prs.slide_width == expected_width
-    assert result_prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_process_with_a3_slide_size():
@@ -104,13 +137,13 @@ def test_process_with_a3_slide_size():
     pptx_bytes = create_test_pptx()
 
     result_bytes = process(pptx_bytes, slide_size="A3")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    expected_width = Inches(SLIDE_SIZES["A3"]["width"])
-    expected_height = Inches(SLIDE_SIZES["A3"]["height"])
+    expected_width = inches_to_emu(SLIDE_SIZES["A3"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["A3"]["height"])
 
-    assert result_prs.slide_width == expected_width
-    assert result_prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_process_with_widescreen_slide_size():
@@ -118,47 +151,49 @@ def test_process_with_widescreen_slide_size():
     pptx_bytes = create_test_pptx()
 
     result_bytes = process(pptx_bytes, slide_size="WIDESCREEN")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    expected_width = Inches(SLIDE_SIZES["WIDESCREEN"]["width"])
-    expected_height = Inches(SLIDE_SIZES["WIDESCREEN"]["height"])
+    expected_width = inches_to_emu(SLIDE_SIZES["WIDESCREEN"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["WIDESCREEN"]["height"])
 
-    assert result_prs.slide_width == expected_width
-    assert result_prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_apply_slide_size_none():
     """Test _apply_slide_size with None does nothing."""
-    prs = Presentation()
-    original_width = prs.slide_width
-    original_height = prs.slide_height
+    prs = create_test_pptx()
+    buf = io.BytesIO(prs)
+    original_width, original_height, _ = find_presentation_information(buf)
 
-    _apply_slide_size(prs, slide_size=None)
+    result_bytes = _apply_slide_size(buf, slide_size=None)
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
     # Dimensions should remain unchanged
-    assert prs.slide_width == original_width
-    assert prs.slide_height == original_height
+    assert result_width == original_width
+    assert result_height == original_height
 
 
 def test_apply_slide_size_with_valid_size():
     """Test _apply_slide_size with valid slide size."""
-    prs = Presentation()
+    prs = create_test_pptx()
+    buf = io.BytesIO(prs)
+    result_bytes = _apply_slide_size(buf, slide_size="16:9")
+    result_width, result_height, _ = find_presentation_information(io.BytesIO(result_bytes))
 
-    _apply_slide_size(prs, slide_size="16:9")
+    expected_width = inches_to_emu(SLIDE_SIZES["16:9"]["width"])
+    expected_height = inches_to_emu(SLIDE_SIZES["16:9"]["height"])
 
-    expected_width = Inches(SLIDE_SIZES["16:9"]["width"])
-    expected_height = Inches(SLIDE_SIZES["16:9"]["height"])
-
-    assert prs.slide_width == expected_width
-    assert prs.slide_height == expected_height
+    assert result_width == expected_width
+    assert result_height == expected_height
 
 
 def test_apply_slide_size_with_invalid_size():
     """Test _apply_slide_size with invalid slide size raises ValueError."""
-    prs = Presentation()
+    prs = create_test_pptx()
 
     with pytest.raises(ValueError, match="Unsupported slide size: BADSIZE"):
-        _apply_slide_size(prs, slide_size="BADSIZE")
+        _apply_slide_size(io.BytesIO(prs), slide_size="BADSIZE")
 
 
 def test_slide_sizes_constant():
@@ -185,28 +220,17 @@ def test_process_returns_bytes():
 
 def test_process_preserves_content():
     """Test that processing preserves presentation content."""
-    prs = Presentation()
-    blank_slide_layout = prs.slide_layouts[6]
-    slide = prs.slides.add_slide(blank_slide_layout)
-
-    # Add a title shape to the slide
-    left = top = Inches(1)
-    width = height = Inches(2)
-    textbox = slide.shapes.add_textbox(left, top, width, height)
-    textbox.text = "Test Content"
-
-    out = io.BytesIO()
-    prs.save(out)
-    pptx_bytes = out.getvalue()
+    prs = create_test_pptx()
 
     # Process the PPTX
-    result_bytes = process(pptx_bytes, slide_size="16:9")
-    result_prs = Presentation(io.BytesIO(result_bytes))
+    result_bytes = process(prs, slide_size="16:9")
+    result_width, result_height, num_slides = find_presentation_information(io.BytesIO(result_bytes))
 
+    # Check width and height
+    assert result_width == inches_to_emu(SLIDE_SIZES["16:9"]["width"])
+    assert result_height == inches_to_emu(SLIDE_SIZES["16:9"]["height"])
     # Check that content is preserved
-    assert len(result_prs.slides) == 1
-    result_slide = result_prs.slides[0]
+    assert num_slides == 1
     # Find the textbox in the result
-    textboxes = [shape for shape in result_slide.shapes if hasattr(shape, "text")]
-    assert len(textboxes) > 0
-    assert textboxes[0].text == "Test Content"
+    text_box_content = find_first_text_box_content(io.BytesIO(result_bytes))
+    assert text_box_content == "Test Content"
