@@ -2,7 +2,7 @@ FROM ghcr.io/astral-sh/uv:alpine3.23@sha256:2a254515e70aac0ffce073735d76babbbcfb
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 ARG APP_IMAGE_VERSION=0.0.0
-ARG PANDOC_VERSION=3.9.0.1
+ARG PANDOC_VERSION=3.9.0.2
 ARG TARGETARCH
 ENV ARCH=${TARGETARCH:-amd64}
 
