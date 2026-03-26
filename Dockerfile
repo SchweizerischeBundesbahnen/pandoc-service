@@ -55,6 +55,7 @@ COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
 
 COPY page_orientation.lua "/usr/local/share/pandoc/filters/page_orientation.lua"
+COPY heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:9082/health || exit 1

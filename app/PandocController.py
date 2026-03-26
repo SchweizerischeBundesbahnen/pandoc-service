@@ -48,12 +48,14 @@ FILTER_BASE_PATH = "/usr/local/share/pandoc/filters"
 FILTERS = {
     "page_break": f"{FILTER_BASE_PATH}/pagebreak.lua",
     "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
+    "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
 }
 
 # List of allowed pandoc options for security
 ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['page_break']}",
     f"--lua-filter={FILTERS['page_orientation']}",
+    f"--lua-filter={FILTERS['heading_levels']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -115,7 +117,7 @@ FILE_EXTENSIONS = {
 }
 
 # Build default options dynamically
-DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all", f"--lua-filter={FILTERS['page_break']}"]
+DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all", f"--lua-filter={FILTERS['page_break']}", f"--lua-filter={FILTERS['heading_levels']}"]
 
 logger = logging.getLogger(__name__)
 

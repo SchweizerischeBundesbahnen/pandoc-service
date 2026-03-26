@@ -210,7 +210,7 @@ def _create_field(field_code: str) -> list[Any]:
 
 def _create_toc_field() -> list[Any]:
     """Create Table of Contents field paragraphs."""
-    return _create_field('TOC \\o "1-3" \\h \\z \\u')
+    return _create_field('TOC \\o "1-9" \\h \\z \\u')
 
 
 def _create_table_listing_field(field_type: str) -> list[Any]:
