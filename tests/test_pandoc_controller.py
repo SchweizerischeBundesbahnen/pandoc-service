@@ -14,6 +14,7 @@ from starlette.testclient import TestClient
 # Import the module to test
 from app.PandocController import (
     DEFAULT_CONVERSION_OPTIONS,
+    FILTERS,
     app,
     get_request_body_limit_mb,
     get_tectonic_availability,
@@ -29,6 +30,12 @@ class File(NamedTuple):
     filename: str
     file: io.BytesIO
     content_type: str
+
+
+def test_default_conversion_options_includes_heading_levels_filter():
+    """Test that heading_levels filter is present in DEFAULT_CONVERSION_OPTIONS."""
+    heading_levels_filter = f"--lua-filter={FILTERS['heading_levels']}"
+    assert heading_levels_filter in DEFAULT_CONVERSION_OPTIONS, "heading_levels filter should be in DEFAULT_CONVERSION_OPTIONS for handling heading levels > 6"
 
 
 def test_version_endpoint():

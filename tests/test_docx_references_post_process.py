@@ -209,7 +209,7 @@ def test_create_toc_field_structure():
     instr = toc_para.find(".//w:instrText", namespaces={"w": SCHEMA})
     assert instr is not None
     assert "TOC" in instr.text
-    assert "\\o" in instr.text  # outline levels
+    assert '\\o "1-9"' in instr.text  # outline levels 1-9 (supports heading levels > 6)
     assert "\\h" in instr.text  # hyperlinks
     assert "\\z" in instr.text  # hide tab leader
     assert "\\u" in instr.text  # use outline
