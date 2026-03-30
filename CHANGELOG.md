@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.0.0...v2.0.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* add Lua filter to support heading levels beyond h6 ([#152](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/152)) ([30ec75d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/30ec75d366563c24f68f9d41da737020192beba0)), closes [#151](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/151)
+* **deps:** update dependency fastapi to v0.135.2 ([148b495](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/148b49560dc8b212812ad9697f0de33a3f38e5ad))
+* **deps:** update dependency jgm/pandoc to v3.9.0.1 ([f3a7569](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f3a7569e45055bfa78a704594853b76340f724a8))
+* **deps:** update dependency jgm/pandoc to v3.9.0.2 ([25e3ab2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/25e3ab219df3caefe303391fbfc9d3dc1650848b))
+* **deps:** update dependency uvicorn to v0.42.0 ([5161704](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/516170468992abaa284d72050509c09d90de138f))
+
 ## [2.0.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v1.7.0...v2.0.0) (2026-03-16)
 
 
