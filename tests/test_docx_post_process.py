@@ -803,7 +803,7 @@ def test_main_function(argv, expected_exit, paper_size, orientation):
         patch.object(sys, "argv", argv),
         patch("pathlib.Path.open", mock_open(read_data=fake_docx_content)) as mock_file,
         patch("app.DocxPostProcess.process", return_value=modified_content) as mock_process,
-        patch("app.DocxPostProcess.logging") as mock_logging,
+        patch("app.DocxPostProcess.logger") as mock_logging,
     ):
         result = DocxPostProcess.main()
 

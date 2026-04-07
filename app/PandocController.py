@@ -194,10 +194,10 @@ def get_request_body_limit_mb() -> int:
     try:
         value = int(env_value)
         if value <= 0:
-            logging.warning(f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not positive. Using default {default_limit_mb} MB.")
+            logger.warning(f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not positive. Using default {default_limit_mb} MB.")
             value = default_limit_mb
     except ValueError:
-        logging.warning(f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not a valid integer. Using default {default_limit_mb} MB.")
+        logger.warning(f"REQUEST_BODY_LIMIT_MB value '{env_value}' is not a valid integer. Using default {default_limit_mb} MB.")
         value = default_limit_mb
     return value
 
@@ -246,7 +246,7 @@ def get_pandoc_version() -> str | None:
         version_line = result.stdout.splitlines()[0]
         return version_line.split()[-1]  # Last word on the first line is the version
     except Exception as e:
-        logging.error(f"Error getting pandoc version: {e}")
+        logger.error(f"Error getting pandoc version: {e}")
         return None
 
 
@@ -794,7 +794,7 @@ def postprocess_and_build_response(output: bytes, target_format: str, file_name:
 
 def process_error(e: Exception, err_msg: str, status: int) -> PlainTextResponse:
     sanitized_err_msg = err_msg.replace("\r\n", "").replace("\n", "")
-    logging.exception(msg=sanitized_err_msg + ": " + str(e))
+    logger.exception(msg=sanitized_err_msg + ": " + str(e))
     return PlainTextResponse(
         content=err_msg + ": " + getattr(e, "message", repr(e)),
         status_code=status,
