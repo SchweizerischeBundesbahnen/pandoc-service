@@ -953,7 +953,7 @@ def test_get_request_body_limit_mb_numeric_with_whitespace():
     """Test get_request_body_limit_mb with numeric string containing whitespace."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": " 1000 "}),
-        patch("logging.warning") as mock_warning,
+        patch("app.PandocController.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         # int() in Python handles leading/trailing whitespace
