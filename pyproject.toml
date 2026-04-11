@@ -25,7 +25,7 @@ dev = [
     "ruff==0.15.9",
     "mypy==1.20.0",
     "anyio==4.13.0",  # Explicit for mypy type checking (transitive from starlette)
-    "types-defusedxml==0.7.0.20260402",
+    "types-defusedxml==0.7.0.20260408",
 ]
 test = [
     "tox==4.52.0",
