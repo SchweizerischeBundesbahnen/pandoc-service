@@ -11,6 +11,7 @@ jobs:
   claude-review:
     uses: SchweizerischeBundesbahnen/github-workflows-polarion/.github/workflows/reusable-claude-code-review.yml@main  # zizmor: ignore[unpinned-uses]
     permissions:
+      actions: read
       contents: read
       pull-requests: write
       issues: write
