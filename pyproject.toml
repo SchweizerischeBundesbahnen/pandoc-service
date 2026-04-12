@@ -11,8 +11,8 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "python-docx==1.2.0",
     "fastapi==0.135.3",
-    "uvicorn==0.43.0",
-    "python-multipart==0.0.22",
+    "uvicorn==0.44.0",
+    "python-multipart==0.0.24",
     "defusedxml==0.7.1",
     "asgiref==3.11.1",
     "prometheus-client==0.24.1",
@@ -25,14 +25,14 @@ dev = [
     "ruff==0.15.9",
     "mypy==1.20.0",
     "anyio==4.13.0",  # Explicit for mypy type checking (transitive from starlette)
-    "types-defusedxml==0.7.0.20260402",
+    "types-defusedxml==0.7.0.20260408",
 ]
 test = [
     "tox==4.52.0",
     "tox-uv==1.34.0",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.1.0",
-    "pytest==9.0.2",
+    "pytest==9.0.3",
     "pytest-mock==3.15.1",
     "pytest-cov==7.1.0",
     "pytest-timeout==2.4.0",
