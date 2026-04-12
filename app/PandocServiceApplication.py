@@ -83,7 +83,7 @@ def main() -> None:
     args = parser.parse_args()
 
     setup_logging()
-    logging.info("Pandoc service listening port: %d", args.port)
+    logging.getLogger(__name__).info("Pandoc service listening port: %d", args.port)
 
     # Start the server - metrics server lifecycle is managed by FastAPI lifespan
     PandocController.start_server(args.port)

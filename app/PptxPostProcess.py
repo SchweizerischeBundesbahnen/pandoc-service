@@ -22,6 +22,7 @@ SLIDE_SIZES: dict[str, Dimensions] = {
     "A3": {"width": 14, "height": 10.5},  # A3
 }
 PPTX_NAMESPACE = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main", "p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
+logger = logging.getLogger(__name__)
 
 
 def inches_to_emu(x: float) -> int:
@@ -94,5 +95,5 @@ def _apply_slide_size(prs: BytesIO, slide_size: str | None = None) -> bytes:
 
     # Sanitize user input for logging to prevent log injection (CWE-117)
     safe_slide_size = slide_size_upper.replace("\r\n", "").replace("\n", "").replace("\r", "")
-    logging.debug(f'Applied slide size {safe_slide_size}: {slide_dims["width"]}" x {slide_dims["height"]}"')
+    logger.debug(f'Applied slide size {safe_slide_size}: {slide_dims["width"]}" x {slide_dims["height"]}"')
     return buf.getvalue()
