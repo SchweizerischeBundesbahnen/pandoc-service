@@ -28,7 +28,7 @@ dev = [
     "types-defusedxml==0.7.0.20260408",
 ]
 test = [
-    "tox==4.52.1",
+    "tox==4.53.0",
     "tox-uv==1.35.1",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.1.0",
