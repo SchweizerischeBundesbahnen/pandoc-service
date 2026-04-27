@@ -49,6 +49,7 @@ FILTERS = {
     "page_break": f"{FILTER_BASE_PATH}/pagebreak.lua",
     "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
+    "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
 }
 
 # List of allowed pandoc options for security
@@ -56,6 +57,7 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['page_break']}",
     f"--lua-filter={FILTERS['page_orientation']}",
     f"--lua-filter={FILTERS['heading_levels']}",
+    f"--lua-filter={FILTERS['inline_styles']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -490,6 +492,12 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
 
             # Build pandoc command with validated options and safe parameters
             cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name]
+
+            # Convert inline CSS on HTML <span style="..."> into AST nodes the
+            # writers understand. Only relevant for HTML sources; runs before
+            # caller-supplied filters so they can override.
+            if source_format == "html":
+                cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
 
             # Add validated options separately
             if validated_options:

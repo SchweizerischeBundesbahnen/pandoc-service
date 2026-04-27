@@ -13,6 +13,7 @@ from starlette.testclient import TestClient
 
 # Import the module to test
 from app.PandocController import (
+    ALLOWED_PANDOC_OPTIONS,
     DEFAULT_CONVERSION_OPTIONS,
     FILTERS,
     app,
@@ -36,6 +37,68 @@ def test_default_conversion_options_includes_heading_levels_filter():
     """Test that heading_levels filter is present in DEFAULT_CONVERSION_OPTIONS."""
     heading_levels_filter = f"--lua-filter={FILTERS['heading_levels']}"
     assert heading_levels_filter in DEFAULT_CONVERSION_OPTIONS, "heading_levels filter should be in DEFAULT_CONVERSION_OPTIONS for handling heading levels > 6"
+
+
+def test_inline_styles_filter_registered():
+    """The inline_styles filter must be registered and allowlisted."""
+    assert "inline_styles" in FILTERS
+    assert f"--lua-filter={FILTERS['inline_styles']}" in ALLOWED_PANDOC_OPTIONS
+
+
+def test_run_pandoc_conversion_appends_inline_styles_filter_for_html_source():
+    """When source format is html, the inline_styles filter is added to the command."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"DOCX content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.html"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.docx"
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("<p>x</p>", "html", "docx")
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert f"--lua-filter={FILTERS['inline_styles']}" in cmd
+
+
+def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_non_html_source():
+    """For non-HTML sources the inline_styles filter must not be appended."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"<p>x</p>")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.md"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.html"
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("# x", "markdown", "html")
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
 
 
 def test_version_endpoint():
