@@ -22,7 +22,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit==4.6.0",
-    "ruff==0.15.11",
+    "ruff==0.15.12",
     "mypy==1.20.2",
     "anyio==4.13.0",  # Explicit for mypy type checking (transitive from starlette)
     "types-defusedxml==0.7.0.20260408",
