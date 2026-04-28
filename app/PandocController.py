@@ -493,10 +493,13 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             # Build pandoc command with validated options and safe parameters
             cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name]
 
-            # Convert inline CSS on HTML <span style="..."> into AST nodes the
-            # writers understand. Only relevant for HTML sources; runs before
-            # caller-supplied filters so they can override.
-            if source_format == "html":
+            # Convert inline CSS on HTML <span style="..."> into raw OOXML runs
+            # for the DOCX writer. The filter emits RawInline("openxml", ...)
+            # nodes which only render when the target writer is docx; for any
+            # other target (markdown, html, pdf, pptx, ...) those nodes are
+            # silently dropped and the styled-span text disappears entirely,
+            # so the filter must be gated on both source and target.
+            if source_format == "html" and target_format == "docx":
                 cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
 
             # Add validated options separately

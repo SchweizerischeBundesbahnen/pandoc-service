@@ -12,7 +12,7 @@
 --   text-decoration: line-through          -> <w:strike/>
 --   color: <hex|rgb()>                     -> <w:color w:val="RRGGBB"/>
 --   background-color: <hex|rgb()>          -> <w:shd w:val="clear" w:color="auto" w:fill="RRGGBB"/>
---   font-size: <Npt>                       -> <w:sz w:val="N*2"/>
+--   font-size: <Nunit|keyword>             -> <w:sz w:val="..."/>  (units: pt, px, pc, in, cm, mm, em, rem, %; keywords: xx-small..xx-large, smaller, larger)
 --   font-family: <name>, ...               -> <w:rFonts w:ascii="name" w:hAnsi="name"/>
 --
 -- Traversal is top-down: the outermost styled span consumes its full subtree
@@ -120,15 +120,88 @@ local function first_font_family(value)
   return nil
 end
 
--- Convert a CSS pt value ("11pt") into the half-points unit Word uses for
--- <w:sz w:val="...">. 11pt becomes "22". math.floor + 0.5 = round-to-nearest.
-local function font_size_half_points(value)
+-- Word's <w:sz w:val="..."> takes a font size in *half-points*. Browsers
+-- emit font-size in many units, so we normalize all of them here.
+--   pt   1pt  = 2 half-points
+--   px   1px  = 0.75pt = 1.5 half-points (CSS reference pixel: 1/96 in)
+--   pc   1pc  = 12pt   = 24 half-points
+--   in   1in  = 72pt   = 144 half-points
+--   cm   1cm  ≈ 28.35pt
+--   mm   1mm  ≈ 2.835pt
+--   em   relative to the parent size; needs `parent_hp` (parent half-points)
+--   rem  same as em — we have no document-root context, so treat as em
+--   %    relative to parent size
+-- A bare number (no unit) is treated as pt — some HTML emitters drop the unit.
+-- Absolute keywords (medium, large, ...) and the relative keywords
+-- (smaller, larger) are mapped to standard CSS table values; smaller/larger
+-- scale the parent size by ~0.83 / ~1.2.
+-- When the value is unparseable we return nil so the caller leaves the
+-- inherited size in place.
+local DEFAULT_HALF_POINTS = 24  -- 12pt — Word's body default
+local FONT_SIZE_KEYWORDS = {
+  ["xx-small"] = 18,  -- 9pt
+  ["x-small"]  = 20,  -- 10pt
+  ["small"]    = 22,  -- 11pt
+  ["medium"]   = 24,  -- 12pt
+  ["large"]    = 28,  -- 14pt
+  ["x-large"]  = 36,  -- 18pt
+  ["xx-large"] = 48,  -- 24pt
+}
+
+local function round_to_string(x)
+  -- Round half-up and stringify as an integer.
+  return tostring(math.floor(x + 0.5))
+end
+
+local function font_size_half_points(value, parent_hp)
   if not value then return nil end
-  local n = value:match("^([%d%.]+)pt$")
+  -- Trim incidental whitespace.
+  local v = value:gsub("^%s+", ""):gsub("%s+$", "")
+
+  -- Absolute keywords map to fixed half-point values.
+  local kw = FONT_SIZE_KEYWORDS[v]
+  if kw then return tostring(kw) end
+
+  -- Relative keywords scale the inherited size; fall back to default if none.
+  local base = (parent_hp and tonumber(parent_hp)) or DEFAULT_HALF_POINTS
+  if v == "smaller" then return round_to_string(base * 0.83) end
+  if v == "larger" then return round_to_string(base * 1.2) end
+
+  -- Numeric form: digits/decimals followed by an optional unit.
+  -- Lua patterns don't have alternation inside a single match, so we try
+  -- letter units, then "%", then bare-number, in turn.
+  local n, unit = v:match("^([%d%.]+)%s*(%a+)$")
+  if not n then
+    n = v:match("^([%d%.]+)%s*%%$")
+    if n then unit = "%" end
+  end
+  if not n then
+    n = v:match("^([%d%.]+)$")
+    if n then unit = "" end
+  end
   if not n then return nil end
-  local pts = tonumber(n)
-  if not pts then return nil end
-  return tostring(math.floor(pts * 2 + 0.5))
+
+  local num = tonumber(n)
+  if not num then return nil end
+
+  if unit == "" or unit == "pt" then
+    return round_to_string(num * 2)
+  elseif unit == "px" then
+    return round_to_string(num * 1.5)
+  elseif unit == "pc" then
+    return round_to_string(num * 24)
+  elseif unit == "in" then
+    return round_to_string(num * 144)
+  elseif unit == "cm" then
+    return round_to_string(num * 56.6929134)
+  elseif unit == "mm" then
+    return round_to_string(num * 5.66929134)
+  elseif unit == "em" or unit == "rem" then
+    return round_to_string(num * base)
+  elseif unit == "%" then
+    return round_to_string(num * base / 100)
+  end
+  return nil
 end
 
 -- Shallow copy of a table. `pairs` iterates every key (string or numeric).
@@ -169,7 +242,9 @@ local function merge_css(parent, css)
     if bg then p.bg = bg end
   end
   if css["font-size"] then
-    local sz = font_size_half_points(css["font-size"])
+    -- Pass the inherited size (in half-points) so em/rem/% can resolve
+    -- against the actual parent rather than always falling back to default.
+    local sz = font_size_half_points(css["font-size"], parent.size)
     if sz then p.size = sz end
   end
   if css["font-family"] then
@@ -197,32 +272,37 @@ end
 -- Build the <w:rPr> (run properties) sub-element from a `props` table and
 -- an optional vert_align ("superscript" / "subscript"). Returns "" when
 -- there's nothing to set, so callers can concatenate unconditionally.
--- Element order follows the OOXML schema (CT_RPr) — Word is strict about
--- this and will complain on validation if children are out of sequence.
+--
+-- Element order follows the OOXML CT_RPr schema sequence (ECMA-376 Part 1
+-- §17.3.2.28). Word's tolerance for out-of-order children is version-
+-- dependent (some builds re-order silently, others log a recovery warning,
+-- LibreOffice may drop the misplaced child entirely), so we emit them in
+-- the canonical order. The schema position of each child we emit is
+-- annotated below for future maintainers.
 local function rpr_xml(props, vert_align)
   local parts = {}
   if props.font then
     local f = escape_attr(props.font)
     -- `parts[#parts + 1] = x` is the idiomatic Lua "append to array".
-    parts[#parts + 1] = '<w:rFonts w:ascii="' .. f .. '" w:hAnsi="' .. f .. '" w:cs="' .. f .. '"/>'
+    parts[#parts + 1] = '<w:rFonts w:ascii="' .. f .. '" w:hAnsi="' .. f .. '" w:cs="' .. f .. '"/>'  -- pos 2
   end
-  if props.bold then parts[#parts + 1] = "<w:b/>" end
-  if props.italic then parts[#parts + 1] = "<w:i/>" end
-  if props.strikeout then parts[#parts + 1] = "<w:strike/>" end
-  if props.fg then parts[#parts + 1] = '<w:color w:val="' .. props.fg .. '"/>' end
+  if props.bold then parts[#parts + 1] = "<w:b/>" end                                                  -- pos 3
+  if props.italic then parts[#parts + 1] = "<w:i/>" end                                                -- pos 5
+  if props.strikeout then parts[#parts + 1] = "<w:strike/>" end                                        -- pos 9
+  if props.fg then parts[#parts + 1] = '<w:color w:val="' .. props.fg .. '"/>' end                     -- pos 19
   if props.size then
-    parts[#parts + 1] = '<w:sz w:val="' .. props.size .. '"/>'
-    parts[#parts + 1] = '<w:szCs w:val="' .. props.size .. '"/>'
+    parts[#parts + 1] = '<w:sz w:val="' .. props.size .. '"/>'                                         -- pos 24
+    parts[#parts + 1] = '<w:szCs w:val="' .. props.size .. '"/>'                                       -- pos 25
   end
+  if props.underline then parts[#parts + 1] = '<w:u w:val="single"/>' end                              -- pos 27
   if props.bg then
-    parts[#parts + 1] = '<w:shd w:val="clear" w:color="auto" w:fill="' .. props.bg .. '"/>'
+    parts[#parts + 1] = '<w:shd w:val="clear" w:color="auto" w:fill="' .. props.bg .. '"/>'            -- pos 30
   end
   if vert_align == "superscript" then
-    parts[#parts + 1] = '<w:vertAlign w:val="superscript"/>'
+    parts[#parts + 1] = '<w:vertAlign w:val="superscript"/>'                                           -- pos 32
   elseif vert_align == "subscript" then
-    parts[#parts + 1] = '<w:vertAlign w:val="subscript"/>'
+    parts[#parts + 1] = '<w:vertAlign w:val="subscript"/>'                                             -- pos 32
   end
-  if props.underline then parts[#parts + 1] = '<w:u w:val="single"/>' end
   if #parts == 0 then return "" end
   -- table.concat joins array items with the given separator (empty here).
   return "<w:rPr>" .. table.concat(parts) .. "</w:rPr>"

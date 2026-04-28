@@ -101,6 +101,35 @@ def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_non_html
         assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
 
 
+@pytest.mark.parametrize("target_format", ["html", "markdown", "plain", "rtf", "epub"])
+def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_html_to_non_docx_target(target_format):
+    """The filter emits raw OOXML; it must not be applied when the target writer is not docx."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"output")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.html"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output." + target_format
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("<p>x</p>", "html", target_format)
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
+
+
 def test_version_endpoint():
     """Test the version endpoint."""
     with patch("subprocess.run") as mock_subprocess, patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0", "PANDOC_SERVICE_BUILD_TIMESTAMP": "2024-03-27"}):
