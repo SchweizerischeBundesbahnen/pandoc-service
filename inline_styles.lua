@@ -313,13 +313,21 @@ walk = function(inlines, props, vert_align)
       -- Hyperlinks would need a relationship entry in word/_rels — we can't
       -- create those from a Lua filter. Keep the link text and lose the URL.
       append_all(result, walk(inline.content, props, vert_align))
+    elseif t == "Image" then
+      -- Images are embedded by Pandoc's DOCX writer as <w:drawing> with a
+      -- relationship in word/_rels/document.xml.rels — that pipeline isn't
+      -- accessible from a Lua filter, so we MUST pass the node through
+      -- untouched. Stringifying would silently drop the image (alt text
+      -- only) and is exactly the bug we just fixed.
+      result[#result + 1] = inline
     else
-      -- Anything else (Image, Note, Cite, Math, ...): collapse to plain
-      -- text via pandoc.utils.stringify so we don't drop the content.
-      local txt = pandoc.utils.stringify(inline)
-      if txt ~= "" then
-        result[#result + 1] = emit_run(txt, props, vert_align)
-      end
+      -- Anything else (Note, Cite, Math, Quoted, SmallCaps, ...) needs
+      -- writer-level handling we can't replicate inline. Pass through; the
+      -- DOCX writer will emit it correctly. The trade-off is that the
+      -- surrounding span's color/font won't propagate into these nodes —
+      -- which is the right call (a footnote marker shouldn't inherit a
+      -- highlight, an Image has no text color, etc.).
+      result[#result + 1] = inline
     end
   end
   return result
