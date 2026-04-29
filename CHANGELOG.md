@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.0.1...v2.1.0) (2026-04-29)
+
+
+### Features
+
+* Support css formatting ([#157](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/157)) ([074d0b5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/074d0b5744a3c8927507c1390c419bd6dcdde902))
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.135.3 ([61b9033](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/61b9033a7efb7bda5690f94ffd2dca0ecce1e7f2))
+* **deps:** update dependency fastapi to v0.136.0 ([b53dbf0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b53dbf0ea817a1f9d24db3b923f6aebdbeff1174))
+* **deps:** update dependency fastapi to v0.136.1 ([bda4941](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/bda49415437b1a1dac7a6138e5f25757f5cd8b9a))
+* **deps:** update dependency prometheus-client to v0.25.0 ([643e895](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/643e895a50d75ed103de53b8d42b43d5d0d7e79e))
+* **deps:** update dependency python-multipart to v0.0.24 ([5ce7d88](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5ce7d881c5e9ce94a6464858d252992f292ba6f1))
+* **deps:** update dependency python-multipart to v0.0.26 ([e814953](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e814953303c64b1709c3ad666b0e240494327fca))
+* **deps:** update dependency uvicorn to v0.43.0 ([4dbe26d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4dbe26d75826da1481ce22dd1aa6c7b26cc22b88))
+* **deps:** update dependency uvicorn to v0.44.0 ([63e6f59](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/63e6f59f4e56d9ed2f37b0a2b9b4b8d863655ee0))
+* **deps:** update dependency uvicorn to v0.45.0 ([791be07](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/791be0706a9a0785839070cb4e2cc53ae1897522))
+* **deps:** update dependency uvicorn to v0.46.0 ([f2b756c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f2b756c211aaa472c5e703fe1d97f7eb9e22801b))
+
 ## [2.0.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.0.0...v2.0.1) (2026-03-30)
 
 
