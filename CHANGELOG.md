@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.0...v2.1.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* properly handle links during transformations of text formatting ([#160](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/160)) ([a254cba](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a254cba787bb8b1463521f3117c2978c69ef3eb3))
+
 ## [2.1.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.0.1...v2.1.0) (2026-04-29)
 
 
