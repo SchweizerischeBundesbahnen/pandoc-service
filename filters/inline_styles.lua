@@ -390,9 +390,16 @@ walk = function(inlines, props, vert_align)
       -- dropped here in favour of the inherited inline-CSS formatting.
       result[#result + 1] = emit_run(inline.text, props, vert_align)
     elseif t == "Link" then
-      -- Hyperlinks would need a relationship entry in word/_rels — we can't
-      -- create those from a Lua filter. Keep the link text and lose the URL.
-      append_all(result, walk(inline.content, props, vert_align))
+      -- Walk the link's content with the surrounding props so the styled
+      -- span's color/font/highlight apply to the link text too, then wrap
+      -- the walked runs back in a Link carrying the original target/title/
+      -- attr. Pandoc's DOCX writer turns that Link into <w:hyperlink> and
+      -- registers the relationship in word/_rels/document.xml.rels — we
+      -- get the relationship side-effect for free as long as we hand it a
+      -- Link node. Discarding the wrapper (the previous behaviour) kept
+      -- the visible text but dropped the click target entirely.
+      local walked = walk(inline.content, props, vert_align)
+      result[#result + 1] = pandoc.Link(walked, inline.target, inline.title, inline.attr)
     elseif t == "Image" then
       -- Images are embedded by Pandoc's DOCX writer as <w:drawing> with a
       -- relationship in word/_rels/document.xml.rels — that pipeline isn't
