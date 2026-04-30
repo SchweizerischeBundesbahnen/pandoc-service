@@ -1033,7 +1033,7 @@ def test_get_request_body_limit_mb_negative():
     """Test get_request_body_limit_mb with negative value (invalid)."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "-100"}),
-        patch("logging.warning") as mock_warning,
+        patch("app.PandocController.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
@@ -1045,7 +1045,7 @@ def test_get_request_body_limit_mb_numeric_with_whitespace():
     """Test get_request_body_limit_mb with numeric string containing whitespace."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": " 1000 "}),
-        patch("logging.warning") as mock_warning,
+        patch("app.PandocController.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         # int() in Python handles leading/trailing whitespace
@@ -1057,7 +1057,7 @@ def test_get_request_body_limit_mb_special_characters():
     """Test get_request_body_limit_mb with special characters."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "1000MB"}),
-        patch("logging.warning") as mock_warning,
+        patch("app.PandocController.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
@@ -1069,7 +1069,7 @@ def test_get_request_body_limit_mb_hex_string():
     """Test get_request_body_limit_mb with hexadecimal string."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "0x100"}),
-        patch("logging.warning") as mock_warning,
+        patch("app.PandocController.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
@@ -1088,7 +1088,7 @@ def test_get_request_body_limit_mb_logging_message_content():
     """Test that logging messages contain appropriate information."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "-1"}),
-        patch("logging.warning") as mock_warning,
+        patch("app.PandocController.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500
