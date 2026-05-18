@@ -6,6 +6,8 @@ from pathlib import Path
 
 from app import PandocController
 
+logger = logging.getLogger(__name__)
+
 
 def setup_logging() -> Path:
     """
@@ -83,7 +85,7 @@ def main() -> None:
     args = parser.parse_args()
 
     setup_logging()
-    logging.info("Pandoc service listening port: %d", args.port)
+    logger.info("Pandoc service listening port: %d", args.port)
 
     # Start the server - metrics server lifecycle is managed by FastAPI lifespan
     PandocController.start_server(args.port)

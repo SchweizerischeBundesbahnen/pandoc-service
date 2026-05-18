@@ -44,6 +44,7 @@ PAPER_SIZES = {
     "LEGAL": {"width": 12240, "height": 20160},
     "LEDGER": {"width": 15840, "height": 24480},
 }
+logger = logging.getLogger(__name__)
 
 
 def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None) -> bytes:
@@ -270,7 +271,7 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
     for extent in extent_elements:
         width = int(extent.attrib["cx"])
         height = int(extent.attrib["cy"])
-        logging.debug(f"Image found, size: {width} x {height}")
+        logger.debug(f"Image found, size: {width} x {height}")
 
         # Resize only if width exceeds max_image_width
         if width > max_image_width:
@@ -282,7 +283,7 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
             extent.set("cx", str(new_width))
             extent.set("cy", str(new_height))
 
-            logging.debug(f"Resized to: {new_width} x {new_height}")
+            logger.debug(f"Resized to: {new_width} x {new_height}")
             modified = True
 
     # If any modification was made, update the cell XML
@@ -301,7 +302,7 @@ def main() -> int:
     ORIENTATION_ARG_INDEX = 3
 
     if not (MIN_ARGS <= len(sys.argv) <= MAX_ARGS):
-        logging.info("Usage: <path_to_docx> [paper_size] [orientation]")
+        logger.info("Usage: <path_to_docx> [paper_size] [orientation]")
         return 1
 
     docx_path = sys.argv[DOCX_PATH_ARG_INDEX]
@@ -314,7 +315,7 @@ def main() -> int:
     with Path(docx_path).open("wb") as docx_file_writer:
         docx_file_writer.write(result_bytes)
 
-    logging.debug(f"Successfully modified table properties in {docx_path}")
+    logger.debug(f"Successfully modified table properties in {docx_path}")
     return 0
 
 

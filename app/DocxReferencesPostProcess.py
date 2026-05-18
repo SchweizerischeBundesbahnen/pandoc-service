@@ -13,6 +13,7 @@ SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSON
 # Common XPath expressions
 XPATH_P_PR = ".//w:pPr"
 XPATH_P_STYLE = ".//w:pStyle"
+logger = logging.getLogger(__name__)
 
 
 def add_table_of_contents_entries(doc: DocumentObject) -> None:
@@ -52,13 +53,13 @@ def enable_auto_update_fields(doc: DocumentObject) -> None:
             # Create the updateFields element
             update_fields = parse_xml(f'<w:updateFields {nsdecls("w")} w:val="true"/>')
             settings_element.append(update_fields)
-            logging.info("Enabled auto-update of fields on document open")
+            logger.info("Enabled auto-update of fields on document open")
         else:
             # Update existing value
             update_fields.set(f"{{{SCHEMA}}}val", "true")
-            logging.info("Updated existing auto-update fields setting")
+            logger.info("Updated existing auto-update fields setting")
     except Exception as e:
-        logging.warning(f"Could not enable auto-update fields: {e}")
+        logger.warning(f"Could not enable auto-update fields: {e}")
 
 
 def _find_and_process_captions(body: Any) -> tuple[list, list]:
@@ -73,13 +74,13 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:
         if text_stripped.startswith("Figure"):
             figure_paragraphs.append((para, text_stripped))
             _add_caption_style_and_tc_field(para, text_stripped, field_flag="F")
-            logging.debug(f"Added Caption style and TC field to figure: {text_stripped}")
+            logger.debug(f"Added Caption style and TC field to figure: {text_stripped}")
         elif text_stripped.startswith("Table"):
             table_paragraphs.append((para, text_stripped))
             _add_caption_style_and_tc_field(para, text_stripped, field_flag="T")
-            logging.debug(f"Added Caption style and TC field to table: {text_stripped}")
+            logger.debug(f"Added Caption style and TC field to table: {text_stripped}")
 
-    logging.info(f"Found {len(figure_paragraphs)} figure captions and {len(table_paragraphs)} table captions")
+    logger.info(f"Found {len(figure_paragraphs)} figure captions and {len(table_paragraphs)} table captions")
     return figure_paragraphs, table_paragraphs
 
 
@@ -128,13 +129,13 @@ def _find_placeholder_paragraphs(body: Any, elements_to_replace: list) -> None:
 
             if text == "TOC_PLACEHOLDER":
                 elements_to_replace.append((idx, element, True, False, False))
-                logging.info(f"Found TOC_PLACEHOLDER at index {idx}, will replace with TOC field")
+                logger.info(f"Found TOC_PLACEHOLDER at index {idx}, will replace with TOC field")
             elif text == "TOF_PLACEHOLDER":
                 elements_to_replace.append((idx, element, False, True, False))
-                logging.info(f"Found TOF_PLACEHOLDER at index {idx}, will replace with TOF field")
+                logger.info(f"Found TOF_PLACEHOLDER at index {idx}, will replace with TOF field")
             elif text == "TOT_PLACEHOLDER":
                 elements_to_replace.append((idx, element, False, False, True))
-                logging.info(f"Found TOT_PLACEHOLDER at index {idx}, will replace with TOT field")
+                logger.info(f"Found TOT_PLACEHOLDER at index {idx}, will replace with TOT field")
 
 
 def _replace_elements_with_fields(body: Any, elements_to_replace: list, figure_paragraphs: list, table_paragraphs: list) -> None:
@@ -144,7 +145,7 @@ def _replace_elements_with_fields(body: Any, elements_to_replace: list, figure_p
         # Remove element
         if element is not None:
             body.remove(element)
-            logging.debug(f"Removed element at index {idx}")
+            logger.debug(f"Removed element at index {idx}")
 
         # Insert replacement fields
         _insert_field_at_position(body, idx, has_toc, has_figure_links, has_table_links, figure_paragraphs, table_paragraphs)
@@ -156,19 +157,19 @@ def _insert_field_at_position(body: Any, idx: int, has_toc: bool, has_figure_lin
         toc_paragraphs = _create_toc_field()
         for toc_para in reversed(toc_paragraphs):
             body.insert(idx, toc_para)
-        logging.info(f"Inserted Table of Contents at index {idx}")
+        logger.info(f"Inserted Table of Contents at index {idx}")
 
     if has_figure_links and figure_paragraphs:
         tof_paragraphs = _create_tof_field()
         for tof_para in reversed(tof_paragraphs):
             body.insert(idx, tof_para)
-        logging.info(f"Inserted Table of Figures at index {idx}")
+        logger.info(f"Inserted Table of Figures at index {idx}")
 
     if has_table_links and table_paragraphs:
         tot_paragraphs = _create_tot_field()
         for tot_para in reversed(tot_paragraphs):
             body.insert(idx, tot_para)
-        logging.info(f"Inserted Table of Tables at index {idx}")
+        logger.info(f"Inserted Table of Tables at index {idx}")
 
 
 def _create_field(field_code: str) -> list[Any]:
