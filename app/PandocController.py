@@ -10,7 +10,7 @@ import tempfile
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import anyio
 import starlette.datastructures
@@ -531,9 +531,9 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # styles, then ask pandoc to surface those style references via
     # docx+styles, and let the docx_colors_to_latex Lua filter emit the
     # matching \textcolor / \colorbox raw LaTeX.
-    apply_docx_color_preprocess = isinstance(source_data, bytes) and source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
-    if apply_docx_color_preprocess and isinstance(source_data, bytes):
-        source_data = DocxColorPreProcess.preprocess(source_data)
+    apply_docx_color_preprocess = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS and isinstance(source_data, bytes)
+    if apply_docx_color_preprocess:
+        source_data = DocxColorPreProcess.preprocess(cast("bytes", source_data))
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:

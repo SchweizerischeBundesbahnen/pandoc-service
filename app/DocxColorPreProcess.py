@@ -104,7 +104,7 @@ def _enumerate_body_parts(names: Iterable[str]) -> list[str]:
     """
     result = []
     for name in names:
-        if name in _FIXED_BODY_PARTS or (name.startswith("word/header") or name.startswith("word/footer")) and name.endswith(".xml"):
+        if name in _FIXED_BODY_PARTS or (name.startswith(("word/header", "word/footer")) and name.endswith(".xml")):
             result.append(name)
     return result
 
@@ -246,10 +246,8 @@ def _replace_run_color_props(rpr: ET.Element, style_id: str) -> None:
     no longer carry the synthetic-style hint either, defeating the whole
     pipeline.
     """
-    # findall returns a live view in some ET implementations; materialize
-    # to a list before mutating to avoid skipping siblings.
     for tag in (_COLOR_TAG, _SHD_TAG, _HIGHLIGHT_TAG, _RSTYLE_TAG):
-        for el in list(rpr.findall(tag)):
+        for el in rpr.findall(tag):
             rpr.remove(el)
     new_rstyle = ET.Element(_RSTYLE_TAG, {_VAL_ATTR: style_id})
     # <w:rStyle> must be the first child of <w:rPr> per the OOXML schema
