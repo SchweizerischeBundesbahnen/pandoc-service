@@ -54,25 +54,25 @@ W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR
 # canonical prefixes globally tells ET to preserve them on serialize.
 _OOXML_NAMESPACES = {
     "w": W_NS,
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
     "o": "urn:schemas-microsoft-com:office:office",
     "v": "urn:schemas-microsoft-com:vml",
     "w10": "urn:schemas-microsoft-com:office:word",
-    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
-    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
-    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
-    "w14": "http://schemas.microsoft.com/office/word/2010/wordml",
-    "w15": "http://schemas.microsoft.com/office/word/2012/wordml",
-    "w16se": "http://schemas.microsoft.com/office/word/2015/wordml/symex",
-    "wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
-    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
-    "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
-    "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",
-    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
-    "wne": "http://schemas.microsoft.com/office/word/2006/wordml",
-}  # NOSONAR False positive - URIs are OOXML namespace identifier (ECMA-376), they are never dereferenced
+    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "w14": "http://schemas.microsoft.com/office/word/2010/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "w15": "http://schemas.microsoft.com/office/word/2012/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "w16se": "http://schemas.microsoft.com/office/word/2015/wordml/symex",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+    "wne": "http://schemas.microsoft.com/office/word/2006/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+}
 for _prefix, _uri in _OOXML_NAMESPACES.items():
     ET.register_namespace(_prefix, _uri)
 
