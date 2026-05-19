@@ -22,7 +22,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxPostProcess, PptxPostProcess
+from . import DocxColorPreProcess, DocxPostProcess, PptxPostProcess
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -50,6 +50,7 @@ FILTERS = {
     "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
+    "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
 }
 
 # List of allowed pandoc options for security
@@ -58,11 +59,18 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['page_orientation']}",
     f"--lua-filter={FILTERS['heading_levels']}",
     f"--lua-filter={FILTERS['inline_styles']}",
+    f"--lua-filter={FILTERS['docx_colors_to_latex']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
     "--toc",
 ]
+
+# Target formats whose writer ultimately produces LaTeX (PDF goes through
+# tectonic, latex is the raw .tex file). The DOCX color preprocessor only
+# helps for these targets — for DOCX -> DOCX/HTML/etc. we leave the input
+# alone.
+_LATEX_TARGET_FORMATS = frozenset({"pdf", "latex"})
 
 # Add other allowed formats as needed
 ALLOWED_SOURCE_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile"]
@@ -451,6 +459,40 @@ def _validate_pandoc_options(options: list[str]) -> list[str]:
     return validated_options
 
 
+def _build_pandoc_command(  # noqa: PLR0913
+    *,
+    source_format: str,
+    target_format: str,
+    source_path: str,
+    output_path: str,
+    validated_options: list[str],
+    apply_docx_color_preprocess: bool,
+) -> list[str]:
+    """Build the pandoc CLI invocation for run_pandoc_conversion."""
+    # Source format gains the +styles extension when the color preprocessor
+    # ran, so the synthetic character styles it injected surface as
+    # custom-style Span attributes that docx_colors_to_latex.lua can pick up.
+    pandoc_source_format = f"{source_format}+styles" if apply_docx_color_preprocess else source_format
+    cmd = [PANDOC_PATH, "-f", pandoc_source_format, "-t", target_format, "-o", output_path, source_path]
+
+    # Convert inline CSS on HTML <span style="..."> into raw OOXML runs for
+    # the DOCX writer. The filter emits RawInline("openxml", ...) nodes which
+    # only render when the target writer is docx; for any other target
+    # (markdown, html, pdf, pptx, ...) those nodes are silently dropped and
+    # the styled-span text disappears entirely, so the filter must be gated
+    # on both source and target.
+    if source_format == "html" and target_format == "docx":
+        cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
+
+    # Companion filter to the DOCX color preprocessor.
+    if apply_docx_color_preprocess:
+        cmd.append(f"--lua-filter={FILTERS['docx_colors_to_latex']}")
+
+    if validated_options:
+        cmd.extend(validated_options)
+    return cmd
+
+
 def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None) -> bytes:
     """
     Run pandoc conversion using subprocess.
@@ -481,30 +523,38 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # Validate all options against whitelist to prevent command injection
     validated_options = _validate_pandoc_options(options)
 
+    # Normalize source_data to bytes once, so the rest of the function
+    # works with a single type. The temp file below is opened in "wb"
+    # mode and DocxColorPreProcess.preprocess expects bytes anyway.
+    if isinstance(source_data, str):
+        source_data = source_data.encode("utf-8")
+
+    # Pandoc's DOCX reader drops direct run-level color formatting
+    # (<w:color>, <w:shd>, <w:highlight>) before producing the AST, so a
+    # post-reader Lua filter cannot recover those properties. For
+    # targets that ultimately produce LaTeX (PDF, latex), rewrite the
+    # colored runs in the source as references to synthetic character
+    # styles, then ask pandoc to surface those style references via
+    # docx+styles, and let the docx_colors_to_latex Lua filter emit the
+    # matching \textcolor / \colorbox raw LaTeX.
+    apply_docx_color_preprocess = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
+    if apply_docx_color_preprocess:
+        source_data = DocxColorPreProcess.preprocess(source_data)
+
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
             # Write input data to temporary file
-            if isinstance(source_data, str):
-                source_file.write(source_data.encode("utf-8"))
-            else:
-                source_file.write(source_data)
+            source_file.write(source_data)
             source_file.flush()
 
-            # Build pandoc command with validated options and safe parameters
-            cmd = [PANDOC_PATH, "-f", source_format, "-t", target_format, "-o", output_file.name, source_file.name]
-
-            # Convert inline CSS on HTML <span style="..."> into raw OOXML runs
-            # for the DOCX writer. The filter emits RawInline("openxml", ...)
-            # nodes which only render when the target writer is docx; for any
-            # other target (markdown, html, pdf, pptx, ...) those nodes are
-            # silently dropped and the styled-span text disappears entirely,
-            # so the filter must be gated on both source and target.
-            if source_format == "html" and target_format == "docx":
-                cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
-
-            # Add validated options separately
-            if validated_options:
-                cmd.extend(validated_options)
+            cmd = _build_pandoc_command(
+                source_format=source_format,
+                target_format=target_format,
+                source_path=source_file.name,
+                output_path=output_file.name,
+                validated_options=validated_options,
+                apply_docx_color_preprocess=apply_docx_color_preprocess,
+            )
 
             # Run pandoc with validated parameters and measure duration
             subprocess_start_time = time.time()

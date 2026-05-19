@@ -130,6 +130,85 @@ def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_html_to_
         assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
 
 
+def test_docx_colors_to_latex_filter_registered():
+    """The DOCX color companion filter must be registered and allowlisted."""
+    assert "docx_colors_to_latex" in FILTERS
+    assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" in ALLOWED_PANDOC_OPTIONS
+
+
+def _run_conversion_capturing_cmd(source_data, source_format, target_format):
+    """Shared scaffold for the docx-color-preprocessor wiring tests.
+
+    Returns ``(cmd_list, preprocess_call_count)``. Mocks tempfile / pathlib /
+    subprocess so we never actually shell out, and patches the preprocessor
+    so we can both observe and short-circuit it.
+    """
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"output")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+        patch("app.PandocController.DocxColorPreProcess.preprocess", side_effect=lambda b: b) as mock_pre,
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source." + source_format
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output." + target_format
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion(source_data, source_format, target_format)
+
+        cmd = mock_subprocess.call_args.args[0]
+        return cmd, mock_pre.call_count
+
+
+def test_run_pandoc_conversion_invokes_docx_color_preprocessor_for_docx_to_pdf():
+    """For DOCX -> PDF we preprocess the source, switch to docx+styles, and
+    add the docx_colors_to_latex filter."""
+    cmd, preprocess_calls = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "pdf")
+
+    assert preprocess_calls == 1
+    assert "docx+styles" in cmd
+    assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" in cmd
+
+
+def test_run_pandoc_conversion_invokes_docx_color_preprocessor_for_docx_to_latex():
+    """Same wiring applies when target is raw LaTeX (the writer path is
+    identical; the tectonic step is just skipped)."""
+    cmd, preprocess_calls = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "latex")
+
+    assert preprocess_calls == 1
+    assert "docx+styles" in cmd
+    assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" in cmd
+
+
+def test_run_pandoc_conversion_skips_docx_color_preprocessor_for_docx_to_docx():
+    """DOCX passthrough must not invoke the preprocessor — the colors are
+    already preserved by the DOCX writer, and we don't want to perturb the
+    bytes."""
+    cmd, preprocess_calls = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "docx")
+
+    assert preprocess_calls == 0
+    assert "docx+styles" not in cmd
+    assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" not in cmd
+
+
+def test_run_pandoc_conversion_skips_docx_color_preprocessor_for_non_docx_source():
+    """HTML -> PDF must not trigger the DOCX preprocessor; it only handles
+    DOCX inputs."""
+    cmd, preprocess_calls = _run_conversion_capturing_cmd("<p>x</p>", "html", "pdf")
+
+    assert preprocess_calls == 0
+    assert "html+styles" not in cmd
+    assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" not in cmd
+
+
 def test_version_endpoint():
     """Test the version endpoint."""
     with patch("subprocess.run") as mock_subprocess, patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0", "PANDOC_SERVICE_BUILD_TIMESTAMP": "2024-03-27"}):
