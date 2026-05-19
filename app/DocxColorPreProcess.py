@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 
 # Well-known OOXML namespaces. ElementTree's default behavior on serialize
 # is to mint synthetic prefixes (ns0, ns1, ...) for every namespace it
@@ -72,7 +72,7 @@ _OOXML_NAMESPACES = {
     "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",
     "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
     "wne": "http://schemas.microsoft.com/office/word/2006/wordml",
-}
+}  # NOSONAR False positive - URIs are OOXML namespace identifier (ECMA-376), they are never dereferenced
 for _prefix, _uri in _OOXML_NAMESPACES.items():
     ET.register_namespace(_prefix, _uri)
 

@@ -10,7 +10,7 @@ import tempfile
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import anyio
 import starlette.datastructures
@@ -523,6 +523,12 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # Validate all options against whitelist to prevent command injection
     validated_options = _validate_pandoc_options(options)
 
+    # Normalize source_data to bytes once, so the rest of the function
+    # works with a single type. The temp file below is opened in "wb"
+    # mode and DocxColorPreProcess.preprocess expects bytes anyway.
+    if isinstance(source_data, str):
+        source_data = source_data.encode("utf-8")
+
     # Pandoc's DOCX reader drops direct run-level color formatting
     # (<w:color>, <w:shd>, <w:highlight>) before producing the AST, so a
     # post-reader Lua filter cannot recover those properties. For
@@ -531,17 +537,14 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # styles, then ask pandoc to surface those style references via
     # docx+styles, and let the docx_colors_to_latex Lua filter emit the
     # matching \textcolor / \colorbox raw LaTeX.
-    apply_docx_color_preprocess = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS and isinstance(source_data, bytes)
+    apply_docx_color_preprocess = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     if apply_docx_color_preprocess:
-        source_data = DocxColorPreProcess.preprocess(cast("bytes", source_data))
+        source_data = DocxColorPreProcess.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
             # Write input data to temporary file
-            if isinstance(source_data, str):
-                source_file.write(source_data.encode("utf-8"))
-            else:
-                source_file.write(source_data)
+            source_file.write(source_data)
             source_file.flush()
 
             cmd = _build_pandoc_command(
