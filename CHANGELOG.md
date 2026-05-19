@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.1.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.1...v2.1.2) (2026-05-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency python-multipart to v0.0.27 ([2ecfae3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2ecfae34945cca65df90bdaed837e2facec7680c))
+* **deps:** update dependency python-multipart to v0.0.28 ([043deca](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/043decace28dfc5f34582b87e15321ef1b5e2523))
+* **deps:** update dependency uvicorn to v0.47.0 ([5a9aa8f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5a9aa8f6d963d8911a3d1779acdfa50d49c22aa8))
+* preserve coloring converting from DOCX to PDF/LaTeX ([#164](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/164)) ([557e4ba](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/557e4ba489f40f3f7f999ee7bd7f15f915eccda4))
+* use named logger instead of root logger ([#155](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/155)) ([68b95d3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/68b95d382a21dc618d1fad2da343d0d6d656edac))
+
 ## [2.1.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.0...v2.1.1) (2026-04-30)
 
 
