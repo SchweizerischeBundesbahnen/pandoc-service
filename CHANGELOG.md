@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.2...v2.1.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency python-multipart to v0.0.29 ([d55d501](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d55d501ab3e75850abf6f30d1de4fc9eca8f07ba))
+
 ## [2.1.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.1...v2.1.2) (2026-05-19)
 
 
