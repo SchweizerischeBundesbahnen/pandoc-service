@@ -110,3 +110,76 @@ def test_hyperlink_inside_styled_span_survives_filter():
     assert rel.get("Target") == "https://example.com/test", f"hyperlink relationship Target mismatch: {rel.get('Target')!r}"
     assert rel.get("TargetMode") == "External", f"hyperlink relationship TargetMode mismatch: {rel.get('TargetMode')!r}"
     assert rel.get("Type", "").endswith("/hyperlink"), f"unexpected Relationship Type: {rel.get('Type')!r}"
+
+
+def test_intersecting_text_decorations_are_additive():
+    """Regression: child text-decoration must add to (not replace) inherited
+    decorations.
+
+    Bug: prior to fix, a nested span setting `text-decoration: line-through`
+    inside a `text-decoration: underline` ancestor unconditionally overwrote
+    both decoration flags from the child's token list, wiping the inherited
+    underline (and vice versa for the inverse direction). CSS draws ancestor
+    decorations through descendants regardless of the descendant's own
+    text-decoration — only `none` clears them.
+
+    Three scenarios are checked in one test to cover both directions plus
+    the `none` escape hatch we intentionally preserved.
+    """
+    html = (
+        "<p>"
+        '<span style="text-decoration: underline">'
+        "u_outer and "
+        '<span style="text-decoration: line-through">u_inner</span>'
+        "</span>"
+        "</p>"
+        "<p>"
+        '<span style="text-decoration: line-through">'
+        "s_outer and "
+        '<span style="text-decoration: underline">s_inner</span>'
+        "</span>"
+        "</p>"
+        "<p>"
+        '<span style="text-decoration: underline">'
+        "u_keep and "
+        '<span style="text-decoration: none">u_clear</span>'
+        "</span>"
+        "</p>"
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+
+    def _decorations_for(needle: str) -> set[str]:
+        """Local-name tags from the <w:rPr> of the first <w:r> whose
+        concatenated <w:t> text contains `needle`. Empty set when the run
+        has no <w:rPr>."""
+        for r in doc.iter(f"{{{W_NS}}}r"):
+            text = "".join(t.text or "" for t in r.iter(f"{{{W_NS}}}t"))
+            if needle in text:
+                rpr = r.find(f"{{{W_NS}}}rPr")
+                if rpr is None:
+                    return set()
+                return {c.tag.split("}", 1)[-1] for c in rpr}
+        all_run_text = ["".join(t.text or "" for t in r.iter(f"{{{W_NS}}}t")) for r in doc.iter(f"{{{W_NS}}}r")]
+        pytest.fail(f"no <w:r> contained {needle!r}; runs were: {all_run_text!r}")
+
+    # Case 1: outer underline + inner line-through → inner range must have BOTH.
+    assert _decorations_for("u_outer") == {"u"}, "outer underline range lost its decoration"
+    inner_u = _decorations_for("u_inner")
+    assert "u" in inner_u and "strike" in inner_u, f"inner range lost inherited underline when it added line-through (got {inner_u!r}) — text-decoration merge regression in filters/inline_styles.lua merge_css"
+
+    # Case 2: outer line-through + inner underline → symmetric — inner must have BOTH.
+    assert _decorations_for("s_outer") == {"strike"}, "outer strike range lost its decoration"
+    inner_s = _decorations_for("s_inner")
+    assert "u" in inner_s and "strike" in inner_s, f"inner range lost inherited strike when it added underline (got {inner_s!r}) — text-decoration merge regression (inverse direction)"
+
+    # Case 3: `text-decoration: none` on a descendant still clears inherited decorations.
+    assert _decorations_for("u_keep") == {"u"}, "outer underline range lost its decoration"
+    inner_none = _decorations_for("u_clear")
+    assert "u" not in inner_none and "strike" not in inner_none, f"text-decoration: none failed to clear inherited decorations (got {inner_none!r}) — the explicit clear escape hatch is broken"
