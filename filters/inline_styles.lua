@@ -222,15 +222,19 @@ local function merge_css(parent, css)
     p.italic = (css["font-style"] == "italic" or css["font-style"] == "oblique")
   end
   -- text-decoration is the legacy shorthand; text-decoration-line is the
-  -- modern long-hand. Either one fully replaces inherited decorations.
+  -- modern long-hand. Child decorations are additive over inherited ones —
+  -- in CSS, an ancestor's decoration draws through descendants regardless
+  -- of what the child sets, so a nested span with `line-through` must not
+  -- silently strip the inherited underline (and vice versa). The explicit
+  -- `none` keyword is the only way to clear inherited decorations.
   local td = css["text-decoration"] or css["text-decoration-line"]
   if td then
     if td == "none" then
       p.underline = false
       p.strikeout = false
     else
-      p.underline = has_token(td, "underline")
-      p.strikeout = has_token(td, "line-through")
+      if has_token(td, "underline") then p.underline = true end
+      if has_token(td, "line-through") then p.strikeout = true end
     end
   end
   if css.color then
