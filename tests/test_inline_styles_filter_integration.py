@@ -58,7 +58,7 @@ def _convert_html_to_docx(html: str, output_path: Path) -> None:
         check=False,
     )
     if result.returncode != 0:
-        pytest.fail(f"pandoc failed (exit {result.returncode}):\n{result.stderr}")
+        raise AssertionError(f"pandoc failed (exit {result.returncode}):\n{result.stderr}")
 
 
 def test_hyperlink_inside_styled_span_survives_filter():
@@ -167,7 +167,7 @@ def test_intersecting_text_decorations_are_additive():
                     return set()
                 return {c.tag.split("}", 1)[-1] for c in rpr}
         all_run_text = ["".join(t.text or "" for t in r.iter(f"{{{W_NS}}}t")) for r in doc.iter(f"{{{W_NS}}}r")]
-        pytest.fail(f"no <w:r> contained {needle!r}; runs were: {all_run_text!r}")
+        raise AssertionError(f"no <w:r> contained {needle!r}; runs were: {all_run_text!r}")
 
     # Case 1: outer underline + inner line-through → inner range must have BOTH.
     assert _decorations_for("u_outer") == {"u"}, "outer underline range lost its decoration"
