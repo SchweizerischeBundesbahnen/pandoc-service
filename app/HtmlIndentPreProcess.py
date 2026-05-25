@@ -50,12 +50,14 @@ _UNIT_TO_TWIPS: dict[str, float] = {
 }
 
 # A numeric value followed by an optional unit (letters or %). The unit is
-# captured separately so percentages can be detected and rejected.
-_VALUE_RE = re.compile(r"^\s*([+-]?\d+(?:\.\d+)?)\s*([a-z%]*)\s*$", re.IGNORECASE)
-
-# Find the margin-left declaration inside a style attribute, tolerating
-# surrounding whitespace and other declarations on either side.
-_MARGIN_LEFT_RE = re.compile(r"(?:^|;)\s*margin-left\s*:\s*([^;]+)", re.IGNORECASE)
+# captured separately so percentages can be detected and rejected. No
+# whitespace allowed inside — CSS forbids it between number and unit, and the
+# caller already strips surrounding whitespace before handing the value over.
+# Keeping the pattern free of variable-width whitespace quantifiers also
+# silences the SonarCloud S5852 "regex could backtrack" warning on the
+# previous `^\s*...\s*...\s*$` form (which was already linear-time but
+# matched the rule's "multiple \s* quantifiers" heuristic).
+_VALUE_RE = re.compile(r"^([+-]?\d+(?:\.\d+)?)([a-z%]*)$", re.IGNORECASE)
 
 # Exceptions we treat as "input isn't parseable HTML, pass it through".
 # Bound to a name (rather than written inline as a tuple literal) because
@@ -134,10 +136,24 @@ def _wrap_paragraph(parent: html.HtmlElement, p: html.HtmlElement, twips: int) -
 
 
 def _extract_margin_left_twips(style: str) -> int | None:
-    m = _MARGIN_LEFT_RE.search(style)
-    if not m:
-        return None
-    return _css_length_to_twips(m.group(1).strip())
+    """Return the first ``margin-left`` value in a CSS style string, in twips.
+
+    Implemented with plain string ops rather than a regex because the previous
+    pattern (``(?:^|;)\\s*margin-left\\s*:\\s*([^;]+)``) tripped SonarCloud's
+    "regex could backtrack" rule on its multiple ``\\s*`` quantifiers. The
+    declarations of a CSS style string are semicolon-separated and each is a
+    plain ``property: value`` pair, so ``str.split``/``str.partition`` handles
+    the parsing in obviously linear time with no analyzer false-positives.
+
+    CSS says later declarations override earlier ones; we keep the original
+    regex's leftmost-wins behavior because Polarion never emits duplicates
+    and the test suite locks that contract down explicitly.
+    """
+    for declaration in style.split(";"):
+        prop, sep, value = declaration.partition(":")
+        if sep and prop.strip().lower() == "margin-left":
+            return _css_length_to_twips(value.strip())
+    return None
 
 
 def _css_length_to_twips(value: str) -> int | None:
