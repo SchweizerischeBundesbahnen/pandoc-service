@@ -91,10 +91,10 @@ def _wrap_orphan_lists(root: html.HtmlElement) -> bool:
     # We must materialize the iterator into a list before mutating: the tree
     # walk is invalidated by insert/remove. iter() yields the root first if
     # it is also a list element, which is fine — we still check its children.
-    for parent in list(root.iter()):
+    for parent in root.iter():
         if parent.tag not in _LIST_TAGS:
             continue
-        for child in list(parent):
+        for child in parent:
             if child.tag in _LIST_TAGS:
                 _wrap_in_marker_li(parent, child)
                 rewrote = True

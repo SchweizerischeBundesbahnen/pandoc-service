@@ -477,12 +477,22 @@ local function inlines_to_openxml(inlines)
 end
 
 -- Build the single OOXML <w:p> for an indented paragraph, or nil to signal
--- "fall back to the original Para".
+-- "fall back to the original Para". `twips` is trusted here: callers MUST
+-- pass an already-validated non-negative integer (Lua number, not string).
+-- See filter.Div below for the validation that establishes that trust.
 local function build_indented_w_p(inlines, twips)
   local body = inlines_to_openxml(inlines)
   if not body then return nil end
+  -- string.format("%d", n) round-trips a validated integer through Lua's
+  -- printf, which emits only decimal digits (and an optional leading '-' we
+  -- already ruled out). Concatenating the raw attribute string here instead
+  -- — as the original version did — would have let HTML input like
+  --   <div class="pandoc-indent" data-indent-twips='1"/><w:r>...</w:r><w:p w:x="'>
+  -- close the <w:ind ...> early and splice arbitrary OOXML into the
+  -- document. The validation in filter.Div + this %d format together close
+  -- that injection path.
   return pandoc.RawBlock("openxml",
-    '<w:p><w:pPr><w:ind w:left="' .. twips .. '"/></w:pPr>' .. body .. '</w:p>')
+    '<w:p><w:pPr><w:ind w:left="' .. string.format("%d", twips) .. '"/></w:pPr>' .. body .. '</w:p>')
 end
 
 local function has_class(el, name)
@@ -492,9 +502,29 @@ local function has_class(el, name)
   return false
 end
 
+-- Parse `data-indent-twips` into a non-negative Lua integer, or return nil
+-- if the attribute is missing, non-numeric, negative, or fractional. This is
+-- the trust boundary between attacker-controlled HTML and the raw OOXML we
+-- splice into the document — every byte of `twips` ends up inside a
+-- <w:ind w:left="..."/> attribute, so anything that isn't a clean integer
+-- could escape the attribute and inject arbitrary XML.
+local function parse_twips(raw)
+  if not raw then return nil end
+  local n = tonumber(raw)
+  if not n then return nil end                  -- not numeric at all
+  if n < 0 then return nil end                  -- negative — Word indents are >= 0
+  if n ~= math.floor(n) then return nil end     -- fractional — would render as "600.5"
+  -- Cap at a Word-sane upper bound. <w:ind w:left> is documented as a 32-bit
+  -- signed integer in EMUs/twips; a value of ~200 inches is already far
+  -- beyond any plausible paragraph indent and prevents stringly-large
+  -- integers from showing up in the output.
+  if n > 31680 then return nil end
+  return math.floor(n)
+end
+
 function filter.Div(el)
   if not has_class(el, "pandoc-indent") then return nil end
-  local twips = el.attributes["indent-twips"]
+  local twips = parse_twips(el.attributes["indent-twips"])
   if not twips then return nil end
 
   local result = {}

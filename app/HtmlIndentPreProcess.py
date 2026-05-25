@@ -110,7 +110,7 @@ def _wrap_indented_paragraphs(root: html.HtmlElement) -> bool:
     rewrote = False
     # Materialize before mutating: parent.remove/insert invalidates the
     # iterator if we walk lazily.
-    for p in list(root.iter("p")):
+    for p in root.iter("p"):
         style = p.get("style")
         if not style:
             continue

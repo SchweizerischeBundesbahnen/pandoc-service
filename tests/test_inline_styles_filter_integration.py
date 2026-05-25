@@ -322,3 +322,111 @@ def test_plain_div_is_left_alone():
     # give it (not a raw <w:p> with no pStyle).
     pstyle = p.find(f".//{{{W_NS}}}pStyle")
     assert pstyle is not None, "regular Div content lost its default pStyle — filter erroneously rewrote it as raw OOXML"
+
+
+# ---------------------------------------------------------------------------
+# Security: data-indent-twips validation
+# ---------------------------------------------------------------------------
+#
+# The HtmlIndentPreProcess preprocessor only ever writes integer values into
+# data-indent-twips, but an HTTP caller can submit HTML that already contains
+# `<div class="pandoc-indent" data-indent-twips="…">` with arbitrary content.
+# Without validation that value is concatenated straight into a
+# <w:ind w:left="..."/> attribute, letting the attacker close the attribute
+# early and splice arbitrary OOXML into the document. The filter MUST treat
+# this attribute as untrusted input and reject anything that isn't a clean
+# non-negative integer.
+
+
+def test_attribute_injection_in_data_indent_twips_is_rejected():
+    """The reviewer's "OOXML attribute injection" finding.
+
+    Attempt to close the <w:ind ...> attribute and inject a fake run plus
+    a control character that would surface in extracted text if injection
+    succeeded. The filter MUST refuse the value entirely and drop the
+    indent rather than splice the attacker's payload into the document.
+    """
+    payload = '600"/></w:pPr><w:r><w:t>INJECTED_PAYLOAD_marker_xyz</w:t></w:r><w:pPr x="'
+    html = f"<div class=\"pandoc-indent\" data-indent-twips='{payload}'><p>visible text</p></div>"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    # The injected marker must NOT appear anywhere in the rendered document.
+    # If parse_twips ever forgets to reject this shape, the marker would
+    # show up here because the run we crafted would render as visible text.
+    assert b"INJECTED_PAYLOAD_marker_xyz" not in doc_xml, (
+        "data-indent-twips injection succeeded — the malicious payload reached document.xml. parse_twips in filters/inline_styles.lua must reject any non-numeric value before formatting it into <w:ind w:left>."
+    )
+
+    # And the original paragraph text must still be present (graceful fallback,
+    # not "drop everything if anything looks suspicious").
+    assert b"visible text" in doc_xml, "graceful fallback failed: malicious data-indent-twips also lost the paragraph's real content"
+
+    # And the resulting <w:p> must not carry an <w:ind w:left> (since we
+    # refused the value), so the document remains well-formed.
+    doc = ET.fromstring(doc_xml)
+    p = _w_p_with_text(doc, "visible text")
+    assert _ind_left(p) is None, "filter emitted an <w:ind w:left> for an invalid twips value"
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "abc",  # non-numeric
+        "12abc",  # numeric prefix only
+        "-1",  # negative
+        "1.5",  # fractional
+        "999999",  # exceeds Word's plausible-indent cap (31680)
+        "1e10",  # scientific notation — parseable but vastly out of range
+        "",  # empty string
+        '600"',  # trailing quote — the classic injection prefix
+        '0"/></w:pPr><w:r><w:t>BOOM</w:t></w:r><w:pPr x="',  # full attribute-escape payload
+    ],
+)
+def test_invalid_twips_values_drop_indent_but_keep_content(bad_value: str):
+    """Every shape that isn't a clean non-negative integer in range must
+    drop the indent and pass the original Para through. Pinned individually
+    so each rejection rule is failure-isolated.
+
+    Note: shapes Lua's tonumber accepts (e.g. " 600", "0xff", "+1") are
+    intentionally NOT in this list — they convert to clean integers and the
+    %d formatter then emits only decimal digits, so they're safe even if
+    permissive. The security boundary is "the value reaches OOXML as a
+    bounded integer", not "the string looks lexically tidy".
+    """
+    html = f"<div class=\"pandoc-indent\" data-indent-twips='{bad_value}'><p>some content here</p></div>"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    p = _w_p_with_text(doc, "some content here")
+    assert _ind_left(p) is None, f"filter accepted bad twips value {bad_value!r} and emitted an <w:ind w:left>"
+    # Defensive: a payload that survived would also surface as text in the
+    # document. Catches the case where some future refactor accepts the
+    # value but then truncates/sanitizes — we want the marker entirely
+    # absent so injection attempts leave no trace.
+    assert b"BOOM" not in doc_xml, f"injection payload leaked into document.xml for {bad_value!r}"
+
+
+def test_valid_integer_twips_values_still_work():
+    """Sanity: the validation must not break the happy path. Includes the
+    extremes the cap rules in (0 is rejected as no-op, 31680 is the upper
+    bound, anything above is dropped)."""
+    cases = [("1", "1"), ("600", "600"), ("31680", "31680")]
+    for raw, expected in cases:
+        html = f'<div class="pandoc-indent" data-indent-twips="{raw}"><p>val_{raw}</p></div>'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "out.docx"
+            _convert_html_to_docx(html, out)
+            with zipfile.ZipFile(out) as zf:
+                doc_xml = zf.read("word/document.xml")
+        doc = ET.fromstring(doc_xml)
+        p = _w_p_with_text(doc, f"val_{raw}")
+        assert _ind_left(p) == expected, f"valid twips {raw!r} did not produce <w:ind w:left='{expected}'/>"
