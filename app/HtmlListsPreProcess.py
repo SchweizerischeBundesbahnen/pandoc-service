@@ -34,6 +34,15 @@ logger = logging.getLogger(__name__)
 SUPPRESS_MARKER_CLASS = "pandoc-suppress-marker"
 _LIST_TAGS = frozenset({"ol", "ul"})
 
+# Exceptions we treat as "input isn't parseable HTML, pass it through".
+# Bound to a name (rather than written inline as a tuple literal) because
+# `ruff format` rewrites literal except-tuples to PEP 758's parens-free form
+# under Python 3.14, which is a SyntaxError on older interpreters and trips
+# every static analyzer that hasn't caught up to the new syntax yet. A name
+# reference is not rewritten by the formatter, so the parens stay where the
+# language requires them.
+_PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
+
 
 def preprocess(source: bytes) -> bytes:
     """Wrap orphan ``<ol>`` / ``<ul>`` children of list elements.
@@ -47,7 +56,7 @@ def preprocess(source: bytes) -> bytes:
         # fragments. We get a list of HtmlElements (and possibly a leading
         # text string) covering everything in the input.
         fragments = html.fragments_fromstring(source)
-    except etree.ParseError, etree.ParserError, ValueError:
+    except _PARSE_FAILURES:
         logger.warning("HtmlListsPreProcess: HTML parse failed; passing input through")
         return source
 

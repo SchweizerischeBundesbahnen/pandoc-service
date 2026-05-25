@@ -57,6 +57,15 @@ _VALUE_RE = re.compile(r"^\s*([+-]?\d+(?:\.\d+)?)\s*([a-z%]*)\s*$", re.IGNORECAS
 # surrounding whitespace and other declarations on either side.
 _MARGIN_LEFT_RE = re.compile(r"(?:^|;)\s*margin-left\s*:\s*([^;]+)", re.IGNORECASE)
 
+# Exceptions we treat as "input isn't parseable HTML, pass it through".
+# Bound to a name (rather than written inline as a tuple literal) because
+# `ruff format` rewrites literal except-tuples to PEP 758's parens-free form
+# under Python 3.14, which is a SyntaxError on older interpreters and trips
+# every static analyzer that hasn't caught up to the new syntax yet. A name
+# reference is not rewritten by the formatter, so the parens stay where the
+# language requires them.
+_PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
+
 
 def preprocess(source: bytes) -> bytes:
     """Wrap each indented ``<p>`` in a marker ``<div>``. Idempotent on input
@@ -64,7 +73,7 @@ def preprocess(source: bytes) -> bytes:
     """
     try:
         fragments = html.fragments_fromstring(source)
-    except etree.ParseError, etree.ParserError, ValueError:
+    except _PARSE_FAILURES:
         logger.warning("HtmlIndentPreProcess: HTML parse failed; passing input through")
         return source
 
