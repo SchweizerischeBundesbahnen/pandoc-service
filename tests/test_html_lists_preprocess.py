@@ -129,3 +129,138 @@ def test_unparseable_input_passes_through():
     # We don't care what it produces as long as it doesn't raise and returns
     # bytes — the public contract is "best-effort, never explode".
     assert isinstance(out, bytes)
+
+
+# --- parse failure --------------------------------------------------------
+#
+# lxml's HTML parser is intentionally forgiving, so we patch the symbol the
+# preprocessor calls to force the exception branch. The contract is the same
+# as in HtmlIndentPreProcess: any caught parser exception must return the
+# original source object unchanged (identity, not equality) so callers can
+# detect "no work done" without re-parsing.
+
+
+def test_parse_failure_passes_input_through(mocker):
+    """If lxml raises, we MUST return the input bytes unchanged so the
+    conversion pipeline doesn't 500 on malformed HTML."""
+    mocker.patch(
+        "app.HtmlListsPreProcess.html.fragments_fromstring",
+        side_effect=ValueError("synthetic parse failure"),
+    )
+    src = b"<ol><ol><li>x</li></ol></ol>"
+    assert HtmlListsPreProcess.preprocess(src) is src
+
+
+def test_parse_failure_logs_warning(mocker, caplog):
+    """The parse-failure path must emit a WARNING so failures are diagnosable
+    in production — locked down so an operator's log alert keeps firing."""
+    import logging  # noqa: PLC0415
+
+    mocker.patch(
+        "app.HtmlListsPreProcess.html.fragments_fromstring",
+        side_effect=ValueError("boom"),
+    )
+    caplog.set_level(logging.WARNING, logger="app.HtmlListsPreProcess")
+    HtmlListsPreProcess.preprocess(b"<ol><li>x</li></ol>")
+    assert any("HtmlListsPreProcess" in rec.message for rec in caplog.records), f"expected a WARNING from HtmlListsPreProcess; got: {[r.message for r in caplog.records]!r}"
+
+
+# --- leading text round-trip ----------------------------------------------
+#
+# fragments_fromstring may emit a leading str (any text before the first
+# element). When at least one orphan list is wrapped, that text must be
+# re-emitted verbatim ahead of the elements.
+
+
+def test_leading_text_before_orphan_list_is_preserved_when_rewriting():
+    """A leading text node must survive the round-trip when an orphan list
+    triggers rewriting. Without this, we'd silently lose text in front of
+    Polarion-style fragments that begin with prose."""
+    src = b"preamble text <ol><ol><li>x</li></ol></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    assert out.startswith(b"preamble text"), f"leading text not preserved: {out!r}"
+    assert SENTINEL in out  # rewriting did happen
+
+
+def test_leading_text_alone_does_not_force_rewrite():
+    """Leading text without any wrap-target must return the source unchanged
+    (identity), so we don't pay the round-trip cost for inputs we have no
+    work to do on."""
+    src = b"just some text <ol><li>plain</li></ol>"
+    assert HtmlListsPreProcess.preprocess(src) is src
+
+
+# --- module-level contract ------------------------------------------------
+
+
+def test_module_constants_match_documented_contract():
+    """The sentinel class name is hard-coded in filters/html_lists.lua —
+    pin it so a rename here doesn't silently break the Lua side."""
+    assert HtmlListsPreProcess.SUPPRESS_MARKER_CLASS == "pandoc-suppress-marker"
+
+
+# --- additional structural cases ------------------------------------------
+
+
+def test_orphan_at_top_of_outer_list_is_wrapped():
+    """Orphan as the very first child of its parent — boundary check."""
+    src = b"<ol><ol><li>first orphan</li></ol><li>then real</li></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    assert _count_sentinels(out) == 1
+    assert out.index(b"first orphan") < out.index(b"then real")
+
+
+def test_orphan_at_bottom_of_outer_list_is_wrapped():
+    """Orphan as the very last child — boundary check on the other side."""
+    src = b"<ol><li>real first</li><ol><li>then orphan</li></ol></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    assert _count_sentinels(out) == 1
+    assert out.index(b"real first") < out.index(b"then orphan")
+
+
+def test_sibling_orphans_each_get_their_own_wrapper():
+    """Two orphans side by side both get wrapped, with one sentinel each."""
+    src = b"<ol><ol><li>A</li></ol><ol><li>B</li></ol></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    assert _count_sentinels(out) == 2
+    # Each orphan must keep its content; order preserved.
+    assert out.index(b">A<") < out.index(b">B<")
+
+
+def test_top_level_ol_with_orphan_child_is_wrapped():
+    """An <ol> that is itself the top-level fragment (no surrounding context)
+    must still have its orphan child wrapped — covers the
+    iter()-includes-root case in _wrap_orphan_lists."""
+    src = b"<ol><ol><li>only one</li></ol></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    assert _count_sentinels(out) == 1
+    assert b"only one" in out
+
+
+def test_well_formed_li_wrapping_a_list_is_not_touched():
+    """A valid <li> that legitimately contains a nested list (i.e. an empty
+    parent item) must NOT be turned into a sentinel — the filter would then
+    strip the marker the user actually wants. Documents the asymmetry: only
+    orphan <ol>/<ul> children trigger wrapping."""
+    src = b"<ol><li><ol><li>nested</li></ol></li></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    # No sentinel added — the existing <li> is well-formed.
+    assert _count_sentinels(out) == 0
+
+
+def test_deeply_nested_mixed_orphans():
+    """A pathological case combining <ol> and <ul> orphans at multiple
+    depths — every orphan still gets its own sentinel."""
+    src = b"<ol><ul><ol><li>x</li></ol></ul></ol>"
+    out = HtmlListsPreProcess.preprocess(src)
+    # Two orphans: <ul> inside <ol>, and <ol> inside <ul>.
+    assert _count_sentinels(out) == 2
+
+
+def test_full_html_document_input_is_handled():
+    """fragments_fromstring also accepts a full document — make sure we
+    don't break when the input includes <html>/<body> wrappers."""
+    src = b'<html><body><ol id="polarion_1"><li>Level 1<ol><ol><li>Level 3</li></ol><li>Level 2</li></ol></li></ol></body></html>'
+    out = HtmlListsPreProcess.preprocess(src)
+    assert _count_sentinels(out) == 1
+    assert b"Level 1" in out and b"Level 2" in out and b"Level 3" in out
