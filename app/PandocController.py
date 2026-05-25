@@ -22,7 +22,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxColorPreProcess, DocxPostProcess, PptxPostProcess
+from . import DocxColorPreProcess, DocxPostProcess, HtmlIndentPreProcess, HtmlListsPreProcess, PptxPostProcess
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -51,6 +51,7 @@ FILTERS = {
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
     "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
+    "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
 }
 
 # List of allowed pandoc options for security
@@ -60,6 +61,7 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['heading_levels']}",
     f"--lua-filter={FILTERS['inline_styles']}",
     f"--lua-filter={FILTERS['docx_colors_to_latex']}",
+    f"--lua-filter={FILTERS['html_lists']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -483,6 +485,11 @@ def _build_pandoc_command(  # noqa: PLR0913
     # on both source and target.
     if source_format == "html" and target_format == "docx":
         cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
+        # Pairs with the HtmlListsPreProcess pass on the source bytes: the
+        # preprocessor wraps orphan <ol>/<ul> with a sentinel <li>, and this
+        # filter strips the marker paragraph that pandoc would otherwise emit
+        # for those synthetic list items.
+        cmd.append(f"--lua-filter={FILTERS['html_lists']}")
 
     # Companion filter to the DOCX color preprocessor.
     if apply_docx_color_preprocess:
@@ -540,6 +547,19 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     apply_docx_color_preprocess = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     if apply_docx_color_preprocess:
         source_data = DocxColorPreProcess.preprocess(source_data)
+
+    # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another
+    # list so pandoc's HTML reader doesn't synthesize an implicit list item
+    # that the DOCX writer would render as a stray marker (e.g. "a.") above
+    # the deeper item. See app/HtmlListsPreProcess.py and
+    # filters/html_lists.lua for the full pipeline.
+    # Also wrap each <p style="margin-left: ..."> in a marker <div> so the
+    # paragraph indent survives pandoc's HTML reader (which drops <p>'s style
+    # attribute outright). See app/HtmlIndentPreProcess.py and the Div
+    # handler in filters/inline_styles.lua for the full pipeline.
+    if source_format == "html" and target_format == "docx":
+        source_data = HtmlListsPreProcess.preprocess(source_data)
+        source_data = HtmlIndentPreProcess.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
