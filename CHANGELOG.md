@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.2...v2.1.3) (2026-05-26)
+
+
+### Bug Fixes
+
+* add filter to preserve indents of paragraphs and another filter  ([#167](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/167)) ([f735d4a](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f735d4a6304dc23a18c1566620e590f5c7dfef1a))
+* **deps:** update dependency python-multipart to v0.0.29 ([d55d501](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d55d501ab3e75850abf6f30d1de4fc9eca8f07ba))
+* fix handling styles when different styling is intersecting (not the same boundaries) ([#166](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/166)) ([230a96a](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/230a96ada06aa2a192d7e5a025e0667221df9c5f))
+
 ## [2.1.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.1...v2.1.2) (2026-05-19)
 
 
