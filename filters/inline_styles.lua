@@ -444,4 +444,102 @@ function filter.Span(el)
   return walk(el.content, props, nil)
 end
 
+-- Paragraph-level indent (margin-left). Pandoc's HTML reader drops the style
+-- attribute from <p> outright, so the indent has to ride into the AST on a
+-- wrapping Div that app/HtmlIndentPreProcess.py inserts. The contract:
+--
+--     <div class="pandoc-indent" data-indent-twips="N"><p>...</p></div>
+--
+-- becomes Div("", ["pandoc-indent"], [("indent-twips","N")]) [Para [...]].
+-- We rewrite each inner Para into a raw OOXML <w:p> whose <w:pPr> carries
+-- <w:ind w:left="N"/>. The Para's inlines are run through the same `walk()`
+-- used by filter.Span, so nested <strong>/<em>/styled <span>s in the source
+-- still render correctly inside the indented paragraph.
+--
+-- Graceful degradation: if walk() returns anything that can't be embedded as
+-- raw OOXML (a Link, Image, footnote, etc. — these need writer-level rels/
+-- drawing handling that a raw <w:p> can't reproduce), we drop the indent for
+-- that paragraph rather than corrupt its content. The Para passes through
+-- with its semantics intact, just without the indent applied.
+
+-- Concatenate a list of inlines into a single OOXML string, or return nil
+-- if any element can't be safely flattened (Link, Image, Note, ...).
+local function inlines_to_openxml(inlines)
+  local runs = walk(inlines, {}, nil)
+  local parts = {}
+  for _, r in ipairs(runs) do
+    if r.t ~= "RawInline" or r.format ~= "openxml" then
+      return nil
+    end
+    parts[#parts + 1] = r.text
+  end
+  return table.concat(parts)
+end
+
+-- Build the single OOXML <w:p> for an indented paragraph, or nil to signal
+-- "fall back to the original Para". `twips` is trusted here: callers MUST
+-- pass an already-validated non-negative integer (Lua number, not string).
+-- See filter.Div below for the validation that establishes that trust.
+local function build_indented_w_p(inlines, twips)
+  local body = inlines_to_openxml(inlines)
+  if not body then return nil end
+  -- string.format("%d", n) round-trips a validated integer through Lua's
+  -- printf, which emits only decimal digits (and an optional leading '-' we
+  -- already ruled out). Concatenating the raw attribute string here instead
+  -- — as the original version did — would have let HTML input like
+  --   <div class="pandoc-indent" data-indent-twips='1"/><w:r>...</w:r><w:p w:x="'>
+  -- close the <w:ind ...> early and splice arbitrary OOXML into the
+  -- document. The validation in filter.Div + this %d format together close
+  -- that injection path.
+  return pandoc.RawBlock("openxml",
+    '<w:p><w:pPr><w:ind w:left="' .. string.format("%d", twips) .. '"/></w:pPr>' .. body .. '</w:p>')
+end
+
+local function has_class(el, name)
+  for _, c in ipairs(el.classes) do
+    if c == name then return true end
+  end
+  return false
+end
+
+-- Parse `data-indent-twips` into a non-negative Lua integer, or return nil
+-- if the attribute is missing, non-numeric, negative, or fractional. This is
+-- the trust boundary between attacker-controlled HTML and the raw OOXML we
+-- splice into the document — every byte of `twips` ends up inside a
+-- <w:ind w:left="..."/> attribute, so anything that isn't a clean integer
+-- could escape the attribute and inject arbitrary XML.
+local function parse_twips(raw)
+  if not raw then return nil end
+  local n = tonumber(raw)
+  if not n then return nil end                  -- not numeric at all
+  if n < 0 then return nil end                  -- negative — Word indents are >= 0
+  if n ~= math.floor(n) then return nil end     -- fractional — would render as "600.5"
+  -- Cap at a Word-sane upper bound. <w:ind w:left> is documented as a 32-bit
+  -- signed integer in EMUs/twips; a value of ~200 inches is already far
+  -- beyond any plausible paragraph indent and prevents stringly-large
+  -- integers from showing up in the output.
+  if n > 31680 then return nil end
+  return math.floor(n)
+end
+
+function filter.Div(el)
+  if not has_class(el, "pandoc-indent") then return nil end
+  local twips = parse_twips(el.attributes["indent-twips"])
+  if not twips then return nil end
+
+  local result = {}
+  for _, block in ipairs(el.content) do
+    if block.t == "Para" or block.t == "Plain" then
+      local rb = build_indented_w_p(block.content, twips)
+      result[#result + 1] = rb or block
+    else
+      -- Anything else in the wrapper (nested lists, code blocks, ...) keeps
+      -- its normal writer treatment. Indent isn't applied to non-Para blocks
+      -- — they have their own pPr semantics we shouldn't trample.
+      result[#result + 1] = block
+    end
+  end
+  return result
+end
+
 return filter
