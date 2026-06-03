@@ -12,7 +12,7 @@ dependencies = [
     "python-docx==1.2.0",
     "fastapi==0.136.3",
     "uvicorn==0.48.0",
-    "python-multipart==0.0.29",
+    "python-multipart==0.0.30",
     "defusedxml==0.7.1",
     "asgiref==3.11.1",
     "prometheus-client==0.25.0",
