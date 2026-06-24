@@ -10,12 +10,17 @@ that may contain runs/paragraphs, and reading/repacking the zip.
 from __future__ import annotations
 
 import io
+import logging
 import zipfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 from xml.etree import ElementTree as ET
 
+from defusedxml import ElementTree as DefusedET
+
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
+
+logger = logging.getLogger(__name__)
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 STYLES_PART = "word/styles.xml"
@@ -82,3 +87,43 @@ def repack(entries: dict[str, bytes]) -> bytes:
         for name, data in entries.items():
             zout.writestr(name, data)
     return buf.getvalue()
+
+
+def parse_xml(xml_bytes: bytes) -> ET.Element | None:
+    """Parse a body/styles part with defusedxml (blocks XXE / billion-laughs),
+    returning None on malformed XML so callers can skip it. We serialize with
+    stdlib ET (:func:`serialize_tree`) since defusedxml has no tostring.
+    """
+    try:
+        return DefusedET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return None
+
+
+def serialize_tree(tree: ET.Element) -> bytes:
+    return ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
+
+
+class _StyleLike(Protocol):
+    style_id: str
+
+
+def augment_styles[S: _StyleLike](styles_xml: bytes, specs: dict[str, S], build_style_element: Callable[[S], ET.Element]) -> bytes:
+    """Append a ``<w:style>`` element (built by ``build_style_element``) for each
+    spec to ``word/styles.xml``, idempotently. Never appends a second style with
+    an existing ``w:styleId`` (Word rejects duplicate styleIds); style order in
+    styles.xml has no semantic meaning, so appending to the root is sufficient.
+    Returns the input unchanged when styles.xml is unparseable.
+    """
+    tree = parse_xml(styles_xml)
+    if tree is None:
+        logger.warning("Unparseable %s; skipping style augmentation", STYLES_PART)
+        return styles_xml
+
+    existing_ids = {el.get(f"{{{W_NS}}}styleId") for el in tree.findall(f"{{{W_NS}}}style")}
+    for spec in specs.values():
+        if spec.style_id in existing_ids:
+            continue
+        tree.append(build_style_element(spec))
+
+    return serialize_tree(tree)

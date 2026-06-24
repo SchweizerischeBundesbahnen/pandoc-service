@@ -32,9 +32,7 @@ from __future__ import annotations
 import logging
 from xml.etree import ElementTree as ET
 
-from defusedxml import ElementTree as DefusedET
-
-from .docx_ooxml import STYLES_PART, W_NS, enumerate_body_parts, read_entries, repack
+from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +79,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
     if not needed_styles:
         return docx_bytes
 
-    entries[STYLES_PART] = _augment_styles(entries[STYLES_PART], needed_styles)
+    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, _build_style_element)
     return repack(entries)
 
 
@@ -183,11 +181,8 @@ def _replace_run_color_props(rpr: ET.Element, style_id: str) -> None:
 
 def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used)."""
-    # defusedxml's fromstring blocks XXE / billion-laughs; we still serialize
-    # with stdlib ET because defusedxml deliberately doesn't expose tostring.
-    try:
-        tree = DefusedET.fromstring(xml_bytes)
-    except ET.ParseError:
+    tree = parse_xml(xml_bytes)
+    if tree is None:
         logger.warning("Unparseable XML in DOCX part; skipping")
         return xml_bytes, {}
 
@@ -216,8 +211,7 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     if not styles_used:
         return xml_bytes, {}
 
-    new_xml = ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
-    return new_xml, styles_used
+    return serialize_tree(tree), styles_used
 
 
 def _normalize_hex(value: str | None) -> str | None:
@@ -245,45 +239,6 @@ def _normalize_hex(value: str | None) -> str | None:
     if len(stripped) == HEX_COLOR_LENGTH and all(c in _HEX_DIGITS for c in stripped):
         return stripped.upper()
     return None
-
-
-def _augment_styles(styles_xml: bytes, specs: dict[str, _StyleSpec]) -> bytes:
-    """Insert <w:style> entries for each spec into word/styles.xml, idempotently.
-
-    The fragment we add looks like::
-
-        <w:style w:type="character" w:customStyle="1" w:styleId="PandocColor__FG_FF0000">
-            <w:name w:val="PandocColor__FG_FF0000"/>
-            <w:rPr>
-                <w:color w:val="FF0000"/>
-            </w:rPr>
-        </w:style>
-
-    Adding the matching ``<w:rPr>`` keeps the style usable when the
-    intermediate DOCX is inspected manually; pandoc only consumes the
-    ``w:styleId`` and ``w:name``.
-    """
-    try:
-        tree = DefusedET.fromstring(styles_xml)
-    except ET.ParseError:
-        logger.warning("Unparseable %s; skipping style augmentation", STYLES_PART)
-        return styles_xml
-
-    # Collect existing styleIds to make this idempotent: if the document
-    # has already been preprocessed (or genuinely defined a style with
-    # the same name) we must not append a duplicate <w:style> — Word
-    # rejects styles.xml with two entries sharing the same styleId.
-    existing_ids = {el.get(f"{{{W_NS}}}styleId") for el in tree.findall(f"{{{W_NS}}}style")}
-
-    for spec in specs.values():
-        if spec.style_id in existing_ids:
-            continue
-        # Appending to the root <w:styles> element is sufficient — style
-        # order in styles.xml has no semantic meaning, only the styleId
-        # link from runs matters.
-        tree.append(_build_style_element(spec))
-
-    return ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
 
 
 def _build_style_element(spec: _StyleSpec) -> ET.Element:

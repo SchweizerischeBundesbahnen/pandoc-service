@@ -38,9 +38,7 @@ from __future__ import annotations
 import logging
 from xml.etree import ElementTree as ET
 
-from defusedxml import ElementTree as DefusedET
-
-from .docx_ooxml import STYLES_PART, W_NS, enumerate_body_parts, read_entries, repack
+from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +99,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
     if not needed_styles:
         return docx_bytes
 
-    entries[STYLES_PART] = _augment_styles(entries[STYLES_PART], needed_styles)
+    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, _build_style_element)
     return repack(entries)
 
 
@@ -173,9 +171,8 @@ def _replace_para_props(ppr: ET.Element, style_id: str) -> None:
 
 def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used)."""
-    try:
-        tree = DefusedET.fromstring(xml_bytes)
-    except ET.ParseError:
+    tree = parse_xml(xml_bytes)
+    if tree is None:
         logger.warning("Unparseable XML in DOCX part; skipping")
         return xml_bytes, {}
 
@@ -204,28 +201,7 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     if not styles_used:
         return xml_bytes, {}
 
-    new_xml = ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
-    return new_xml, styles_used
-
-
-def _augment_styles(styles_xml: bytes, specs: dict[str, _StyleSpec]) -> bytes:
-    """Insert a <w:style w:type="paragraph"> entry for each spec, idempotently."""
-    try:
-        tree = DefusedET.fromstring(styles_xml)
-    except ET.ParseError:
-        logger.warning("Unparseable %s; skipping style augmentation", STYLES_PART)
-        return styles_xml
-
-    # Idempotency: never append a second <w:style> with an existing styleId
-    # (Word rejects styles.xml with duplicate styleIds).
-    existing_ids = {el.get(f"{{{W_NS}}}styleId") for el in tree.findall(f"{{{W_NS}}}style")}
-
-    for spec in specs.values():
-        if spec.style_id in existing_ids:
-            continue
-        tree.append(_build_style_element(spec))
-
-    return ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
+    return serialize_tree(tree), styles_used
 
 
 def _build_style_element(spec: _StyleSpec) -> ET.Element:

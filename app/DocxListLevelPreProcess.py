@@ -30,9 +30,7 @@ from __future__ import annotations
 import logging
 from xml.etree import ElementTree as ET
 
-from defusedxml import ElementTree as DefusedET
-
-from .docx_ooxml import W_NS, enumerate_body_parts, read_entries, repack
+from .docx_ooxml import W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +117,8 @@ def _make_sentinel_run(level: int) -> ET.Element:
 
 def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Tag every list paragraph in one body part. Returns (new_bytes, changed)."""
-    try:
-        tree = DefusedET.fromstring(xml_bytes)
-    except ET.ParseError:
+    tree = parse_xml(xml_bytes)
+    if tree is None:
         logger.warning("Unparseable XML in DOCX part; skipping")
         return xml_bytes, False
 
@@ -146,4 +143,4 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     if not changed:
         return xml_bytes, False
 
-    return ET.tostring(tree, xml_declaration=True, encoding="UTF-8"), True
+    return serialize_tree(tree), True
