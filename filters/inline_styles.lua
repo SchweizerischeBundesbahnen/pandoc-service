@@ -444,23 +444,28 @@ function filter.Span(el)
   return walk(el.content, props, nil)
 end
 
--- Paragraph-level indent (margin-left). Pandoc's HTML reader drops the style
--- attribute from <p> outright, so the indent has to ride into the AST on a
--- wrapping Div that app/HtmlIndentPreProcess.py inserts. The contract:
+-- Paragraph-level formatting (margin-left indent + text-align). Pandoc's HTML
+-- reader drops the style attribute from <p> outright, so the formatting has to
+-- ride into the AST on a wrapping Div that app/HtmlParagraphPreProcess.py
+-- inserts. The contract:
 --
---     <div class="pandoc-indent" data-indent-twips="N"><p>...</p></div>
+--     <div class="pandoc-para" data-indent-twips="N" data-text-align="center"><p>...</p></div>
 --
--- becomes Div("", ["pandoc-indent"], [("indent-twips","N")]) [Para [...]].
--- We rewrite each inner Para into a raw OOXML <w:p> whose <w:pPr> carries
--- <w:ind w:left="N"/>. The Para's inlines are run through the same `walk()`
+-- becomes Div("", ["pandoc-para"], [("indent-twips","N"),("text-align","center")])
+-- [Para [...]] — pandoc strips the data- prefix off both attributes (the align
+-- attribute is data-text-align rather than data-align precisely so this
+-- stripping happens; "align" is a reserved HTML attribute pandoc would keep
+-- prefixed). Each data-* attribute is optional. We rewrite each inner Para
+-- into a raw OOXML <w:p> whose <w:pPr> carries <w:ind w:left="N"/> and/or
+-- <w:jc w:val="..."/>. The Para's inlines are run through the same `walk()`
 -- used by filter.Span, so nested <strong>/<em>/styled <span>s in the source
--- still render correctly inside the indented paragraph.
+-- still render correctly inside the formatted paragraph.
 --
 -- Graceful degradation: if walk() returns anything that can't be embedded as
 -- raw OOXML (a Link, Image, footnote, etc. — these need writer-level rels/
--- drawing handling that a raw <w:p> can't reproduce), we drop the indent for
--- that paragraph rather than corrupt its content. The Para passes through
--- with its semantics intact, just without the indent applied.
+-- drawing handling that a raw <w:p> can't reproduce), we drop the paragraph
+-- formatting rather than corrupt its content. The Para passes through with its
+-- semantics intact, just without the indent/alignment applied.
 
 -- Concatenate a list of inlines into a single OOXML string, or return nil
 -- if any element can't be safely flattened (Link, Image, Note, ...).
@@ -476,23 +481,39 @@ local function inlines_to_openxml(inlines)
   return table.concat(parts)
 end
 
--- Build the single OOXML <w:p> for an indented paragraph, or nil to signal
--- "fall back to the original Para". `twips` is trusted here: callers MUST
--- pass an already-validated non-negative integer (Lua number, not string).
--- See filter.Div below for the validation that establishes that trust.
-local function build_indented_w_p(inlines, twips)
+-- Build the single OOXML <w:p> for a formatted paragraph, or nil to signal
+-- "fall back to the original Para". Both `twips` and `jc` are trusted here:
+-- callers MUST pass an already-validated non-negative integer (Lua number, not
+-- string) and an allowlisted justification literal. See filter.Div below for
+-- the validation that establishes that trust. At least one of them must be
+-- set — an empty <w:pPr> would be pointless, so we return nil in that case and
+-- let the caller keep pandoc's native Para.
+local function build_para_w_p(inlines, twips, jc)
   local body = inlines_to_openxml(inlines)
   if not body then return nil end
+  -- <w:pPr> children must follow the CT_PPr schema sequence (ECMA-376 Part 1
+  -- §17.3.1.26): <w:ind> precedes <w:jc>. Word/LibreOffice are version-
+  -- dependent about out-of-order children (silent reorder, recovery warning,
+  -- or dropping the child), so we emit them in canonical order.
+  local ppr = {}
   -- string.format("%d", n) round-trips a validated integer through Lua's
   -- printf, which emits only decimal digits (and an optional leading '-' we
   -- already ruled out). Concatenating the raw attribute string here instead
-  -- — as the original version did — would have let HTML input like
-  --   <div class="pandoc-indent" data-indent-twips='1"/><w:r>...</w:r><w:p w:x="'>
+  -- — as an earlier version did — would have let HTML input like
+  --   <div class="pandoc-para" data-indent-twips='1"/><w:r>...</w:r><w:p w:x="'>
   -- close the <w:ind ...> early and splice arbitrary OOXML into the
   -- document. The validation in filter.Div + this %d format together close
-  -- that injection path.
+  -- that injection path. `jc` is one of a fixed set of literal strings (never
+  -- echoed input), so it carries no injection risk.
+  if twips then
+    ppr[#ppr + 1] = '<w:ind w:left="' .. string.format("%d", twips) .. '"/>'
+  end
+  if jc then
+    ppr[#ppr + 1] = '<w:jc w:val="' .. jc .. '"/>'
+  end
+  if #ppr == 0 then return nil end
   return pandoc.RawBlock("openxml",
-    '<w:p><w:pPr><w:ind w:left="' .. string.format("%d", twips) .. '"/></w:pPr>' .. body .. '</w:p>')
+    "<w:p><w:pPr>" .. table.concat(ppr) .. "</w:pPr>" .. body .. "</w:p>")
 end
 
 local function has_class(el, name)
@@ -522,20 +543,42 @@ local function parse_twips(raw)
   return math.floor(n)
 end
 
+-- Map the canonical text-align token (written by HtmlParagraphPreProcess) to
+-- the OOXML <w:jc w:val> value, or nil for anything unrecognized. This is a
+-- trust boundary: only values present as a *key* in this fixed table are ever
+-- emitted, and the emitted string is the table's literal *value* — attacker
+-- input is never echoed into the OOXML, so there is no attribute-injection
+-- path the way there is for the free-form twips attribute.
+local ALIGN_TO_JC = {
+  left = "left",
+  center = "center",
+  right = "right",
+  justify = "both",   -- CSS "justify" -> OOXML "both"
+  both = "both",      -- accept the OOXML spelling too, defensively
+}
+
+local function parse_align(raw)
+  if not raw then return nil end
+  return ALIGN_TO_JC[raw]
+end
+
 function filter.Div(el)
-  if not has_class(el, "pandoc-indent") then return nil end
+  if not has_class(el, "pandoc-para") then return nil end
   local twips = parse_twips(el.attributes["indent-twips"])
-  if not twips then return nil end
+  local jc = parse_align(el.attributes["text-align"])
+  -- Nothing valid to apply — leave the Div for pandoc's normal handling
+  -- rather than emit an empty/ malformed <w:pPr>.
+  if not twips and not jc then return nil end
 
   local result = {}
   for _, block in ipairs(el.content) do
     if block.t == "Para" or block.t == "Plain" then
-      local rb = build_indented_w_p(block.content, twips)
+      local rb = build_para_w_p(block.content, twips, jc)
       result[#result + 1] = rb or block
     else
       -- Anything else in the wrapper (nested lists, code blocks, ...) keeps
-      -- its normal writer treatment. Indent isn't applied to non-Para blocks
-      -- — they have their own pPr semantics we shouldn't trample.
+      -- its normal writer treatment. Indent/alignment aren't applied to
+      -- non-Para blocks — they have their own pPr semantics we shouldn't trample.
       result[#result + 1] = block
     end
   end

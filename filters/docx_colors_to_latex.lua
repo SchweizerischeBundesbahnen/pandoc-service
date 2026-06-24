@@ -26,16 +26,22 @@
 -- color directive outside means \hl only sees plain text characters,
 -- which is the only input shape it reliably typesets.
 --
--- Why we still drop \hl for non-trivial inline content: even with the
--- color macro hoisted out, the Span may itself contain pandoc-emitted
--- macros (\textbf for Strong, \href for Link, \includegraphics for Image,
--- math delimiters, raw LaTeX, etc.). Any of those inside \hl produce
--- corrupt output: the link disappears, math is mis-typeset, the image
--- gets dropped or clipped. We therefore only apply the highlight wrapper
--- when the span's content is pure text (Str/Space/SoftBreak/LineBreak).
--- For anything richer we silently drop the highlight and rely on the
--- foreground color alone — which \textcolor preserves losslessly,
--- including around images.
+-- Bold/italic highlighted text: the same hoist-it-outside trick extends to
+-- the inline-formatting macros. When the whole span content is uniformly
+-- wrapped in Emph/Strong/Superscript/Subscript (the common case — a fully
+-- italic or bold highlighted phrase), we peel those wrappers and emit them
+-- as macros AROUND \hl (\emph{...\hl{plain}...}), so \hl still sees only
+-- plain text. hoist_for_hl() does this recursively, so bold-italic
+-- (Strong[Emph[...]]) hoists both. We deliberately do NOT hoist
+-- Underline/Strikeout: soul's own \ul/\st cannot nest inside \hl, and the
+-- core \underline is not line-breakable.
+--
+-- Why we still drop \hl for genuinely mixed content: if the highlight range
+-- only partially overlaps a formatting run (e.g. [Str "a", Emph "b"]) or
+-- contains a \href/\includegraphics/math, there is no single macro to hoist
+-- and soul cannot wrap it. hoist_for_hl() returns nil in that case and we
+-- fall back to dropping the highlight and keeping the foreground color
+-- alone — which \textcolor preserves losslessly, including around images.
 
 -- Word's 16 named highlight colors (ECMA-376 17.18.40) -> RGB hex.
 local HIGHLIGHT_HEX = {
@@ -77,6 +83,41 @@ local function content_is_soul_safe(content)
     end
   end
   return true
+end
+
+-- Inline-formatting nodes whose LaTeX macro uniformly wraps the node's whole
+-- content and is safe to place OUTSIDE soul's \hl. These are core LaTeX macros
+-- (not soul commands), so nesting them around \hl is fine. Underline/Strikeout
+-- are intentionally absent — see the header comment.
+local HOISTABLE = {
+  Emph        = { "\\emph{", "}" },
+  Strong      = { "\\textbf{", "}" },
+  Superscript = { "\\textsuperscript{", "}" },
+  Subscript   = { "\\textsubscript{", "}" },
+}
+
+-- Peel uniform formatting wrappers off `content` so soul's \hl can wrap the
+-- plain text inside. Returns (open, close, inner_inlines) where open/close are
+-- the hoisted macros to place around \hl, and inner_inlines is the soul-safe
+-- remainder to render inside it. Returns nil when the content is mixed/partial
+-- or contains something \hl can't handle (caller then drops the highlight).
+local function hoist_for_hl(content)
+  local open, close = "", ""
+  while true do
+    if content_is_soul_safe(content) then
+      return open, close, content
+    end
+    -- Only a single wrapper covering the entire content can be hoisted; a list
+    -- with siblings means the formatting is partial and soul can't wrap it.
+    if #content == 1 and HOISTABLE[content[1].t] then
+      local macro = HOISTABLE[content[1].t]
+      open = open .. macro[1]
+      close = macro[2] .. close
+      content = content[1].content
+    else
+      return nil
+    end
+  end
 end
 
 -- Parse the synthetic style name into a {fg, bg, hl} table, or return nil
@@ -138,8 +179,14 @@ function filter.Span(el)
     bg_color = HIGHLIGHT_HEX[props.hl]
   end
 
-  -- Highlight wrapper only when soul can handle the content shape.
-  local apply_bg = bg_color and content_is_soul_safe(el.content)
+  -- Highlight wrapper only when soul can handle the content shape. We peel
+  -- any uniform Emph/Strong/... wrappers out so \hl sees plain text; hl_inner
+  -- is what goes inside \hl (the original content minus the hoisted wrappers).
+  local hl_macros_open, hl_macros_close, hl_inner
+  if bg_color then
+    hl_macros_open, hl_macros_close, hl_inner = hoist_for_hl(el.content)
+  end
+  local apply_bg = hl_inner ~= nil
 
   if not props.fg and not apply_bg then
     return nil
@@ -149,23 +196,30 @@ function filter.Span(el)
 
   -- Outer: foreground color. \textcolor is a directive (no box, no
   -- padding, no line-break inhibition); applied first so it wraps the
-  -- entire span including any highlight wrapper inside.
+  -- entire span including any formatting/highlight wrappers inside.
   if props.fg then
     open = open .. "\\textcolor[HTML]{" .. props.fg .. "}{"
     close = "}" .. close
   end
 
-  -- Inner: highlight via soul \hl. The braces around \definecolor and
-  -- \sethlcolor make the color binding local so other highlighted spans
-  -- can redefine "pdc_hl" without interference. \hl sees only plain
-  -- text characters (the content-safety check above guarantees that).
+  -- Middle + inner: inline-formatting macros hoisted out of \hl (\emph,
+  -- \textbf, ...) followed by the highlight itself. The braces around
+  -- \definecolor and \sethlcolor make the color binding local so other
+  -- highlighted spans can redefine "pdc_hl" without interference. \hl sees
+  -- only plain text characters (hoist_for_hl guarantees that). All emitted
+  -- together so the macro strings are only referenced when apply_bg is true.
   if apply_bg then
-    open = open .. "{\\definecolor{pdc_hl}{HTML}{" .. bg_color .. "}\\sethlcolor{pdc_hl}\\hl{"
-    close = "}}" .. close
+    open = open .. hl_macros_open .. "{\\definecolor{pdc_hl}{HTML}{" .. bg_color .. "}\\sethlcolor{pdc_hl}\\hl{"
+    close = "}}" .. hl_macros_close .. close
   end
 
+  -- When highlighting we render the peeled-down inner inlines (the hoisted
+  -- Emph/Strong are now macros in `open`/`close`, so re-emitting them here
+  -- would double them up). Otherwise render the original content untouched.
+  local body = apply_bg and hl_inner or el.content
+
   local result = { pandoc.RawInline("latex", open) }
-  for _, inline in ipairs(el.content) do
+  for _, inline in ipairs(body) do
     result[#result + 1] = inline
   end
   result[#result + 1] = pandoc.RawInline("latex", close)

@@ -135,7 +135,7 @@ def test_unparseable_input_passes_through():
 #
 # lxml's HTML parser is intentionally forgiving, so we patch the symbol the
 # preprocessor calls to force the exception branch. The contract is the same
-# as in HtmlIndentPreProcess: any caught parser exception must return the
+# as in HtmlParagraphPreProcess: any caught parser exception must return the
 # original source object unchanged (identity, not equality) so callers can
 # detect "no work done" without re-parsing.
 

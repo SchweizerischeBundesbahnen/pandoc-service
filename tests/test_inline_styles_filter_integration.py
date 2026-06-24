@@ -186,13 +186,13 @@ def test_intersecting_text_decorations_are_additive():
 
 
 # ---------------------------------------------------------------------------
-# Paragraph indent (Div handler) — see filter.Div in filters/inline_styles.lua
+# Paragraph formatting (Div handler) — see filter.Div in filters/inline_styles.lua
 # ---------------------------------------------------------------------------
 #
-# These tests cover the contract with app/HtmlIndentPreProcess.py: a
-# <div class="pandoc-indent" data-indent-twips="N"><p>...</p></div> wrapper
-# becomes a raw OOXML <w:p> carrying <w:pPr><w:ind w:left="N"/></w:pPr> and
-# the original inlines rendered as <w:r> runs.
+# These tests cover the contract with app/HtmlParagraphPreProcess.py: a
+# <div class="pandoc-para" data-indent-twips="N" data-text-align="..."><p>...</p></div>
+# wrapper becomes a raw OOXML <w:p> carrying <w:pPr><w:ind w:left="N"/>
+# <w:jc w:val="..."/></w:pPr> and the original inlines rendered as <w:r> runs.
 
 
 def _w_p_with_text(doc: ET.Element, needle: str) -> ET.Element:
@@ -213,6 +213,14 @@ def _ind_left(p: ET.Element) -> str | None:
     return ind.get(f"{{{W_NS}}}left")
 
 
+def _jc_val(p: ET.Element) -> str | None:
+    """Read <w:jc w:val=...> off a paragraph, or None when not set."""
+    jc = p.find(f".//{{{W_NS}}}jc")
+    if jc is None:
+        return None
+    return jc.get(f"{{{W_NS}}}val")
+
+
 def test_indent_div_sets_w_ind_left_in_twips():
     """The canonical Polarion case: two paragraphs at different indents.
 
@@ -220,7 +228,7 @@ def test_indent_div_sets_w_ind_left_in_twips():
     N matches the data-indent-twips on the wrapper. 40px = 600 twips and
     80px = 1200 twips (1 px = 15 twips at the CSS reference DPI).
     """
-    html = '<div class="pandoc-indent" data-indent-twips="600"><p>Indentation</p></div><div class="pandoc-indent" data-indent-twips="1200"><p>2 levels</p></div>'
+    html = '<div class="pandoc-para" data-indent-twips="600"><p>Indentation</p></div><div class="pandoc-para" data-indent-twips="1200"><p>2 levels</p></div>'
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "out.docx"
         _convert_html_to_docx(html, out)
@@ -237,7 +245,7 @@ def test_indent_preserves_inline_formatting_via_walk():
     still produce the right run properties. This is the key reason the Div
     handler reuses the existing walk() — without it, we'd lose all inline
     styling when rewriting the Para as raw OOXML."""
-    html = '<div class="pandoc-indent" data-indent-twips="600"><p>plain <strong>bold</strong> and <span style="color:#FF0000">red</span> text</p></div>'
+    html = '<div class="pandoc-para" data-indent-twips="600"><p>plain <strong>bold</strong> and <span style="color:#FF0000">red</span> text</p></div>'
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "out.docx"
         _convert_html_to_docx(html, out)
@@ -268,7 +276,7 @@ def test_indent_div_without_twips_attribute_is_passthrough():
     """A Div with the class but no data-indent-twips must not be rewritten —
     we degrade to letting pandoc render the inner Para normally so we don't
     emit a <w:p> with malformed <w:ind w:left=""/>."""
-    html = '<div class="pandoc-indent"><p>no indent</p></div>'
+    html = '<div class="pandoc-para"><p>no indent</p></div>'
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "out.docx"
         _convert_html_to_docx(html, out)
@@ -285,10 +293,10 @@ def test_indent_div_falls_back_when_para_contains_a_link():
     word/_rels/document.xml.rels — something the Div handler can't reproduce
     when it emits a single raw <w:p>. The handler must detect a Link inside
     the Para and fall back to leaving the Para alone (indent dropped, link
-    kept) rather than corrupting the document. See the build_indented_w_p
+    kept) rather than corrupting the document. See the build_para_w_p
     "graceful degradation" comment in filters/inline_styles.lua.
     """
-    html = '<div class="pandoc-indent" data-indent-twips="600"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
+    html = '<div class="pandoc-para" data-indent-twips="600"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "out.docx"
         _convert_html_to_docx(html, out)
@@ -305,7 +313,7 @@ def test_indent_div_falls_back_when_para_contains_a_link():
 
 
 def test_plain_div_is_left_alone():
-    """A Div without the pandoc-indent class must pass through unchanged —
+    """A Div without the pandoc-para class must pass through unchanged —
     the handler's first guard. Otherwise unrelated <div>s in user content
     would all get rewritten as raw OOXML and lose pandoc's default styling."""
     html = '<div class="some-other-class"><p>just a div</p></div>'
@@ -317,7 +325,7 @@ def test_plain_div_is_left_alone():
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "just a div")
-    assert _ind_left(p) is None, "filter applied an indent to a Div that doesn't have the pandoc-indent class"
+    assert _ind_left(p) is None, "filter applied an indent to a Div that doesn't have the pandoc-para class"
     # And the Para should still have whatever pStyle pandoc would normally
     # give it (not a raw <w:p> with no pStyle).
     pstyle = p.find(f".//{{{W_NS}}}pStyle")
@@ -325,12 +333,121 @@ def test_plain_div_is_left_alone():
 
 
 # ---------------------------------------------------------------------------
+# Paragraph alignment (data-text-align -> <w:jc>)
+# ---------------------------------------------------------------------------
+
+
+def test_align_div_sets_w_jc_val():
+    """The canonical Polarion case: centered and right-aligned paragraphs.
+
+    The filter must emit <w:p> with <w:pPr><w:jc w:val="..."/></w:pPr>, where
+    CSS center -> "center" and right -> "right".
+    """
+    html = '<div class="pandoc-para" data-text-align="center"><p>Centered</p></div><div class="pandoc-para" data-text-align="right"><p>Right aligned</p></div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    assert _jc_val(_w_p_with_text(doc, "Centered")) == "center"
+    assert _jc_val(_w_p_with_text(doc, "Right aligned")) == "right"
+
+
+def test_align_justify_maps_to_both():
+    """CSS `justify` becomes OOXML `both` — the one keyword whose OOXML
+    spelling differs from CSS."""
+    html = '<div class="pandoc-para" data-text-align="justify"><p>Justified</p></div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    assert _jc_val(_w_p_with_text(doc, "Justified")) == "both"
+
+
+def test_indent_and_align_emit_both_in_schema_order():
+    """A paragraph wrapper carrying both data attributes must produce a single
+    <w:p> whose <w:pPr> has <w:ind> immediately before <w:jc> (CT_PPr schema
+    order — Word reorders or drops out-of-order children otherwise)."""
+    html = '<div class="pandoc-para" data-indent-twips="600" data-text-align="center"><p>Both</p></div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    p = _w_p_with_text(doc, "Both")
+    assert _ind_left(p) == "600"
+    assert _jc_val(p) == "center"
+    # <w:ind> must come before <w:jc> within <w:pPr>.
+    ppr = p.find(f"{{{W_NS}}}pPr")
+    assert ppr is not None, "indented+aligned paragraph has no <w:pPr>"
+    child_tags = [c.tag.split("}", 1)[-1] for c in ppr]
+    assert "ind" in child_tags and "jc" in child_tags, f"missing ind/jc in pPr: {child_tags!r}"
+    assert child_tags.index("ind") < child_tags.index("jc"), f"<w:ind> must precede <w:jc> per CT_PPr schema order, got {child_tags!r}"
+
+
+def test_align_preserves_inline_formatting_via_walk():
+    """Nested inline formatting inside an aligned paragraph must survive the
+    raw-OOXML rewrite, same as for indent."""
+    html = '<div class="pandoc-para" data-text-align="center"><p>plain <strong>bold</strong> text</p></div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    p = _w_p_with_text(doc, "bold")
+    assert _jc_val(p) == "center", "alignment dropped on paragraph that contains inline formatting"
+    bold_run = next((r for r in p.iter(f"{{{W_NS}}}r") if "".join(t.text or "" for t in r.iter(f"{{{W_NS}}}t")) == "bold"), None)
+    assert bold_run is not None and bold_run.find(f".//{{{W_NS}}}b") is not None, "bold run lost <w:b/> after Div handler rewrote the aligned Para"
+
+
+def test_align_div_falls_back_when_para_contains_a_link():
+    """Same graceful-degradation contract as the indent path: a Link inside the
+    Para can't be reproduced in a raw <w:p>, so the handler keeps the original
+    Para (alignment dropped, link + relationship kept)."""
+    html = '<div class="pandoc-para" data-text-align="center"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+            rels_xml = zf.read("word/_rels/document.xml.rels")
+
+    doc = ET.fromstring(doc_xml)
+    assert doc.find(f".//{{{W_NS}}}hyperlink") is not None, "Div handler dropped the <w:hyperlink> when falling back on an aligned paragraph"
+    assert b"hyperlink" in rels_xml, "hyperlink relationship missing — graceful degradation dropped the rel side-effect"
+
+
+def test_unknown_align_value_is_rejected():
+    """data-text-align is mapped through a fixed allowlist; an unrecognized value
+    must not reach <w:jc> and must not corrupt the paragraph."""
+    html = '<div class="pandoc-para" data-text-align="bogus"><p>visible text</p></div>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    p = _w_p_with_text(doc, "visible text")
+    assert _jc_val(p) is None, "filter emitted a <w:jc> for an unmapped data-text-align value"
+
+
+# ---------------------------------------------------------------------------
 # Security: data-indent-twips validation
 # ---------------------------------------------------------------------------
 #
-# The HtmlIndentPreProcess preprocessor only ever writes integer values into
+# The HtmlParagraphPreProcess preprocessor only ever writes integer values into
 # data-indent-twips, but an HTTP caller can submit HTML that already contains
-# `<div class="pandoc-indent" data-indent-twips="…">` with arbitrary content.
+# `<div class="pandoc-para" data-indent-twips="…">` with arbitrary content.
 # Without validation that value is concatenated straight into a
 # <w:ind w:left="..."/> attribute, letting the attacker close the attribute
 # early and splice arbitrary OOXML into the document. The filter MUST treat
@@ -347,7 +464,7 @@ def test_attribute_injection_in_data_indent_twips_is_rejected():
     indent rather than splice the attacker's payload into the document.
     """
     payload = '600"/></w:pPr><w:r><w:t>INJECTED_PAYLOAD_marker_xyz</w:t></w:r><w:pPr x="'
-    html = f"<div class=\"pandoc-indent\" data-indent-twips='{payload}'><p>visible text</p></div>"
+    html = f"<div class=\"pandoc-para\" data-indent-twips='{payload}'><p>visible text</p></div>"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "out.docx"
@@ -398,7 +515,7 @@ def test_invalid_twips_values_drop_indent_but_keep_content(bad_value: str):
     permissive. The security boundary is "the value reaches OOXML as a
     bounded integer", not "the string looks lexically tidy".
     """
-    html = f"<div class=\"pandoc-indent\" data-indent-twips='{bad_value}'><p>some content here</p></div>"
+    html = f"<div class=\"pandoc-para\" data-indent-twips='{bad_value}'><p>some content here</p></div>"
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "out.docx"
         _convert_html_to_docx(html, out)
@@ -421,7 +538,7 @@ def test_valid_integer_twips_values_still_work():
     bound, anything above is dropped)."""
     cases = [("1", "1"), ("600", "600"), ("31680", "31680")]
     for raw, expected in cases:
-        html = f'<div class="pandoc-indent" data-indent-twips="{raw}"><p>val_{raw}</p></div>'
+        html = f'<div class="pandoc-para" data-indent-twips="{raw}"><p>val_{raw}</p></div>'
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir) / "out.docx"
             _convert_html_to_docx(html, out)

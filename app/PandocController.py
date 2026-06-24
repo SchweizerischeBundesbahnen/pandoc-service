@@ -22,7 +22,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxColorPreProcess, DocxPostProcess, HtmlIndentPreProcess, HtmlListsPreProcess, PptxPostProcess
+from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -51,6 +51,8 @@ FILTERS = {
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
     "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
+    "docx_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_paragraphs_to_latex.lua",
+    "docx_lists_to_latex": f"{FILTER_BASE_PATH}/docx_lists_to_latex.lua",
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
 }
 
@@ -61,6 +63,8 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['heading_levels']}",
     f"--lua-filter={FILTERS['inline_styles']}",
     f"--lua-filter={FILTERS['docx_colors_to_latex']}",
+    f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
+    f"--lua-filter={FILTERS['docx_lists_to_latex']}",
     f"--lua-filter={FILTERS['html_lists']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
@@ -491,9 +495,14 @@ def _build_pandoc_command(  # noqa: PLR0913
         # for those synthetic list items.
         cmd.append(f"--lua-filter={FILTERS['html_lists']}")
 
-    # Companion filter to the DOCX color preprocessor.
+    # Companion filters to the DOCX color and paragraph-format preprocessors.
+    # Both only emit raw LaTeX, so they are gated on the docx->latex path. Div
+    # (paragraph) and Span (run color) scopes are independent, so order between
+    # them does not matter.
     if apply_docx_color_preprocess:
         cmd.append(f"--lua-filter={FILTERS['docx_colors_to_latex']}")
+        cmd.append(f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}")
+        cmd.append(f"--lua-filter={FILTERS['docx_lists_to_latex']}")
 
     if validated_options:
         cmd.extend(validated_options)
@@ -547,19 +556,33 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     apply_docx_color_preprocess = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     if apply_docx_color_preprocess:
         source_data = DocxColorPreProcess.preprocess(source_data)
+        # Same docx->latex gate: pandoc's docx reader drops paragraph alignment
+        # (<w:jc>) and collapses left indentation (<w:ind w:left>) into a single
+        # BlockQuote before the AST. Rewrite those paragraphs as references to
+        # synthetic paragraph styles that survive via docx+styles, and let the
+        # docx_paragraphs_to_latex Lua filter emit the matching \leftskip /
+        # \centering / \raggedleft. See app/DocxParagraphPreProcess.py.
+        source_data = DocxParagraphPreProcess.preprocess(source_data)
+        # Same gate: pandoc's docx reader flattens "irregular" lists (a deeper
+        # level nested directly inside a shallower one) so the deeper item loses
+        # its indentation. Tag each list paragraph's true <w:ilvl> so the
+        # docx_lists_to_latex Lua filter can restore the indentation. See
+        # app/DocxListLevelPreProcess.py.
+        source_data = DocxListLevelPreProcess.preprocess(source_data)
 
     # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another
     # list so pandoc's HTML reader doesn't synthesize an implicit list item
     # that the DOCX writer would render as a stray marker (e.g. "a.") above
     # the deeper item. See app/HtmlListsPreProcess.py and
     # filters/html_lists.lua for the full pipeline.
-    # Also wrap each <p style="margin-left: ..."> in a marker <div> so the
-    # paragraph indent survives pandoc's HTML reader (which drops <p>'s style
-    # attribute outright). See app/HtmlIndentPreProcess.py and the Div
-    # handler in filters/inline_styles.lua for the full pipeline.
+    # Also wrap each <p style="margin-left: ...; text-align: ..."> in a marker
+    # <div> so the paragraph indent and/or alignment survive pandoc's HTML
+    # reader (which drops <p>'s style attribute outright). See
+    # app/HtmlParagraphPreProcess.py and the Div handler in
+    # filters/inline_styles.lua for the full pipeline.
     if source_format == "html" and target_format == "docx":
         source_data = HtmlListsPreProcess.preprocess(source_data)
-        source_data = HtmlIndentPreProcess.preprocess(source_data)
+        source_data = HtmlParagraphPreProcess.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:

@@ -1,9 +1,10 @@
-"""Unit tests for ``app.HtmlIndentPreProcess``.
+"""Unit tests for ``app.HtmlParagraphPreProcess``.
 
-These tests verify the Python side of the paragraph-indent pipeline: that
-``<p style="margin-left:...">`` is rewritten into a marker ``<div>`` carrying
-``class="pandoc-indent"`` and ``data-indent-twips="N"``, and that the unit
-conversion from CSS lengths to Word twips is correct.
+These tests verify the Python side of the paragraph-formatting pipeline: that
+``<p style="margin-left:...; text-align:...">`` is rewritten into a marker
+``<div>`` carrying ``class="pandoc-para"`` plus ``data-indent-twips="N"``
+and/or ``data-text-align="..."``, that the unit conversion from CSS lengths to Word
+twips is correct, and that ``text-align`` keywords map to canonical tokens.
 
 The companion Lua filter (filters/inline_styles.lua) is exercised separately
 in ``test_inline_styles_filter_integration.py``.
@@ -13,12 +14,12 @@ from __future__ import annotations
 
 import pytest
 
-from app import HtmlIndentPreProcess
+from app import HtmlParagraphPreProcess
 
 
 def _twips_after_preprocess(src: bytes) -> int | None:
     """Helper: return the data-indent-twips value as int, or None if not wrapped."""
-    out = HtmlIndentPreProcess.preprocess(src)
+    out = HtmlParagraphPreProcess.preprocess(src)
     if b"data-indent-twips=" not in out:
         return None
     # Look for data-indent-twips="N" in the output.
@@ -29,14 +30,26 @@ def _twips_after_preprocess(src: bytes) -> int | None:
     return int(m.group(1))
 
 
+def _align_after_preprocess(src: bytes) -> str | None:
+    """Helper: return the data-text-align value as str, or None if not wrapped."""
+    out = HtmlParagraphPreProcess.preprocess(src)
+    if b"data-text-align=" not in out:
+        return None
+    import re
+
+    m = re.search(rb'data-text-align="([a-z]+)"', out)
+    assert m, f"data-text-align marker present but unparseable: {out!r}"
+    return m.group(1).decode()
+
+
 # --- happy path -----------------------------------------------------------
 
 
 def test_px_margin_left_is_wrapped_with_twips():
     """40px at the CSS reference DPI (96) = 1/2.4 inch = 600 twips."""
     src = b'<p style="margin-left: 40px;">hi</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b'class="pandoc-indent"' in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b'class="pandoc-para"' in out
     assert b'data-indent-twips="600"' in out
     assert b"<p" in out and b"hi" in out
 
@@ -44,8 +57,8 @@ def test_px_margin_left_is_wrapped_with_twips():
 def test_user_provided_polarion_snippet():
     """Two paragraphs at different indents each get wrapped independently."""
     src = b'<p id="polarion_1" style="margin-left: 40px;">Indentation</p><p id="polarion_2" style="margin-left: 80px;">2 levels</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert out.count(b'class="pandoc-indent"') == 2
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert out.count(b'class="pandoc-para"') == 2
     assert b'data-indent-twips="600"' in out
     assert b'data-indent-twips="1200"' in out
 
@@ -87,8 +100,8 @@ def test_css_length_conversion(value: str, expected_twips: int):
 )
 def test_invalid_or_zero_lengths_do_not_wrap(value: str):
     src = f'<p style="margin-left: {value}">x</p>'.encode()
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b"pandoc-indent" not in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" not in out
 
 
 # --- style parsing --------------------------------------------------------
@@ -108,15 +121,15 @@ def test_margin_left_with_extra_whitespace():
 def test_margin_shorthand_is_not_treated_as_margin_left():
     """`margin: 0 0 0 40px` is a shorthand we deliberately don't parse."""
     src = b'<p style="margin: 0 0 0 40px">x</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b"pandoc-indent" not in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" not in out
 
 
 def test_inline_style_left_alone_inside_indented_p():
     """The original <p> keeps its style attribute — the Lua filter doesn't
     need it stripped, and we don't want to alter unrelated CSS."""
     src = b'<p style="margin-left: 40px; color: red">x</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
+    out = HtmlParagraphPreProcess.preprocess(src)
     assert b"color: red" in out
 
 
@@ -125,24 +138,24 @@ def test_inline_style_left_alone_inside_indented_p():
 
 def test_p_without_style_is_unchanged():
     src = b"<p>plain</p>"
-    assert HtmlIndentPreProcess.preprocess(src) == src
+    assert HtmlParagraphPreProcess.preprocess(src) == src
 
 
 def test_p_with_style_but_no_margin_left_is_unchanged():
     src = b'<p style="color: red">plain</p>'
-    assert HtmlIndentPreProcess.preprocess(src) == src
+    assert HtmlParagraphPreProcess.preprocess(src) == src
 
 
 def test_empty_input_is_returned_unchanged():
-    assert HtmlIndentPreProcess.preprocess(b"") == b""
+    assert HtmlParagraphPreProcess.preprocess(b"") == b""
 
 
 def test_non_p_elements_are_ignored():
     """Only <p> is targeted; <div style="margin-left:..."> is left alone for
     now (would need separate handling — see the limitations note)."""
     src = b'<div style="margin-left: 40px">x</div>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b"pandoc-indent" not in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" not in out
 
 
 # --- structure / context --------------------------------------------------
@@ -153,21 +166,21 @@ def test_top_level_p_is_wrapped():
     fragment (no parent in the fragment list) must still be wrapped — we
     re-parent fragments under a synthetic root before walking."""
     src = b'<p style="margin-left: 40px">top-level</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b"pandoc-indent" in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" in out
 
 
 def test_nested_p_is_wrapped():
     """A <p> deep inside other elements is still found and wrapped."""
     src = b'<div><section><p style="margin-left: 40px">deep</p></section></div>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b"pandoc-indent" in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" in out
 
 
 def test_multiple_paragraphs_with_mixed_indentation():
     src = b'<p style="margin-left: 40px">A</p><p>plain</p><p style="margin-left: 80px">B</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert out.count(b'class="pandoc-indent"') == 2
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert out.count(b'class="pandoc-para"') == 2
     assert b">plain</p>" in out  # un-wrapped one still exists as-is
 
 
@@ -190,11 +203,11 @@ def test_parse_failure_passes_input_through(mocker):
     # extra imports here; the assertion is "any caught exception returns the
     # original source untouched".
     mocker.patch(
-        "app.HtmlIndentPreProcess.html.fragments_fromstring",
+        "app.HtmlParagraphPreProcess.html.fragments_fromstring",
         side_effect=ValueError("synthetic parse failure"),
     )
     src = b'<p style="margin-left: 40px">x</p>'
-    assert HtmlIndentPreProcess.preprocess(src) is src
+    assert HtmlParagraphPreProcess.preprocess(src) is src
 
 
 def test_parse_failure_logs_warning(mocker, caplog):
@@ -205,12 +218,12 @@ def test_parse_failure_logs_warning(mocker, caplog):
     import logging  # noqa: PLC0415
 
     mocker.patch(
-        "app.HtmlIndentPreProcess.html.fragments_fromstring",
+        "app.HtmlParagraphPreProcess.html.fragments_fromstring",
         side_effect=ValueError("boom"),
     )
-    caplog.set_level(logging.WARNING, logger="app.HtmlIndentPreProcess")
-    HtmlIndentPreProcess.preprocess(b"<p>x</p>")
-    assert any("HtmlIndentPreProcess" in rec.message for rec in caplog.records), f"expected a WARNING from HtmlIndentPreProcess; got: {[r.message for r in caplog.records]!r}"
+    caplog.set_level(logging.WARNING, logger="app.HtmlParagraphPreProcess")
+    HtmlParagraphPreProcess.preprocess(b"<p>x</p>")
+    assert any("HtmlParagraphPreProcess" in rec.message for rec in caplog.records), f"expected a WARNING from HtmlParagraphPreProcess; got: {[r.message for r in caplog.records]!r}"
 
 
 # --- leading text ---------------------------------------------------------
@@ -228,9 +241,9 @@ def test_leading_text_before_indented_p_is_preserved_when_rewriting():
     together when there's text AND at least one paragraph gets wrapped.
     """
     src = b'hello there <p style="margin-left: 40px">indented</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
+    out = HtmlParagraphPreProcess.preprocess(src)
     assert out.startswith(b"hello there"), f"leading text not preserved: {out!r}"
-    assert b'class="pandoc-indent"' in out
+    assert b'class="pandoc-para"' in out
 
 
 def test_leading_text_alone_does_not_force_rewrite():
@@ -241,7 +254,7 @@ def test_leading_text_alone_does_not_force_rewrite():
     lets us promise "valid HTML is never modified".
     """
     src = b"hello there <p>no indent</p>"
-    assert HtmlIndentPreProcess.preprocess(src) is src
+    assert HtmlParagraphPreProcess.preprocess(src) is src
 
 
 # --- decimal / rounding behavior ------------------------------------------
@@ -272,7 +285,7 @@ def test_subpixel_and_decimal_lengths(value: str, expected_twips: int):
 def test_very_large_indent_does_not_overflow():
     """Sanity: huge values still work — no overflow, no exception."""
     src = b'<p style="margin-left: 10000px">x</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
+    out = HtmlParagraphPreProcess.preprocess(src)
     assert b'data-indent-twips="150000"' in out
 
 
@@ -312,8 +325,8 @@ def test_empty_p_with_margin_left_is_still_wrapped():
     """An empty paragraph that happens to be indented is still wrapped —
     visual whitespace alone is valid content in a document."""
     src = b'<p style="margin-left: 40px"></p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b'class="pandoc-indent"' in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b'class="pandoc-para"' in out
     assert b'data-indent-twips="600"' in out
 
 
@@ -321,7 +334,7 @@ def test_indented_p_with_nested_inline_children_keeps_structure():
     """Nested inline elements inside the indented <p> must not be flattened
     or reordered — the wrap is purely additive."""
     src = b'<p style="margin-left: 40px">a <strong>b</strong> <em>c</em> d</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
+    out = HtmlParagraphPreProcess.preprocess(src)
     assert b"<strong>b</strong>" in out
     assert b"<em>c</em>" in out
     # The strong appears before the em in the output (order preserved).
@@ -333,8 +346,8 @@ def test_scientific_notation_lengths_are_rejected():
     intentionally doesn't accept exponents.
     """
     src = b'<p style="margin-left: 1e10px">x</p>'
-    out = HtmlIndentPreProcess.preprocess(src)
-    assert b"pandoc-indent" not in out
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" not in out
 
 
 # --- module-level contract ------------------------------------------------
@@ -344,8 +357,9 @@ def test_module_constants_match_documented_contract():
     """The class name and attribute key are part of the contract with the
     Lua filter — pin them so a casual rename here doesn't silently break
     filters/inline_styles.lua, which hard-codes the same strings."""
-    assert HtmlIndentPreProcess.INDENT_CLASS == "pandoc-indent"
-    assert HtmlIndentPreProcess.INDENT_ATTR == "data-indent-twips"
+    assert HtmlParagraphPreProcess.PARA_CLASS == "pandoc-para"
+    assert HtmlParagraphPreProcess.INDENT_ATTR == "data-indent-twips"
+    assert HtmlParagraphPreProcess.ALIGN_ATTR == "data-text-align"
 
 
 # --- helper-function targeted tests ---------------------------------------
@@ -369,7 +383,7 @@ def test_module_constants_match_documented_contract():
     ],
 )
 def test_css_length_to_twips_direct(value: str, expected: int | None):
-    assert HtmlIndentPreProcess._css_length_to_twips(value) == expected
+    assert HtmlParagraphPreProcess._css_length_to_twips(value) == expected
 
 
 @pytest.mark.parametrize(
@@ -384,4 +398,123 @@ def test_css_length_to_twips_direct(value: str, expected: int | None):
     ],
 )
 def test_extract_margin_left_twips_direct(style: str, expected: int | None):
-    assert HtmlIndentPreProcess._extract_margin_left_twips(style) == expected
+    assert HtmlParagraphPreProcess._extract_margin_left_twips(style) == expected
+
+
+# --- text-align: happy path -----------------------------------------------
+
+
+def test_user_provided_alignment_snippet():
+    """The user's Polarion snippet: the style-less left paragraph is left
+    alone, while the centered/right ones get a marker div with data-text-align."""
+    src = b'<p id="polarion_template_0">Left aligned</p>\n<p id="polarion_1" style="text-align: center;">Centered</p>\n<p id="polarion_2" style="text-align: right;">Right aligned</p>'
+    out = HtmlParagraphPreProcess.preprocess(src)
+    # Exactly the two styled paragraphs are wrapped.
+    assert out.count(b'class="pandoc-para"') == 2
+    assert b'data-text-align="center"' in out
+    assert b'data-text-align="right"' in out
+    # The default-left paragraph keeps its text but is NOT wrapped.
+    assert b">Left aligned</p>" in out
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("left", "left"),
+        ("center", "center"),
+        ("right", "right"),
+        ("justify", "justify"),
+        ("start", "left"),  # logical start folds to left (LTR assumption)
+        ("end", "right"),  # logical end folds to right
+    ],
+)
+def test_text_align_keyword_mapping(value: str, expected: str):
+    src = f'<p style="text-align: {value};">x</p>'.encode()
+    assert _align_after_preprocess(src) == expected
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        b"TEXT-ALIGN: Center",  # uppercase property + mixed-case value
+        b"text-align:center",  # no spaces around colon
+        b"text-align :center",  # space before colon
+        b"color: red; text-align: center; font-size: 12pt;",  # among other declarations
+        b"  text-align  :   center   ;",  # extra whitespace
+    ],
+)
+def test_text_align_parsing_is_case_and_whitespace_insensitive(style: bytes):
+    src = b'<p style="' + style + b'">x</p>'
+    assert _align_after_preprocess(src) == "center"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "inherit",
+        "initial",
+        "unset",
+        "-moz-center",  # vendor-prefixed
+        "garbage",
+        "",
+    ],
+)
+def test_unmapped_text_align_values_do_not_wrap(value: str):
+    src = f'<p style="text-align: {value};">x</p>'.encode()
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b"pandoc-para" not in out
+
+
+def test_last_text_align_loses_to_first_when_declared_twice():
+    """Leftmost-wins, mirroring the margin-left contract — Polarion never
+    emits duplicates, so the simpler behavior is acceptable and pinned here."""
+    src = b'<p style="text-align: center; text-align: right">x</p>'
+    assert _align_after_preprocess(src) == "center"
+
+
+# --- text-align: combined with indent -------------------------------------
+
+
+def test_indent_and_align_share_one_wrapper():
+    """A paragraph with both margin-left and text-align must produce a single
+    marker div carrying both data attributes (not two nested divs)."""
+    src = b'<p style="margin-left: 40px; text-align: center;">both</p>'
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert out.count(b'class="pandoc-para"') == 1
+    assert b'data-indent-twips="600"' in out
+    assert b'data-text-align="center"' in out
+
+
+def test_align_only_wrapper_has_no_indent_attr():
+    src = b'<p style="text-align: right;">x</p>'
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b'class="pandoc-para"' in out
+    assert b"data-indent-twips" not in out
+
+
+def test_indent_only_wrapper_has_no_align_attr():
+    src = b'<p style="margin-left: 40px;">x</p>'
+    out = HtmlParagraphPreProcess.preprocess(src)
+    assert b'class="pandoc-para"' in out
+    assert b"data-text-align" not in out
+
+
+# --- text-align: helper-function targeted tests ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("style", "expected"),
+    [
+        ("text-align: center", "center"),
+        ("text-align: justify", "justify"),
+        ("text-align: start", "left"),
+        ("text-align: end", "right"),
+        ("text-align: inherit", None),
+        ("color: red", None),
+        ("", None),
+        ("text-align:", None),  # empty value
+        ("vertical-align: top", None),  # different property
+    ],
+)
+def test_extract_text_align_direct(style: str, expected: str | None):
+    assert HtmlParagraphPreProcess._extract_text_align(style) == expected
