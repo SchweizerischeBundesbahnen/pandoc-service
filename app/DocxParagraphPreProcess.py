@@ -35,50 +35,15 @@ Limitations
 
 from __future__ import annotations
 
-import io
 import logging
-import zipfile
-from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 
 from defusedxml import ElementTree as DefusedET
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
+from .docx_ooxml import STYLES_PART, W_NS, enumerate_body_parts, read_entries, repack
 
 logger = logging.getLogger(__name__)
 
-W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-
-# Canonical OOXML prefixes. ElementTree mints synthetic prefixes (ns0, ns1, …)
-# for namespaces it wasn't told about, which makes pandoc's docx reader drop
-# every <w:drawing> (images vanish). Registering the canonical prefixes keeps
-# them on serialize. See app/DocxColorPreProcess.py for the full rationale.
-_OOXML_NAMESPACES = {
-    "w": W_NS,
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "o": "urn:schemas-microsoft-com:office:office",
-    "v": "urn:schemas-microsoft-com:vml",
-    "w10": "urn:schemas-microsoft-com:office:word",
-    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "w14": "http://schemas.microsoft.com/office/word/2010/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "w15": "http://schemas.microsoft.com/office/word/2012/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "w16se": "http://schemas.microsoft.com/office/word/2015/wordml/symex",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wne": "http://schemas.microsoft.com/office/word/2006/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-}
-for _prefix, _uri in _OOXML_NAMESPACES.items():
-    ET.register_namespace(_prefix, _uri)
-
-STYLES_PART = "word/styles.xml"
 STYLE_PREFIX = "PandocPara"
 SEGMENT_SEPARATOR = "__"
 
@@ -99,15 +64,6 @@ _ALIGN_MAP: dict[str, str | None] = {
     "distribute": None,
 }
 
-_FIXED_BODY_PARTS = frozenset(
-    {
-        "word/document.xml",
-        "word/footnotes.xml",
-        "word/endnotes.xml",
-        "word/comments.xml",
-    }
-)
-
 _P_TAG = f"{{{W_NS}}}p"
 _TC_TAG = f"{{{W_NS}}}tc"
 _PPR_TAG = f"{{{W_NS}}}pPr"
@@ -118,28 +74,13 @@ _VAL_ATTR = f"{{{W_NS}}}val"
 _LEFT_ATTR = f"{{{W_NS}}}left"
 
 
-def _enumerate_body_parts(names: Iterable[str]) -> list[str]:
-    """Return zip entry names that may contain paragraphs to rewrite.
-
-    Headers/footers live in numbered parts (``word/header1.xml`` …) whose count
-    depends on the section layout, so they're matched by prefix + ``.xml``.
-    """
-    result = []
-    for name in names:
-        if name in _FIXED_BODY_PARTS or (name.startswith(("word/header", "word/footer")) and name.endswith(".xml")):
-            result.append(name)
-    return result
-
-
 def preprocess(docx_bytes: bytes) -> bytes:
     """Return a DOCX with aligned/indented paragraphs rewritten to use synthetic
     paragraph styles. Returns the input unchanged when no such paragraphs are
     found or when the package is not a recognizable DOCX.
     """
-    try:
-        with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin:
-            entries = {name: zin.read(name) for name in zin.namelist()}
-    except zipfile.BadZipFile:
+    entries = read_entries(docx_bytes)
+    if entries is None:
         logger.warning("Input is not a valid zip / DOCX; skipping paragraph preprocess")
         return docx_bytes
 
@@ -147,15 +88,11 @@ def preprocess(docx_bytes: bytes) -> bytes:
         logger.debug("DOCX has no %s; skipping paragraph preprocess", STYLES_PART)
         return docx_bytes
 
-    body_parts = _enumerate_body_parts(entries.keys())
-    if not body_parts:
-        return docx_bytes
-
     # Deduplicated by style_id across all body parts so styles.xml gets one
     # <w:style> per unique align/indent combo even if many paragraphs use it.
     needed_styles: dict[str, _StyleSpec] = {}
 
-    for part in body_parts:
+    for part in enumerate_body_parts(entries.keys()):
         rewritten, part_styles = _rewrite_part(entries[part])
         if part_styles:
             entries[part] = rewritten
@@ -165,12 +102,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
         return docx_bytes
 
     entries[STYLES_PART] = _augment_styles(entries[STYLES_PART], needed_styles)
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for name, data in entries.items():
-            zout.writestr(name, data)
-    return buf.getvalue()
+    return repack(entries)
 
 
 class _StyleSpec:
@@ -191,7 +123,7 @@ def _style_id(align: str | None, indent_twips: int | None) -> str:
     parts = [STYLE_PREFIX]
     if align:
         parts.append(f"ALIGN_{align}")
-    if indent_twips:
+    if indent_twips is not None:
         parts.append(f"IND_{indent_twips}")
     return SEGMENT_SEPARATOR.join(parts)
 
@@ -312,7 +244,7 @@ def _build_style_element(spec: _StyleSpec) -> ET.Element:
     )
     ET.SubElement(style, f"{{{W_NS}}}name", {f"{{{W_NS}}}val": spec.style_id})
     ppr = ET.SubElement(style, _PPR_TAG)
-    if spec.indent_twips:
+    if spec.indent_twips is not None:
         ET.SubElement(ppr, _IND_TAG, {_LEFT_ATTR: str(spec.indent_twips)})
     if spec.align:
         # Only center/right are ever encoded (see _ALIGN_MAP), and both map
