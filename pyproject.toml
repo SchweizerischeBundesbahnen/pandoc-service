@@ -51,10 +51,6 @@ package = false
 
 [tool.ruff]
 line-length = 240
-# Pinned below requires-python (3.14) so ruff's formatter does not apply PEP 758
-# (optional except parentheses, 3.14-only). Keeps `except (A, B):` parenthesized,
-# which is valid on every Python version and readable to pre-3.14 tooling.
-target-version = "py313"
 fix = true
 show-fixes = true
 exclude = [

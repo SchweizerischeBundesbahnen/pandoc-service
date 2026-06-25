@@ -196,6 +196,52 @@ def test_svg_from_string_invalid_returns_none():
     assert SvgProcessor().svg_from_string("<svg>") is None
 
 
+def test_get_svg_invalid_base64_returns_none():
+    # Undecodable base64 (incorrect padding) is swallowed and yields None.
+    assert SvgProcessor().get_svg("image/svg+xml", "abc") is None
+
+
+def test_parse_float_invalid_returns_default():
+    assert SvgProcessor._parse_float("not_a_float", 1.5) == 1.5
+    assert SvgProcessor._parse_float(None, 2.5) == 2.5
+    assert SvgProcessor._parse_float("3.0", 1.0) == 3.0
+
+
+@pytest.mark.parametrize(
+    "src",
+    [None, "https://example.com/x.svg", "data:image/svg+xml,<svg/>"],  # not a base64 data URL
+)
+def test_parse_data_url_base64_returns_none_for_non_base64(src):
+    assert SvgProcessor()._parse_data_url_base64(src) is None
+
+
+def test_parse_data_url_base64_valid():
+    assert SvgProcessor()._parse_data_url_base64("data:image/svg+xml;base64,Zm9v") == ("image/svg+xml", "Zm9v")
+
+
+@pytest.mark.asyncio
+async def test_replace_svg_with_png_invalid_dimensions_returns_original():
+    # No width/height/viewBox -> dimensions undefined -> original SVG returned unchanged.
+    mime, _ = await SvgProcessor().replace_svg_with_png(DET.fromstring("<svg></svg>"))
+    assert mime == SvgProcessor.IMAGE_SVG
+
+
+@pytest.mark.asyncio
+async def test_replace_svg_with_png_no_manager_returns_original():
+    # Valid dimensions but no ChromiumManager -> cannot rasterize -> original SVG.
+    mime, _ = await SvgProcessor(chromium_manager=None).replace_svg_with_png(DET.fromstring('<svg width="100" height="100"></svg>'))
+    assert mime == SvgProcessor.IMAGE_SVG
+
+
+@pytest.mark.asyncio
+async def test_replace_svg_with_png_cdp_failure_returns_original():
+    # A CDP conversion failure is swallowed and falls back to the original SVG.
+    manager = MagicMock()
+    manager.convert_svg_to_png = AsyncMock(side_effect=RuntimeError("cdp boom"))
+    mime, _ = await SvgProcessor(chromium_manager=manager).replace_svg_with_png(DET.fromstring('<svg width="100" height="100"></svg>'))
+    assert mime == SvgProcessor.IMAGE_SVG
+
+
 # ---------------- process_svg integration (real Chromium) ----------------
 
 

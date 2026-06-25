@@ -154,7 +154,7 @@ async def _start_chromium() -> None:
         await chromium_manager.start()
         logger.info("Chromium started for SVG conversion (version: %s)", chromium_manager.get_version())
     except Exception as e:  # noqa: BLE001
-        logger.error("Failed to start Chromium for SVG conversion; SVG rasterization disabled: %s", e)
+        logger.exception("Failed to start Chromium for SVG conversion; SVG rasterization disabled: %s", e)
 
 
 async def _stop_chromium() -> None:
@@ -166,7 +166,7 @@ async def _stop_chromium() -> None:
         try:
             await chromium_manager.stop()
         except Exception as e:  # noqa: BLE001
-            logger.error("Error stopping Chromium: %s", e)
+            logger.exception("Error stopping Chromium: %s", e)
 
 
 @contextlib.asynccontextmanager
@@ -601,7 +601,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
         result = str(processed)
         return result.encode("utf-8") if is_bytes else result
     except Exception as e:  # noqa: BLE001
-        logger.error("SVG preprocessing failed; passing HTML through unchanged: %s", e)
+        logger.exception("SVG preprocessing failed; passing HTML through unchanged: %s", e)
         return source
 
 

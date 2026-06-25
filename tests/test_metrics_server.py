@@ -1,7 +1,8 @@
 """Tests for metrics server module."""
 
+import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from starlette.testclient import TestClient
@@ -161,6 +162,29 @@ class TestMetricsServer:
 
             # Should not raise
             await server.stop()
+            assert server.is_running is False
+
+        anyio.run(run_test)
+
+    def test_server_start_timeout_raises(self):
+        """Test that start() raises TimeoutError if the server never reports ready."""
+        import anyio
+
+        async def run_test():
+            server = MetricsServer(port=19185)
+
+            fake_server = MagicMock()
+            fake_server.started = False  # never becomes ready
+
+            async def _never_ready_serve():
+                await asyncio.sleep(3600)
+
+            fake_server.serve = _never_ready_serve
+
+            with patch("app.metrics_server.uvicorn.Server", return_value=fake_server), patch("app.metrics_server.STARTUP_TIMEOUT_SECONDS", 0.05):
+                with pytest.raises(TimeoutError, match="failed to start"):
+                    await server.start()
+
             assert server.is_running is False
 
         anyio.run(run_test)
