@@ -134,9 +134,8 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
             # Idempotent: a previous pass already prepended a sentinel run.
             continue
         # Insert the sentinel run as the first run of the paragraph, after the
-        # <w:pPr> (which must stay the first child of <w:p>). list(para) keeps
-        # document order; pPr is index 0 when present.
-        insert_at = 1 if list(para)[0] is ppr else 0
+        # <w:pPr> (which must stay the first child of <w:p>) when present.
+        insert_at = 1 if next(iter(para)) is ppr else 0
         para.insert(insert_at, _make_sentinel_run(level))
         changed = True
 
