@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.2.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.3...v2.2.0) (2026-06-25)
+
+
+### Features
+
+* **deps:** update dependency jgm/pandoc to v3.10 ([0a715db](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/0a715db4f971651a0bef41385ad7f4da0e34078d))
+* rasterize SVG images to PNG ([#172](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/172)) ([42ad9a6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/42ad9a696827f60eb886b33b9ec7e8dc18a3b8b5)), closes [#171](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/171)
+
+
+### Bug Fixes
+
+* add filter to preserve alignment of paragraphs ([#170](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/170)) ([7bb137d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/7bb137d05f8834fd30dc0bd8921c404d024e3a45))
+* **deps:** update dependency fastapi to v0.136.3 ([c784127](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c7841275ba2c839f07f3a18fb46cd8027d348744))
+* **deps:** update dependency fastapi to v0.137.0 ([b8d5c71](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b8d5c716c3da5210e23ddf768dac0048fc5abf79))
+* **deps:** update dependency fastapi to v0.137.1 ([6ebd76a](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/6ebd76a7868ed8364fda8dab9bc3262a1aed1d7c))
+* **deps:** update dependency fastapi to v0.137.2 ([b7c6750](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b7c6750509d037c39b1f3483561a18584c88c12f))
+* **deps:** update dependency fastapi to v0.138.0 ([b246826](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b246826cf9d85078dd41208c6946ebdd5d77c886))
+* **deps:** update dependency prometheus-fastapi-instrumentator to v8 ([#169](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/169)) ([3135293](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3135293896b62abc0add7a83e334f15b09c49182))
+* **deps:** update dependency python-multipart to v0.0.30 ([75ad937](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/75ad937431efb62104ede440b10123b8ad7addf4))
+* **deps:** update dependency python-multipart to v0.0.31 ([b34e9e3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b34e9e3814d09b0c01d794815269b1683fab331c))
+* **deps:** update dependency python-multipart to v0.0.32 ([78133dc](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/78133dcf24f6a3ebcbf341f3e9cd8fb2a039f1af))
+* **deps:** update dependency uvicorn to v0.48.0 ([997ce5d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/997ce5d083464248a6cf22159b9e49e3cfd0b8fc))
+* **deps:** update dependency uvicorn to v0.49.0 ([7a85480](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/7a854801260dc66585e4d6676413f462869a8e0a))
+
 ## [2.1.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.2...v2.1.3) (2026-05-26)
 
 
