@@ -228,7 +228,7 @@ class ChromiumMetrics:
             self.total_memory_sum += memory_mb
             self.avg_chromium_memory_mb = self.total_memory_sum / self.total_memory_samples
 
-        except psutil.NoSuchProcess, psutil.AccessDenied:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             # Process no longer exists or we don't have access
             pass
 
@@ -725,7 +725,7 @@ class ChromiumManager:
                 did_transition = True  # Successfully transitioned to active
                 async with self._create_and_yield_page(device_scale_factor) as page:
                     yield page
-        except asyncio.CancelledError, Exception:
+        except (asyncio.CancelledError, Exception):
             # Only decrement waiting counter if we never transitioned to active
             # (i.e., exception happened before acquiring semaphore).
             # If we did transition, decrement is handled by _create_and_yield_page's finally block.
@@ -930,7 +930,7 @@ class ChromiumManager:
         """Parse a string to float with a default fallback."""
         try:
             return float(value) if value is not None else default
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return default
 
     @staticmethod
@@ -938,7 +938,7 @@ class ChromiumManager:
         """Parse a string to int with a default fallback."""
         try:
             return int(value) if value is not None else default
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return default
 
 
