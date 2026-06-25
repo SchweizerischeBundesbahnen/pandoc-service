@@ -211,11 +211,16 @@ def test_run_pandoc_conversion_skips_docx_color_preprocessor_for_non_docx_source
 
 def test_version_endpoint():
     """Test the version endpoint."""
-    with patch("subprocess.run") as mock_subprocess, patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0", "PANDOC_SERVICE_BUILD_TIMESTAMP": "2024-03-27"}):
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0", "PANDOC_SERVICE_BUILD_TIMESTAMP": "2024-03-27"}),
+        patch("app.PandocController.get_chromium_manager") as mock_get_manager,
+    ):
         # Mock subprocess run result
         mock_process = MagicMock()
         mock_process.stdout = "pandoc 3.1.9\nCopyright (C) 2006-2023 John MacFarlane"
         mock_subprocess.return_value = mock_process
+        mock_get_manager.return_value.get_version.return_value = "148.0.7778.96"
 
         # Simulate calling the version endpoint
         result = version()
@@ -225,6 +230,7 @@ def test_version_endpoint():
         assert result.pandoc == "3.1.9"
         assert result.pandocService == "1.0.0"
         assert result.timestamp == "2024-03-27"
+        assert result.chromium == "148.0.7778.96"
 
 
 def test_version_endpoint_with_subprocess_error():

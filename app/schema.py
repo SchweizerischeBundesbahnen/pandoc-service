@@ -6,3 +6,4 @@ class VersionSchema(BaseModel):
     pandoc: str | None = Field()
     pandocService: str | None = Field()
     timestamp: str | None = Field()
+    chromium: str | None = Field()

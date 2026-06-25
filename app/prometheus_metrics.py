@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from prometheus_client import Counter, Gauge, Histogram, Info
 
 if TYPE_CHECKING:
+    from app.chromium_manager import ChromiumManager
     from app.pandoc_metrics import PandocMetrics
 
 
@@ -105,6 +106,78 @@ pandoc_info = Info(
 )
 
 
+# --- SVG-to-PNG (Chromium) metrics ---
+# These mirror the ChromiumManager metrics used in weasyprint-service. Gauge
+# names are prefixed with "chromium_" to avoid colliding with the service-level
+# gauges above (e.g. uptime_seconds, active_conversions).
+svg_conversions_total = Counter(
+    "svg_conversions_total",
+    "Total number of successful SVG to PNG conversions",
+)
+
+svg_conversion_failures_total = Counter(
+    "svg_conversion_failures_total",
+    "Total number of failed SVG to PNG conversions",
+)
+
+svg_conversion_duration_seconds = Histogram(
+    "svg_conversion_duration_seconds",
+    "SVG to PNG conversion duration in seconds",
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
+chromium_restarts_total = Counter(
+    "chromium_restarts_total",
+    "Total number of Chromium browser restarts",
+)
+
+svg_conversion_error_rate_percent = Gauge(
+    "svg_conversion_error_rate_percent",
+    "SVG conversion error rate as percentage",
+)
+
+avg_svg_conversion_time_seconds = Gauge(
+    "avg_svg_conversion_time_seconds",
+    "Average SVG to PNG conversion time in seconds",
+)
+
+chromium_uptime_seconds = Gauge(
+    "chromium_uptime_seconds",
+    "Chromium browser uptime in seconds",
+)
+
+chromium_consecutive_failures = Gauge(
+    "chromium_consecutive_failures",
+    "Current number of consecutive Chromium health check failures",
+)
+
+chromium_cpu_percent = Gauge(
+    "chromium_cpu_percent",
+    "Current Chromium CPU usage percentage",
+)
+
+chromium_memory_bytes = Gauge(
+    "chromium_memory_bytes",
+    "Current Chromium memory usage in bytes",
+)
+
+chromium_queue_size = Gauge(
+    "chromium_queue_size",
+    "Current number of requests waiting for an SVG conversion slot",
+)
+
+chromium_active_conversions = Gauge(
+    "chromium_active_conversions",
+    "Current number of in-flight SVG conversions",
+)
+
+# Browser info
+chromium_info = Info(
+    "chromium",
+    "Chromium browser information",
+)
+
+
 def initialize_pandoc_info(pandoc_version: str, service_version: str) -> None:
     """
     Initialize pandoc service info metric once at startup.
@@ -161,6 +234,55 @@ def observe_response_body_size(size_bytes: int) -> None:
     pandoc_response_body_bytes.observe(size_bytes)
 
 
+def increment_svg_conversion_success(duration_seconds: float) -> None:
+    """Increment successful SVG conversion counter and record duration."""
+    svg_conversions_total.inc()
+    svg_conversion_duration_seconds.observe(duration_seconds)
+
+
+def increment_svg_conversion_failure() -> None:
+    """Increment failed SVG conversion counter."""
+    svg_conversion_failures_total.inc()
+
+
+def increment_chromium_restart() -> None:
+    """Increment Chromium restart counter."""
+    chromium_restarts_total.inc()
+
+
+def update_gauges_from_chromium_manager(chromium_manager: ChromiumManager) -> None:
+    """
+    Update Prometheus gauges from ChromiumManager current state.
+
+    Called before serving metrics so gauges reflect current state. It only
+    updates gauges; counters are incremented when events occur via the
+    increment_* functions.
+
+    Args:
+        chromium_manager: ChromiumManager instance to collect metrics from.
+    """
+    try:
+        metrics = chromium_manager.get_metrics()
+
+        svg_conversion_error_rate_percent.set(float(metrics["error_svg_conversion_rate_percent"]))
+        avg_svg_conversion_time_seconds.set(float(metrics["avg_svg_conversion_time_ms"]) / 1000.0)
+        chromium_uptime_seconds.set(float(metrics["uptime_seconds"]))
+        chromium_consecutive_failures.set(float(metrics.get("consecutive_failures", 0)))
+        chromium_cpu_percent.set(float(metrics["current_cpu_percent"]))
+        chromium_memory_bytes.set(float(metrics["current_chromium_memory_mb"]) * 1024 * 1024)  # MB -> bytes
+        chromium_queue_size.set(float(metrics["queue_size"]))
+        chromium_active_conversions.set(float(metrics["active_pdf_generations"]))
+
+        chromium_version = chromium_manager.get_version()
+        if chromium_version:
+            chromium_info.info({"version": chromium_version})
+
+        logger.debug("Prometheus gauges updated from ChromiumManager")
+
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Failed to update Prometheus gauges: %s", e)
+
+
 def update_gauges_from_pandoc_metrics(pandoc_metrics: PandocMetrics) -> None:
     """
     Update Prometheus gauges from PandocMetrics current state.
@@ -194,4 +316,4 @@ def update_gauges_from_pandoc_metrics(pandoc_metrics: PandocMetrics) -> None:
         logger.debug("Prometheus gauges updated from PandocMetrics")
 
     except Exception as e:
-        logger.error("Failed to update Prometheus gauges: %s", e, exc_info=True)
+        logger.exception("Failed to update Prometheus gauges: %s", e)

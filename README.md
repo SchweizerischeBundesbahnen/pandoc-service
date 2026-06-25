@@ -18,6 +18,7 @@ from one format into another.
 
 - Simple REST API to access [Pandoc](https://pandoc.org/)
 - Direct subprocess calls to the pandoc binary (no Python module dependency)
+- SVG-to-PNG rasterization of embedded diagrams via headless Chromium, so SVGs (e.g. draw.io / mxgraph) render correctly in targets with weak SVG support such as Word
 - Prometheus metrics endpoint on dedicated port (9182) for monitoring and Grafana integration
 - Compatible with amd64 and arm64 architectures
 - Easily deployable via Docker
@@ -48,6 +49,57 @@ docker run --init --detach \
 The service will be accessible on port 9082, and Prometheus metrics on port 9182.
 
 The REQUEST_BODY_LIMIT_MB environment variable sets the maximum allowed size (in megabytes) for uploaded files or request bodies processed by the Pandoc service. The default is 500 MB.
+
+### SVG to PNG conversion
+
+For HTML sources, the service rasterizes embedded SVGs to PNG before handing the
+HTML to pandoc. This is done with a persistent headless Chromium browser (via
+Playwright), the same approach used by `weasyprint-service`. It exists because
+renderers with weak SVG support — notably Microsoft Word, which does not support
+draw.io's `<switch>` / `<foreignObject>` mechanism — would otherwise show the
+"Text is not SVG - cannot display" fallback instead of the diagram. Rendering the
+SVG to PNG with Chromium (which fully supports `foreignObject`) sidesteps that.
+
+This runs only for `source_format == "html"`. It is **best effort**: if Chromium
+is disabled or fails to start, conversions still run and SVGs are simply passed
+through unrasterized — the service never fails because of it.
+
+**Image density (scale factor).** The rasterization density is controlled by a
+device scale factor (1.0 = 96 dpi). It can be set per request with the
+`scale_factor` query parameter on the conversion endpoints, or globally via the
+`DEVICE_SCALE_FACTOR` environment variable; the query parameter takes precedence,
+falling back to the env var, then to `1.0`. The `docx-exporter` extension sends
+this as its "Image density" setting (96/192/300/600 dpi → 1.0/2.0/3.125/6.25).
+
+**Configuration (environment variables):**
+
+| Variable | Default | Range | Purpose |
+|---|---|---|---|
+| `ENABLE_SVG_CONVERSION` | `true` | - | Master switch for SVG rasterization. |
+| `DEVICE_SCALE_FACTOR` | `1.0` | 1.0-10.0 | Rasterization density (overridden per request by `scale_factor`). |
+| `MAX_CONCURRENT_CONVERSIONS` | `10` | 1-100 | Max concurrent SVG→PNG conversions. |
+| `CHROMIUM_CONVERSION_TIMEOUT` | `30` | 5-300 | Per-conversion timeout (seconds). |
+| `CHROMIUM_MAX_CONVERSION_RETRIES` | `2` | 1-10 | Retry attempts (browser is restarted between attempts). |
+| `CHROMIUM_RESTART_AFTER_N_CONVERSIONS` | `0` | 0-10000 | Restart Chromium after N conversions (0 = disabled). |
+| `CHROMIUM_HEALTH_CHECK_ENABLED` | `true` | - | Background health-monitor loop (auto-restarts on degradation). |
+| `CHROMIUM_HEALTH_CHECK_INTERVAL` | `30` | 10-300 | Health-check interval (seconds). |
+
+Out-of-range or invalid values fall back to the default with a warning logged.
+
+```bash
+docker run --init --detach \
+  --publish 9082:9082 \
+  --publish 9182:9182 \
+  --name pandoc-service \
+  --env DEVICE_SCALE_FACTOR=2.0 \
+  --env MAX_CONCURRENT_CONVERSIONS=20 \
+  ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+```
+
+The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
+`stopped`) for visibility; because SVG rasterization is best effort, this status
+is informational and does not by itself mark the service unhealthy. The Chromium
+version is reported by the `/version` endpoint.
 
 ### Using as a Base Image
 
@@ -87,6 +139,21 @@ The service exposes Prometheus-compatible metrics for comprehensive monitoring a
 - `uptime_seconds` - Service uptime
 - `active_conversions` - Current active conversion count
 - `pandoc_info` - Service and pandoc version information
+
+**SVG / Chromium Metrics (SVG-to-PNG rasterization):**
+- `svg_conversions_total` - Total successful SVG→PNG conversions
+- `svg_conversion_failures_total` - Total failed SVG→PNG conversions
+- `svg_conversion_duration_seconds` - SVG→PNG conversion time histogram
+- `svg_conversion_error_rate_percent` - SVG conversion error rate as percentage
+- `avg_svg_conversion_time_seconds` - Average SVG→PNG conversion time
+- `chromium_restarts_total` - Chromium browser restart count
+- `chromium_consecutive_failures` - Current consecutive health-check failure streak
+- `chromium_cpu_percent` - Current Chromium CPU usage
+- `chromium_memory_bytes` - Current Chromium memory usage (bytes)
+- `chromium_uptime_seconds` - Chromium browser uptime
+- `chromium_queue_size` - Requests waiting for a conversion slot
+- `chromium_active_conversions` - In-flight SVG conversions
+- `chromium_info` - Chromium browser version information
 
 **HTTP Metrics (via prometheus-fastapi-instrumentator):**
 - `http_request_duration_seconds` - HTTP request duration histogram
@@ -263,7 +330,7 @@ Pandoc Service provides the following endpoints:
 
 > | HTTP code | Content-Type       | Response                                                                                                       |
 > |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
-> | `200`     | `application/json` | `{ "python": "3.14.0", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0" }` |
+> | `200`     | `application/json` | `{ "python": "3.14.0", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "chromium": "148.0.7778.96" }` |
 
 ##### Example cURL
 
