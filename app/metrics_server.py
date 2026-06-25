@@ -17,8 +17,9 @@ import uvicorn
 from fastapi import FastAPI, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app.chromium_manager import get_chromium_manager
 from app.pandoc_metrics import get_pandoc_metrics
-from app.prometheus_metrics import update_gauges_from_pandoc_metrics
+from app.prometheus_metrics import update_gauges_from_chromium_manager, update_gauges_from_pandoc_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ async def metrics() -> Response:
     """
     pandoc_metrics = get_pandoc_metrics()
     update_gauges_from_pandoc_metrics(pandoc_metrics)
+    update_gauges_from_chromium_manager(get_chromium_manager())
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

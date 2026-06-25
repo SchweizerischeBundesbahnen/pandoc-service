@@ -67,7 +67,10 @@ bash tests/shell/test_pandoc_service.sh
 - **app/DocxReferencesPostProcess.py**: DOCX table-of-contents and field update post-processing
 - **app/PptxPostProcess.py**: PPTX slide size post-processing
 - **app/schema.py**: Pydantic models for API responses
-- **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation
+- **app/svg_processor.py**: Finds SVGs in incoming HTML and rasterizes them to PNG (port of weasyprint-service's `SvgProcessor`)
+- **app/chromium_manager.py**: Persistent headless Chromium (Playwright) used for SVG→PNG, with metrics, retries and a health-monitor loop (port of weasyprint-service's `ChromiumManager`)
+- **app/constants.py**: Small env-var helpers (`get_bool_env`)
+- **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG/Chromium metrics)
 
 ### Security Model
 - Uses allowlisted pandoc options to prevent command injection
@@ -77,9 +80,16 @@ bash tests/shell/test_pandoc_service.sh
 
 ### Conversion Pipeline
 1. Request validation (format, size, encoding)
-2. Pandoc subprocess execution with security constraints
-3. Post-processing (especially for DOCX files)
-4. Response formatting with appropriate MIME types
+2. For HTML sources: SVG-to-PNG rasterization via headless Chromium (`preprocess_html_svgs` → `SvgProcessor` → `ChromiumManager`), so SVGs render in targets with weak SVG support (e.g. Word). Best effort: if Chromium is disabled/unavailable, the HTML passes through unchanged.
+3. Pandoc subprocess execution with security constraints
+4. Post-processing (especially for DOCX files)
+5. Response formatting with appropriate MIME types
+
+### SVG to PNG conversion
+- Runs only for `source_format == "html"`, before pandoc.
+- Density is a device scale factor: per-request `scale_factor` query param (overrides `DEVICE_SCALE_FACTOR` env, default 1.0). docx-exporter sends its "Image density" setting via this param.
+- The Chromium lifecycle is managed in the FastAPI `lifespan` (`_start_chromium`/`_stop_chromium`); a start failure is logged and swallowed.
+- Browser comes from Playwright's bundled Chromium (Debian base; `playwright install chromium`), not a system package. Tunable via `ENABLE_SVG_CONVERSION`, `MAX_CONCURRENT_CONVERSIONS`, `CHROMIUM_CONVERSION_TIMEOUT`, `CHROMIUM_MAX_CONVERSION_RETRIES`, `CHROMIUM_RESTART_AFTER_N_CONVERSIONS`, `CHROMIUM_HEALTH_CHECK_ENABLED`, `CHROMIUM_HEALTH_CHECK_INTERVAL` (see README).
 
 ### Supported Formats
 - **Source**: docx, epub, fb2, html, json, latex, markdown, rtf, textile
@@ -90,17 +100,18 @@ bash tests/shell/test_pandoc_service.sh
 - **uv** for dependency management (`--frozen` flag used in CI)
 - **Ruff** for linting (line length: 240, TCH rule enforces `if TYPE_CHECKING:` import guards)
 - **Mypy** for type checking (strict mode)
-- **Pytest** with >=90% coverage requirement
-- **Pandoc** binary in container (see Dockerfile for version)
+- **Pytest** with >=90% coverage requirement; SVG/Chromium tests are real-browser (`pytest-asyncio`), and `tox` provisions Chromium via `playwright install chromium` before running them
+- **Debian base image** (`debian:trixie-slim`, same as weasyprint-service) — required because Playwright has no musllinux wheel, so Alpine is not viable
+- **Pandoc** and **tectonic** binaries in container, plus Playwright's bundled **Chromium** (see Dockerfile)
 
 ## API Endpoints
-- `GET /health` - Health check (pandoc, tectonic, filesystem status)
-- `GET /version` - Service version information
+- `GET /health` - Health check (pandoc, tectonic, filesystem, and informational chromium status)
+- `GET /version` - Service version information (python, pandoc, pandocService, timestamp, chromium)
 - `GET /docx-template` - Download default DOCX template
 - `GET /pptx-template` - Download default PPTX template
-- `POST /convert/{source_format}/to/{target_format}` - General conversion
-- `POST /convert/{source_format}/to/docx-with-template` - DOCX with custom template
-- `POST /convert/{source_format}/to/pptx-with-template` - PPTX with custom template
+- `POST /convert/{source_format}/to/{target_format}` - General conversion (HTML sources accept a `scale_factor` query param)
+- `POST /convert/{source_format}/to/docx-with-template` - DOCX with custom template (accepts `scale_factor`)
+- `POST /convert/{source_format}/to/pptx-with-template` - PPTX with custom template (accepts `scale_factor`)
 
 Service runs on port 9082 with health checks and comprehensive logging.
 

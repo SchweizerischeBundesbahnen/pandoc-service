@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import anyio
 import starlette.datastructures
 import uvicorn
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -23,6 +24,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.schema import VersionSchema
 
 from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
+from .chromium_manager import get_chromium_manager
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -35,6 +37,7 @@ from .prometheus_metrics import (
     observe_response_body_size,
     observe_subprocess_duration,
 )
+from .svg_processor import SvgProcessor
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -138,6 +141,34 @@ DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all", f"--lua-filter={FILTERS['pa
 logger = logging.getLogger(__name__)
 
 
+async def _start_chromium() -> None:
+    """Start the persistent Chromium browser used to rasterize embedded SVGs.
+
+    Best effort: if it fails to start, conversions still run (SVGs just pass
+    through unrasterized) so a missing browser never takes the service down.
+    """
+    if not is_svg_conversion_enabled():
+        return
+    chromium_manager = get_chromium_manager()
+    try:
+        await chromium_manager.start()
+        logger.info("Chromium started for SVG conversion (version: %s)", chromium_manager.get_version())
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to start Chromium for SVG conversion; SVG rasterization disabled: %s", e)
+
+
+async def _stop_chromium() -> None:
+    """Stop the persistent Chromium browser if it is running."""
+    if not is_svg_conversion_enabled():
+        return
+    chromium_manager = get_chromium_manager()
+    if chromium_manager.is_running():
+        try:
+            await chromium_manager.stop()
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error stopping Chromium: %s", e)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001
     """
@@ -174,7 +205,12 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
             logger.error("Failed to start metrics server: %s", e)
             metrics_server = None
 
+    # Start the persistent Chromium browser used to rasterize embedded SVGs.
+    await _start_chromium()
+
     yield  # Application runs here
+
+    await _stop_chromium()
 
     # Stop metrics server
     if metrics_server:
@@ -304,6 +340,7 @@ def version() -> VersionSchema:
         pandoc=get_pandoc_version(),
         pandocService=os.environ.get("PANDOC_SERVICE_VERSION"),
         timestamp=os.environ.get("PANDOC_SERVICE_BUILD_TIMESTAMP"),
+        chromium=get_chromium_manager().get_version(),
     )
 
 
@@ -331,7 +368,9 @@ def health() -> JSONResponse:
     logger.debug("Health check endpoint called")
 
     # Basic health check - service is running
-    health_status = {"status": "healthy", "pandoc": "available" if get_pandoc_version() else "unavailable", "tectonic": get_tectonic_availability(), "filesystem": get_temp_directory_writability()}
+    # Note: "chromium" is informational only (values never match the unhealthy
+    # trip words below) because SVG rasterization is a best-effort enhancement.
+    health_status = {"status": "healthy", "pandoc": "available" if get_pandoc_version() else "unavailable", "tectonic": get_tectonic_availability(), "filesystem": get_temp_directory_writability(), "chromium": get_chromium_health()}
 
     # Optional: Add dependency checks here
     # Memory/resource status
@@ -510,6 +549,62 @@ def _build_pandoc_command(  # noqa: PLR0913
     return cmd
 
 
+def is_svg_conversion_enabled() -> bool:
+    """Whether HTML SVG-to-PNG rasterization via headless Chromium is enabled (default on)."""
+    return os.environ.get("ENABLE_SVG_CONVERSION", "true").strip().lower() not in {"false", "0", "no"}
+
+
+def get_chromium_health() -> str:
+    """Report Chromium status for the health endpoint (informational, never gates health)."""
+    if not is_svg_conversion_enabled():
+        return "disabled"
+    return "available" if get_chromium_manager().health_check() else "stopped"
+
+
+async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None = None) -> str | bytes:
+    """Rasterize SVGs embedded in HTML to PNG via headless Chromium before pandoc runs.
+
+    Word's built-in SVG engine does not support draw.io's
+    ``<switch>`` + ``foreignObject`` mechanism, so a raw SVG embedded in the
+    DOCX renders a "Text is not SVG - cannot display" fallback instead of the
+    diagram. Rendering the SVG to a PNG here (mirroring the weasyprint-service
+    fix) sidesteps that.
+
+    ``scale_factor`` is the device scale factor controlling rasterization
+    density (image density). When None, SvgProcessor falls back to the
+    DEVICE_SCALE_FACTOR env var (default 1.0). This mirrors weasyprint-service.
+
+    Returns the source unchanged when SVG conversion is disabled, the browser is
+    unavailable, the input contains no SVG, or processing fails (best effort:
+    a missing rasterizer must never break a conversion).
+    """
+    if not is_svg_conversion_enabled():
+        return source
+
+    is_bytes = isinstance(source, bytes)
+    html_str = source.decode("utf-8", errors="replace") if isinstance(source, bytes) else source
+
+    # Cheap guard: skip the parse/serialize round-trip when there is no SVG.
+    lowered = html_str.lower()
+    if "data:image/svg+xml" not in lowered and "<svg" not in lowered:
+        return source
+
+    manager = get_chromium_manager()
+    if not manager.is_running():
+        logger.warning("SVG conversion requested but Chromium is not running; passing HTML through unchanged")
+        return source
+
+    try:
+        soup = BeautifulSoup(html_str, "html.parser")
+        processor = SvgProcessor(chromium_manager=manager, device_scale_factor=scale_factor)
+        processed = await processor.process_svg(soup)
+        result = str(processed)
+        return result.encode("utf-8") if is_bytes else result
+    except Exception as e:  # noqa: BLE001
+        logger.error("SVG preprocessing failed; passing HTML through unchanged: %s", e)
+        return source
+
+
 def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None) -> bytes:
     """
     Run pandoc conversion using subprocess.
@@ -631,13 +726,14 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def convert_docx_with_ref(  # noqa: PLR0913
+async def convert_docx_with_ref(  # noqa: PLR0913, C901
     request: Request,
     source_format: str,
     encoding: str | None = None,
     file_name: str = "converted-document.docx",
     paper_size: str | None = None,
     orientation: str | None = None,
+    scale_factor: float | None = None,
 ) -> Response:
     temp_template_filename = None
     pandoc_metrics = get_pandoc_metrics()
@@ -686,6 +782,11 @@ async def convert_docx_with_ref(  # noqa: PLR0913
         if temp_template_filename is not None:
             options.append(f"--reference-doc={temp_template_filename}")
 
+        # Rasterize any embedded SVGs to PNG so Word gets a usable image
+        # instead of the draw.io "Text is not SVG - cannot display" fallback.
+        if source_format == "html":
+            source = await preprocess_html_svgs(source, scale_factor)
+
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, "docx", options)
 
@@ -729,6 +830,7 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
     encoding: str | None = None,
     file_name: str = "converted-document.pptx",
     slide_size: str | None = None,
+    scale_factor: float | None = None,
 ) -> Response:
     temp_template_filename = None
     pandoc_metrics = get_pandoc_metrics()
@@ -771,6 +873,10 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
 
         if temp_template_filename is not None:
             options.append(f"--reference-doc={temp_template_filename}")
+
+        # Rasterize any embedded SVGs to PNG so the slide renderer gets a usable image.
+        if source_format == "html":
+            source = await preprocess_html_svgs(source, scale_factor)
 
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, "pptx", options)
@@ -817,6 +923,7 @@ async def convert(  # noqa: PLR0913
     file_name: str | None = None,
     paper_size: str | None = None,
     orientation: str | None = None,
+    scale_factor: float | None = None,
 ) -> Response:
     pandoc_metrics = get_pandoc_metrics()
     conversion_start_time = time.time()
@@ -846,6 +953,11 @@ async def convert(  # noqa: PLR0913
 
         if target_format == "pdf":
             options.append("--pdf-engine=tectonic")
+
+        # Rasterize any embedded SVGs to PNG so renderers without full SVG
+        # support (e.g. Word) get a usable image instead of a fallback warning.
+        if source_format == "html":
+            source = await preprocess_html_svgs(source, scale_factor)
 
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, target_format, options)

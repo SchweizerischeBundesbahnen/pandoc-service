@@ -107,7 +107,7 @@ def _is_test_related_container(container: Container) -> bool:
         container.name == TEST_CONTAINER_NAME
         or (container.image.tags and TEST_IMAGE_FULL in str(container.image.tags))
         or not container.image.tags  # Intermediate containers
-        or (container.image.tags and "python:3.14-alpine" in str(container.image.tags))  # Base image containers
+        or (container.image.tags and "debian:trixie-slim" in str(container.image.tags))  # Base image containers
     )
 
 
@@ -394,11 +394,13 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     assert "pandoc" in version_info
     assert "pandocService" in version_info
     assert "timestamp" in version_info
+    assert "chromium" in version_info
 
     # Verify that values are reasonable (not empty where required)
     assert version_info["python"], "Python version should not be empty"
     assert version_info["pandoc"], "Pandoc version should not be empty"
     assert version_info["pandocService"], "Pandoc service version should not be empty"
+    assert version_info["chromium"], "Chromium version should not be empty"
 
 
 def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data) -> requests.Response:
