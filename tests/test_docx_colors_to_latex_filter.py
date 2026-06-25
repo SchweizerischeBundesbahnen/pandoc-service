@@ -165,3 +165,70 @@ def test_non_matching_custom_style_is_left_alone():
     assert "\\colorbox" not in result.stdout
     assert "\\hl{" not in result.stdout
     assert "hello" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Highlight on bold/italic text — formatting macros hoisted OUTSIDE \hl
+# ---------------------------------------------------------------------------
+#
+# Regression for the bug where a highlighted (background/shaded) run that is
+# also bold/italic lost its highlight entirely in DOCX->PDF: soul's \hl can't
+# wrap a span containing \emph/\textbf, so the old filter dropped the highlight.
+# The fix peels uniform formatting wrappers and emits them as macros AROUND
+# \hl, which only ever sees plain text. These build the exact AST shape pandoc
+# produces from `-f docx+styles` (Span[custom-style][Emph/Strong[...]]) via a
+# markdown bracketed span, so the test is pandoc-only (no tectonic needed).
+
+
+def _md_to_latex(md: str) -> str:
+    """Convert a markdown snippet to LaTeX through the filter, return stdout."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = Path(tmpdir) / "in.md"
+        src.write_text(md, encoding="utf-8")
+        result = subprocess.run(
+            [PANDOC, "-f", "markdown", "-t", "latex", f"--lua-filter={FILTER_PATH}", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    return _flatten_whitespace(result.stdout)
+
+
+def test_highlight_survives_italic_with_emph_hoisted_outside_hl():
+    """The "injected humour" case: italic + foreground color + background.
+
+    The highlight must NOT be dropped. \\emph is hoisted OUTSIDE \\hl (soul
+    can't wrap \\emph), \\textcolor stays outermost, and \\hl wraps plain text.
+    """
+    flat = _md_to_latex('[*injected humour*]{custom-style="PandocColor__FG_00B050__BG_FFFF00"}\n')
+    assert "\\hl{injected humour}" in flat, f"highlight dropped on italic text: {flat}"
+    assert "\\emph{" in flat, flat
+    assert "\\textcolor[HTML]{00B050}" in flat, flat
+    # Ordering: \textcolor outermost, then \emph, then \hl innermost.
+    assert flat.index("\\textcolor") < flat.index("\\emph{") < flat.index("\\hl{"), flat
+
+
+def test_highlight_survives_bold():
+    """Bold + background: \\textbf hoisted outside \\hl, highlight preserved."""
+    flat = _md_to_latex('[**loud**]{custom-style="PandocColor__BG_FFFF00"}\n')
+    assert "\\hl{loud}" in flat, f"highlight dropped on bold text: {flat}"
+    assert "\\textbf{" in flat and flat.index("\\textbf{") < flat.index("\\hl{"), flat
+
+
+def test_highlight_survives_bold_italic_nested():
+    """Bold-italic nests two wrappers; both must hoist out, \\hl innermost."""
+    flat = _md_to_latex('[***both***]{custom-style="PandocColor__BG_FFFF00"}\n')
+    assert "\\hl{both}" in flat, f"highlight dropped on bold-italic text: {flat}"
+    assert flat.index("\\textbf{") < flat.index("\\hl{"), flat
+    assert flat.index("\\emph{") < flat.index("\\hl{"), flat
+
+
+def test_partial_formatting_inside_highlight_drops_hl_but_keeps_color():
+    """When formatting only partially overlaps the highlighted span there is no
+    single macro to hoist, so soul can't wrap it. The highlight is gracefully
+    dropped (current limitation) while the foreground color and the text — bold
+    part included — are preserved."""
+    flat = _md_to_latex('[plain *and italic*]{custom-style="PandocColor__FG_00B050__BG_FFFF00"}\n')
+    assert "\\hl{" not in flat and "\\sethlcolor" not in flat, f"soul wrapped mixed content: {flat}"
+    assert "\\textcolor[HTML]{00B050}" in flat, flat
+    assert "\\emph{" in flat and "italic" in flat, flat

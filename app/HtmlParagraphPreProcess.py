@@ -1,26 +1,43 @@
-"""Preserve ``<p style="margin-left: ...">`` indentation for DOCX conversion.
+"""Preserve paragraph-level ``<p style="...">`` formatting for DOCX conversion.
 
 Pandoc's HTML reader drops the ``style`` attribute from ``<p>`` entirely, so
-any margin-left applied inline at the paragraph level is lost before any Lua
-filter can read it. This preprocessor finds each such ``<p>``, parses the
-margin-left value into twips (Word's native unit for ``<w:ind w:left=".."/>``),
-and wraps the paragraph in
+any paragraph-level CSS applied inline is lost before any Lua filter can read
+it. This preprocessor finds each such ``<p>``, extracts the formatting we
+support — ``margin-left`` (indent) and ``text-align`` (justification) — and
+wraps the paragraph in a marker ``<div>``:
 
-    <div class="pandoc-indent" data-indent-twips="N"><p ...>...</p></div>
+    <div class="pandoc-para" data-indent-twips="N" data-text-align="center"><p ...>...</p></div>
 
-Pandoc preserves both ``class`` and ``data-*`` attributes on ``<div>`` elements
-(they survive as the AST's ``Attr`` triple), so the indent value travels
-intact to the companion Lua filter (``filters/inline_styles.lua``), which
-emits a raw OOXML ``<w:p>`` carrying the matching paragraph properties.
+Each ``data-*`` attribute is emitted only when the corresponding property is
+present, so an indent-only, align-only, or combined paragraph all share the
+same wrapper. Pandoc preserves both ``class`` and ``data-*`` attributes on
+``<div>`` elements (they survive as the AST's ``Attr`` triple), so the values
+travel intact to the companion Lua filter (``filters/inline_styles.lua``),
+which emits a raw OOXML ``<w:p>`` carrying the matching paragraph properties
+(``<w:ind w:left="N"/>`` and/or ``<w:jc w:val="..."/>``). Pandoc strips the
+``data-`` prefix off these attributes when they aren't reserved HTML attribute
+names, so the filter sees ``indent-twips`` and ``text-align`` — note the align
+attribute is deliberately ``data-text-align`` (not ``data-align``) because
+``align`` *is* a reserved HTML attribute and pandoc would keep it prefixed,
+breaking the symmetry with ``indent-twips``.
 
-Unit conversion
----------------
+Indent unit conversion
+----------------------
 1 twip = 1/1440 inch. CSS reference DPI is 96, so 1 px = 1/96 inch = 15 twips.
 Absolute units (pt, in, cm, mm, pc) convert directly. em/rem are resolved
 against the standard 12pt body size (1 em = 240 twips). Percentages and
 unparseable values are skipped — the paragraph passes through with no indent
 rather than producing wrong output. Negative or zero indents are dropped for
 the same reason.
+
+Alignment
+---------
+The CSS ``text-align`` keyword is mapped to a canonical token
+(``left``/``center``/``right``/``justify``); ``start``/``end`` are folded onto
+``left``/``right``. The canonical token (not the OOXML value) is written into
+``data-align`` so the OOXML trust boundary stays in the Lua filter, mirroring
+how the twips value is handled. Anything else (``inherit``, ``initial``,
+vendor-prefixed, unknown) is skipped.
 """
 
 from __future__ import annotations
@@ -32,8 +49,14 @@ from lxml import etree, html  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
-INDENT_CLASS = "pandoc-indent"
+PARA_CLASS = "pandoc-para"
 INDENT_ATTR = "data-indent-twips"
+# Deliberately "data-text-align", not "data-align": pandoc strips the "data-"
+# prefix only when the remainder isn't a reserved HTML attribute. "align" is
+# reserved (pandoc would keep "data-align"), but "text-align" is not, so it
+# de-prefixes to "text-align" just like "indent-twips" — keeping the Lua-side
+# attribute lookups symmetric. See the module docstring.
+ALIGN_ATTR = "data-text-align"
 
 # CSS unit -> twips conversion factor. 1 twip = 1/1440 inch.
 _UNIT_TO_TWIPS: dict[str, float] = {
@@ -47,6 +70,19 @@ _UNIT_TO_TWIPS: dict[str, float] = {
     # the default 12pt body size (1 em = 12pt = 240 twips).
     "em": 240.0,
     "rem": 240.0,
+}
+
+# CSS text-align keyword -> canonical token written into data-align. The
+# logical keywords start/end fold onto left/right (we have no bidi context, so
+# treat the document as left-to-right). Anything not listed here is skipped,
+# so inherit/initial/unset/vendor-prefixed values never produce a wrapper.
+_ALIGN_MAP: dict[str, str] = {
+    "left": "left",
+    "center": "center",
+    "right": "right",
+    "justify": "justify",
+    "start": "left",
+    "end": "right",
 }
 
 # A numeric value followed by an optional unit (letters or %). The unit is
@@ -70,20 +106,20 @@ _PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
 
 
 def preprocess(source: bytes) -> bytes:
-    """Wrap each indented ``<p>`` in a marker ``<div>``. Idempotent on input
+    """Wrap each formatted ``<p>`` in a marker ``<div>``. Idempotent on input
     that has nothing to rewrite — returns the original bytes unchanged.
     """
     try:
         fragments = html.fragments_fromstring(source)
     except _PARSE_FAILURES:
-        logger.warning("HtmlIndentPreProcess: HTML parse failed; passing input through")
+        logger.warning("HtmlParagraphPreProcess: HTML parse failed; passing input through")
         return source
 
     # Top-level <p> fragments have no parent, so we couldn't reparent them
     # with their wrapping <div>. Hang every fragment off a synthetic root
     # while we walk so getparent()/insert() works uniformly — then drop the
     # root on the way out.
-    synthetic_root = etree.Element("__pandoc_indent_root__")
+    synthetic_root = etree.Element("__pandoc_para_root__")
     leading_text: str | None = None
     for frag in fragments:
         if hasattr(frag, "tag"):
@@ -94,7 +130,7 @@ def preprocess(source: bytes) -> bytes:
         else:
             leading_text += frag
 
-    rewrote = _wrap_indented_paragraphs(synthetic_root)
+    rewrote = _wrap_formatted_paragraphs(synthetic_root)
     if not rewrote:
         return source
 
@@ -106,7 +142,7 @@ def preprocess(source: bytes) -> bytes:
     return b"".join(parts)
 
 
-def _wrap_indented_paragraphs(root: html.HtmlElement) -> bool:
+def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
     rewrote = False
     # Materialize before mutating: parent.remove/insert invalidates the
     # iterator if we walk lazily.
@@ -115,21 +151,25 @@ def _wrap_indented_paragraphs(root: html.HtmlElement) -> bool:
         if not style:
             continue
         twips = _extract_margin_left_twips(style)
-        if twips is None:
+        align = _extract_text_align(style)
+        if twips is None and align is None:
             continue
         parent = p.getparent()
         if parent is None:
             continue
-        _wrap_paragraph(parent, p, twips)
+        _wrap_paragraph(parent, p, twips, align)
         rewrote = True
     return rewrote
 
 
-def _wrap_paragraph(parent: html.HtmlElement, p: html.HtmlElement, twips: int) -> None:
+def _wrap_paragraph(parent: html.HtmlElement, p: html.HtmlElement, twips: int | None, align: str | None) -> None:
     idx = parent.index(p)
     div = etree.Element("div")
-    div.set("class", INDENT_CLASS)
-    div.set(INDENT_ATTR, str(twips))
+    div.set("class", PARA_CLASS)
+    if twips is not None:
+        div.set(INDENT_ATTR, str(twips))
+    if align is not None:
+        div.set(ALIGN_ATTR, align)
     parent.remove(p)
     div.append(p)
     parent.insert(idx, div)
@@ -153,6 +193,22 @@ def _extract_margin_left_twips(style: str) -> int | None:
         prop, sep, value = declaration.partition(":")
         if sep and prop.strip().lower() == "margin-left":
             return _css_length_to_twips(value.strip())
+    return None
+
+
+def _extract_text_align(style: str) -> str | None:
+    """Return the first ``text-align`` value in a CSS style string as a
+    canonical token (``left``/``center``/``right``/``justify``), or None when
+    the property is absent or its value isn't one we map.
+
+    Parsing mirrors :func:`_extract_margin_left_twips` — plain
+    ``str.split``/``str.partition`` over the semicolon-separated declarations,
+    leftmost-wins — so the two extractors stay consistent.
+    """
+    for declaration in style.split(";"):
+        prop, sep, value = declaration.partition(":")
+        if sep and prop.strip().lower() == "text-align":
+            return _ALIGN_MAP.get(value.strip().lower())
     return None
 
 

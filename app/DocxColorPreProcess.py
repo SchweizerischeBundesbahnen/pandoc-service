@@ -29,84 +29,17 @@ Limitations
 
 from __future__ import annotations
 
-import io
 import logging
-import zipfile
-from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 
-from defusedxml import ElementTree as DefusedET
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
+from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
 
-W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-
-# Well-known OOXML namespaces. ElementTree's default behavior on serialize
-# is to mint synthetic prefixes (ns0, ns1, ...) for every namespace it
-# wasn't told about — fine for round-tripping inside ET, but DOCX readers
-# (notably pandoc's docx reader) match drawing/relationship/etc. elements
-# on the canonical prefix rather than the URI. When wp:/a:/pic:/r: get
-# renamed to ns1:/ns2:/..., pandoc silently drops every <w:drawing> in
-# the file and images disappear from the output. Registering the
-# canonical prefixes globally tells ET to preserve them on serialize.
-_OOXML_NAMESPACES = {
-    "w": W_NS,
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "o": "urn:schemas-microsoft-com:office:office",
-    "v": "urn:schemas-microsoft-com:vml",
-    "w10": "urn:schemas-microsoft-com:office:word",
-    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "w14": "http://schemas.microsoft.com/office/word/2010/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "w15": "http://schemas.microsoft.com/office/word/2012/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "w16se": "http://schemas.microsoft.com/office/word/2015/wordml/symex",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-    "wne": "http://schemas.microsoft.com/office/word/2006/wordml",  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
-}
-for _prefix, _uri in _OOXML_NAMESPACES.items():
-    ET.register_namespace(_prefix, _uri)
-
-STYLES_PART = "word/styles.xml"
 STYLE_PREFIX = "PandocColor"
 SEGMENT_SEPARATOR = "__"
 HEX_COLOR_LENGTH = 6
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
-
-# Parts that can contain <w:r> runs we need to rewrite. Theme / numbering
-# / settings parts cannot carry runs and are skipped.
-_FIXED_BODY_PARTS = frozenset(
-    {
-        "word/document.xml",
-        "word/footnotes.xml",
-        "word/endnotes.xml",
-        "word/comments.xml",
-    }
-)
-
-
-def _enumerate_body_parts(names: Iterable[str]) -> list[str]:
-    """Return zip entry names that may contain runs to rewrite.
-
-    Headers and footers live in numbered parts (``word/header1.xml``,
-    ``word/footer2.xml``, ...) — the count and naming depend on how many
-    sections the document defines — so they can't be enumerated by a
-    fixed name list and have to be matched by prefix + ``.xml`` suffix.
-    """
-    result = []
-    for name in names:
-        if name in _FIXED_BODY_PARTS or (name.startswith(("word/header", "word/footer")) and name.endswith(".xml")):
-            result.append(name)
-    return result
 
 
 def preprocess(docx_bytes: bytes) -> bytes:
@@ -118,10 +51,8 @@ def preprocess(docx_bytes: bytes) -> bytes:
     # under the 200MB request cap and a full in-memory dict keeps the
     # rewrite loop simple — we mutate body parts in place and then
     # re-zip from the same dict at the end.
-    try:
-        with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin:
-            entries = {name: zin.read(name) for name in zin.namelist()}
-    except zipfile.BadZipFile:
+    entries = read_entries(docx_bytes)
+    if entries is None:
         logger.warning("Input is not a valid zip / DOCX; skipping color preprocess")
         return docx_bytes
 
@@ -131,16 +62,12 @@ def preprocess(docx_bytes: bytes) -> bytes:
         logger.debug("DOCX has no %s; skipping color preprocess", STYLES_PART)
         return docx_bytes
 
-    body_parts = _enumerate_body_parts(entries.keys())
-    if not body_parts:
-        return docx_bytes
-
     # Collected across all body parts and deduplicated by style_id so
     # styles.xml gets one <w:style> per unique fg/bg/highlight combo even
     # if many runs reference it.
     needed_styles: dict[str, _StyleSpec] = {}
 
-    for part in body_parts:
+    for part in enumerate_body_parts(entries.keys()):
         rewritten, part_styles = _rewrite_part(entries[part])
         if part_styles:
             entries[part] = rewritten
@@ -152,13 +79,8 @@ def preprocess(docx_bytes: bytes) -> bytes:
     if not needed_styles:
         return docx_bytes
 
-    entries[STYLES_PART] = _augment_styles(entries[STYLES_PART], needed_styles)
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for name, data in entries.items():
-            zout.writestr(name, data)
-    return buf.getvalue()
+    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, _build_style_element)
+    return repack(entries)
 
 
 class _StyleSpec:
@@ -259,11 +181,8 @@ def _replace_run_color_props(rpr: ET.Element, style_id: str) -> None:
 
 def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used)."""
-    # defusedxml's fromstring blocks XXE / billion-laughs; we still serialize
-    # with stdlib ET because defusedxml deliberately doesn't expose tostring.
-    try:
-        tree = DefusedET.fromstring(xml_bytes)
-    except ET.ParseError:
+    tree = parse_xml(xml_bytes)
+    if tree is None:
         logger.warning("Unparseable XML in DOCX part; skipping")
         return xml_bytes, {}
 
@@ -292,8 +211,7 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     if not styles_used:
         return xml_bytes, {}
 
-    new_xml = ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
-    return new_xml, styles_used
+    return serialize_tree(tree), styles_used
 
 
 def _normalize_hex(value: str | None) -> str | None:
@@ -321,45 +239,6 @@ def _normalize_hex(value: str | None) -> str | None:
     if len(stripped) == HEX_COLOR_LENGTH and all(c in _HEX_DIGITS for c in stripped):
         return stripped.upper()
     return None
-
-
-def _augment_styles(styles_xml: bytes, specs: dict[str, _StyleSpec]) -> bytes:
-    """Insert <w:style> entries for each spec into word/styles.xml, idempotently.
-
-    The fragment we add looks like::
-
-        <w:style w:type="character" w:customStyle="1" w:styleId="PandocColor__FG_FF0000">
-            <w:name w:val="PandocColor__FG_FF0000"/>
-            <w:rPr>
-                <w:color w:val="FF0000"/>
-            </w:rPr>
-        </w:style>
-
-    Adding the matching ``<w:rPr>`` keeps the style usable when the
-    intermediate DOCX is inspected manually; pandoc only consumes the
-    ``w:styleId`` and ``w:name``.
-    """
-    try:
-        tree = DefusedET.fromstring(styles_xml)
-    except ET.ParseError:
-        logger.warning("Unparseable %s; skipping style augmentation", STYLES_PART)
-        return styles_xml
-
-    # Collect existing styleIds to make this idempotent: if the document
-    # has already been preprocessed (or genuinely defined a style with
-    # the same name) we must not append a duplicate <w:style> — Word
-    # rejects styles.xml with two entries sharing the same styleId.
-    existing_ids = {el.get(f"{{{W_NS}}}styleId") for el in tree.findall(f"{{{W_NS}}}style")}
-
-    for spec in specs.values():
-        if spec.style_id in existing_ids:
-            continue
-        # Appending to the root <w:styles> element is sufficient — style
-        # order in styles.xml has no semantic meaning, only the styleId
-        # link from runs matters.
-        tree.append(_build_style_element(spec))
-
-    return ET.tostring(tree, xml_declaration=True, encoding="UTF-8")
 
 
 def _build_style_element(spec: _StyleSpec) -> ET.Element:
