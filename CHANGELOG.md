@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.0...v2.2.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency prometheus-fastapi-instrumentator to v8.0.1 ([2445c7f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2445c7f5303242ca7e0ef52303b2b987d7af4e04))
+* validate CLI path before filesystem access ([#175](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/175)) ([7b2bbda](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/7b2bbdad62a0b3f28e33bc64a280750f435ae43f)), closes [#174](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/174)
+
 ## [2.2.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.1.3...v2.2.0) (2026-06-25)
 
 
