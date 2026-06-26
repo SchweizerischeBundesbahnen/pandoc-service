@@ -1,5 +1,4 @@
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -820,10 +819,12 @@ def test_main_function(argv, expected_exit, paper_size, orientation):
 
 
 def test_main_function_rejects_path_outside_working_directory():
-    outside_path = str(Path(tempfile.gettempdir()).resolve() / "escape.docx")
+    fixed_cwd = Path("/app/workdir").resolve()
+    outside_path = str(Path("/outside/escape.docx").resolve())
 
     with (
         patch.object(sys, "argv", ["script.py", outside_path]),
+        patch("pathlib.Path.cwd", return_value=fixed_cwd),
         patch("pathlib.Path.open", mock_open()) as mock_file,
         patch("app.DocxPostProcess.process") as mock_process,
         patch("app.DocxPostProcess.logger") as mock_logging,
