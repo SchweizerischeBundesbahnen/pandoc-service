@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -815,6 +816,25 @@ def test_main_function(argv, expected_exit, paper_size, orientation):
             handle = mock_file()
             handle.write.assert_called_once_with(modified_content)
             mock_logging.debug.assert_called_once()
+
+
+def test_main_function_rejects_path_outside_working_directory():
+    fixed_cwd = Path("/app/workdir").resolve()
+    outside_path = str(Path("/outside/escape.docx").resolve())
+
+    with (
+        patch.object(sys, "argv", ["script.py", outside_path]),
+        patch("pathlib.Path.cwd", return_value=fixed_cwd),
+        patch("pathlib.Path.open", mock_open()) as mock_file,
+        patch("app.DocxPostProcess.process") as mock_process,
+        patch("app.DocxPostProcess.logger") as mock_logging,
+    ):
+        result = DocxPostProcess.main()
+
+        assert result == 1
+        mock_process.assert_not_called()
+        mock_file.assert_not_called()
+        mock_logging.error.assert_called_once()
 
 
 # Integration tests for the process() function to ensure 100% coverage
