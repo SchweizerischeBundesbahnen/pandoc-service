@@ -12,6 +12,7 @@ COPY --from=uv-source /uv /usr/local/bin/uv
 
 ARG APP_IMAGE_VERSION=0.0.0
 ARG PANDOC_VERSION=3.10
+ARG TECTONIC_VERSION=0.16.9
 ARG TARGETARCH
 ENV ARCH=${TARGETARCH:-amd64}
 
@@ -60,16 +61,22 @@ RUN curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION
     curl -fsSL https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -o /usr/local/share/pandoc/filters/pagebreak.lua && \
     rm -rf /tmp/pandoc*
 
-# Use bash with pipefail so a failure in the piped tectonic install below is
-# not masked by the exit status of the final command in the pipe.
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
 # Install tectonic (downloaded static binary) for the PDF/LaTeX target.
 # Installed at /usr/bin/tectonic to match the path the health check probes.
-# hadolint ignore=DL3003
-RUN cd /tmp && \
-    curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh && \
-    mv /tmp/tectonic /usr/bin/tectonic
+# The musl static build is fetched directly (instead of the drop-sh installer)
+# because upstream ships only an aarch64-unknown-linux-musl build for arm64 —
+# there is no aarch64-unknown-linux-gnu asset, so the glibc auto-detecting
+# installer 404s on arm64. The musl binary is fully static and runs on Debian.
+RUN case "${ARCH}" in \
+        amd64) TECTONIC_ARCH=x86_64 ;; \
+        arm64) TECTONIC_ARCH=aarch64 ;; \
+        *) echo "Unsupported architecture: ${ARCH}" >&2; exit 1 ;; \
+    esac && \
+    curl --proto '=https' --tlsv1.2 -fsSL \
+        "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-${TECTONIC_ARCH}-unknown-linux-musl.tar.gz" \
+        -o /tmp/tectonic.tar.gz && \
+    tar -xzf /tmp/tectonic.tar.gz -C /usr/bin tectonic && \
+    rm -f /tmp/tectonic.tar.gz
 
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
