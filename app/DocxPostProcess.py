@@ -305,14 +305,19 @@ def main() -> int:
         logger.info("Usage: <path_to_docx> [paper_size] [orientation]")
         return 1
 
-    docx_path = sys.argv[DOCX_PATH_ARG_INDEX]
+    docx_path = Path(sys.argv[DOCX_PATH_ARG_INDEX]).resolve()
+    base_dir = Path.cwd().resolve()
+    if not docx_path.is_relative_to(base_dir):
+        logger.error(f"Refusing to access path outside the working directory: {docx_path}")
+        return 1
+
     paper_size = sys.argv[PAPER_SIZE_ARG_INDEX] if len(sys.argv) > PAPER_SIZE_ARG_INDEX and sys.argv[PAPER_SIZE_ARG_INDEX] != "None" else None
     orientation = sys.argv[ORIENTATION_ARG_INDEX] if len(sys.argv) > ORIENTATION_ARG_INDEX and sys.argv[ORIENTATION_ARG_INDEX] != "None" else None
 
-    with Path(docx_path).open("rb") as docx_file_reader:
+    with docx_path.open("rb") as docx_file_reader:
         result_bytes = process(docx_file_reader.read(), paper_size, orientation)
 
-    with Path(docx_path).open("wb") as docx_file_writer:
+    with docx_path.open("wb") as docx_file_writer:
         docx_file_writer.write(result_bytes)
 
     logger.debug(f"Successfully modified table properties in {docx_path}")
