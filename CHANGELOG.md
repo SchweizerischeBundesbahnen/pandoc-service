@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.1...v2.2.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* update Tectonic installation for architecture compatibility ([#177](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/177)) ([8efd90b](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/8efd90b6e2f0c1ed62064c7f0f89726ad2525400)), closes [#176](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/176)
+
 ## [2.2.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.0...v2.2.1) (2026-06-26)
 
 
