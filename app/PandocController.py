@@ -73,6 +73,8 @@ ALLOWED_PANDOC_OPTIONS = [
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
     "--toc",
+    "-M",
+    "preserve_table_styles=true",
 ]
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
@@ -512,6 +514,7 @@ def _build_pandoc_command(  # noqa: PLR0913
     output_path: str,
     validated_options: list[str],
     apply_docx_latex_filters: bool,
+    preserve_table_styles: bool = False,
 ) -> list[str]:
     """Build the pandoc CLI invocation for run_pandoc_conversion."""
     # Source format gains the +styles extension on the docx->latex path so the
@@ -534,6 +537,10 @@ def _build_pandoc_command(  # noqa: PLR0913
         # filter strips the marker paragraph that pandoc would otherwise emit
         # for those synthetic list items.
         cmd.append(f"--lua-filter={FILTERS['html_lists']}")
+        # Opt-in: preserve CSS table cell styles (background-color, borders)
+        # by rebuilding styled tables as raw OOXML via the Lua filter.
+        if preserve_table_styles:
+            cmd.extend(["-M", "preserve_table_styles=true"])
 
     # Companion filters to the DOCX color and paragraph-format preprocessors.
     # Both only emit raw LaTeX, so they are gated on the docx->latex path. Div
@@ -605,7 +612,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
         return source
 
 
-def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None) -> bytes:
+def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None, preserve_table_styles: bool = False) -> bytes:
     """
     Run pandoc conversion using subprocess.
 
@@ -693,6 +700,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
                 output_path=output_file.name,
                 validated_options=validated_options,
                 apply_docx_latex_filters=apply_docx_latex_filters,
+                preserve_table_styles=preserve_table_styles,
             )
 
             # Run pandoc with validated parameters and measure duration
@@ -734,6 +742,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
     paper_size: str | None = None,
     orientation: str | None = None,
     scale_factor: float | None = None,
+    preserve_table_styles: bool = False,
 ) -> Response:
     temp_template_filename = None
     pandoc_metrics = get_pandoc_metrics()
@@ -788,7 +797,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
             source = await preprocess_html_svgs(source, scale_factor)
 
         # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "docx", options)
+        output = run_pandoc_conversion(source, source_format, "docx", options, preserve_table_styles=preserve_table_styles)
 
         response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation)
 
@@ -924,6 +933,7 @@ async def convert(  # noqa: PLR0913
     paper_size: str | None = None,
     orientation: str | None = None,
     scale_factor: float | None = None,
+    preserve_table_styles: bool = False,
 ) -> Response:
     pandoc_metrics = get_pandoc_metrics()
     conversion_start_time = time.time()
@@ -960,7 +970,7 @@ async def convert(  # noqa: PLR0913
             source = await preprocess_html_svgs(source, scale_factor)
 
         # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, target_format, options)
+        output = run_pandoc_conversion(source, source_format, target_format, options, preserve_table_styles=preserve_table_styles)
 
         response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation)
 

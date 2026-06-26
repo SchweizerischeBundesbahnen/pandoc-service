@@ -573,7 +573,7 @@ def test_convert_with_encoding():
         response = test_client.post("/convert/markdown/to/html?encoding=utf-8", content=b"# Test Content")
 
         # Assertions
-        mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
+        mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS, preserve_table_styles=False)
         mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html", None, None)
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
@@ -593,7 +593,7 @@ def test_convert_with_custom_filename():
         response = test_client.post("/convert/markdown/to/html?file_name=custom.html", content=b"# Test Content")
 
         # Assertions
-        mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
+        mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS, preserve_table_styles=False)
         mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html", None, None)
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
