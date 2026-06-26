@@ -185,6 +185,44 @@ def test_intersecting_text_decorations_are_additive():
     assert "u" not in inner_none and "strike" not in inner_none, f"text-decoration: none failed to clear inherited decorations (got {inner_none!r}) — the explicit clear escape hatch is broken"
 
 
+def test_superscript_wrapping_styled_span_keeps_both():
+    """Regression: when <sup>/<sub> ENCLOSES a styled <span>, the inner run must
+    keep BOTH the vertical alignment and the span's formatting.
+
+    Topdown traversal reaches the Superscript/Subscript wrapper first; without a
+    dedicated handler, filter.Span would consume the span subtree with no
+    knowledge of the surrounding sup/sub and the DOCX writer would drop the
+    vertAlign on those runs (it ignores the AST wrapper around raw OOXML runs).
+    """
+    html = '<p><sup>A<span style="color:#FF0000">B</span></sup> x <sub>C<span style="color:#00B050">D</span></sub></p>'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out = Path(tmpdir) / "out.docx"
+        _convert_html_to_docx(html, out)
+        with zipfile.ZipFile(out) as zf:
+            doc = ET.fromstring(zf.read("word/document.xml"))
+
+    def _run(needle: str) -> ET.Element:
+        for r in doc.iter(f"{{{W_NS}}}r"):
+            if needle in "".join(t.text or "" for t in r.iter(f"{{{W_NS}}}t")):
+                return r
+        raise AssertionError(f"no run with {needle!r}")
+
+    def _vert_align(r: ET.Element) -> str | None:
+        el = r.find(f".//{{{W_NS}}}vertAlign")
+        return el.get(f"{{{W_NS}}}val") if el is not None else None
+
+    def _color(r: ET.Element) -> str | None:
+        el = r.find(f".//{{{W_NS}}}color")
+        return el.get(f"{{{W_NS}}}val") if el is not None else None
+
+    # The styled-span runs inside the wrapper keep BOTH properties.
+    assert _vert_align(_run("B")) == "superscript" and _color(_run("B")) == "FF0000", "superscript lost on the colored run inside <sup>"
+    assert _vert_align(_run("D")) == "subscript" and _color(_run("D")) == "00B050", "subscript lost on the colored run inside <sub>"
+    # The plain part of the wrapper still gets the vertical alignment too.
+    assert _vert_align(_run("A")) == "superscript"
+    assert _vert_align(_run("C")) == "subscript"
+
+
 # ---------------------------------------------------------------------------
 # Paragraph formatting (Div handler) — see filter.Div in filters/inline_styles.lua
 # ---------------------------------------------------------------------------

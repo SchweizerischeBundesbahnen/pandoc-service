@@ -118,6 +118,32 @@ def test_soul_package_added_to_header_includes():
     assert "\\usepackage{soul}" in result.stdout, result.stdout
 
 
+def test_superscript_subscript_routed_to_ulem_for_box_safety():
+    """soul's \\ul/\\st abort with "Reconstruction failed" inside the boxes that
+    \\textsuperscript/\\textsubscript build (i.e. underlined/struck text inside a
+    <sup>/<sub>). The preamble must load ulem and redefine
+    \\textsuperscript/\\textsubscript to swap soul's \\ul/\\st for ulem's box-safe
+    \\uline/\\sout *locally* — globally \\ul/\\st stay soul so ordinary
+    underlined/struck text is unchanged (no document-wide line-break/hyphenation
+    regression). Requires --standalone so header-includes are emitted."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        preprocessed = DocxColorPreProcess.preprocess(FIXTURE_PATH.read_bytes())
+        src = Path(tmpdir) / "in.docx"
+        src.write_bytes(preprocessed)
+        result = subprocess.run(
+            [PANDOC, "-f", "docx+styles", "-t", "latex", "--standalone", f"--lua-filter={FILTER_PATH}", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    flat = _flatten_whitespace(result.stdout)
+    assert "\\usepackage[normalem]{ulem}" in flat, flat
+    # The \ul -> \uline / \st -> \sout swap is scoped inside the super/subscript
+    # redefinitions, NOT applied globally.
+    assert "\\renewcommand{\\textsuperscript}[1]{\\pdcOldSuperscript{\\let\\ul\\uline\\let\\st\\sout" in flat, flat
+    assert "\\renewcommand{\\textsubscript}[1]{\\pdcOldSubscript{\\let\\ul\\uline\\let\\st\\sout" in flat, flat
+
+
 def test_image_inside_styled_span_is_not_wrapped_in_hl():
     """When a styled span contains an Image, soul's \\hl would fail to
     typeset it (and \\colorbox would clip / pad it past the margin). The
@@ -143,6 +169,24 @@ def test_image_inside_styled_span_is_not_wrapped_in_hl():
     # Background highlight was suppressed — no soul wrappers.
     assert "\\hl{" not in flat, flat
     assert "\\sethlcolor" not in flat, flat
+
+
+def test_font_size_emits_fontsize():
+    """A PandocColor__SZ_<halfpoints> style becomes \\fontsize{pt}{...} (pt =
+    half-points / 2, so 32 -> 16pt)."""
+    md = '[big]{custom-style="PandocColor__SZ_32"}\n'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = Path(tmpdir) / "in.md"
+        src.write_text(md, encoding="utf-8")
+        result = subprocess.run(
+            [PANDOC, "-f", "markdown", "-t", "latex", f"--lua-filter={FILTER_PATH}", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    flat = _flatten_whitespace(result.stdout)
+    assert "\\fontsize{16}{19.2}\\selectfont" in flat, flat
+    assert "big" in flat
 
 
 def test_non_matching_custom_style_is_left_alone():

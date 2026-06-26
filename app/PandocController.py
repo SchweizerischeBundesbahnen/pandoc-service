@@ -53,6 +53,7 @@ FILTERS = {
     "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
+    "docx_text_decorations": f"{FILTER_BASE_PATH}/docx_text_decorations.lua",
     "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
     "docx_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_paragraphs_to_latex.lua",
     "docx_lists_to_latex": f"{FILTER_BASE_PATH}/docx_lists_to_latex.lua",
@@ -65,6 +66,7 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['page_orientation']}",
     f"--lua-filter={FILTERS['heading_levels']}",
     f"--lua-filter={FILTERS['inline_styles']}",
+    f"--lua-filter={FILTERS['docx_text_decorations']}",
     f"--lua-filter={FILTERS['docx_colors_to_latex']}",
     f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
     f"--lua-filter={FILTERS['docx_lists_to_latex']}",
@@ -540,6 +542,10 @@ def _build_pandoc_command(  # noqa: PLR0913
     # (paragraph) and Span (run color) scopes are independent, so order between
     # them does not matter.
     if apply_docx_latex_filters:
+        # Must precede docx_colors_to_latex: it rewrites underline/strikeout that
+        # carry other formatting into ulem and strips highlight from inside them,
+        # before the colour filter turns those spans into \textcolor/\hl.
+        cmd.append(f"--lua-filter={FILTERS['docx_text_decorations']}")
         cmd.append(f"--lua-filter={FILTERS['docx_colors_to_latex']}")
         cmd.append(f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}")
         cmd.append(f"--lua-filter={FILTERS['docx_lists_to_latex']}")

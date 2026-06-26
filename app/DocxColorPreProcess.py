@@ -86,18 +86,19 @@ def preprocess(docx_bytes: bytes) -> bytes:
 class _StyleSpec:
     """Lightweight value object describing a synthetic character style."""
 
-    __slots__ = ("bg", "fg", "highlight", "style_id")
+    __slots__ = ("bg", "fg", "highlight", "size", "style_id")
 
-    def __init__(self, style_id: str, fg: str | None, bg: str | None, highlight: str | None) -> None:
+    def __init__(self, style_id: str, fg: str | None, bg: str | None, highlight: str | None, size: str | None) -> None:
         self.style_id = style_id
         self.fg = fg
         self.bg = bg
         self.highlight = highlight
+        self.size = size
 
 
-def _style_id(fg: str | None, bg: str | None, highlight: str | None) -> str:
-    # Fixed FG/BG/HL ordering keeps the style id deterministic: the same
-    # color combination always produces the same id, which is what lets
+def _style_id(fg: str | None, bg: str | None, highlight: str | None, size: str | None) -> str:
+    # Fixed FG/BG/HL/SZ ordering keeps the style id deterministic: the same
+    # formatting combination always produces the same id, which is what lets
     # the Lua filter pattern-match the encoded segments back out and what
     # makes deduplication across runs work.
     parts = [STYLE_PREFIX]
@@ -107,12 +108,16 @@ def _style_id(fg: str | None, bg: str | None, highlight: str | None) -> str:
         parts.append(f"BG_{bg}")
     if highlight:
         parts.append(f"HL_{highlight}")
+    if size:
+        parts.append(f"SZ_{size}")
     return SEGMENT_SEPARATOR.join(parts)
 
 
 _COLOR_TAG = f"{{{W_NS}}}color"
 _SHD_TAG = f"{{{W_NS}}}shd"
 _HIGHLIGHT_TAG = f"{{{W_NS}}}highlight"
+_SZ_TAG = f"{{{W_NS}}}sz"
+_SZCS_TAG = f"{{{W_NS}}}szCs"
 _RSTYLE_TAG = f"{{{W_NS}}}rStyle"
 _RPR_TAG = f"{{{W_NS}}}rPr"
 _R_TAG = f"{{{W_NS}}}r"
@@ -120,12 +125,12 @@ _VAL_ATTR = f"{{{W_NS}}}val"
 _FILL_ATTR = f"{{{W_NS}}}fill"
 
 
-def _extract_run_colors(rpr: ET.Element) -> tuple[str | None, str | None, str | None]:
-    """Read fg/bg/highlight from a <w:rPr> element, normalising and filtering
-    out unusable values (theme references with no concrete value, the literal
+def _extract_run_colors(rpr: ET.Element) -> tuple[str | None, str | None, str | None, str | None]:
+    """Read fg/bg/highlight/size from a <w:rPr>, normalising and filtering out
+    unusable values (theme references with no concrete value, the literal
     keyword "auto", or highlight="none").
 
-    Three independent OOXML properties contribute:
+    Four independent OOXML properties contribute:
       * ``<w:color w:val="RRGGBB"/>``    — text (foreground) color
       * ``<w:shd w:fill="RRGGBB"/>``     — paragraph/run shading background;
         the fill is on the ``w:fill`` attribute, not ``w:val`` (which carries
@@ -133,14 +138,19 @@ def _extract_run_colors(rpr: ET.Element) -> tuple[str | None, str | None, str | 
       * ``<w:highlight w:val="yellow"/>`` — the legacy Word highlighter, whose
         value is a *named* color from a fixed palette ("yellow", "green",
         "cyan", ...), never a hex string
+      * ``<w:sz w:val="32"/>``           — font size in *half-points* (32 = 16pt);
+        pandoc's docx reader drops it, so it rides along in the synthetic style
+        like the colors do
     """
     color_el = rpr.find(_COLOR_TAG)
     shd_el = rpr.find(_SHD_TAG)
     highlight_el = rpr.find(_HIGHLIGHT_TAG)
+    sz_el = rpr.find(_SZ_TAG)
 
     fg = _normalize_hex(color_el.get(_VAL_ATTR)) if color_el is not None else None
     bg = _normalize_hex(shd_el.get(_FILL_ATTR)) if shd_el is not None else None
     highlight = highlight_el.get(_VAL_ATTR) if highlight_el is not None else None
+    size = _normalize_half_points(sz_el.get(_VAL_ATTR)) if sz_el is not None else None
 
     # "auto" means "use whatever the consumer's default is" (typically black
     # text on white background). Treating it as a real color would emit
@@ -154,11 +164,23 @@ def _extract_run_colors(rpr: ET.Element) -> tuple[str | None, str | None, str | 
     # editors emit it explicitly rather than omitting the element.
     if highlight == "none":
         highlight = None
-    return fg, bg, highlight
+    return fg, bg, highlight, size
+
+
+def _normalize_half_points(value: str | None) -> str | None:
+    """Return the run font size (OOXML half-points) as a bare integer string, or
+    None when absent/unparseable. The Lua filter halves it to points."""
+    if not value:
+        return None
+    try:
+        hp = int(value)
+    except ValueError:
+        return None
+    return str(hp) if hp > 0 else None
 
 
 def _replace_run_color_props(rpr: ET.Element, style_id: str) -> None:
-    """Strip <w:color>/<w:shd>/<w:highlight> from <w:rPr> and insert a
+    """Strip <w:color>/<w:shd>/<w:highlight>/<w:sz> from <w:rPr> and insert a
     single <w:rStyle> reference pointing at the synthetic style. Any
     existing <w:rStyle> is replaced (see module docstring).
 
@@ -168,7 +190,7 @@ def _replace_run_color_props(rpr: ET.Element, style_id: str) -> None:
     no longer carry the synthetic-style hint either, defeating the whole
     pipeline.
     """
-    for tag in (_COLOR_TAG, _SHD_TAG, _HIGHLIGHT_TAG, _RSTYLE_TAG):
+    for tag in (_COLOR_TAG, _SHD_TAG, _HIGHLIGHT_TAG, _SZ_TAG, _SZCS_TAG, _RSTYLE_TAG):
         for el in rpr.findall(tag):
             rpr.remove(el)
     new_rstyle = ET.Element(_RSTYLE_TAG, {_VAL_ATTR: style_id})
@@ -196,12 +218,12 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
         if rpr is None:
             # No run-properties element means no direct color formatting.
             continue
-        fg, bg, highlight = _extract_run_colors(rpr)
-        if not (fg or bg or highlight):
+        fg, bg, highlight, size = _extract_run_colors(rpr)
+        if not (fg or bg or highlight or size):
             continue
 
-        style_id = _style_id(fg, bg, highlight)
-        styles_used[style_id] = _StyleSpec(style_id, fg, bg, highlight)
+        style_id = _style_id(fg, bg, highlight, size)
+        styles_used[style_id] = _StyleSpec(style_id, fg, bg, highlight, size)
         _replace_run_color_props(rpr, style_id)
 
     # Skip the re-serialize roundtrip when nothing changed. ET.tostring
@@ -279,4 +301,7 @@ def _build_style_element(spec: _StyleSpec) -> ET.Element:
         )
     if spec.highlight:
         ET.SubElement(rpr, f"{{{W_NS}}}highlight", {f"{{{W_NS}}}val": spec.highlight})
+    if spec.size:
+        ET.SubElement(rpr, f"{{{W_NS}}}sz", {f"{{{W_NS}}}val": spec.size})
+        ET.SubElement(rpr, f"{{{W_NS}}}szCs", {f"{{{W_NS}}}val": spec.size})
     return style

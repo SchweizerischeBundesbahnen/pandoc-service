@@ -126,6 +126,35 @@ def test_preprocess_rewrites_highlight_preserving_named_value():
     assert "PandocColor__HL_yellow" in _style_ids(_styles(result))
 
 
+def test_preprocess_captures_font_size():
+    """Pandoc's docx reader drops run <w:sz>, so a size-only run is rewritten to
+    a synthetic style carrying the half-point size (32 = 16pt)."""
+    blob = _pack(
+        {
+            "word/document.xml": _doc(_run('<w:sz w:val="32"/><w:szCs w:val="32"/>', "big")),
+            "word/styles.xml": EMPTY_STYLES_XML,
+        }
+    )
+
+    result = DocxColorPreProcess.preprocess(blob)
+
+    body = _body(result)
+    assert body.find(f".//{{{W_NS}}}sz") is None, "direct <w:sz> must be stripped from the run"
+    assert _rstyle_vals(body) == ["PandocColor__SZ_32"]
+    assert "PandocColor__SZ_32" in _style_ids(_styles(result))
+
+
+def test_preprocess_combines_color_and_size():
+    blob = _pack(
+        {
+            "word/document.xml": _doc(_run('<w:color w:val="FF0000"/><w:sz w:val="20"/>', "x")),
+            "word/styles.xml": EMPTY_STYLES_XML,
+        }
+    )
+    body = _body(DocxColorPreProcess.preprocess(blob))
+    assert _rstyle_vals(body) == ["PandocColor__FG_FF0000__SZ_20"]
+
+
 def test_preprocess_combines_fg_bg_highlight_into_single_style():
     """A run with all three properties becomes a single combined style.
     Ordering of segments is deterministic: FG, BG, HL.

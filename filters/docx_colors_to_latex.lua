@@ -120,10 +120,11 @@ local function hoist_for_hl(content)
   end
 end
 
--- Parse the synthetic style name into a {fg, bg, hl} table, or return nil
+-- Parse the synthetic style name into a {fg, bg, hl, sz} table, or return nil
 -- if it does not match our naming scheme. Segments are separated by "__".
--- Each segment is "<KEY>_<value>" with KEY in {FG, BG, HL} and value with
--- no internal underscore (6-char hex or a Word highlight identifier).
+-- Each segment is "<KEY>_<value>" with KEY in {FG, BG, HL, SZ} and value with
+-- no internal underscore (6-char hex, a Word highlight identifier, or — for
+-- SZ — the font size in half-points).
 local function parse_style(name)
   if name:sub(1, #STYLE_PREFIX) ~= STYLE_PREFIX then
     return nil
@@ -136,22 +137,61 @@ local function parse_style(name)
       props.bg = value
     elseif key == "HL" then
       props.hl = value
+    elseif key == "SZ" then
+      props.sz = value
     end
   end
   return props
 end
 
+-- Build a "{\fontsize{pt}{baselineskip}\selectfont " opener for a half-point
+-- size, or nil when the value isn't a clean positive integer. pt = half-points
+-- / 2; the baseline skip follows LaTeX's usual 1.2x leading. string.format with
+-- %g keeps the trust boundary tight — only digits and a dot reach the output.
+local function font_size_open(half_points)
+  local hp = tonumber(half_points)
+  if not hp or hp <= 0 or hp ~= math.floor(hp) then
+    return nil
+  end
+  local pt = hp / 2
+  return "{\\fontsize{" .. string.format("%g", pt) .. "}{" .. string.format("%g", pt * 1.2) .. "}\\selectfont "
+end
+
 local filter = {}
 
--- Inject \usepackage{soul} into header-includes so the document preamble
--- loads soul before \hl appears in the body. Only meaningful when the
--- target writer is LaTeX/PDF; for any other writer this is a harmless
--- no-op (the metadata is simply ignored by non-LaTeX writers).
+-- Inject the LaTeX preamble fixups this pipeline needs into header-includes.
+-- Only meaningful when the target writer is LaTeX/PDF; for any other writer
+-- this is a harmless no-op (the metadata is ignored by non-LaTeX writers).
+--
+--   * \usepackage{soul} — defines \hl (the line-breakable highlight we emit
+--     for background/highlight runs below) and pandoc's \ul/\st for
+--     underline/strikeout.
+--   * pandoc renders Underline/Strikeout as soul's \ul/\st, but soul
+--     reconstructs its argument character-by-character and aborts with
+--     "Reconstruction failed" inside the LR boxes that
+--     \textsuperscript/\textsubscript build — which happens as soon as
+--     underlined/struck text sits inside a <sup>/<sub>. ulem's \uline/\sout are
+--     box-safe, so we route \ul/\st to them — but ONLY inside super/subscripts,
+--     by redefining \textsuperscript/\textsubscript to swap the soul commands
+--     locally. Globally, \ul/\st stay soul, so ordinary underlined/struck text
+--     renders and line-breaks exactly as before (no document-wide change).
+--     \hl has no box-safe drop-in, so inside a super/subscript we drop the
+--     highlight (keep the text) — rare, and only the highlight is affected.
+local PREAMBLE = table.concat({
+  "\\usepackage{soul}",
+  "\\usepackage[normalem]{ulem}",
+  "\\providecommand{\\pdcDropHl}[1]{#1}",
+  "\\let\\pdcOldSuperscript\\textsuperscript",
+  "\\let\\pdcOldSubscript\\textsubscript",
+  "\\renewcommand{\\textsuperscript}[1]{\\pdcOldSuperscript{\\let\\ul\\uline\\let\\st\\sout\\let\\hl\\pdcDropHl#1}}",
+  "\\renewcommand{\\textsubscript}[1]{\\pdcOldSubscript{\\let\\ul\\uline\\let\\st\\sout\\let\\hl\\pdcDropHl#1}}",
+}, "\n")
+
 function filter.Meta(meta)
   if not FORMAT:match("latex") then
     return nil
   end
-  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", "\\usepackage{soul}") })
+  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ soul_block })
@@ -188,11 +228,20 @@ function filter.Span(el)
   end
   local apply_bg = hl_inner ~= nil
 
-  if not props.fg and not apply_bg then
+  local size_open = props.sz and font_size_open(props.sz) or nil
+
+  if not props.fg and not apply_bg and not size_open then
     return nil
   end
 
   local open, close = "", ""
+
+  -- Outermost: font size. \fontsize ... \selectfont changes the size for the
+  -- rest of the group; it wraps everything else so colour/highlight inherit it.
+  if size_open then
+    open = open .. size_open
+    close = "}" .. close
+  end
 
   -- Outer: foreground color. \textcolor is a directive (no box, no
   -- padding, no line-break inhibition); applied first so it wraps the
