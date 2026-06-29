@@ -23,7 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
+from . import DocxLatexPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
 from .chromium_manager import get_chromium_manager
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
@@ -647,30 +647,18 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if isinstance(source_data, str):
         source_data = source_data.encode("utf-8")
 
-    # Pandoc's DOCX reader drops direct run-level color formatting
-    # (<w:color>, <w:shd>, <w:highlight>) before producing the AST, so a
-    # post-reader Lua filter cannot recover those properties. For
-    # targets that ultimately produce LaTeX (PDF, latex), rewrite the
-    # colored runs in the source as references to synthetic character
-    # styles, then ask pandoc to surface those style references via
-    # docx+styles, and let the docx_colors_to_latex Lua filter emit the
-    # matching \textcolor / \colorbox raw LaTeX.
+    # Pandoc's DOCX reader drops several direct formatting properties before
+    # producing the AST — run colour/size (<w:color>/<w:shd>/<w:highlight>/<w:sz>),
+    # paragraph alignment (<w:jc>) and indent (<w:ind>), and it flattens
+    # level-skipping lists. For targets that ultimately produce LaTeX (PDF,
+    # latex) we rewrite the source so those properties survive (synthetic
+    # character/paragraph styles surfaced via docx+styles, plus <w:ilvl>
+    # sentinels), and the docx_*_to_latex Lua filters re-emit them. All three
+    # rewrites run in a single unzip/re-zip pass (DocxLatexPreProcess) so an
+    # image-heavy document's media is recompressed once, not three times.
     apply_docx_latex_filters = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     if apply_docx_latex_filters:
-        source_data = DocxColorPreProcess.preprocess(source_data)
-        # Same docx->latex gate: pandoc's docx reader drops paragraph alignment
-        # (<w:jc>) and collapses left indentation (<w:ind w:left>) into a single
-        # BlockQuote before the AST. Rewrite those paragraphs as references to
-        # synthetic paragraph styles that survive via docx+styles, and let the
-        # docx_paragraphs_to_latex Lua filter emit the matching \leftskip /
-        # \centering / \raggedleft. See app/DocxParagraphPreProcess.py.
-        source_data = DocxParagraphPreProcess.preprocess(source_data)
-        # Same gate: pandoc's docx reader flattens "irregular" lists (a deeper
-        # level nested directly inside a shallower one) so the deeper item loses
-        # its indentation. Tag each list paragraph's true <w:ilvl> so the
-        # docx_lists_to_latex Lua filter can restore the indentation. See
-        # app/DocxListLevelPreProcess.py.
-        source_data = DocxListLevelPreProcess.preprocess(source_data)
+        source_data = DocxLatexPreProcess.preprocess(source_data)
 
     # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another
     # list so pandoc's HTML reader doesn't synthesize an implicit list item

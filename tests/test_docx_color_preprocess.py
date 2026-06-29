@@ -144,6 +144,24 @@ def test_preprocess_captures_font_size():
     assert "PandocColor__SZ_32" in _style_ids(_styles(result))
 
 
+def test_preprocess_preserves_distinct_complex_script_size():
+    """A run whose complex-script size (w:szCs) differs from w:sz must keep both
+    values — szCs is encoded separately, not overwritten with the w:sz value."""
+    blob = _pack(
+        {
+            "word/document.xml": _doc(_run('<w:sz w:val="32"/><w:szCs w:val="28"/>', "x")),
+            "word/styles.xml": EMPTY_STYLES_XML,
+        }
+    )
+    result = DocxColorPreProcess.preprocess(blob)
+    assert _rstyle_vals(_body(result)) == ["PandocColor__SZ_32__SZCS_28"]
+    # The registered style keeps the distinct szCs value (28), not 32.
+    styles = _styles(result)
+    style = next(el for el in styles.findall(f"{{{W_NS}}}style") if el.get(f"{{{W_NS}}}styleId") == "PandocColor__SZ_32__SZCS_28")
+    assert style.find(f".//{{{W_NS}}}sz").get(f"{{{W_NS}}}val") == "32"
+    assert style.find(f".//{{{W_NS}}}szCs").get(f"{{{W_NS}}}val") == "28"
+
+
 def test_preprocess_combines_color_and_size():
     blob = _pack(
         {
