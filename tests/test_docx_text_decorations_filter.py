@@ -108,3 +108,27 @@ def test_foreground_color_preserved_inside_decoration():
     latex = _native_to_latex(native, DECO, COLORS)
     assert "\\uline{" in latex and "\\textcolor[HTML]{FF0000}" in latex, latex
     assert "\\hl" not in latex, latex
+
+
+def test_inter_span_space_inherits_shared_highlight():
+    """Two adjacent runs sharing a background leave the Space pandoc lifts out
+    between them un-highlighted — a visible gap in the band. The space must be
+    wrapped in the shared highlight so the band stays continuous (rendered as a
+    boxed space abutting its neighbours)."""
+    native = '[ Para [ Span ("",[],[("custom-style","PandocColor__BG_99FFFF")]) [ Str "injected" ] , Space , Span ("",[],[("custom-style","PandocColor__BG_99FFFF")]) [ Strong [ Str "humour" ] ] ] ]'
+    latex = _native_to_latex(native, DECO, COLORS)
+    # Three highlight boxes: word, the bridged space, word — no un-highlighted gap.
+    assert latex.count("\\colorbox[HTML]{99FFFF}") == 3, latex
+    # The bridge box must keep its space: \strut{} (not "\strut ") so the space
+    # isn't swallowed as the control word's terminator (would jam the words).
+    assert "\\strut{} }" in latex, f"bridge space was lost (words would jam): {latex}"
+    assert "\\strut{} injected" not in latex  # the word box has no spurious leading space
+
+
+def test_inter_span_space_not_filled_when_backgrounds_differ():
+    """Only a SHARED background bridges the space; differing backgrounds (or a
+    plain neighbour) leave the space alone."""
+    native = '[ Para [ Span ("",[],[("custom-style","PandocColor__BG_99FFFF")]) [ Str "a" ] , Space , Span ("",[],[("custom-style","PandocColor__BG_FF0000")]) [ Str "b" ] ] ]'
+    latex = _native_to_latex(native, DECO, COLORS)
+    # Two highlight boxes (a, b); the differing-background space is left plain.
+    assert latex.count("\\colorbox[HTML]") == 2, latex

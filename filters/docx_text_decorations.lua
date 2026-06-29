@@ -31,6 +31,28 @@ local ULEM_MACRO = { Underline = "\\uline", Strikeout = "\\sout" }
 -- Application order, outermost first: underline must enclose strikeout.
 local DECO_ORDER = { "Underline", "Strikeout" }
 
+-- A \colorbox is one unbreakable hbox, so a long highlighted run inside a
+-- decoration would overflow the text block (a metres-wide "Overfull \hbox").
+-- Only box short runs; longer ones drop the background (kept line-breakable),
+-- matching docx_colors_to_latex's MAX_BOXABLE_LEN.
+local MAX_BOXABLE_LEN = 60
+
+-- Total length of the plain text in `inlines` (Str chars + one per Space /
+-- SoftBreak), recursing into wrappers.
+local function content_text_length(inlines)
+  local len = 0
+  for _, inline in ipairs(inlines) do
+    if inline.t == "Str" then
+      len = len + #inline.text
+    elseif inline.t == "Space" or inline.t == "SoftBreak" then
+      len = len + 1
+    elseif inline.content then
+      len = len + content_text_length(inline.content)
+    end
+  end
+  return len
+end
+
 -- Plain == only characters/spaces. LineBreak is deliberately excluded: a run
 -- with breaks is handled by the splitting ulem path, never by soul.
 local function is_plain(inlines)
@@ -58,10 +80,20 @@ local function boxify_highlight(inlines)
     if cs and cs:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       local hex = cs:match("__BG_(%x%x%x%x%x%x)")
       inline.attributes["custom-style"] = cs:gsub("__BG_[^_]+", ""):gsub("__HL_[^_]+", "")
+      if hex and hex:upper() == "FFFFFF" then
+        hex = nil -- white is the page colour (invisible); never box it
+      end
+      if hex and content_text_length(inline.content) > MAX_BOXABLE_LEN then
+        hex = nil -- too long to box safely; drop the background, keep the text
+      end
       if hex then
         -- \fboxsep=0pt so the box hugs the text (no padding around the
-        -- highlight); wrapped in a group so the setting is local.
-        out[#out + 1] = pandoc.RawInline("latex", "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. hex .. "}{")
+        -- highlight); wrapped in a group so the setting is local. The leading
+        -- \strut forces the box to the full line height/depth, matching soul's
+        -- \hl band (which is strut-based) — without it the box would hug only
+        -- this run's glyph bbox and sit visibly lower/shorter than the \hl
+        -- bands of adjacent non-decorated highlighted runs.
+        out[#out + 1] = pandoc.RawInline("latex", "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. hex .. "}{\\strut{}")
         out[#out + 1] = inline
         out[#out + 1] = pandoc.RawInline("latex", "}}")
       else
@@ -192,12 +224,58 @@ local function decorate(el)
   return render_decorations(boxify_highlight(inner), set)
 end
 
+-- The highlight key (__BG_<hex> or __HL_<name>) carried by a PandocColor span,
+-- or nil if the inline isn't a highlighted span.
+local function bg_key(inline)
+  if inline.t ~= "Span" or not inline.attributes then
+    return nil
+  end
+  local cs = inline.attributes["custom-style"]
+  if not cs or cs:sub(1, #STYLE_PREFIX) ~= STYLE_PREFIX then
+    return nil
+  end
+  local key = cs:match("__BG_%x+") or cs:match("__HL_%a+")
+  -- White is the page colour (invisible); never bridge an inter-word gap with
+  -- it — doing so would only add non-breakable white boxes.
+  if key and key:upper() == "__BG_FFFFFF" then
+    return nil
+  end
+  return key
+end
+
+-- Highlight is emitted per source run, so two adjacent runs that share the same
+-- background leave the inter-word Space (which pandoc lifts out between the two
+-- spans) un-highlighted — a visible gap in the background band. Wrap such a
+-- Space in the shared highlight so the band stays continuous. docx_colors_to_latex
+-- then renders it as \hl{ } abutting its neighbours.
+local function fill_highlight_gaps(inlines)
+  if not FORMAT:match("latex") then
+    return nil
+  end
+  local changed = false
+  for i = 2, #inlines - 1 do
+    local cur = inlines[i]
+    if cur.t == "Space" or cur.t == "SoftBreak" then
+      local key = bg_key(inlines[i - 1])
+      if key and key == bg_key(inlines[i + 1]) then
+        inlines[i] = pandoc.Span({ cur }, pandoc.Attr("", {}, { ["custom-style"] = STYLE_PREFIX .. key }))
+        changed = true
+      end
+    end
+  end
+  return changed and inlines or nil
+end
+
 local filter = {}
 
 -- Top-down: the outermost decoration must be reached first so peel() sees the
 -- whole Underline/Strikeout chain as AST nodes (bottom-up would convert the
 -- inner one to raw ulem before the outer could reorder it).
 filter.traverse = "topdown"
+
+function filter.Inlines(inlines)
+  return fill_highlight_gaps(inlines)
+end
 
 function filter.Underline(el)
   return decorate(el)
