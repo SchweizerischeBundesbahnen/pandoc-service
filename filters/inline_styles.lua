@@ -658,6 +658,11 @@ end
 -- { sz = <eighths>, val = <ooxml_style>, color = <6hex> }, or nil.
 local function parse_border(value)
   if not value then return nil end
+  -- Collapse spaces inside rgb()/hsl() so the tokeniser below doesn't
+  -- split "rgb(255, 0, 0)" into separate fragments.
+  value = value:gsub("(%a+)(%b())", function(fn, parens)
+    return fn .. parens:gsub("%s", "")
+  end)
   local sz, val, color
   for p in value:gmatch("%S+") do
     local lp = p:lower()
