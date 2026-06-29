@@ -758,7 +758,13 @@ local function block_to_ooxml(block, jc_val)
       if r.t == "RawInline" and r.format == "openxml" then
         run_parts[#run_parts + 1] = r.text
       else
-        -- Best-effort for nodes walk() couldn't serialise (Link, Image, …)
+        -- Known limitation: Link and Image nodes returned by walk() are not
+        -- RawInline("openxml") — they need writer-level relationship handling
+        -- that raw OOXML can't reproduce. Links lose their hyperlink target
+        -- (text is preserved) and Images are reduced to alt-text. Nested
+        -- tables and lists also hit this path. This is acceptable for the
+        -- opt-in table-style feature; the alternative would be to fall back
+        -- the entire table to the default writer, losing all cell styling.
         run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
           .. escape_xml(pandoc.utils.stringify(r))
           .. "</w:t></w:r>"
@@ -897,9 +903,20 @@ function filter.Table(tbl)
   local xml = {}
   xml[#xml + 1] = "<w:tbl>"
 
-  -- Table properties: 100 % width, autofit layout.
+  -- Table properties: 100 % width, autofit layout, default single-line
+  -- borders matching Pandoc's default DOCX writer output. Without these,
+  -- tables that only set background-color (no per-cell border) would
+  -- render with no gridlines at all.
   xml[#xml + 1] = "<w:tblPr>"
   xml[#xml + 1] = '<w:tblW w:w="5000" w:type="pct"/>'
+  xml[#xml + 1] = "<w:tblBorders>"
+  xml[#xml + 1] = '<w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = "</w:tblBorders>"
   xml[#xml + 1] = '<w:tblLayout w:type="autofit"/>'
   xml[#xml + 1] = "</w:tblPr>"
 

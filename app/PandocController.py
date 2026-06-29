@@ -73,8 +73,6 @@ ALLOWED_PANDOC_OPTIONS = [
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
     "--toc",
-    "-M",
-    "preserve_table_styles=true",
 ]
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
