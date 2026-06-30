@@ -11,37 +11,28 @@
 -- survive into the PDF/LaTeX output:
 --
 --   FG (color)      -> \textcolor[HTML]{RRGGBB}{...}
---   BG (shading)    -> \hl{...} via soul + \sethlcolor   (only for plain text)
---   HL (highlight)  -> \hl{...} via soul + \sethlcolor   (only for plain text)
+--   BG (shading)    -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
+--   HL (highlight)  -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
+--   SZ (font size)  -> {\fontsize{pt}{baseline}\selectfont ...}
 --
--- Why \hl and not \colorbox: \colorbox produces a non-breakable hbox, so any
--- colored run longer than a line overflows the right margin (paragraphs end
--- up outside the page), and wrapping an image in \colorbox adds padding that
--- pushes wide images past \textwidth. soul's \hl is line-breakable.
+-- Why \colorbox and not soul's \hl: soul's \hl band hugs the glyph height, so a
+-- plain-text highlight sits shorter and lower than the box we are forced to use
+-- when a highlight ALSO carries underline/strikeout (soul and ulem cannot
+-- compose, so decorated highlight must be a box). Mixing the two left a visible
+-- step in the background wherever an underlined word met a non-underlined one.
+-- Boxing every highlight with a leading \strut gives one uniform band height
+-- across the whole run (the highlighter-pen look) and a \colorbox tolerates any
+-- inline content, so bold/italic/underlined highlights need no special casing.
 --
--- Why \textcolor is OUTSIDE \hl: soul's \hl reconstructs the content
--- character-by-character and crashes on most macros it has not been told
--- about (\textcolor, \href, \textbf, ...). pdflatex emits "Argument of
--- \textcolor has an extra }" when the macro is inside \hl. Putting the
--- color directive outside means \hl only sees plain text characters,
--- which is the only input shape it reliably typesets.
+-- The deliberate trade-off: a \colorbox cannot break across a line, so a
+-- highlighted run no longer hyphenates, and a run longer than MAX_BOXABLE_LEN
+-- (or one containing an image/link/math/raw LaTeX — see BOX_UNSAFE) drops its
+-- background rather than overflow the margin. The foreground color is still
+-- applied in that case (\textcolor is line-breakable and harmless around
+-- images), so only the shading is lost on those rare long/complex runs.
 --
--- Bold/italic highlighted text: the same hoist-it-outside trick extends to
--- the inline-formatting macros. When the whole span content is uniformly
--- wrapped in Emph/Strong/Superscript/Subscript (the common case — a fully
--- italic or bold highlighted phrase), we peel those wrappers and emit them
--- as macros AROUND \hl (\emph{...\hl{plain}...}), so \hl still sees only
--- plain text. hoist_for_hl() does this recursively, so bold-italic
--- (Strong[Emph[...]]) hoists both. We deliberately do NOT hoist
--- Underline/Strikeout: soul's own \ul/\st cannot nest inside \hl, and the
--- core \underline is not line-breakable.
---
--- Why we still drop \hl for genuinely mixed content: if the highlight range
--- only partially overlaps a formatting run (e.g. [Str "a", Emph "b"]) or
--- contains a \href/\includegraphics/math, there is no single macro to hoist
--- and soul cannot wrap it. hoist_for_hl() returns nil in that case and we
--- fall back to dropping the highlight and keeping the foreground color
--- alone — which \textcolor preserves losslessly, including around images.
+-- \textcolor and \fontsize wrap OUTSIDE the box so they apply to the whole run
+-- regardless of whether it ends up boxed.
 
 -- Word's 16 named highlight colors (ECMA-376 17.18.40) -> RGB hex.
 local HIGHLIGHT_HEX = {
@@ -65,65 +56,79 @@ local HIGHLIGHT_HEX = {
 
 local STYLE_PREFIX = "PandocColor"
 
--- The only AST inline node types soul's \hl can wrap safely. Pandoc's
--- LaTeX writer emits macros for everything else (\textbf for Strong,
--- \emph for Emph, \href for Link, \includegraphics for Image, math
--- delimiters, raw LaTeX, ...), and soul cannot parse those.
-local SOUL_SAFE_INLINES = {
-  Str = true,
-  Space = true,
-  SoftBreak = true,
+-- Every highlight (background shading or Word highlight) is rendered as a
+-- full-height \colorbox rather than soul's \hl. soul's \hl band hugs the glyph
+-- height, so a plain-text highlight (e.g. "de") sits visibly shorter and lower
+-- than the box used for a highlight that also carries underline/strikeout (soul
+-- and ulem can't compose, so decorated highlight MUST be a box). Mixing the two
+-- left a step in the background band wherever an underlined word abutted a
+-- non-underlined one. Boxing everything with a leading \strut gives one uniform
+-- band height across the whole run — the highlighter-pen look — with no steps.
+-- The trade-off (chosen deliberately): a \colorbox can't break across lines, so
+-- a highlighted run no longer hyphenates and a run longer than MAX_BOXABLE_LEN
+-- drops its background rather than overflow the margin.
+
+-- Inline types that must NOT be wrapped in a \colorbox: a box is unbreakable
+-- and adds no value here — an Image gets padded/pushed past \textwidth, and
+-- Link/Code/Math/raw LaTeX can carry their own boxes or fragile macros. When a
+-- highlight's content contains any of these we drop the background (keeping the
+-- foreground colour, which is harmless around images); otherwise it is plain
+-- text wrapped in decorations/inline-formatting (Underline, Strikeout, Emph,
+-- Strong, sub/superscript, nested Spans), which boxes safely.
+local BOX_UNSAFE = {
+  Image = true,
+  Link = true,
+  Code = true,
+  Math = true,
+  RawInline = true,
+  Note = true,
+  Cite = true,
+  -- A \colorbox cannot break, so a hard line break inside it (\\ ) would either
+  -- be swallowed or overflow; such content must not be boxed.
   LineBreak = true,
 }
 
-local function content_is_soul_safe(content)
+-- A \colorbox is a single unbreakable hbox: content wider than the text block
+-- overflows the margin (an "Overfull \hbox ... too wide" that runs metres off
+-- the page). Most highlighted runs are a word or a short phrase, so we only box
+-- runs whose text is at most this many characters; a longer run drops its
+-- background rather than overflow. ~60 chars is well under one \textwidth line
+-- at body size.
+local MAX_BOXABLE_LEN = 60
+
+-- Total length of the plain text in `content` (Str chars + one per Space /
+-- SoftBreak), recursing into wrappers. Used only to keep \colorbox runs short.
+local function content_text_length(content)
+  local len = 0
   for _, inline in ipairs(content) do
-    if not SOUL_SAFE_INLINES[inline.t] then
+    if inline.t == "Str" then
+      len = len + #inline.text
+    elseif inline.t == "Space" or inline.t == "SoftBreak" then
+      len = len + 1
+    elseif inline.content then
+      len = len + content_text_length(inline.content)
+    end
+  end
+  return len
+end
+
+local function content_is_boxable(content)
+  for _, inline in ipairs(content) do
+    if BOX_UNSAFE[inline.t] then
+      return false
+    end
+    if inline.content and not content_is_boxable(inline.content) then
       return false
     end
   end
   return true
 end
 
--- Inline-formatting nodes whose LaTeX macro uniformly wraps the node's whole
--- content and is safe to place OUTSIDE soul's \hl. These are core LaTeX macros
--- (not soul commands), so nesting them around \hl is fine. Underline/Strikeout
--- are intentionally absent — see the header comment.
-local HOISTABLE = {
-  Emph        = { "\\emph{", "}" },
-  Strong      = { "\\textbf{", "}" },
-  Superscript = { "\\textsuperscript{", "}" },
-  Subscript   = { "\\textsubscript{", "}" },
-}
-
--- Peel uniform formatting wrappers off `content` so soul's \hl can wrap the
--- plain text inside. Returns (open, close, inner_inlines) where open/close are
--- the hoisted macros to place around \hl, and inner_inlines is the soul-safe
--- remainder to render inside it. Returns nil when the content is mixed/partial
--- or contains something \hl can't handle (caller then drops the highlight).
-local function hoist_for_hl(content)
-  local open, close = "", ""
-  while true do
-    if content_is_soul_safe(content) then
-      return open, close, content
-    end
-    -- Only a single wrapper covering the entire content can be hoisted; a list
-    -- with siblings means the formatting is partial and soul can't wrap it.
-    if #content == 1 and HOISTABLE[content[1].t] then
-      local macro = HOISTABLE[content[1].t]
-      open = open .. macro[1]
-      close = macro[2] .. close
-      content = content[1].content
-    else
-      return nil
-    end
-  end
-end
-
--- Parse the synthetic style name into a {fg, bg, hl} table, or return nil
+-- Parse the synthetic style name into a {fg, bg, hl, sz} table, or return nil
 -- if it does not match our naming scheme. Segments are separated by "__".
--- Each segment is "<KEY>_<value>" with KEY in {FG, BG, HL} and value with
--- no internal underscore (6-char hex or a Word highlight identifier).
+-- Each segment is "<KEY>_<value>" with KEY in {FG, BG, HL, SZ} and value with
+-- no internal underscore (6-char hex, a Word highlight identifier, or — for
+-- SZ — the font size in half-points).
 local function parse_style(name)
   if name:sub(1, #STYLE_PREFIX) ~= STYLE_PREFIX then
     return nil
@@ -136,22 +141,74 @@ local function parse_style(name)
       props.bg = value
     elseif key == "HL" then
       props.hl = value
+    elseif key == "SZ" then
+      props.sz = value
     end
   end
   return props
 end
 
+-- Build a "{\fontsize{pt}{baselineskip}\selectfont " opener for a half-point
+-- size, or nil when the value isn't a clean positive integer. pt = half-points
+-- / 2; the baseline skip follows LaTeX's usual 1.2x leading. string.format with
+-- %g keeps the trust boundary tight — only digits and a dot reach the output.
+local function font_size_open(half_points)
+  local hp = tonumber(half_points)
+  if not hp or hp <= 0 or hp ~= math.floor(hp) then
+    return nil
+  end
+  local pt = hp / 2
+  return "{\\fontsize{" .. string.format("%g", pt) .. "}{" .. string.format("%g", pt * 1.2) .. "}\\selectfont "
+end
+
 local filter = {}
 
--- Inject \usepackage{soul} into header-includes so the document preamble
--- loads soul before \hl appears in the body. Only meaningful when the
--- target writer is LaTeX/PDF; for any other writer this is a harmless
--- no-op (the metadata is simply ignored by non-LaTeX writers).
+-- Inject the LaTeX preamble fixups this pipeline needs into header-includes.
+-- Only meaningful when the target writer is LaTeX/PDF; for any other writer
+-- this is a harmless no-op (the metadata is ignored by non-LaTeX writers).
+--
+--   * \usepackage{soul} — defines \hl (the line-breakable highlight we emit
+--     for background/highlight runs below) and pandoc's \ul/\st for
+--     underline/strikeout.
+--   * pandoc renders Underline/Strikeout as soul's \ul/\st, but soul
+--     reconstructs its argument character-by-character and aborts with
+--     "Reconstruction failed" inside the LR boxes that
+--     \textsuperscript/\textsubscript build — which happens as soon as
+--     underlined/struck text sits inside a <sup>/<sub>. ulem's \uline/\sout are
+--     box-safe, so we route \ul/\st to them — but ONLY inside super/subscripts,
+--     by redefining \textsuperscript/\textsubscript to swap the soul commands
+--     locally. Globally, \ul/\st stay soul, so ordinary underlined/struck text
+--     renders and line-breaks exactly as before (no document-wide change).
+--     \hl has no box-safe drop-in, so inside a super/subscript we drop the
+--     highlight (keep the text) — rare, and only the highlight is affected.
+local PREAMBLE = table.concat({
+  "\\usepackage{soul}",
+  "\\usepackage[normalem]{ulem}",
+  -- Pin the underline depth/thickness for BOTH underline mechanisms so every
+  -- underline sits at the same place regardless of font size or which mechanism
+  -- drew it. Plain underlined text uses soul's \ul (it hyphenates); underlined
+  -- text carrying other formatting uses ulem's \uline (it composes with macros).
+  -- Both default to a depth that scales with the current font, so an underline
+  -- under a larger run dropped lower than its normal-size neighbour — a visible
+  -- step where the formatting changed. Fixing ulem's \ULdepth and soul's \setul
+  -- to the same absolute 1.6pt/0.4pt keeps the rule level across size changes and
+  -- across the soul/ulem boundary. 1.6pt is the body-size auto value, so ordinary
+  -- underlines are unchanged.
+  "\\setlength{\\ULdepth}{1.6pt}",
+  "\\renewcommand{\\ULthickness}{0.4pt}",
+  "\\setul{1.6pt}{0.4pt}",
+  "\\providecommand{\\pdcDropHl}[1]{#1}",
+  "\\let\\pdcOldSuperscript\\textsuperscript",
+  "\\let\\pdcOldSubscript\\textsubscript",
+  "\\renewcommand{\\textsuperscript}[1]{\\pdcOldSuperscript{\\let\\ul\\uline\\let\\st\\sout\\let\\hl\\pdcDropHl#1}}",
+  "\\renewcommand{\\textsubscript}[1]{\\pdcOldSubscript{\\let\\ul\\uline\\let\\st\\sout\\let\\hl\\pdcDropHl#1}}",
+}, "\n")
+
 function filter.Meta(meta)
   if not FORMAT:match("latex") then
     return nil
   end
-  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", "\\usepackage{soul}") })
+  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ soul_block })
@@ -178,48 +235,58 @@ function filter.Span(el)
   if not bg_color and props.hl then
     bg_color = HIGHLIGHT_HEX[props.hl]
   end
-
-  -- Highlight wrapper only when soul can handle the content shape. We peel
-  -- any uniform Emph/Strong/... wrappers out so \hl sees plain text; hl_inner
-  -- is what goes inside \hl (the original content minus the hoisted wrappers).
-  local hl_macros_open, hl_macros_close, hl_inner
-  if bg_color then
-    hl_macros_open, hl_macros_close, hl_inner = hoist_for_hl(el.content)
+  -- A white background is the page colour: invisible, and Polarion stamps
+  -- background-color:#FFFFFF on virtually every run. Boxing it would wrap most
+  -- of the document in non-breakable \colorboxes (lines overflow the margin),
+  -- so treat white as no highlight at all.
+  if bg_color and bg_color:upper() == "FFFFFF" then
+    bg_color = nil
   end
-  local apply_bg = hl_inner ~= nil
 
-  if not props.fg and not apply_bg then
+  -- Highlight is a full-height \colorbox (uniform band, no soul \hl). We can
+  -- only box content a box won't break or distort, and only while it is short
+  -- enough to fit a line; otherwise the background is dropped (the foreground
+  -- colour is still applied, which is harmless and line-breakable).
+  local box_bg = bg_color ~= nil and content_is_boxable(el.content) and content_text_length(el.content) <= MAX_BOXABLE_LEN
+
+  local size_open = props.sz and font_size_open(props.sz) or nil
+
+  if not props.fg and not box_bg and not size_open then
     return nil
   end
 
   local open, close = "", ""
 
-  -- Outer: foreground color. \textcolor is a directive (no box, no
-  -- padding, no line-break inhibition); applied first so it wraps the
-  -- entire span including any formatting/highlight wrappers inside.
+  -- Outermost: font size. \fontsize ... \selectfont changes the size for the
+  -- rest of the group; it wraps everything else so colour/highlight inherit it.
+  if size_open then
+    open = open .. size_open
+    close = "}" .. close
+  end
+
+  -- Outer: foreground color. \textcolor is a directive (no box, no padding, no
+  -- line-break inhibition); applied first so it wraps the highlight box inside.
   if props.fg then
     open = open .. "\\textcolor[HTML]{" .. props.fg .. "}{"
     close = "}" .. close
   end
 
-  -- Middle + inner: inline-formatting macros hoisted out of \hl (\emph,
-  -- \textbf, ...) followed by the highlight itself. The braces around
-  -- \definecolor and \sethlcolor make the color binding local so other
-  -- highlighted spans can redefine "pdc_hl" without interference. \hl sees
-  -- only plain text characters (hoist_for_hl guarantees that). All emitted
-  -- together so the macro strings are only referenced when apply_bg is true.
-  if apply_bg then
-    open = open .. hl_macros_open .. "{\\definecolor{pdc_hl}{HTML}{" .. bg_color .. "}\\sethlcolor{pdc_hl}\\hl{"
-    close = "}}" .. hl_macros_close .. close
+  -- Inner: the highlight box. \fboxsep=0pt so it hugs the text horizontally and
+  -- a leading \strut forces full line height, so every highlighted run — plain,
+  -- bold, italic, underlined, struck — shares one uniform band height and the
+  -- background never steps. A \colorbox tolerates any inline content (unlike
+  -- soul's \hl), so no wrapper hoisting is needed.
+  if box_bg then
+    -- \strut{} (not "\strut ") forces full line height: the {} terminates the
+    -- control word so a following space — e.g. when this box bridges the gap
+    -- between two highlighted words and its whole content IS a space — is
+    -- typeset rather than swallowed as the macro's argument terminator.
+    open = open .. "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. bg_color .. "}{\\strut{}"
+    close = "}}" .. close
   end
 
-  -- When highlighting we render the peeled-down inner inlines (the hoisted
-  -- Emph/Strong are now macros in `open`/`close`, so re-emitting them here
-  -- would double them up). Otherwise render the original content untouched.
-  local body = apply_bg and hl_inner or el.content
-
   local result = { pandoc.RawInline("latex", open) }
-  for _, inline in ipairs(body) do
+  for _, inline in ipairs(el.content) do
     result[#result + 1] = inline
   end
   result[#result + 1] = pandoc.RawInline("latex", close)
