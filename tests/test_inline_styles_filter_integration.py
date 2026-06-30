@@ -1,8 +1,8 @@
 """End-to-end integration tests for filters/inline_styles.lua.
 
-These tests invoke a real `pandoc` binary with the lua filter loaded, then
-inspect the resulting DOCX package. They skip cleanly when pandoc is not on
-PATH so unit-test runs on dev machines without pandoc are unaffected.
+These tests convert HTML → DOCX through the pandoc-service container (which
+applies the lua filter automatically for HTML→DOCX conversions), then inspect
+the resulting DOCX package.
 
 Why an integration test (vs. mocked unit tests):
     The other tests for this filter mock subprocess.run and only verify that
@@ -14,54 +14,33 @@ Why an integration test (vs. mocked unit tests):
     file plugs that gap with a single, focused round-trip assertion.
 """
 
-import shutil
-import subprocess
-import tempfile
 import zipfile
-from pathlib import Path
+from io import BytesIO
 from xml.etree import ElementTree as ET
 
 import pytest
 
-PANDOC = shutil.which("pandoc")
-FILTER_PATH = Path(__file__).resolve().parents[1] / "filters" / "inline_styles.lua"
+from tests.test_container import TestParameters
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
-pytestmark = pytest.mark.skipif(
-    PANDOC is None or not FILTER_PATH.exists(),
-    reason="pandoc binary or filters/inline_styles.lua not available",
-)
+
+def _convert_html_to_docx(test_parameters: TestParameters, html: str) -> bytes:
+    """Convert HTML to DOCX via the pandoc-service container API.
+
+    Returns the raw DOCX bytes. Raises AssertionError if the service returns
+    a non-2xx status.
+    """
+    url = f"{test_parameters.base_url}/convert/html/to/docx"
+    response = test_parameters.request_session.post(url, data=html)
+    if response.status_code // 100 != 2:
+        raise AssertionError(f"pandoc-service returned {response.status_code}:\n{response.text}")
+    return response.content
 
 
-def _convert_html_to_docx(html: str, output_path: Path) -> None:
-    """Run pandoc directly with the local filter file. Surfaces pandoc's
-    stderr verbatim if it fails, since lua errors land there."""
-    src_path = output_path.with_suffix(".html")
-    src_path.write_text(html, encoding="utf-8")
-    result = subprocess.run(
-        [
-            PANDOC,
-            "-f",
-            "html",
-            "-t",
-            "docx",
-            f"--lua-filter={FILTER_PATH}",
-            "-o",
-            str(output_path),
-            str(src_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise AssertionError(f"pandoc failed (exit {result.returncode}):\n{result.stderr}")
-
-
-def test_hyperlink_inside_styled_span_survives_filter():
+def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParameters):
     """Regression: <a> inside a styled <span> must remain clickable.
 
     Catches two failure modes:
@@ -77,12 +56,10 @@ def test_hyperlink_inside_styled_span_survives_filter():
     """
     html = '<p><span style="color:#FF0000;"><a href="https://example.com/test">click here</a></span></p>'
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
-            rels_xml = zf.read("word/_rels/document.xml.rels")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+        rels_xml = zf.read("word/_rels/document.xml.rels")
 
     doc = ET.fromstring(doc_xml)
     rels = ET.fromstring(rels_xml)
@@ -112,7 +89,7 @@ def test_hyperlink_inside_styled_span_survives_filter():
     assert rel.get("Type", "").endswith("/hyperlink"), f"unexpected Relationship Type: {rel.get('Type')!r}"
 
 
-def test_intersecting_text_decorations_are_additive():
+def test_intersecting_text_decorations_are_additive(test_parameters: TestParameters):
     """Regression: child text-decoration must add to (not replace) inherited
     decorations.
 
@@ -147,11 +124,9 @@ def test_intersecting_text_decorations_are_additive():
         "</p>"
     )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
 
@@ -185,7 +160,7 @@ def test_intersecting_text_decorations_are_additive():
     assert "u" not in inner_none and "strike" not in inner_none, f"text-decoration: none failed to clear inherited decorations (got {inner_none!r}) — the explicit clear escape hatch is broken"
 
 
-def test_superscript_wrapping_styled_span_keeps_both():
+def test_superscript_wrapping_styled_span_keeps_both(test_parameters: TestParameters):
     """Regression: when <sup>/<sub> ENCLOSES a styled <span>, the inner run must
     keep BOTH the vertical alignment and the span's formatting.
 
@@ -195,11 +170,9 @@ def test_superscript_wrapping_styled_span_keeps_both():
     vertAlign on those runs (it ignores the AST wrapper around raw OOXML runs).
     """
     html = '<p><sup>A<span style="color:#FF0000">B</span></sup> x <sub>C<span style="color:#00B050">D</span></sub></p>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc = ET.fromstring(zf.read("word/document.xml"))
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
 
     def _run(needle: str) -> ET.Element:
         for r in doc.iter(f"{{{W_NS}}}r"):
@@ -259,7 +232,7 @@ def _jc_val(p: ET.Element) -> str | None:
     return jc.get(f"{{{W_NS}}}val")
 
 
-def test_indent_div_sets_w_ind_left_in_twips():
+def test_indent_div_sets_w_ind_left_in_twips(test_parameters: TestParameters):
     """The canonical Polarion case: two paragraphs at different indents.
 
     The filter must emit <w:p> with <w:pPr><w:ind w:left="N"/></w:pPr>, where
@@ -267,28 +240,24 @@ def test_indent_div_sets_w_ind_left_in_twips():
     80px = 1200 twips (1 px = 15 twips at the CSS reference DPI).
     """
     html = '<div class="pandoc-para" data-indent-twips="600"><p>Indentation</p></div><div class="pandoc-para" data-indent-twips="1200"><p>2 levels</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     assert _ind_left(_w_p_with_text(doc, "Indentation")) == "600"
     assert _ind_left(_w_p_with_text(doc, "2 levels")) == "1200"
 
 
-def test_indent_preserves_inline_formatting_via_walk():
+def test_indent_preserves_inline_formatting_via_walk(test_parameters: TestParameters):
     """Nested <strong>/<em>/styled <span> inside an indented paragraph must
     still produce the right run properties. This is the key reason the Div
     handler reuses the existing walk() — without it, we'd lose all inline
     styling when rewriting the Para as raw OOXML."""
     html = '<div class="pandoc-para" data-indent-twips="600"><p>plain <strong>bold</strong> and <span style="color:#FF0000">red</span> text</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "bold")
@@ -310,23 +279,21 @@ def test_indent_preserves_inline_formatting_via_walk():
     assert color is not None and color.get(f"{{{W_NS}}}val") == "FF0000", "color span lost <w:color val=FF0000/> after Div handler rewrote the Para"
 
 
-def test_indent_div_without_twips_attribute_is_passthrough():
+def test_indent_div_without_twips_attribute_is_passthrough(test_parameters: TestParameters):
     """A Div with the class but no data-indent-twips must not be rewritten —
     we degrade to letting pandoc render the inner Para normally so we don't
     emit a <w:p> with malformed <w:ind w:left=""/>."""
     html = '<div class="pandoc-para"><p>no indent</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "no indent")
     assert _ind_left(p) is None, "filter emitted an <w:ind> for a Div with no data-indent-twips"
 
 
-def test_indent_div_falls_back_when_para_contains_a_link():
+def test_indent_div_falls_back_when_para_contains_a_link(test_parameters: TestParameters):
     """A <w:hyperlink> needs a relationship registered in
     word/_rels/document.xml.rels — something the Div handler can't reproduce
     when it emits a single raw <w:p>. The handler must detect a Link inside
@@ -335,12 +302,10 @@ def test_indent_div_falls_back_when_para_contains_a_link():
     "graceful degradation" comment in filters/inline_styles.lua.
     """
     html = '<div class="pandoc-para" data-indent-twips="600"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
-            rels_xml = zf.read("word/_rels/document.xml.rels")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+        rels_xml = zf.read("word/_rels/document.xml.rels")
 
     doc = ET.fromstring(doc_xml)
     # The hyperlink must survive — losing it would silently corrupt the doc.
@@ -350,16 +315,14 @@ def test_indent_div_falls_back_when_para_contains_a_link():
     assert b"hyperlink" in rels_xml, "hyperlink relationship missing from document.xml.rels — graceful degradation dropped the rel side-effect"
 
 
-def test_plain_div_is_left_alone():
+def test_plain_div_is_left_alone(test_parameters: TestParameters):
     """A Div without the pandoc-para class must pass through unchanged —
     the handler's first guard. Otherwise unrelated <div>s in user content
     would all get rewritten as raw OOXML and lose pandoc's default styling."""
     html = '<div class="some-other-class"><p>just a div</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "just a div")
@@ -375,48 +338,42 @@ def test_plain_div_is_left_alone():
 # ---------------------------------------------------------------------------
 
 
-def test_align_div_sets_w_jc_val():
+def test_align_div_sets_w_jc_val(test_parameters: TestParameters):
     """The canonical Polarion case: centered and right-aligned paragraphs.
 
     The filter must emit <w:p> with <w:pPr><w:jc w:val="..."/></w:pPr>, where
     CSS center -> "center" and right -> "right".
     """
     html = '<div class="pandoc-para" data-text-align="center"><p>Centered</p></div><div class="pandoc-para" data-text-align="right"><p>Right aligned</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     assert _jc_val(_w_p_with_text(doc, "Centered")) == "center"
     assert _jc_val(_w_p_with_text(doc, "Right aligned")) == "right"
 
 
-def test_align_justify_maps_to_both():
+def test_align_justify_maps_to_both(test_parameters: TestParameters):
     """CSS `justify` becomes OOXML `both` — the one keyword whose OOXML
     spelling differs from CSS."""
     html = '<div class="pandoc-para" data-text-align="justify"><p>Justified</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     assert _jc_val(_w_p_with_text(doc, "Justified")) == "both"
 
 
-def test_indent_and_align_emit_both_in_schema_order():
+def test_indent_and_align_emit_both_in_schema_order(test_parameters: TestParameters):
     """A paragraph wrapper carrying both data attributes must produce a single
     <w:p> whose <w:pPr> has <w:ind> immediately before <w:jc> (CT_PPr schema
     order — Word reorders or drops out-of-order children otherwise)."""
     html = '<div class="pandoc-para" data-indent-twips="600" data-text-align="center"><p>Both</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "Both")
@@ -430,15 +387,13 @@ def test_indent_and_align_emit_both_in_schema_order():
     assert child_tags.index("ind") < child_tags.index("jc"), f"<w:ind> must precede <w:jc> per CT_PPr schema order, got {child_tags!r}"
 
 
-def test_align_preserves_inline_formatting_via_walk():
+def test_align_preserves_inline_formatting_via_walk(test_parameters: TestParameters):
     """Nested inline formatting inside an aligned paragraph must survive the
     raw-OOXML rewrite, same as for indent."""
     html = '<div class="pandoc-para" data-text-align="center"><p>plain <strong>bold</strong> text</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "bold")
@@ -447,32 +402,28 @@ def test_align_preserves_inline_formatting_via_walk():
     assert bold_run is not None and bold_run.find(f".//{{{W_NS}}}b") is not None, "bold run lost <w:b/> after Div handler rewrote the aligned Para"
 
 
-def test_align_div_falls_back_when_para_contains_a_link():
+def test_align_div_falls_back_when_para_contains_a_link(test_parameters: TestParameters):
     """Same graceful-degradation contract as the indent path: a Link inside the
     Para can't be reproduced in a raw <w:p>, so the handler keeps the original
     Para (alignment dropped, link + relationship kept)."""
     html = '<div class="pandoc-para" data-text-align="center"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
-            rels_xml = zf.read("word/_rels/document.xml.rels")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+        rels_xml = zf.read("word/_rels/document.xml.rels")
 
     doc = ET.fromstring(doc_xml)
     assert doc.find(f".//{{{W_NS}}}hyperlink") is not None, "Div handler dropped the <w:hyperlink> when falling back on an aligned paragraph"
     assert b"hyperlink" in rels_xml, "hyperlink relationship missing — graceful degradation dropped the rel side-effect"
 
 
-def test_unknown_align_value_is_rejected():
+def test_unknown_align_value_is_rejected(test_parameters: TestParameters):
     """data-text-align is mapped through a fixed allowlist; an unrecognized value
     must not reach <w:jc> and must not corrupt the paragraph."""
     html = '<div class="pandoc-para" data-text-align="bogus"><p>visible text</p></div>'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "visible text")
@@ -493,7 +444,7 @@ def test_unknown_align_value_is_rejected():
 # non-negative integer.
 
 
-def test_attribute_injection_in_data_indent_twips_is_rejected():
+def test_attribute_injection_in_data_indent_twips_is_rejected(test_parameters: TestParameters):
     """The reviewer's "OOXML attribute injection" finding.
 
     Attempt to close the <w:ind ...> attribute and inject a fake run plus
@@ -504,11 +455,9 @@ def test_attribute_injection_in_data_indent_twips_is_rejected():
     payload = '600"/></w:pPr><w:r><w:t>INJECTED_PAYLOAD_marker_xyz</w:t></w:r><w:pPr x="'
     html = f"<div class=\"pandoc-para\" data-indent-twips='{payload}'><p>visible text</p></div>"
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     # The injected marker must NOT appear anywhere in the rendered document.
     # If parse_twips ever forgets to reject this shape, the marker would
@@ -542,7 +491,7 @@ def test_attribute_injection_in_data_indent_twips_is_rejected():
         '0"/></w:pPr><w:r><w:t>BOOM</w:t></w:r><w:pPr x="',  # full attribute-escape payload
     ],
 )
-def test_invalid_twips_values_drop_indent_but_keep_content(bad_value: str):
+def test_invalid_twips_values_drop_indent_but_keep_content(test_parameters: TestParameters, bad_value: str):
     """Every shape that isn't a clean non-negative integer in range must
     drop the indent and pass the original Para through. Pinned individually
     so each rejection rule is failure-isolated.
@@ -554,11 +503,9 @@ def test_invalid_twips_values_drop_indent_but_keep_content(bad_value: str):
     bounded integer", not "the string looks lexically tidy".
     """
     html = f"<div class=\"pandoc-para\" data-indent-twips='{bad_value}'><p>some content here</p></div>"
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out = Path(tmpdir) / "out.docx"
-        _convert_html_to_docx(html, out)
-        with zipfile.ZipFile(out) as zf:
-            doc_xml = zf.read("word/document.xml")
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
 
     doc = ET.fromstring(doc_xml)
     p = _w_p_with_text(doc, "some content here")
@@ -570,18 +517,16 @@ def test_invalid_twips_values_drop_indent_but_keep_content(bad_value: str):
     assert b"BOOM" not in doc_xml, f"injection payload leaked into document.xml for {bad_value!r}"
 
 
-def test_valid_integer_twips_values_still_work():
+def test_valid_integer_twips_values_still_work(test_parameters: TestParameters):
     """Sanity: the validation must not break the happy path. Includes the
     extremes the cap rules in (0 is rejected as no-op, 31680 is the upper
     bound, anything above is dropped)."""
     cases = [("1", "1"), ("600", "600"), ("31680", "31680")]
     for raw, expected in cases:
         html = f'<div class="pandoc-para" data-indent-twips="{raw}"><p>val_{raw}</p></div>'
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out = Path(tmpdir) / "out.docx"
-            _convert_html_to_docx(html, out)
-            with zipfile.ZipFile(out) as zf:
-                doc_xml = zf.read("word/document.xml")
+        docx_bytes = _convert_html_to_docx(test_parameters, html)
+        with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+            doc_xml = zf.read("word/document.xml")
         doc = ET.fromstring(doc_xml)
         p = _w_p_with_text(doc, f"val_{raw}")
         assert _ind_left(p) == expected, f"valid twips {raw!r} did not produce <w:ind w:left='{expected}'/>"
