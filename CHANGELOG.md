@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.2...v2.3.0) (2026-06-30)
+
+
+### Features
+
+* preserve CSS table cell styles in HTML to DOCX conversion ([#180](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/180)) ([8b03392](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/8b0339285b4ad684aa5eef69540c12de261bb428)), closes [#179](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/179)
+
+
+### Bug Fixes
+
+* better handling of complex formatting with intersections, for HTML -&gt; DOCX as well as for DOCX -&gt; PDF conversion ([#181](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/181)) ([be2631d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/be2631d4d614c37b6f3c2061f5ed4ad6adffc6ba))
+* **deps:** update dependency fastapi to v0.138.1 ([9a517a3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9a517a35019675c2124c693e3ea334aba43c48fb))
+* **deps:** update dependency prometheus-fastapi-instrumentator to v8.0.2 ([4e5b0b5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4e5b0b53bb75d8c5657fd8cd9656e44f1833dfbb))
+
 ## [2.2.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.1...v2.2.2) (2026-06-26)
 
 
