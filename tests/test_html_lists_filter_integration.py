@@ -135,15 +135,9 @@ def test_sentinel_span_without_orphan_pattern_is_a_no_op(test_parameters: TestPa
     # in isolation, against a hand-authored sentinel. Use docker exec to
     # run pandoc directly inside the container with only this filter.
     container = test_parameters.container
-    exit_code, output = container.exec_run(
-        [PANDOC_PATH, "-f", "html", "-t", "docx", f"--lua-filter={FILTER_PATH}", "-o", "/tmp/out.docx"],
-        stdin=True,
-        socket=True,
-    )
-    # Use a simpler approach: write HTML to a temp file inside the container, run pandoc, read output
     container.exec_run(["sh", "-c", "mkdir -p /tmp/test"])
     container.exec_run(
-        ["sh", "-c", f"echo '{html}' > /tmp/test/in.html"],
+        ["sh", "-c", f"cat > /tmp/test/in.html << 'HEREDOC_EOF'\n{html}\nHEREDOC_EOF"],
     )
     exit_code, stderr = container.exec_run(
         ["sh", "-c", f"{PANDOC_PATH} -f html -t docx --lua-filter={FILTER_PATH} -o /tmp/test/out.docx /tmp/test/in.html"],

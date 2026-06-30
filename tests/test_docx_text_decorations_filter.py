@@ -22,16 +22,6 @@ DECO = f"{FILTERS_DIR}/docx_text_decorations.lua"
 COLORS = f"{FILTERS_DIR}/docx_colors_to_latex.lua"
 
 
-def _exec_pandoc(container: Container, cmd: str, input_data: str) -> str:
-    """Run a pandoc command inside the container, return stdout."""
-    # Write input to a temp file, run pandoc, capture stdout
-    container.exec_run(["sh", "-c", "mkdir -p /tmp/test"])
-    container.exec_run(["sh", "-c", f"cat > /tmp/test/in.native << 'HEREDOC_EOF'\n{input_data}\nHEREDOC_EOF"])
-    exit_code, output = container.exec_run(["sh", "-c", cmd])
-    assert exit_code == 0, f"pandoc failed (exit {exit_code}): {output.decode()}"
-    return output.decode("utf-8")
-
-
 def _native_to_latex(container: Container, native: str, *filters: str) -> str:
     container.exec_run(["sh", "-c", "mkdir -p /tmp/test"])
     container.exec_run(["sh", "-c", f"cat > /tmp/test/in.native << 'HEREDOC_EOF'\n{native}\nHEREDOC_EOF"])
