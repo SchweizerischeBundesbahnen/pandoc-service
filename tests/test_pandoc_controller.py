@@ -130,6 +130,64 @@ def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_html_to_
         assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
 
 
+def test_preserve_table_styles_appends_metadata_flag():
+    """When preserve_table_styles=True and source is html→docx, -M preserve_table_styles=true is added."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"DOCX content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.html"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.docx"
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("<p>x</p>", "html", "docx", preserve_table_styles=True)
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert "-M" in cmd
+        m_index = cmd.index("-M")
+        assert cmd[m_index + 1] == "preserve_table_styles=true"
+
+
+def test_preserve_table_styles_not_added_when_false():
+    """When preserve_table_styles=False (default), no -M flag is added."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"DOCX content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.html"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.docx"
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("<p>x</p>", "html", "docx", preserve_table_styles=False)
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert "-M" not in cmd
+
+
 def test_docx_colors_to_latex_filter_registered():
     """The DOCX color companion filter must be registered and allowlisted."""
     assert "docx_colors_to_latex" in FILTERS
