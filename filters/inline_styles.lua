@@ -444,6 +444,42 @@ function filter.Span(el)
   return walk(el.content, props, nil)
 end
 
+-- True if any descendant inline is a Span carrying a `style` attribute.
+local function has_styled_span(inlines)
+  for _, inline in ipairs(inlines) do
+    if inline.t == "Span" and inline.attributes and inline.attributes.style then
+      return true
+    end
+    if inline.content and has_styled_span(inline.content) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Native inline-formatting wrappers (Superscript/Subscript/Emph/Strong/...)
+-- that ENCLOSE a styled <span>. Topdown traversal reaches such a wrapper
+-- before the span, but without these handlers pandoc would just descend and
+-- filter.Span would consume the span subtree with no knowledge of the
+-- surrounding formatting — so the wrapper's superscript/bold/etc. is dropped
+-- (the DOCX writer ignores the AST wrapper around the RawInline runs the span
+-- produced). When the wrapper contains a styled span we therefore walk its
+-- whole subtree ourselves, seeding the run properties with the wrapper's own
+-- formatting; nested wrappers compose because walk() handles them in turn.
+-- When there is no styled span inside, we return nil and let pandoc render the
+-- wrapper natively (the common case — no inline CSS involved).
+local function wrap_native(el, props, vert_align)
+  if not has_styled_span(el.content) then return nil end
+  return walk(el.content, props, vert_align)
+end
+
+function filter.Superscript(el) return wrap_native(el, {}, "superscript") end
+function filter.Subscript(el) return wrap_native(el, {}, "subscript") end
+function filter.Emph(el) return wrap_native(el, { italic = true }, nil) end
+function filter.Strong(el) return wrap_native(el, { bold = true }, nil) end
+function filter.Underline(el) return wrap_native(el, { underline = true }, nil) end
+function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) end
+
 -- Paragraph-level formatting (margin-left indent + text-align). Pandoc's HTML
 -- reader drops the style attribute from <p> outright, so the formatting has to
 -- ride into the AST on a wrapping Div that app/HtmlParagraphPreProcess.py

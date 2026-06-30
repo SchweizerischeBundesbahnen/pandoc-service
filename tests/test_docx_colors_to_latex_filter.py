@@ -82,23 +82,23 @@ def test_fg_color_emits_textcolor():
     assert "\\textcolor[HTML]{FF0000}{red foreground}" in _flatten_whitespace(latex), latex
 
 
-def test_shd_emits_soul_hl_not_colorbox():
-    """Background shading must use soul's line-breakable \\hl, NOT
-    \\colorbox. Regression for the bug where long shaded runs overflowed
-    the right margin because \\colorbox produces a non-breakable hbox.
-    """
+def test_shd_emits_full_height_colorbox():
+    """Background shading is rendered as a full-height \\colorbox (\\strut so the
+    band is uniform with decorated highlights), not soul's \\hl. soul's \\hl band
+    hugs the glyph height, which left a visible step where a plain highlight met
+    an underlined one; boxing every highlight keeps the band level."""
     latex = _convert_docx_to_latex(FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(latex)
-    assert "\\colorbox" not in flat, flat
-    assert "{\\definecolor{pdc_hl}{HTML}{00FF00}\\sethlcolor{pdc_hl}\\hl{green shading}}" in flat, flat
+    assert "\\hl{" not in flat and "\\sethlcolor" not in flat, flat
+    assert "\\colorbox[HTML]{00FF00}{\\strut{}green shading}" in flat, flat
 
 
-def test_named_highlight_resolves_to_hex_and_uses_hl():
-    """A Word "yellow" highlight becomes \\hl{...} with the matching hex
+def test_named_highlight_resolves_to_hex_and_boxes():
+    """A Word "yellow" highlight becomes a \\colorbox with the matching hex
     color (resolved via the static name-to-hex table inside the filter)."""
     latex = _convert_docx_to_latex(FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(latex)
-    assert "{\\definecolor{pdc_hl}{HTML}{FFFF00}\\sethlcolor{pdc_hl}\\hl{yellow highlight}}" in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}yellow highlight}" in flat, flat
 
 
 def test_soul_package_added_to_header_includes():
@@ -116,13 +116,46 @@ def test_soul_package_added_to_header_includes():
             check=True,
         )
     assert "\\usepackage{soul}" in result.stdout, result.stdout
+    # Both underline mechanisms must be pinned to the same fixed depth so an
+    # underline under a larger run does not drop below its normal-size neighbour
+    # (soul's \ul and ulem's \uline both scale their depth with the font by
+    # default). Regression for the underline-step-on-font-size-change report.
+    assert "\\setlength{\\ULdepth}{1.6pt}" in result.stdout, result.stdout
+    assert "\\setul{1.6pt}{0.4pt}" in result.stdout, result.stdout
+
+
+def test_superscript_subscript_routed_to_ulem_for_box_safety():
+    """soul's \\ul/\\st abort with "Reconstruction failed" inside the boxes that
+    \\textsuperscript/\\textsubscript build (i.e. underlined/struck text inside a
+    <sup>/<sub>). The preamble must load ulem and redefine
+    \\textsuperscript/\\textsubscript to swap soul's \\ul/\\st for ulem's box-safe
+    \\uline/\\sout *locally* — globally \\ul/\\st stay soul so ordinary
+    underlined/struck text is unchanged (no document-wide line-break/hyphenation
+    regression). Requires --standalone so header-includes are emitted."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        preprocessed = DocxColorPreProcess.preprocess(FIXTURE_PATH.read_bytes())
+        src = Path(tmpdir) / "in.docx"
+        src.write_bytes(preprocessed)
+        result = subprocess.run(
+            [PANDOC, "-f", "docx+styles", "-t", "latex", "--standalone", f"--lua-filter={FILTER_PATH}", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    flat = _flatten_whitespace(result.stdout)
+    assert "\\usepackage[normalem]{ulem}" in flat, flat
+    # The \ul -> \uline / \st -> \sout swap is scoped inside the super/subscript
+    # redefinitions, NOT applied globally.
+    assert "\\renewcommand{\\textsuperscript}[1]{\\pdcOldSuperscript{\\let\\ul\\uline\\let\\st\\sout" in flat, flat
+    assert "\\renewcommand{\\textsubscript}[1]{\\pdcOldSubscript{\\let\\ul\\uline\\let\\st\\sout" in flat, flat
 
 
 def test_image_inside_styled_span_is_not_wrapped_in_hl():
     """When a styled span contains an Image, soul's \\hl would fail to
     typeset it (and \\colorbox would clip / pad it past the margin). The
-    filter must skip the background wrapper in that case while still
-    emitting the foreground color (which is harmless around images).
+    filter must skip BOTH background wrappers (soul \\hl and the \\colorbox
+    fallback) in that case while still emitting the foreground color (which
+    is harmless around images).
     """
     # Markdown bracketed span carrying both color and an image. Pandoc
     # turns this into a Span node with our custom-style attribute and
@@ -140,9 +173,29 @@ def test_image_inside_styled_span_is_not_wrapped_in_hl():
     flat = _flatten_whitespace(result.stdout)
     # Foreground color was applied.
     assert "\\textcolor[HTML]{FF0000}" in flat, flat
-    # Background highlight was suppressed — no soul wrappers.
+    # Background highlight was suppressed — no soul wrappers and, crucially, no
+    # \colorbox fallback either (an Image is BOX_UNSAFE).
     assert "\\hl{" not in flat, flat
     assert "\\sethlcolor" not in flat, flat
+    assert "\\colorbox" not in flat, flat
+
+
+def test_font_size_emits_fontsize():
+    """A PandocColor__SZ_<halfpoints> style becomes \\fontsize{pt}{...} (pt =
+    half-points / 2, so 32 -> 16pt)."""
+    md = '[big]{custom-style="PandocColor__SZ_32"}\n'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = Path(tmpdir) / "in.md"
+        src.write_text(md, encoding="utf-8")
+        result = subprocess.run(
+            [PANDOC, "-f", "markdown", "-t", "latex", f"--lua-filter={FILTER_PATH}", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    flat = _flatten_whitespace(result.stdout)
+    assert "\\fontsize{16}{19.2}\\selectfont" in flat, flat
+    assert "big" in flat
 
 
 def test_non_matching_custom_style_is_left_alone():
@@ -168,16 +221,16 @@ def test_non_matching_custom_style_is_left_alone():
 
 
 # ---------------------------------------------------------------------------
-# Highlight on bold/italic text — formatting macros hoisted OUTSIDE \hl
+# Highlight on bold/italic/underlined text — all boxed, uniform band height
 # ---------------------------------------------------------------------------
 #
-# Regression for the bug where a highlighted (background/shaded) run that is
-# also bold/italic lost its highlight entirely in DOCX->PDF: soul's \hl can't
-# wrap a span containing \emph/\textbf, so the old filter dropped the highlight.
-# The fix peels uniform formatting wrappers and emits them as macros AROUND
-# \hl, which only ever sees plain text. These build the exact AST shape pandoc
-# produces from `-f docx+styles` (Span[custom-style][Emph/Strong[...]]) via a
-# markdown bracketed span, so the test is pandoc-only (no tectonic needed).
+# Every highlight is a full-height \colorbox so the background band stays level
+# regardless of the inline formatting it carries (bold, italic, underline). A
+# \colorbox tolerates any content, so the formatting macros simply sit INSIDE
+# the box — no hoisting, no soul \hl. \textcolor (and \fontsize) wrap outside.
+# These build the exact AST shape pandoc produces from `-f docx+styles`
+# (Span[custom-style][Emph/Strong/Underline[...]]) via a markdown bracketed
+# span, so the test is pandoc-only (no tectonic needed).
 
 
 def _md_to_latex(md: str) -> str:
@@ -194,41 +247,71 @@ def _md_to_latex(md: str) -> str:
     return _flatten_whitespace(result.stdout)
 
 
-def test_highlight_survives_italic_with_emph_hoisted_outside_hl():
+def test_highlight_on_italic_is_boxed_with_color_outside():
     """The "injected humour" case: italic + foreground color + background.
 
-    The highlight must NOT be dropped. \\emph is hoisted OUTSIDE \\hl (soul
-    can't wrap \\emph), \\textcolor stays outermost, and \\hl wraps plain text.
-    """
+    The highlight must NOT be dropped. \\emph sits INSIDE the \\colorbox,
+    \\textcolor wraps OUTSIDE, and no soul \\hl is emitted."""
     flat = _md_to_latex('[*injected humour*]{custom-style="PandocColor__FG_00B050__BG_FFFF00"}\n')
-    assert "\\hl{injected humour}" in flat, f"highlight dropped on italic text: {flat}"
-    assert "\\emph{" in flat, flat
-    assert "\\textcolor[HTML]{00B050}" in flat, flat
-    # Ordering: \textcolor outermost, then \emph, then \hl innermost.
-    assert flat.index("\\textcolor") < flat.index("\\emph{") < flat.index("\\hl{"), flat
+    assert "\\hl{" not in flat, f"soul \\hl used instead of \\colorbox: {flat}"
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{injected humour}}" in flat, flat
+    # \textcolor is outermost, then the box.
+    assert flat.index("\\textcolor") < flat.index("\\colorbox"), flat
 
 
-def test_highlight_survives_bold():
-    """Bold + background: \\textbf hoisted outside \\hl, highlight preserved."""
+def test_highlight_on_bold_is_boxed():
+    """Bold + background: \\textbf sits inside the \\colorbox, highlight kept."""
     flat = _md_to_latex('[**loud**]{custom-style="PandocColor__BG_FFFF00"}\n')
-    assert "\\hl{loud}" in flat, f"highlight dropped on bold text: {flat}"
-    assert "\\textbf{" in flat and flat.index("\\textbf{") < flat.index("\\hl{"), flat
+    assert "\\hl{" not in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}\\textbf{loud}}" in flat, flat
 
 
-def test_highlight_survives_bold_italic_nested():
-    """Bold-italic nests two wrappers; both must hoist out, \\hl innermost."""
+def test_highlight_on_bold_italic_is_boxed():
+    """Bold-italic nests two wrappers; both sit inside the box."""
     flat = _md_to_latex('[***both***]{custom-style="PandocColor__BG_FFFF00"}\n')
-    assert "\\hl{both}" in flat, f"highlight dropped on bold-italic text: {flat}"
-    assert flat.index("\\textbf{") < flat.index("\\hl{"), flat
-    assert flat.index("\\emph{") < flat.index("\\hl{"), flat
+    assert "\\hl{" not in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}" in flat, flat
+    assert "\\textbf{" in flat and "\\emph{" in flat, flat
+    assert flat.index("\\colorbox") < flat.index("\\textbf{"), flat
 
 
-def test_partial_formatting_inside_highlight_drops_hl_but_keeps_color():
-    """When formatting only partially overlaps the highlighted span there is no
-    single macro to hoist, so soul can't wrap it. The highlight is gracefully
-    dropped (current limitation) while the foreground color and the text — bold
-    part included — are preserved."""
+def test_partial_formatting_inside_highlight_is_boxed():
+    """A highlight whose formatting only partially overlaps it (plain + italic)
+    is still boxed as one unit — the background covers the whole run, with the
+    foreground color outside."""
     flat = _md_to_latex('[plain *and italic*]{custom-style="PandocColor__FG_00B050__BG_FFFF00"}\n')
-    assert "\\hl{" not in flat and "\\sethlcolor" not in flat, f"soul wrapped mixed content: {flat}"
+    assert "\\hl{" not in flat and "\\sethlcolor" not in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}" in flat, f"background dropped instead of boxed: {flat}"
     assert "\\textcolor[HTML]{00B050}" in flat, flat
     assert "\\emph{" in flat and "italic" in flat, flat
+
+
+def test_white_background_is_not_boxed():
+    """A white (#FFFFFF) background is the page colour — invisible — and Polarion
+    stamps it on nearly every run. Boxing it would wrap most of the document in
+    non-breakable \\colorboxes and overflow the margin, so white must be treated
+    as no highlight: no box, and the text stays line-breakable."""
+    flat = _md_to_latex('[If you are going to use a passage of text here]{custom-style="PandocColor__FG_FF0000__BG_FFFFFF"}\n')
+    assert "\\colorbox" not in flat, f"white background was boxed: {flat}"
+    assert "\\textcolor[HTML]{FF0000}" in flat, flat  # foreground colour still applied
+
+
+def test_long_highlight_is_not_boxed():
+    """A \\colorbox is unbreakable, so boxing a long run overflows the page by
+    metres. Only SHORT runs are boxed; a long highlighted run drops the
+    background (foreground color stays) rather than becoming an overfull box."""
+    long_text = "lorem ipsum dolor sit amet " * 6  # well over the ~60-char cap
+    flat = _md_to_latex(f'[{long_text}*it*]{{custom-style="PandocColor__BG_FFFF00"}}\n')
+    assert "\\colorbox" not in flat, f"long run was boxed (overflow risk): {flat}"
+    assert "\\hl{" not in flat, flat
+
+
+def test_underline_inside_highlight_is_boxed():
+    """A run that is BOTH highlighted and underlined boxes the whole run (with
+    the underline inside), so the band stays continuous and level — no
+    un-highlighted hole and no height step versus a neighbouring plain
+    highlight (which is now also boxed)."""
+    flat = _md_to_latex('[[underlined]{.underline}]{custom-style="PandocColor__BG_CC99FF"}\n')
+    assert "\\colorbox[HTML]{CC99FF}" in flat, f"background dropped on underlined run: {flat}"
+    assert "\\strut" in flat, flat
+    assert "\\ul{underlined}" in flat or "\\uline{underlined}" in flat, flat

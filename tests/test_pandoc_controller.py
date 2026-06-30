@@ -148,7 +148,7 @@ def _run_conversion_capturing_cmd(source_data, source_format, target_format):
         patch("pathlib.Path.open", mock_open(read_data=b"output")),
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("app.PandocController.DocxColorPreProcess.preprocess", side_effect=lambda b: b) as mock_pre,
+        patch("app.PandocController.DocxLatexPreProcess.preprocess", side_effect=lambda b: b) as mock_pre,
     ):
         mock_subprocess.return_value.returncode = 0
 
