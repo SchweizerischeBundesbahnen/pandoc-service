@@ -130,6 +130,64 @@ def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_html_to_
         assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
 
 
+def test_preserve_table_styles_appends_metadata_flag():
+    """When preserve_table_styles=True and source is html→docx, -M preserve_table_styles=true is added."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"DOCX content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.html"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.docx"
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("<p>x</p>", "html", "docx", preserve_table_styles=True)
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert "-M" in cmd
+        m_index = cmd.index("-M")
+        assert cmd[m_index + 1] == "preserve_table_styles=true"
+
+
+def test_preserve_table_styles_not_added_when_false():
+    """When preserve_table_styles=False (default), no -M flag is added."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("pathlib.Path.open", mock_open(read_data=b"DOCX content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_subprocess.return_value.returncode = 0
+
+        source_file_mock = MagicMock()
+        source_file_mock.name = "source.html"
+        output_file_mock = MagicMock()
+        output_file_mock.name = "output.docx"
+
+        mock_context_src = MagicMock()
+        mock_context_src.__enter__.return_value = source_file_mock
+        mock_context_out = MagicMock()
+        mock_context_out.__enter__.return_value = output_file_mock
+
+        with patch("tempfile.NamedTemporaryFile", side_effect=[mock_context_src, mock_context_out]):
+            run_pandoc_conversion("<p>x</p>", "html", "docx", preserve_table_styles=False)
+
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args.args[0]
+        assert "-M" not in cmd
+
+
 def test_docx_colors_to_latex_filter_registered():
     """The DOCX color companion filter must be registered and allowlisted."""
     assert "docx_colors_to_latex" in FILTERS
@@ -573,7 +631,7 @@ def test_convert_with_encoding():
         response = test_client.post("/convert/markdown/to/html?encoding=utf-8", content=b"# Test Content")
 
         # Assertions
-        mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
+        mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS, preserve_table_styles=False)
         mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html", None, None)
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
@@ -593,7 +651,7 @@ def test_convert_with_custom_filename():
         response = test_client.post("/convert/markdown/to/html?file_name=custom.html", content=b"# Test Content")
 
         # Assertions
-        mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS)
+        mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS, preserve_table_styles=False)
         mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html", None, None)
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"

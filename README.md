@@ -396,12 +396,13 @@ Pandoc Service provides the following endpoints:
 
 ##### Parameters
 
-> | Parameter name       | Type     | Data type | Description                                                                                                     |
-> |----------------------|----------|-----------|-----------------------------------------------------------------------------------------------------------------|
-> | encoding             | optional | string    | Encoding of provided HTML (default: utf-8)                                                                      |
-> | file_name            | optional | string    | Output filename (default: converted-document.pdf)                                                               |
-> | paper_size           | optional | string    | Paper size for the output document. Supported values: A5, A4, A3, B5, B4, JIS_B5, JIS_B4, LETTER, LEGAL, LEDGER |
-> | orientation          | optional | string    | Page orientation. Supported values: portrait, landscape                                                         |
+> | Parameter name           | Type     | Data type | Description                                                                                                     |
+> |--------------------------|----------|-----------|-----------------------------------------------------------------------------------------------------------------|
+> | encoding                 | optional | string    | Encoding of provided HTML (default: utf-8)                                                                      |
+> | file_name                | optional | string    | Output filename (default: converted-document.pdf)                                                               |
+> | paper_size               | optional | string    | Paper size for the output document. Supported values: A5, A4, A3, B5, B4, JIS_B5, JIS_B4, LETTER, LEGAL, LEDGER |
+> | orientation              | optional | string    | Page orientation. Supported values: portrait, landscape                                                         |
+> | preserve_table_styles    | optional | boolean   | Preserve CSS table cell styles (background-color, borders, vertical-align) in the DOCX output (default: false)  |
 
 ##### Responses
 
@@ -421,6 +422,11 @@ Pandoc Service provides the following endpoints:
 > ```bash
 > curl -X POST -H "Content-Type: application/html" --data @input_html "http://localhost:9082/convert/html/to/docx?paper_size=A4&orientation=landscape" --output output.docx
 > ```
+>
+> With preserved table styles (background colors, borders):
+> ```bash
+> curl -X POST -H "Content-Type: application/html" --data @input_html "http://localhost:9082/convert/html/to/docx?preserve_table_styles=true" --output output.docx
+> ```
 
 </details>
 
@@ -435,14 +441,15 @@ Pandoc Service provides the following endpoints:
 
 ##### Parameters
 
-> | Parameter name       | Type     | Data type | Description                                                                                                     |
-> |----------------------|----------|-----------|-----------------------------------------------------------------------------------------------------------------|
-> | source               | required | file      | Source HTML content as multipart/form-data                                                                      |
-> | template             | optional | file      | Custom DOCX template file as multipart/form-data                                                                |
-> | encoding             | optional | string    | Encoding of provided HTML (default: utf-8)                                                                      |
-> | file_name            | optional | string    | Output filename (default: converted-document.docx)                                                              |
-> | paper_size           | optional | string    | Paper size for the output document. Supported values: A5, A4, A3, B5, B4, JIS_B5, JIS_B4, LETTER, LEGAL, LEDGER |
-> | orientation          | optional | string    | Page orientation. Supported values: portrait, landscape                                                         |
+> | Parameter name           | Type     | Data type | Description                                                                                                     |
+> |--------------------------|----------|-----------|-----------------------------------------------------------------------------------------------------------------|
+> | source                   | required | file      | Source HTML content as multipart/form-data                                                                      |
+> | template                 | optional | file      | Custom DOCX template file as multipart/form-data                                                                |
+> | encoding                 | optional | string    | Encoding of provided HTML (default: utf-8)                                                                      |
+> | file_name                | optional | string    | Output filename (default: converted-document.docx)                                                              |
+> | paper_size               | optional | string    | Paper size for the output document. Supported values: A5, A4, A3, B5, B4, JIS_B5, JIS_B4, LETTER, LEGAL, LEDGER |
+> | orientation              | optional | string    | Page orientation. Supported values: portrait, landscape                                                         |
+> | preserve_table_styles    | optional | boolean   | Preserve CSS table cell styles (background-color, borders, vertical-align) in the DOCX output (default: false)  |
 
 ##### Responses
 
@@ -461,6 +468,11 @@ Pandoc Service provides the following endpoints:
 > With custom paper size and orientation:
 > ```bash
 > curl -X POST -F "source=@input.html" -F "template=@custom-template.docx" "http://localhost:9082/convert/html/to/docx-with-template?paper_size=A4&orientation=landscape" --output output.docx
+> ```
+>
+> With preserved table styles:
+> ```bash
+> curl -X POST -F "source=@input.html" -F "template=@custom-template.docx" "http://localhost:9082/convert/html/to/docx-with-template?preserve_table_styles=true" --output output.docx
 > ```
 
 </details>

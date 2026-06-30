@@ -424,8 +424,20 @@ walk = function(inlines, props, vert_align)
   return result
 end
 
--- Pandoc Lua filters are tables of "ElementType -> function" entries.
--- Returning the table from the script registers all entries at once.
+-- Module-level flag set by the Meta pass. The Table handler only activates
+-- when callers pass `-M preserve_table_styles=true` on the command line.
+local preserve_table_styles = false
+
+-- ---- Pass 1: read metadata ----
+local meta_pass = {}
+
+function meta_pass.Meta(meta)
+  if meta.preserve_table_styles then
+    preserve_table_styles = true
+  end
+end
+
+-- ---- Pass 2: rewrite AST elements ----
 local filter = {}
 
 -- Tell Pandoc to walk top-down (parents before children). With the default
@@ -621,4 +633,362 @@ function filter.Div(el)
   return result
 end
 
-return filter
+-- ======================== TABLE CELL STYLING ========================
+--
+-- Pandoc's DOCX writer ignores cell.attr on <td>/<th> elements, so CSS
+-- properties like background-color and border on table cells are dropped.
+-- This section detects styled tables and rebuilds them as raw OOXML
+-- (<w:tbl>), preserving cell backgrounds, borders, and merges.
+--
+-- When no cell in a table carries a style attribute the handler returns
+-- nil and lets the default DOCX writer emit the table normally.
+
+-- CSS border-style keyword → OOXML w:val
+local CSS_BORDER_TO_OOXML = {
+  solid = "single", dashed = "dashed", dotted = "dotted",
+  double = "double", groove = "single", ridge = "single",
+  inset = "single", outset = "single", none = "nil", hidden = "nil",
+}
+
+-- Named CSS colors frequently seen in HTML tables.
+local NAMED_COLORS = {
+  black = "000000", white = "FFFFFF", red = "FF0000", green = "008000",
+  blue = "0000FF", yellow = "FFFF00", gray = "808080", grey = "808080",
+  silver = "C0C0C0", maroon = "800000", olive = "808000", navy = "000080",
+  purple = "800080", teal = "008080", fuchsia = "FF00FF", aqua = "00FFFF",
+  orange = "FFA500", windowtext = "000000",
+}
+
+-- Parse a CSS border-width value (e.g. "1.5pt", "1px") into OOXML eighths
+-- of a point (w:sz units). Returns nil on failure.
+local function border_width_eighths(val)
+  if not val then return nil end
+  local n, unit = val:lower():match("^([%d%.]+)(%a+)$")
+  if not n then
+    -- bare number → treat as pt
+    n = tonumber(val)
+    if n then return math.floor(n * 8 + 0.5) end
+    return nil
+  end
+  n = tonumber(n)
+  if not n then return nil end
+  if unit == "pt" then return math.floor(n * 8 + 0.5)
+  elseif unit == "px" then return math.floor(n * 6 + 0.5)
+  elseif unit == "cm" then return math.floor(n * 226.77 + 0.5)
+  elseif unit == "mm" then return math.floor(n * 22.677 + 0.5)
+  elseif unit == "in" then return math.floor(n * 576 + 0.5)
+  end
+  return nil
+end
+
+-- Resolve a color token into uppercase 6-hex. Tries normalize_color first
+-- (handles #RGB, #RRGGBB, rgb()), then falls back to named colors.
+local function resolve_border_color(token)
+  if not token then return nil end
+  local c = normalize_color(token)
+  if c then return c end
+  return NAMED_COLORS[token:lower()]
+end
+
+-- Parse a CSS border shorthand ("1.5pt solid black") into
+-- { sz = <eighths>, val = <ooxml_style>, color = <6hex> }, or nil.
+local function parse_border(value)
+  if not value then return nil end
+  -- Collapse spaces inside rgb()/hsl() so the tokeniser below doesn't
+  -- split "rgb(255, 0, 0)" into separate fragments.
+  value = value:gsub("(%a+)(%b())", function(fn, parens)
+    return fn .. parens:gsub("%s", "")
+  end)
+  local sz, val, color
+  for p in value:gmatch("%S+") do
+    local lp = p:lower()
+    if CSS_BORDER_TO_OOXML[lp] then
+      val = CSS_BORDER_TO_OOXML[lp]
+    elseif lp:match("^[%d%.]+%a*$") then
+      sz = sz or border_width_eighths(lp)
+    else
+      color = color or resolve_border_color(p)
+    end
+  end
+  if not val and not sz and not color then return nil end
+  return {
+    sz    = sz    or 4,        -- default 0.5pt
+    val   = val   or "single",
+    color = color or "000000",
+  }
+end
+
+-- Emit a single <w:XYZ .../> border element, or "" if nil/none.
+local function border_element_xml(side, b)
+  if not b or b.val == "nil" then return "" end
+  return string.format('<w:%s w:val="%s" w:sz="%d" w:space="0" w:color="%s"/>',
+    side, b.val, b.sz, b.color)
+end
+
+-- Build <w:tcBorders>...</w:tcBorders> from a parsed CSS table, or "".
+local function build_tc_borders_xml(css)
+  local top    = parse_border(css["border-top"])    or parse_border(css["border"])
+  local left   = parse_border(css["border-left"])   or parse_border(css["border"])
+  local bottom = parse_border(css["border-bottom"]) or parse_border(css["border"])
+  local right  = parse_border(css["border-right"])  or parse_border(css["border"])
+  if not (top or left or bottom or right) then return "" end
+  return "<w:tcBorders>"
+    .. border_element_xml("top",    top)
+    .. border_element_xml("left",   left)
+    .. border_element_xml("bottom", bottom)
+    .. border_element_xml("right",  right)
+    .. "</w:tcBorders>"
+end
+
+-- Build <w:tcPr> for a cell. Follows CT_TcPr schema order (§17.4.70).
+--   css            — parsed CSS table (nil = no styling)
+--   col_span       — integer (1 = no span)
+--   row_span       — integer (1 = no span)
+--   vmerge_cont    — true for rowspan continuation cells
+local function build_tc_pr_xml(css, col_span, row_span, vmerge_cont)
+  local parts = {}
+  -- pos 3: gridSpan
+  if col_span and col_span > 1 then
+    parts[#parts + 1] = string.format('<w:gridSpan w:val="%d"/>', col_span)
+  end
+  -- pos 5: vMerge
+  if vmerge_cont then
+    parts[#parts + 1] = "<w:vMerge/>"
+  elseif row_span and row_span > 1 then
+    parts[#parts + 1] = '<w:vMerge w:val="restart"/>'
+  end
+  if css then
+    -- pos 6: tcBorders
+    parts[#parts + 1] = build_tc_borders_xml(css)
+    -- pos 7: shd (background-color)
+    local bg = resolve_border_color(css["background-color"])
+    if bg then
+      parts[#parts + 1] = string.format(
+        '<w:shd w:val="clear" w:color="auto" w:fill="%s"/>', bg)
+    end
+    -- pos 12: vAlign
+    local va = css["vertical-align"]
+    if va == "top" then         parts[#parts + 1] = '<w:vAlign w:val="top"/>'
+    elseif va == "middle" then  parts[#parts + 1] = '<w:vAlign w:val="center"/>'
+    elseif va == "bottom" then  parts[#parts + 1] = '<w:vAlign w:val="bottom"/>'
+    end
+  end
+  if #parts == 0 then return "<w:tcPr/>" end
+  return "<w:tcPr>" .. table.concat(parts) .. "</w:tcPr>"
+end
+
+-- Convert a Pandoc Alignment value to a w:jc val, or nil for default.
+local function alignment_to_jc(align)
+  if align == pandoc.AlignLeft   then return "left"   end
+  if align == pandoc.AlignCenter then return "center" end
+  if align == pandoc.AlignRight  then return "right"  end
+  return nil
+end
+
+-- Convert a single Block to a <w:p> OOXML string.
+local function block_to_ooxml(block, jc_val)
+  local ppr = ""
+  if jc_val then
+    ppr = '<w:pPr><w:jc w:val="' .. jc_val .. '"/></w:pPr>'
+  end
+
+  if block.t == "Para" or block.t == "Plain" then
+    local runs = walk(block.content, {}, nil)
+    local run_parts = {}
+    for _, r in ipairs(runs) do
+      if r.t == "RawInline" and r.format == "openxml" then
+        run_parts[#run_parts + 1] = r.text
+      else
+        -- Known limitation: Link and Image nodes returned by walk() are not
+        -- RawInline("openxml") — they need writer-level relationship handling
+        -- that raw OOXML can't reproduce. Links lose their hyperlink target
+        -- (text is preserved) and Images are reduced to alt-text. Nested
+        -- tables and lists also hit this path. This is acceptable for the
+        -- opt-in table-style feature; the alternative would be to fall back
+        -- the entire table to the default writer, losing all cell styling.
+        run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
+          .. escape_xml(pandoc.utils.stringify(r))
+          .. "</w:t></w:r>"
+      end
+    end
+    return "<w:p>" .. ppr .. table.concat(run_parts) .. "</w:p>"
+  end
+
+  if block.t == "RawBlock" and block.format == "openxml" then
+    return block.text
+  end
+
+  -- Fallback: extract plain text
+  return "<w:p>" .. ppr .. "<w:r><w:t xml:space=\"preserve\">"
+    .. escape_xml(pandoc.utils.stringify(block)) .. "</w:t></w:r></w:p>"
+end
+
+-- Convert all blocks in a cell to OOXML. Always returns at least "<w:p/>".
+local function cell_blocks_to_ooxml(blocks, jc_val)
+  if #blocks == 0 then return "<w:p/>" end
+  local paras = {}
+  for _, block in ipairs(blocks) do
+    paras[#paras + 1] = block_to_ooxml(block, jc_val)
+  end
+  return table.concat(paras)
+end
+
+-- Check if any cell in a list of Rows carries a style attribute.
+local function rows_have_styles(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      if cell.attributes and cell.attributes.style then return true end
+    end
+  end
+  return false
+end
+
+-- Check the whole table for any styled cell.
+local function table_has_cell_styles(tbl)
+  if rows_have_styles(tbl.head.rows) then return true end
+  for _, body in ipairs(tbl.bodies) do
+    if rows_have_styles(body.body) then return true end
+    if body.head and rows_have_styles(body.head) then return true end
+  end
+  if rows_have_styles(tbl.foot.rows) then return true end
+  return false
+end
+
+-- Rebuild a styled Table as a raw OOXML <w:tbl> block.
+-- Gated by the pandoc metadata variable `preserve_table_styles` — callers
+-- pass `-M preserve_table_styles=true` on the command line to activate.
+-- The flag is read in meta_pass.Meta (pass 1) and stored in the module-level
+-- `preserve_table_styles` variable.
+function filter.Table(tbl)
+  -- Only emit raw OOXML when the target writer is docx.
+  if FORMAT ~= "docx" then return nil end
+  -- Check the opt-in metadata flag (set by meta_pass.Meta).
+  if not preserve_table_styles then return nil end
+  if not table_has_cell_styles(tbl) then return nil end
+
+  local num_cols = #tbl.colspecs
+  if num_cols == 0 then return nil end
+
+  -- Flatten all rows in document order (head → body → foot).
+  local all_rows = {}
+  for _, r in ipairs(tbl.head.rows) do all_rows[#all_rows + 1] = r end
+  for _, body in ipairs(tbl.bodies) do
+    if body.head then
+      for _, r in ipairs(body.head) do all_rows[#all_rows + 1] = r end
+    end
+    for _, r in ipairs(body.body) do all_rows[#all_rows + 1] = r end
+  end
+  for _, r in ipairs(tbl.foot.rows) do all_rows[#all_rows + 1] = r end
+  if #all_rows == 0 then return nil end
+
+  -- ---- Phase 1: build a logical grid with rowspan tracking ----
+  -- coverage[row][col] = { col_span, css } for vMerge continuation cells.
+  local coverage = {}
+  local grid = {}
+
+  for ri, row in ipairs(all_rows) do
+    local cells_info = {}
+    local gc = 1   -- grid column (1-based)
+    local ci = 1   -- index into row.cells
+
+    while gc <= num_cols do
+      if coverage[ri] and coverage[ri][gc] then
+        local cov = coverage[ri][gc]
+        cells_info[#cells_info + 1] = {
+          grid_col        = gc,
+          col_span        = cov.col_span,
+          is_continuation = true,
+          css             = cov.css,
+        }
+        gc = gc + cov.col_span
+      else
+        if ci > #row.cells then break end
+        local cell = row.cells[ci]; ci = ci + 1
+        local cs = cell.col_span or 1
+        local rs = cell.row_span or 1
+        local style = cell.attributes and cell.attributes.style
+        local css = style and parse_style(style) or nil
+
+        if rs > 1 then
+          for r2 = ri + 1, ri + rs - 1 do
+            if not coverage[r2] then coverage[r2] = {} end
+            coverage[r2][gc] = { col_span = cs, css = css }
+          end
+        end
+
+        -- Resolve paragraph alignment: cell overrides colspec.
+        local jc = nil
+        if cell.alignment and cell.alignment ~= pandoc.AlignDefault then
+          jc = alignment_to_jc(cell.alignment)
+        elseif tbl.colspecs[gc] then
+          jc = alignment_to_jc(tbl.colspecs[gc][1])
+        end
+
+        cells_info[#cells_info + 1] = {
+          cell            = cell,
+          grid_col        = gc,
+          col_span        = cs,
+          row_span        = rs,
+          is_continuation = false,
+          css             = css,
+          jc              = jc,
+        }
+        gc = gc + cs
+      end
+    end
+
+    grid[ri] = cells_info
+  end
+
+  -- ---- Phase 2: emit OOXML ----
+  local xml = {}
+  xml[#xml + 1] = "<w:tbl>"
+
+  -- Table properties: 100 % width, autofit layout, default single-line
+  -- borders matching Pandoc's default DOCX writer output. Without these,
+  -- tables that only set background-color (no per-cell border) would
+  -- render with no gridlines at all.
+  xml[#xml + 1] = "<w:tblPr>"
+  xml[#xml + 1] = '<w:tblW w:w="5000" w:type="pct"/>'
+  xml[#xml + 1] = "<w:tblBorders>"
+  xml[#xml + 1] = '<w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
+  xml[#xml + 1] = "</w:tblBorders>"
+  xml[#xml + 1] = '<w:tblLayout w:type="autofit"/>'
+  xml[#xml + 1] = "</w:tblPr>"
+
+  -- Grid columns (widths left to autofit).
+  xml[#xml + 1] = "<w:tblGrid>"
+  for _ = 1, num_cols do xml[#xml + 1] = "<w:gridCol/>" end
+  xml[#xml + 1] = "</w:tblGrid>"
+
+  -- Rows
+  for _, cells_info in ipairs(grid) do
+    xml[#xml + 1] = "<w:tr>"
+    for _, info in ipairs(cells_info) do
+      xml[#xml + 1] = "<w:tc>"
+      if info.is_continuation then
+        xml[#xml + 1] = build_tc_pr_xml(info.css, info.col_span, nil, true)
+        xml[#xml + 1] = "<w:p/>"
+      else
+        xml[#xml + 1] = build_tc_pr_xml(info.css, info.col_span, info.row_span, false)
+        xml[#xml + 1] = cell_blocks_to_ooxml(info.cell.contents, info.jc)
+      end
+      xml[#xml + 1] = "</w:tc>"
+    end
+    xml[#xml + 1] = "</w:tr>"
+  end
+
+  xml[#xml + 1] = "</w:tbl>"
+
+  return pandoc.RawBlock("openxml", table.concat(xml))
+end
+
+-- Return two passes: first reads metadata, second rewrites AST elements.
+-- Pandoc executes them in order — the meta_pass sets module-level flags
+-- that the main filter pass consults.
+return { meta_pass, filter }
