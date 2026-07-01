@@ -4,7 +4,7 @@ FROM ghcr.io/astral-sh/uv:0.10.6@sha256:2f2ccd27bbf953ec7a9e3153a4563705e41c852a
 # Use debian:trixie-slim as base (same base as weasyprint-service / python:3.14-slim).
 # A glibc base is required because Playwright publishes no musllinux wheel, so the
 # Chromium used to rasterize embedded SVGs comes from Playwright's bundled browser.
-FROM debian:trixie-slim@sha256:1d3c811171a08a5adaa4a163fbafd96b61b87aa871bbc7aa15431ac275d3d430
+FROM debian:trixie-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 # Copy uv binary from source stage
