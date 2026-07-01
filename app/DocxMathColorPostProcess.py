@@ -55,9 +55,10 @@ def apply_math_colors(doc: DocumentObject) -> None:
     color_stack: list[str] = []
     marker_runs: list[etree._Element] = []
 
-    # Materialize the run list before mutating, so inserting <w:rPr> / removing marker
-    # runs cannot disturb a live tree walk.
-    for run in list(doc.element.iter(_M_R)):
+    # Walking the live tree is safe here: marker runs are removed in a second pass
+    # (below), never during this walk, and _apply_color inserts only <w:rPr> (never an
+    # <m:r>), so the set of runs this loop visits does not change under it.
+    for run in doc.element.iter(_M_R):
         text = _run_text(run)
         if text == MARKER_END:
             if color_stack:
@@ -74,7 +75,7 @@ def apply_math_colors(doc: DocumentObject) -> None:
 
     for run in marker_runs:
         parent = run.getparent()
-        if parent is not None:
+        if parent is not None:  # pragma: no branch - a marker run always has a parent
             parent.remove(run)
 
 
@@ -94,7 +95,8 @@ def _apply_color(run: etree._Element, hex_color: str) -> None:
     w_rpr = run.find(_W_RPR)
     if w_rpr is None:
         w_rpr = run.makeelement(_W_RPR, {})
-        insert_at = 1 if run.find(_M_RPR) is not None else 0
+        m_rpr = run.find(_M_RPR)
+        insert_at = list(run).index(m_rpr) + 1 if m_rpr is not None else 0
         run.insert(insert_at, w_rpr)
     color = w_rpr.find(_W_COLOR)
     if color is None:

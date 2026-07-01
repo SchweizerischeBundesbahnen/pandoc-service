@@ -101,6 +101,30 @@ def test_non_color_command_untouched() -> None:
     assert _encode_body("\\frac{a}{b} + \\sqrt{c}") == "\\frac{a}{b} + \\sqrt{c}"
 
 
+def test_control_symbol_is_copied_verbatim() -> None:
+    # A control symbol (backslash + non-letter, e.g. "\,") is copied as its two
+    # characters; the surrounding color command still rewrites.
+    assert _encode_body("\\,\\color{red}{x}") == "\\," + _start("FF0000") + "x" + _END
+
+
+def test_unclosed_model_bracket_leaves_command_untouched() -> None:
+    # A "[model" with no closing "]" is malformed; the command is copied verbatim.
+    latex = "\\textcolor[HTML{FF0000}{x}"
+    assert _encode_body(latex) == latex
+
+
+def test_color_command_without_brace_group_untouched() -> None:
+    # A color command not followed by a "{color}" brace group is copied verbatim.
+    latex = "\\textcolor abc"
+    assert _encode_body(latex) == latex
+
+
+def test_unbalanced_content_brace_leaves_command_untouched() -> None:
+    # The content group "{x" is never closed; the command is copied verbatim.
+    latex = "\\color{red}{x"
+    assert _encode_body(latex) == latex
+
+
 def test_color_outside_math_script_is_untouched() -> None:
     # \textcolor in ordinary HTML text (not a math script) must not be rewritten.
     html = b"<html><body><p>literal \\textcolor{red}{x} here</p></body></html>"

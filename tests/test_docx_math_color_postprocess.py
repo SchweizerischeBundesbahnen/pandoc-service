@@ -103,6 +103,38 @@ def test_document_without_markers_is_unchanged() -> None:
     assert etree.tostring(doc.element) == before
 
 
+def test_end_marker_without_open_is_ignored() -> None:
+    # A stray end marker (empty color stack) is removed without error; following runs
+    # stay uncolored.
+    doc = _doc(_run("@@PMCEND@@") + _run("x"))
+    apply_math_colors(doc)
+    runs = _runs(doc)
+    assert [_text(r) for r in runs] == ["x"]  # end marker removed
+    assert _color(runs[0]) is None
+
+
+def test_content_run_without_text_element_is_colored() -> None:
+    # A math run carrying no <m:t> (text is None) is neither marker; while a color is
+    # active it still gets <w:color>, and the walk does not crash on the missing text.
+    doc = _doc(_run("@@PMC:FF0000@@") + "<m:r></m:r>" + _run("@@PMCEND@@"))
+    apply_math_colors(doc)
+    (run,) = _runs(doc)
+    assert _text(run) is None
+    assert _color(run) == "FF0000"
+
+
+def test_existing_run_color_is_overwritten() -> None:
+    # A content run that already carries <w:rPr> with a <w:color> keeps that single
+    # rPr/color pair, with the value replaced by the active marker color.
+    existing = '<m:r><w:rPr><w:color w:val="000000"/></w:rPr><m:t>x</m:t></m:r>'
+    doc = _doc(_run("@@PMC:FF0000@@") + existing + _run("@@PMCEND@@"))
+    apply_math_colors(doc)
+    (run,) = _runs(doc)
+    assert len(run.findall(f"{{{W_NS}}}rPr")) == 1
+    assert len(run.find(f"{{{W_NS}}}rPr").findall(f"{{{W_NS}}}color")) == 1
+    assert _color(run) == "FF0000"
+
+
 def test_color_survives_document_save() -> None:
     # The injected <w:color> must survive a python-docx save/reload round-trip.
     doc = _doc(_run("@@PMC:FF0000@@") + _run("x") + _run("@@PMCEND@@"))

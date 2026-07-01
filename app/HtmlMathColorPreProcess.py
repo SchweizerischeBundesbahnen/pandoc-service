@@ -167,19 +167,10 @@ def _rewrite_math_colors(latex: str) -> str:
 
         name, name_end = _read_control_word(latex, i)
         if name in _COLOR_COMMANDS:
-            parsed = _parse_color_command(latex, name_end)
-            if parsed is not None:
-                hex_color, content, end = parsed
-                inner = _rewrite_math_colors(content)  # nested colors convert too
-                if hex_color is not None:
-                    out.append("\\text{" + MARKER_PREFIX + hex_color + MARKER_SUFFIX + "}")
-                    out.append(inner)
-                    out.append("\\text{" + MARKER_END + "}")
-                else:
-                    # Color we cannot resolve: keep the content (uncolored) rather than
-                    # leave the command in place, so \textcolor does not leak.
-                    out.append(inner)
-                i = end
+            rewritten = _rewrite_color_command(latex, name, name_end)
+            if rewritten is not None:
+                text, i = rewritten
+                out.append(text)
                 continue
 
         # Not a color command (or its arguments were malformed): copy the control
@@ -194,6 +185,26 @@ def _rewrite_math_colors(latex: str) -> str:
     return "".join(out)
 
 
+def _rewrite_color_command(latex: str, name: str, name_end: int) -> tuple[str, int] | None:
+    """Rewrite the color command ``name`` whose name ends at ``name_end``, recursing into
+    its content. Returns ``(replacement_text, index_past_command)``, or ``None`` when the
+    two-argument brace form is absent (switch form or malformed) so the caller copies
+    the command verbatim.
+    """
+    parsed = _parse_color_command(latex, name_end)
+    if parsed is None:
+        return None
+    hex_color, raw_color, content, end = parsed
+    inner = _rewrite_math_colors(content)  # nested colors convert too
+    if hex_color is None:
+        # Color we cannot resolve: keep the content (uncolored) rather than leave the
+        # command in place, so \textcolor does not leak. Warn so the dropped color is
+        # traceable when debugging a formula.
+        logger.warning("HtmlMathColorPreProcess: unresolvable color %r in \\%s - content kept, color dropped", raw_color, name)
+        return inner, end
+    return "\\text{" + MARKER_PREFIX + hex_color + MARKER_SUFFIX + "}" + inner + "\\text{" + MARKER_END + "}", end
+
+
 def _read_control_word(latex: str, backslash_index: int) -> tuple[str, int]:
     """Return the control-word name after the backslash at ``backslash_index`` and the
     index just past it. An empty name means a control symbol (backslash + non-letter).
@@ -204,10 +215,10 @@ def _read_control_word(latex: str, backslash_index: int) -> tuple[str, int]:
     return latex[backslash_index + 1 : j], j
 
 
-def _parse_color_command(latex: str, pos: int) -> tuple[str | None, str, int] | None:
+def _parse_color_command(latex: str, pos: int) -> tuple[str | None, str, str, int] | None:
     """Parse the ``[model]{color}{content}`` arguments starting at ``pos`` (just past the
-    command name). Returns ``(hex_or_None, content, end_index)``, or ``None`` when the
-    two-argument brace form is absent (switch form or malformed) so the caller leaves
+    command name). Returns ``(hex_or_None, raw_color, content, end_index)``, or ``None`` when
+    the two-argument brace form is absent (switch form or malformed) so the caller leaves
     the command untouched. ``hex_or_None`` is ``None`` when the color cannot be resolved.
     """
     i = _skip_ws(latex, pos)
@@ -228,7 +239,8 @@ def _parse_color_command(latex: str, pos: int) -> tuple[str | None, str, int] | 
     if content is None:
         return None
 
-    return _resolve_color(model, color_value[0].strip()), content[0], content[1]
+    raw_color = color_value[0].strip()
+    return _resolve_color(model, raw_color), raw_color, content[0], content[1]
 
 
 def _read_brace_group(latex: str, i: int) -> tuple[str, int] | None:
