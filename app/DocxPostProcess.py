@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from docx.section import Section
     from docx.table import Table, _Cell
 
+from app.DocxMathColorPostProcess import apply_math_colors
 from app.DocxReferencesPostProcess import add_table_of_contents_entries, enable_auto_update_fields
 
 # Patch the python-docx parser to handle large XML documents (> 10MB)
@@ -52,6 +53,7 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     _move_header_footer_references_to_first_section(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc)
+    apply_math_colors(doc)
     add_table_of_contents_entries(doc)
     enable_auto_update_fields(doc)
     out = io.BytesIO()

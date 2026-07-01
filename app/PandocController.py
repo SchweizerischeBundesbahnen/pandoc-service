@@ -23,7 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxLatexPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
+from . import DocxLatexPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlMathColorPreProcess, HtmlParagraphPreProcess, PptxPostProcess
 from .chromium_manager import get_chromium_manager
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
@@ -678,6 +678,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if source_format == "html" and target_format == "docx":
         source_data = HtmlListsPreProcess.preprocess(source_data)
         source_data = HtmlParagraphPreProcess.preprocess(source_data)
+        source_data = HtmlMathColorPreProcess.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
