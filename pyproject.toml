@@ -16,7 +16,7 @@ dependencies = [
     "defusedxml==0.7.1",
     "asgiref==3.11.1",
     "beautifulsoup4==4.15.0",
-    "playwright==1.60.0",
+    "playwright==1.61.0",
     "psutil==7.2.2",
     "prometheus-client==0.25.0",
     "prometheus-fastapi-instrumentator==8.0.2",
