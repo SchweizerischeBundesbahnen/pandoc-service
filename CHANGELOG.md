@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.0...v2.3.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* math formula color is lost when converting HTML to DOCX ([#186](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/186)) ([acd5676](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/acd5676071640f6bfbe7295c0eba45dffc2e63b1)), closes [#185](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/185)
+
 ## [2.3.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.2...v2.3.0) (2026-06-30)
 
 
