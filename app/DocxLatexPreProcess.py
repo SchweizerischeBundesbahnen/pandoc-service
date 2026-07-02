@@ -17,7 +17,7 @@ lighter on memory.
 
 from __future__ import annotations
 
-from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess
+from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -27,8 +27,9 @@ def _rewrite_body_part(
     color_styles: dict[str, DocxColorPreProcess._StyleSpec],
     para_styles: dict[str, DocxParagraphPreProcess._StyleSpec],
 ) -> tuple[bytes, bool]:
-    """Run the colour → paragraph → list rewrites over one body part, collecting
-    any synthetic styles into the shared dicts. Returns (new_xml, changed)."""
+    """Run the colour → paragraph → list → table rewrites over one body part,
+    collecting any synthetic styles into the shared dicts.  Returns
+    (new_xml, changed)."""
     changed = False
     if has_styles:
         rewritten, color_used = DocxColorPreProcess._rewrite_part(xml)
@@ -42,14 +43,19 @@ def _rewrite_body_part(
     rewritten, list_changed = DocxListLevelPreProcess._rewrite_part(xml)
     if list_changed:
         xml, changed = rewritten, True
+    rewritten, table_changed = DocxTablePreProcess._rewrite_part(xml)
+    if table_changed:
+        xml, changed = rewritten, True
     return xml, changed
 
 
 def preprocess(docx_bytes: bytes) -> bytes:
-    """Apply the colour, paragraph and list-level rewrites in one unzip/re-zip.
+    """Apply the colour, paragraph, list-level and table-cell rewrites in one
+    unzip/re-zip.
 
-    Equivalent to ``DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess
-    .preprocess(DocxColorPreProcess.preprocess(docx_bytes)))`` but without
+    Equivalent to chaining ``DocxColorPreProcess.preprocess``,
+    ``DocxParagraphPreProcess.preprocess``, ``DocxListLevelPreProcess
+    .preprocess`` and ``DocxTablePreProcess.preprocess`` but without
     re-zipping the package (and its media) between each step.
     """
     entries = read_entries(docx_bytes)
