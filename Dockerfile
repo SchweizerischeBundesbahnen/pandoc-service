@@ -122,6 +122,7 @@ COPY filters/docx_text_decorations.lua "/usr/local/share/pandoc/filters/docx_tex
 COPY filters/docx_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
 COPY filters/docx_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_paragraphs_to_latex.lua"
 COPY filters/docx_lists_to_latex.lua "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
+COPY filters/docx_tables_to_latex.lua "/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
 COPY filters/html_lists.lua "/usr/local/share/pandoc/filters/html_lists.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
