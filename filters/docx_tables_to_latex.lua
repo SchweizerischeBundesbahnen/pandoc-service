@@ -57,35 +57,30 @@ end
 -- Returns the parsed properties table (or nil) and mutates the blocks
 -- in-place to strip the sentinel text.
 local function consume_sentinel(cell_blocks)
-  if #cell_blocks == 0 then return nil end
-  local first_block = cell_blocks[1]
-  if first_block.t ~= "Para" and first_block.t ~= "Plain" then
-    return nil
-  end
-  local inlines = first_block.content
-  if #inlines == 0 then return nil end
-  local first_inline = inlines[1]
-  if first_inline.t ~= "Str" then return nil end
-
-  local payload, rest = first_inline.text:match(SENTINEL_PATTERN)
-  if not payload then return nil end
-
-  local props = parse_payload(payload)
-
-  -- Strip the sentinel from the text. If nothing remains, remove the Str
-  -- node entirely; otherwise replace its text.
-  if rest == "" then
-    -- Remove the sentinel Str. If the next inline is a Space, remove it
-    -- too so the cell content doesn't start with a spurious blank.
-    table.remove(inlines, 1)
-    if #inlines > 0 and inlines[1].t == "Space" then
-      table.remove(inlines, 1)
+  -- Scan all blocks (not just the first) because a cell with a nested table
+  -- may have the sentinel in a later paragraph block.
+  for _, block in ipairs(cell_blocks) do
+    if block.t == "Para" or block.t == "Plain" then
+      local inlines = block.content
+      if #inlines > 0 and inlines[1].t == "Str" then
+        local payload, rest = inlines[1].text:match(SENTINEL_PATTERN)
+        if payload then
+          local props = parse_payload(payload)
+          -- Strip the sentinel from the text.
+          if rest == "" then
+            table.remove(inlines, 1)
+            if #inlines > 0 and inlines[1].t == "Space" then
+              table.remove(inlines, 1)
+            end
+          else
+            inlines[1] = pandoc.Str(rest)
+          end
+          return props
+        end
+      end
     end
-  else
-    inlines[1] = pandoc.Str(rest)
   end
-
-  return props
+  return nil
 end
 
 -- Inject \cellcolor at the very start of the cell's first block.
@@ -122,30 +117,11 @@ local function process_rows(rows)
   return modified
 end
 
--- ---- Pass 1: Table processing + preamble injection ----
+-- ---- Pass 1: Table processing ----
+
+local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 
 local table_pass = {}
-
--- Inject \usepackage{colortbl} into header-includes for LaTeX/PDF targets.
--- colortbl provides \cellcolor; xcolor (already pulled in by the colour
--- filter) provides the [HTML] colour model.
-local PREAMBLE = "\\usepackage{colortbl}"
-
-function table_pass.Meta(meta)
-  if not FORMAT:match("latex") then return nil end
-
-  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
-  local existing = meta["header-includes"]
-  if existing == nil then
-    meta["header-includes"] = pandoc.MetaList({ block })
-  elseif existing.t == "MetaList" then
-    table.insert(existing, block)
-    meta["header-includes"] = existing
-  else
-    meta["header-includes"] = pandoc.MetaList({ existing, block })
-  end
-  return meta
-end
 
 function table_pass.Table(tbl)
   if not FORMAT:match("latex") then return nil end
@@ -160,10 +136,37 @@ function table_pass.Table(tbl)
   if process_rows(tbl.foot.rows) then modified = true end
 
   if not modified then return nil end
+  has_cellcolor = true
   return tbl
 end
 
--- ---- Pass 2: Global sentinel cleanup ----
+-- ---- Pass 2: Conditional preamble injection ----
+-- Only adds \usepackage{colortbl} when at least one cell was coloured in
+-- pass 1.  colortbl redefines internal table macros and can interact with
+-- longtable or custom preambles, so we avoid loading it unnecessarily.
+
+local PREAMBLE = "\\usepackage{colortbl}"
+
+local preamble_pass = {}
+
+function preamble_pass.Meta(meta)
+  if not FORMAT:match("latex") then return nil end
+  if not has_cellcolor then return nil end
+
+  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
+  local existing = meta["header-includes"]
+  if existing == nil then
+    meta["header-includes"] = pandoc.MetaList({ block })
+  elseif existing.t == "MetaList" then
+    table.insert(existing, block)
+    meta["header-includes"] = existing
+  else
+    meta["header-includes"] = pandoc.MetaList({ existing, block })
+  end
+  return meta
+end
+
+-- ---- Pass 3: Global sentinel cleanup ----
 -- Strip any residual sentinel text from Str nodes that the Table handler
 -- might have missed (e.g. sentinels in cells that pandoc wrapped in
 -- unexpected block types).
@@ -182,5 +185,5 @@ function cleanup_pass.Str(s)
   return nil
 end
 
--- Return both passes in order: tables first, then cleanup.
-return { table_pass, cleanup_pass }
+-- Return all three passes in order: tables, conditional preamble, cleanup.
+return { table_pass, preamble_pass, cleanup_pass }

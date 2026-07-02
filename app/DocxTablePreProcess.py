@@ -40,7 +40,6 @@ SENTINEL_OPEN = "\ue010"
 SENTINEL_CLOSE = "\ue011"
 
 _TBL_TAG = f"{{{W_NS}}}tbl"
-_TBLPR_TAG = f"{{{W_NS}}}tblPr"
 _TBLGRID_TAG = f"{{{W_NS}}}tblGrid"
 _GRIDCOL_TAG = f"{{{W_NS}}}gridCol"
 _TC_TAG = f"{{{W_NS}}}tc"
@@ -186,10 +185,25 @@ def _tag_cell_backgrounds(tbl: ET.Element) -> bool:
         if not bg:
             continue
 
-        # Find the first <w:p> in this cell.
-        first_para = tc.find(_P_TAG)
+        # Find the first <w:p> that precedes any nested <w:tbl>.  A cell
+        # containing a nested table has structure [tcPr, tbl, p] where the
+        # trailing <w:p/> is the mandatory cell-mark paragraph — injecting
+        # the sentinel there would place it after the Table AST node, where
+        # the Lua filter would miss it.  If no <w:p> exists before a nested
+        # table, prepend a new one so the sentinel lands in cell_blocks[1].
+        first_para = None
+        for child in tc:
+            if child.tag == _TBL_TAG:
+                break
+            if child.tag == _P_TAG:
+                first_para = child
+                break
         if first_para is None:
-            continue
+            # No paragraph before the nested table (or empty cell): insert
+            # a new paragraph right after <w:tcPr> (or at position 0).
+            first_para = ET.Element(_P_TAG)
+            insert_pos = 1 if tcpr is not None and next(iter(tc), None) is tcpr else 0
+            tc.insert(insert_pos, first_para)
 
         if _already_tagged(first_para):
             continue

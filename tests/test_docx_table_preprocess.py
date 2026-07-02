@@ -10,6 +10,8 @@ from __future__ import annotations
 import io
 import zipfile
 from pathlib import Path
+
+import pytest
 from xml.etree import ElementTree as ET  # noqa: S405
 
 from app import DocxTablePreProcess
@@ -282,7 +284,7 @@ def test_real_docx_with_table_styles():
     """End-to-end smoke test against the real test fixture."""
     fixture = Path("tests/data/test/test_convert_live_doc_with_table_with_inline_style.docx")
     if not fixture.exists():
-        return  # Skip if fixture not available
+        pytest.skip("Fixture not available: test_convert_live_doc_with_table_with_inline_style.docx")
 
     blob = fixture.read_bytes()
     result = DocxTablePreProcess.preprocess(blob)
