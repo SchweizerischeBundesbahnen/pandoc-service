@@ -169,6 +169,33 @@ def _fix_grid_col_widths(tbl: ET.Element) -> bool:
     return changed
 
 
+def _find_or_create_first_para(tc: ET.Element, tcpr: ET.Element) -> ET.Element:
+    """Return the first ``<w:p>`` before any nested ``<w:tbl>`` in *tc*.
+
+    A cell containing a nested table has structure ``[tcPr, tbl, p]`` where the
+    trailing ``<w:p/>`` is the mandatory cell-mark paragraph.  Injecting the
+    sentinel there would place it after the ``Table`` AST node, so we look for
+    a ``<w:p>`` that *precedes* any ``<w:tbl>``.  If none exists, a new empty
+    paragraph is inserted right after ``<w:tcPr>``.
+    """
+    for child in tc:
+        if child.tag == _TBL_TAG:
+            break
+        if child.tag == _P_TAG:
+            return child
+    para = ET.Element(_P_TAG)
+    insert_pos = 1 if next(iter(tc), None) is tcpr else 0
+    tc.insert(insert_pos, para)
+    return para
+
+
+def _inject_sentinel(para: ET.Element, bg: str) -> None:
+    """Insert a sentinel run encoding *bg* into *para*."""
+    ppr = para.find(_PPR_TAG)
+    insert_at = 1 if ppr is not None and next(iter(para), None) is ppr else 0
+    para.insert(insert_at, _make_sentinel_run(_build_sentinel_text(bg)))
+
+
 def _tag_cell_backgrounds(tbl: ET.Element) -> bool:
     """Prepend sentinels encoding background colour to styled cells.
 
@@ -185,36 +212,11 @@ def _tag_cell_backgrounds(tbl: ET.Element) -> bool:
         if not bg:
             continue
 
-        # Find the first <w:p> that precedes any nested <w:tbl>.  A cell
-        # containing a nested table has structure [tcPr, tbl, p] where the
-        # trailing <w:p/> is the mandatory cell-mark paragraph — injecting
-        # the sentinel there would place it after the Table AST node, where
-        # the Lua filter would miss it.  If no <w:p> exists before a nested
-        # table, prepend a new one so the sentinel lands in cell_blocks[1].
-        first_para = None
-        for child in tc:
-            if child.tag == _TBL_TAG:
-                break
-            if child.tag == _P_TAG:
-                first_para = child
-                break
-        if first_para is None:
-            # No paragraph before the nested table (or empty cell): insert
-            # a new paragraph right after <w:tcPr> (or at position 0).
-            first_para = ET.Element(_P_TAG)
-            insert_pos = 1 if tcpr is not None and next(iter(tc), None) is tcpr else 0
-            tc.insert(insert_pos, first_para)
-
+        first_para = _find_or_create_first_para(tc, tcpr)
         if _already_tagged(first_para):
             continue
 
-        sentinel_text = _build_sentinel_text(bg)
-
-        # Insert sentinel run after <w:pPr> when present (it must stay the
-        # first child of <w:p> per the OOXML schema).
-        ppr = first_para.find(_PPR_TAG)
-        insert_at = 1 if ppr is not None and next(iter(first_para), None) is ppr else 0
-        first_para.insert(insert_at, _make_sentinel_run(sentinel_text))
+        _inject_sentinel(first_para, bg)
         changed = True
 
     return changed
