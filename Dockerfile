@@ -120,8 +120,10 @@ COPY filters/heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.
 COPY filters/inline_styles.lua "/usr/local/share/pandoc/filters/inline_styles.lua"
 COPY filters/docx_text_decorations.lua "/usr/local/share/pandoc/filters/docx_text_decorations.lua"
 COPY filters/docx_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
+COPY filters/docx_math_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_math_colors_to_latex.lua"
 COPY filters/docx_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_paragraphs_to_latex.lua"
 COPY filters/docx_lists_to_latex.lua "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
+COPY filters/docx_tables_to_latex.lua "/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
 COPY filters/html_lists.lua "/usr/local/share/pandoc/filters/html_lists.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -1,23 +1,24 @@
 """Single-pass docx→latex preprocessing.
 
-For LaTeX/PDF targets three independent rewrites run on the source DOCX before
+For LaTeX/PDF targets five independent rewrites run on the source DOCX before
 pandoc reads it: colour/size runs (:mod:`app.DocxColorPreProcess`), paragraph
-alignment/indent (:mod:`app.DocxParagraphPreProcess`) and list-level tagging
-(:mod:`app.DocxListLevelPreProcess`). Run separately they each unzip the whole
+alignment/indent (:mod:`app.DocxParagraphPreProcess`), list-level tagging
+(:mod:`app.DocxListLevelPreProcess`), table-cell backgrounds
+(:mod:`app.DocxTablePreProcess`), and math-run colour encoding
+(:mod:`app.DocxMathColorPreProcess`). Run separately they each unzip the whole
 package, rewrite their body parts and re-zip — so an image-heavy document gets
-its media decompressed and recompressed three times, tripling the peak memory
+its media decompressed and recompressed five times, quintupling the peak memory
 and CPU of the step.
 
 This module orchestrates the same per-part transforms over a single unzip /
-re-zip: the media is held once and the body XML flows colour → paragraph →
-list through the existing ``_rewrite_part`` helpers, so the produced DOCX is
-byte-for-byte identical to chaining the three ``preprocess`` calls — only much
-lighter on memory.
+re-zip: the media is held once and the body XML flows through the existing
+``_rewrite_part`` helpers, so the produced DOCX is byte-for-byte identical to
+chaining the five ``preprocess`` calls — only much lighter on memory.
 """
 
 from __future__ import annotations
 
-from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess
+from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxMathColorPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -27,8 +28,9 @@ def _rewrite_body_part(
     color_styles: dict[str, DocxColorPreProcess._StyleSpec],
     para_styles: dict[str, DocxParagraphPreProcess._StyleSpec],
 ) -> tuple[bytes, bool]:
-    """Run the colour → paragraph → list rewrites over one body part, collecting
-    any synthetic styles into the shared dicts. Returns (new_xml, changed)."""
+    """Run the colour → paragraph → list → table rewrites over one body part,
+    collecting any synthetic styles into the shared dicts.  Returns
+    (new_xml, changed)."""
     changed = False
     if has_styles:
         rewritten, color_used = DocxColorPreProcess._rewrite_part(xml)
@@ -42,15 +44,24 @@ def _rewrite_body_part(
     rewritten, list_changed = DocxListLevelPreProcess._rewrite_part(xml)
     if list_changed:
         xml, changed = rewritten, True
+    rewritten, table_changed = DocxTablePreProcess._rewrite_part(xml)
+    if table_changed:
+        xml, changed = rewritten, True
+    rewritten, math_color_changed = DocxMathColorPreProcess._rewrite_part(xml)
+    if math_color_changed:
+        xml, changed = rewritten, True
     return xml, changed
 
 
 def preprocess(docx_bytes: bytes) -> bytes:
-    """Apply the colour, paragraph and list-level rewrites in one unzip/re-zip.
+    """Apply the colour, paragraph, list-level, table-cell and math-colour
+    rewrites in one unzip/re-zip.
 
-    Equivalent to ``DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess
-    .preprocess(DocxColorPreProcess.preprocess(docx_bytes)))`` but without
-    re-zipping the package (and its media) between each step.
+    Equivalent to chaining ``DocxColorPreProcess.preprocess``,
+    ``DocxParagraphPreProcess.preprocess``, ``DocxListLevelPreProcess
+    .preprocess``, ``DocxTablePreProcess.preprocess`` and
+    ``DocxMathColorPreProcess.preprocess`` but without re-zipping the package
+    (and its media) between each step.
     """
     entries = read_entries(docx_bytes)
     if entries is None:
