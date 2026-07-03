@@ -17,7 +17,7 @@ lighter on memory.
 
 from __future__ import annotations
 
-from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
+from . import DocxColorPreProcess, DocxListLevelPreProcess, DocxMathColorPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -45,6 +45,9 @@ def _rewrite_body_part(
         xml, changed = rewritten, True
     rewritten, table_changed = DocxTablePreProcess._rewrite_part(xml)
     if table_changed:
+        xml, changed = rewritten, True
+    rewritten, math_color_changed = DocxMathColorPreProcess._rewrite_part(xml)
+    if math_color_changed:
         xml, changed = rewritten, True
     return xml, changed
 

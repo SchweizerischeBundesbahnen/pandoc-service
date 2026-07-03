@@ -10,7 +10,7 @@ from __future__ import annotations
 import io
 import zipfile
 
-from app import DocxColorPreProcess, DocxLatexPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
+from app import DocxColorPreProcess, DocxLatexPreProcess, DocxListLevelPreProcess, DocxMathColorPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 STYLES = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
@@ -43,7 +43,7 @@ _BODY = _doc(
 def test_single_pass_matches_sequential_preprocessors():
     blob = _pack({"word/document.xml": _BODY, "word/styles.xml": STYLES, "word/media/img.png": b"\x89PNG" + b"\x00" * 500})
 
-    sequential = DocxTablePreProcess.preprocess(DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess.preprocess(DocxColorPreProcess.preprocess(blob))))
+    sequential = DocxMathColorPreProcess.preprocess(DocxTablePreProcess.preprocess(DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess.preprocess(DocxColorPreProcess.preprocess(blob)))))
     single = DocxLatexPreProcess.preprocess(blob)
 
     seq_entries, single_entries = _entries(sequential), _entries(single)
@@ -77,8 +77,7 @@ def test_no_body_parts_returned_unchanged():
 def test_single_pass_includes_table_cell_preprocessing():
     """Table cell backgrounds are tagged by the single-pass orchestrator."""
     body_with_table = _doc(
-        '<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9EAF7"/></w:tcPr>'
-        "<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>",
+        '<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9EAF7"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
     )
     blob = _pack({"word/document.xml": body_with_table, "word/styles.xml": STYLES})
 
@@ -91,4 +90,4 @@ def test_single_pass_includes_table_cell_preprocessing():
         assert single_entries[name] == data, f"{name} differs between single-pass and sequential"
 
     # Verify the sentinel is present
-    assert "\uE010bg=D9EAF7\uE011".encode() in single_entries["word/document.xml"]
+    assert "\ue010bg=D9EAF7\ue011".encode() in single_entries["word/document.xml"]
