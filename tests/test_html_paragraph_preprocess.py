@@ -203,7 +203,7 @@ def test_parse_failure_passes_input_through(mocker):
     # extra imports here; the assertion is "any caught exception returns the
     # original source untouched".
     mocker.patch(
-        "app.HtmlParagraphPreProcess.html.fragments_fromstring",
+        "app.HtmlParagraphPreProcess.html.document_fromstring",
         side_effect=ValueError("synthetic parse failure"),
     )
     src = b'<p style="margin-left: 40px">x</p>'
@@ -218,7 +218,7 @@ def test_parse_failure_logs_warning(mocker, caplog):
     import logging  # noqa: PLC0415
 
     mocker.patch(
-        "app.HtmlParagraphPreProcess.html.fragments_fromstring",
+        "app.HtmlParagraphPreProcess.html.document_fromstring",
         side_effect=ValueError("boom"),
     )
     caplog.set_level(logging.WARNING, logger="app.HtmlParagraphPreProcess")
@@ -242,7 +242,9 @@ def test_leading_text_before_indented_p_is_preserved_when_rewriting():
     """
     src = b'hello there <p style="margin-left: 40px">indented</p>'
     out = HtmlParagraphPreProcess.preprocess(src)
-    assert out.startswith(b"hello there"), f"leading text not preserved: {out!r}"
+    # Output is a full document now (head preserved), so the text is inside
+    # <body> rather than at byte 0 — what matters is it isn't dropped.
+    assert b"hello there" in out, f"leading text not preserved: {out!r}"
     assert b'class="pandoc-para"' in out
 
 

@@ -144,7 +144,7 @@ def test_parse_failure_passes_input_through(mocker):
     """If lxml raises, we MUST return the input bytes unchanged so the
     conversion pipeline doesn't 500 on malformed HTML."""
     mocker.patch(
-        "app.HtmlListsPreProcess.html.fragments_fromstring",
+        "app.HtmlListsPreProcess.html.document_fromstring",
         side_effect=ValueError("synthetic parse failure"),
     )
     src = b"<ol><ol><li>x</li></ol></ol>"
@@ -157,7 +157,7 @@ def test_parse_failure_logs_warning(mocker, caplog):
     import logging  # noqa: PLC0415
 
     mocker.patch(
-        "app.HtmlListsPreProcess.html.fragments_fromstring",
+        "app.HtmlListsPreProcess.html.document_fromstring",
         side_effect=ValueError("boom"),
     )
     caplog.set_level(logging.WARNING, logger="app.HtmlListsPreProcess")
@@ -178,7 +178,9 @@ def test_leading_text_before_orphan_list_is_preserved_when_rewriting():
     Polarion-style fragments that begin with prose."""
     src = b"preamble text <ol><ol><li>x</li></ol></ol>"
     out = HtmlListsPreProcess.preprocess(src)
-    assert out.startswith(b"preamble text"), f"leading text not preserved: {out!r}"
+    # Output is a full document now (head preserved), so the text is inside
+    # <body> rather than at byte 0 — what matters is it isn't dropped.
+    assert b"preamble text" in out, f"leading text not preserved: {out!r}"
     assert SENTINEL in out  # rewriting did happen
 
 

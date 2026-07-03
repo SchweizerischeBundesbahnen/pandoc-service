@@ -14,7 +14,10 @@ Why an integration test (vs. mocked unit tests):
     file plugs that gap with a single, focused round-trip assertion.
 """
 
+import base64
+import struct
 import zipfile
+import zlib
 from io import BytesIO
 from xml.etree import ElementTree as ET
 
@@ -530,3 +533,67 @@ def test_valid_integer_twips_values_still_work(test_parameters: TestParameters):
         doc = ET.fromstring(doc_xml)
         p = _w_p_with_text(doc, f"val_{raw}")
         assert _ind_left(p) == expected, f"valid twips {raw!r} did not produce <w:ind w:left='{expected}'/>"
+
+
+# ---------------------------------------------------------------------------
+# Image sizing — end to end through the whole html->docx pipeline
+# ---------------------------------------------------------------------------
+#
+# Two cooperating pieces size images so a DOCX matches the browser:
+#   * filters/inline_styles.lua (Image handler) copies a CSS width/height from
+#     an <img style="..."> onto the node's width/height attributes, which the
+#     DOCX writer honours.
+#   * app/HtmlImagePreProcess.py sizes images that have NO explicit width/height
+#     from their intrinsic pixels at 96 dpi (honouring max-width), so pandoc
+#     doesn't fall back to its 72 dpi no-density guess (~1.33x too large).
+# The per-unit / format details are unit-tested in tests/test_html_image_preprocess.py;
+# here we prove the extent (EMU) comes out right through the real container.
+
+WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+EMU_PER_PX = 9525  # 1px @96dpi
+
+
+def _png_data_uri(width: int, height: int) -> str:
+    """A minimal valid PNG of the given pixel size as a base64 data URI."""
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        body = typ + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + b"\xcc\xcc\xcc" * width for _ in range(height))
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+def _drawing_extent(docx_bytes: bytes) -> tuple[int, int]:
+    """Return (cx, cy) EMU of the first image drawing in the DOCX."""
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+    extent = doc.find(f".//{{{WP_NS}}}extent")
+    assert extent is not None, "no <wp:extent> — image was not embedded/sized"
+    return int(extent.get("cx")), int(extent.get("cy"))
+
+
+def test_image_css_px_dimensions_size_the_docx_extent(test_parameters: TestParameters):
+    """<img style="width:200px;height:100px"> -> extent of exactly 200x100 px in
+    EMU (px * 9525). Exercises the inline_styles.lua Image handler."""
+    html = f'<p><img src="{_png_data_uri(40, 20)}" style="width:200px;height:100px;"></p>'
+    cx, cy = _drawing_extent(_convert_html_to_docx(test_parameters, html))
+    assert (cx, cy) == (200 * EMU_PER_PX, 100 * EMU_PER_PX), f"got {(cx, cy)}"
+
+
+def test_unsized_image_renders_at_96dpi_native(test_parameters: TestParameters):
+    """An image with only max-width (no width/height) must render at its pixel
+    size at 96 dpi, not pandoc's 72 dpi fallback. A 400x200 png under
+    max-width:650px stays native (400px < 650px)."""
+    html = f'<p><img src="{_png_data_uri(400, 200)}" style="max-width:650px;"></p>'
+    cx, cy = _drawing_extent(_convert_html_to_docx(test_parameters, html))
+    assert (cx, cy) == (400 * EMU_PER_PX, 200 * EMU_PER_PX), f"got {(cx, cy)}"
+
+
+def test_unsized_image_wider_than_max_width_is_clamped(test_parameters: TestParameters):
+    """A 400x200 png under max-width:100px is clamped to 100x50 px (ratio kept)."""
+    html = f'<p><img src="{_png_data_uri(400, 200)}" style="max-width:100px;"></p>'
+    cx, cy = _drawing_extent(_convert_html_to_docx(test_parameters, html))
+    assert (cx, cy) == (100 * EMU_PER_PX, 50 * EMU_PER_PX), f"got {(cx, cy)}"

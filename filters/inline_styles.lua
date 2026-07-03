@@ -52,6 +52,46 @@ local function parse_style(style)
   return props
 end
 
+-- Validate a CSS image dimension (the value of `width:`/`height:` in an
+-- <img style="...">). Returns the value unchanged when it is a number with a
+-- unit pandoc's image-size parser understands (px, in, cm, mm, pt, pc, % — or
+-- unitless, which pandoc treats as px), else nil. Font-relative/viewport units
+-- (em, ex, vw, vh, ...) are rejected: pandoc can't turn them into a concrete
+-- <wp:extent>, so we leave the image unsized rather than emit garbage. Only a
+-- validated value ever reaches the node attribute (never raw style text).
+local SUPPORTED_IMG_UNITS = { [""] = true, px = true, ["in"] = true, cm = true, mm = true, pt = true, pc = true, ["%"] = true }
+local function image_dim(value)
+  if not value then return nil end
+  -- A number (optional decimals) followed by an optional unit: either letters
+  -- (px, in, cm, ...) or a literal "%". Surrounding whitespace is tolerated.
+  local num, unit = value:match("^%s*(%d+%.?%d*)%s*([%a%%]*)%s*$")
+  if num and SUPPORTED_IMG_UNITS[unit] then
+    return num .. unit
+  end
+  return nil
+end
+
+-- Pandoc's HTML reader leaves <img style="width:..;height:.."> as an opaque
+-- `style` attribute, and the DOCX writer sizes images only from the node's
+-- `width`/`height` attributes — so CSS-sized images come out at native size.
+-- Copy validated CSS width/height onto those attributes (a node-attribute tweak,
+-- not the writer's unreachable embedding pipeline). Never overwrite an existing
+-- width/height attribute (an <img width=..> or the value app/svg_processor.py
+-- sets for rasterised SVGs); set only the side(s) given so the writer keeps the
+-- aspect ratio when just one is present. Mutates the Image in place.
+local function apply_image_style_dimensions(img)
+  local style = img.attributes and img.attributes.style
+  if not style then return end
+  local props = parse_style(style)
+  for _, dim in ipairs({ "width", "height" }) do
+    local cur = img.attributes[dim]
+    if not cur or cur == "" then
+      local v = image_dim(props[dim])
+      if v then img.attributes[dim] = v end
+    end
+  end
+end
+
 -- Accept "#RRGGBB", "RRGGBB", "#RGB", "RGB", or "rgb(r,g,b)" and return
 -- the canonical 6-char uppercase hex string Word expects ("FF0000"), or
 -- nil when the value can't be parsed.
@@ -410,6 +450,13 @@ walk = function(inlines, props, vert_align)
       -- accessible from a Lua filter, so we MUST pass the node through
       -- untouched. Stringifying would silently drop the image (alt text
       -- only) and is exactly the bug we just fixed.
+      --
+      -- ...but we still copy CSS width/height onto the node's width/height
+      -- attributes so the writer sizes it (see apply_image_style_dimensions).
+      -- filter.Image does this for standalone images; doing it here too covers
+      -- images that sit inside a styled span (idempotent — it never overwrites
+      -- an already-set dimension).
+      apply_image_style_dimensions(inline)
       result[#result + 1] = inline
     else
       -- Anything else (Note, Cite, Math, Quoted, SmallCaps, ...) needs
@@ -454,6 +501,13 @@ function filter.Span(el)
   if not el.attributes.style then return nil end
   local props = merge_css({}, parse_style(el.attributes.style))
   return walk(el.content, props, nil)
+end
+
+-- Standalone images (the common case — an <img style="width:.."> not wrapped in
+-- a styled span) never enter walk(), so size them here from their CSS style.
+function filter.Image(el)
+  apply_image_style_dimensions(el)
+  return el
 end
 
 -- True if any descendant inline is a Span carrying a `style` attribute.
