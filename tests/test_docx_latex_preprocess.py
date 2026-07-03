@@ -10,9 +10,10 @@ from __future__ import annotations
 import io
 import zipfile
 
-from app import DocxColorPreProcess, DocxLatexPreProcess, DocxListLevelPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
+from app import DocxColorPreProcess, DocxLatexPreProcess, DocxListLevelPreProcess, DocxMathColorPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 STYLES = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
 
 
@@ -43,7 +44,7 @@ _BODY = _doc(
 def test_single_pass_matches_sequential_preprocessors():
     blob = _pack({"word/document.xml": _BODY, "word/styles.xml": STYLES, "word/media/img.png": b"\x89PNG" + b"\x00" * 500})
 
-    sequential = DocxTablePreProcess.preprocess(DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess.preprocess(DocxColorPreProcess.preprocess(blob))))
+    sequential = DocxMathColorPreProcess.preprocess(DocxTablePreProcess.preprocess(DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess.preprocess(DocxColorPreProcess.preprocess(blob)))))
     single = DocxLatexPreProcess.preprocess(blob)
 
     seq_entries, single_entries = _entries(sequential), _entries(single)
@@ -65,6 +66,27 @@ def test_media_is_preserved_and_changes_applied():
     assert "".encode() in out["word/document.xml"]
 
 
+def test_math_colour_applied_without_styles_xml():
+    """A colored equation with no styles.xml: colour/paragraph rewrites skip
+    (has_styles False), but the math-colour rewrite still runs in the single pass."""
+    math_body = (
+        f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="{W_NS}" xmlns:m="{M_NS}"><w:body><w:p><m:oMath><m:r><w:rPr><w:color w:val="FF0000"/></w:rPr><m:t>E</m:t></m:r></m:oMath></w:p></w:body></w:document>'
+    ).encode()
+    blob = _pack({"word/document.xml": math_body})
+    out = _entries(DocxLatexPreProcess.preprocess(blob))["word/document.xml"]
+    # The colour is encoded as markers and the direct <w:color> stripped.
+    assert b"PMCzzzFF0000zzzEzzzPMCENDzzz" in out
+    assert b"<w:color" not in out
+
+
+def test_unchanged_document_returns_original_bytes():
+    """A document nothing rewrites (plain run, no colour/list/table/math) returns
+    the original bytes rather than a re-zipped copy."""
+    plain = _doc("<w:p><w:r><w:t>plain</w:t></w:r></w:p>")
+    blob = _pack({"word/document.xml": plain, "word/styles.xml": STYLES})
+    assert DocxLatexPreProcess.preprocess(blob) == blob
+
+
 def test_non_docx_returned_unchanged():
     assert DocxLatexPreProcess.preprocess(b"not a zip") == b"not a zip"
 
@@ -77,8 +99,7 @@ def test_no_body_parts_returned_unchanged():
 def test_single_pass_includes_table_cell_preprocessing():
     """Table cell backgrounds are tagged by the single-pass orchestrator."""
     body_with_table = _doc(
-        '<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9EAF7"/></w:tcPr>'
-        "<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>",
+        '<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9EAF7"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
     )
     blob = _pack({"word/document.xml": body_with_table, "word/styles.xml": STYLES})
 
@@ -91,4 +112,4 @@ def test_single_pass_includes_table_cell_preprocessing():
         assert single_entries[name] == data, f"{name} differs between single-pass and sequential"
 
     # Verify the sentinel is present
-    assert "\uE010bg=D9EAF7\uE011".encode() in single_entries["word/document.xml"]
+    assert "\ue010bg=D9EAF7\ue011".encode() in single_entries["word/document.xml"]
