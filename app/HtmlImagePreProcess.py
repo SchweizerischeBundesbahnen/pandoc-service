@@ -172,11 +172,18 @@ def _decode_image_size(src: str | None) -> tuple[int, int] | None:
     if "base64" not in header:
         return None
     try:
-        raw = base64.b64decode(payload, validate=False)
+        # For PNG/GIF/BMP the magic header fits in the first ~26 bytes; only
+        # JPEG may need more (SOF can follow a large APP1/EXIF block). Decode
+        # up to 64 KiB — enough to cover almost all EXIF payloads — so we
+        # avoid allocating a full decoded copy of a multi-megabyte image.
+        raw = base64.b64decode(payload[: _MAX_HEADER_DECODE * 4 // 3 + 4], validate=False)
     except _DECODE_FAILURES:
         return None
     return _read_raster_size(raw)
 
+
+# Cap the base64 we decode when sniffing image dimensions; see _decode_image_size.
+_MAX_HEADER_DECODE = 65536
 
 # Smallest header we bother inspecting (a GIF logical-screen descriptor); PNG
 # and BMP need more and are length-checked in their own branch.
@@ -223,7 +230,7 @@ def _read_jpeg_size(data: bytes) -> tuple[int, int] | None:
     """Walk JPEG segment markers to the start-of-frame and read its size."""
     i = 2  # skip the SOI (\xff\xd8)
     n = len(data)
-    while i + 9 < n:
+    while i + 9 <= n:
         if data[i] != _JPEG_MARKER_PREFIX:
             i += 1
             continue
