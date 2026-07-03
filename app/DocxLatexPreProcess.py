@@ -1,18 +1,19 @@
 """Single-pass docx→latex preprocessing.
 
-For LaTeX/PDF targets three independent rewrites run on the source DOCX before
+For LaTeX/PDF targets five independent rewrites run on the source DOCX before
 pandoc reads it: colour/size runs (:mod:`app.DocxColorPreProcess`), paragraph
-alignment/indent (:mod:`app.DocxParagraphPreProcess`) and list-level tagging
-(:mod:`app.DocxListLevelPreProcess`). Run separately they each unzip the whole
+alignment/indent (:mod:`app.DocxParagraphPreProcess`), list-level tagging
+(:mod:`app.DocxListLevelPreProcess`), table-cell backgrounds
+(:mod:`app.DocxTablePreProcess`), and math-run colour encoding
+(:mod:`app.DocxMathColorPreProcess`). Run separately they each unzip the whole
 package, rewrite their body parts and re-zip — so an image-heavy document gets
-its media decompressed and recompressed three times, tripling the peak memory
+its media decompressed and recompressed five times, quintupling the peak memory
 and CPU of the step.
 
 This module orchestrates the same per-part transforms over a single unzip /
-re-zip: the media is held once and the body XML flows colour → paragraph →
-list through the existing ``_rewrite_part`` helpers, so the produced DOCX is
-byte-for-byte identical to chaining the three ``preprocess`` calls — only much
-lighter on memory.
+re-zip: the media is held once and the body XML flows through the existing
+``_rewrite_part`` helpers, so the produced DOCX is byte-for-byte identical to
+chaining the five ``preprocess`` calls — only much lighter on memory.
 """
 
 from __future__ import annotations
@@ -53,13 +54,14 @@ def _rewrite_body_part(
 
 
 def preprocess(docx_bytes: bytes) -> bytes:
-    """Apply the colour, paragraph, list-level and table-cell rewrites in one
-    unzip/re-zip.
+    """Apply the colour, paragraph, list-level, table-cell and math-colour
+    rewrites in one unzip/re-zip.
 
     Equivalent to chaining ``DocxColorPreProcess.preprocess``,
     ``DocxParagraphPreProcess.preprocess``, ``DocxListLevelPreProcess
-    .preprocess`` and ``DocxTablePreProcess.preprocess`` but without
-    re-zipping the package (and its media) between each step.
+    .preprocess``, ``DocxTablePreProcess.preprocess`` and
+    ``DocxMathColorPreProcess.preprocess`` but without re-zipping the package
+    (and its media) between each step.
     """
     entries = read_entries(docx_bytes)
     if entries is None:

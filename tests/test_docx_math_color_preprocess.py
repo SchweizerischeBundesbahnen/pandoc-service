@@ -99,5 +99,26 @@ def test_colored_run_without_text_element_does_not_crash() -> None:
     assert out == blob
 
 
+def test_math_run_with_rpr_but_no_color_is_skipped() -> None:
+    # <w:rPr> present (e.g. bold) but no <w:color> child -> run left untouched.
+    body = "<m:r><w:rPr><w:b/></w:rPr><m:t>x</m:t></m:r>"
+    blob = _pack(_doc(body))
+    assert DocxMathColorPreProcess.preprocess(blob) == blob
+
+
+def test_color_element_without_value_is_skipped() -> None:
+    # <w:color/> with no w:val attribute -> nothing to encode, run left untouched.
+    body = "<m:r><w:rPr><w:color/></w:rPr><m:t>x</m:t></m:r>"
+    blob = _pack(_doc(body))
+    assert DocxMathColorPreProcess.preprocess(blob) == blob
+
+
+def test_unparseable_document_part_is_skipped() -> None:
+    # A valid zip whose word/document.xml is malformed XML -> the part is skipped
+    # (parse returns None) and the package is returned unchanged.
+    blob = _pack(b"<not-well-formed")
+    assert DocxMathColorPreProcess.preprocess(blob) == blob
+
+
 def test_invalid_zip_returned_unchanged() -> None:
     assert DocxMathColorPreProcess.preprocess(b"not a zip") == b"not a zip"

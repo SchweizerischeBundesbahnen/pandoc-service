@@ -31,7 +31,10 @@ function filter.Math(el)
   if not FORMAT:match("latex") then
     return nil
   end
-  local replaced = el.text:gsub(MARKER, "{\\color[HTML]{%1} %2}")
+  local replaced, count = el.text:gsub(MARKER, "{\\color[HTML]{%1} %2}")
+  if count == 0 then
+    return nil
+  end
   el.text = replaced
   return el
 end
