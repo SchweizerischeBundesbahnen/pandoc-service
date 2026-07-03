@@ -23,7 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxLatexPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlMathColorPreProcess, HtmlParagraphPreProcess, PptxPostProcess
+from . import DocxLatexPreProcess, DocxPostProcess, HtmlImagePreProcess, HtmlListsPreProcess, HtmlMathColorPreProcess, HtmlParagraphPreProcess, PptxPostProcess
 from .chromium_manager import get_chromium_manager
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
@@ -675,10 +675,15 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # reader (which drops <p>'s style attribute outright). See
     # app/HtmlParagraphPreProcess.py and the Div handler in
     # filters/inline_styles.lua for the full pipeline.
+    # Also give un-sized <img> an explicit px width/height read from the inlined
+    # image so pandoc renders it at the 96 dpi CSS reference (not its 72 dpi
+    # no-density fallback), honouring any CSS max-width. See
+    # app/HtmlImagePreProcess.py.
     if source_format == "html" and target_format == "docx":
         source_data = HtmlListsPreProcess.preprocess(source_data)
         source_data = HtmlParagraphPreProcess.preprocess(source_data)
         source_data = HtmlMathColorPreProcess.preprocess(source_data)
+        source_data = HtmlImagePreProcess.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:

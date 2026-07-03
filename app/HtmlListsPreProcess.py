@@ -52,34 +52,22 @@ def preprocess(source: bytes) -> bytes:
     valid HTML is never modified.
     """
     try:
-        # fragments_fromstring tolerates both full documents and bare
-        # fragments. We get a list of HtmlElements (and possibly a leading
-        # text string) covering everything in the input.
-        fragments = html.fragments_fromstring(source)
+        # document_fromstring (not fragments_fromstring) so a full HTML document
+        # keeps its <head>: the exporter sends <head><title>...</title>, which
+        # pandoc renders with the "Title" style. fragments_fromstring drops the
+        # head, so re-serializing after wrapping an orphan list would lose the
+        # title (it falls back to "First Paragraph"). A bare fragment is
+        # harmlessly wrapped in <html><body> (pandoc reads it the same), and we
+        # only re-serialize at all when an orphan list was actually wrapped.
+        doc = html.document_fromstring(source)
     except _PARSE_FAILURES:
         logger.warning("HtmlListsPreProcess: HTML parse failed; passing input through")
         return source
 
-    rewrote = False
-    for frag in fragments:
-        # Plain leading text is returned as a str; skip those.
-        if not hasattr(frag, "iter"):
-            continue
-        rewrote = _wrap_orphan_lists(frag) or rewrote
-
-    if not rewrote:
+    if not _wrap_orphan_lists(doc):
         return source
 
-    # Serialize each fragment and concatenate. encoding=str returns a Python
-    # string we then re-encode as UTF-8 (matching what pandoc expects when
-    # we hand it the temp file).
-    parts: list[bytes] = []
-    for frag in fragments:
-        if hasattr(frag, "tag"):
-            parts.append(html.tostring(frag, encoding="utf-8"))
-        else:
-            parts.append(frag.encode("utf-8"))
-    return b"".join(parts)
+    return html.tostring(doc, encoding="utf-8")
 
 
 def _wrap_orphan_lists(root: html.HtmlElement) -> bool:
