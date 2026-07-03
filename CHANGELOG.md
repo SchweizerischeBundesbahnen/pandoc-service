@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.1...v2.3.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.138.2 ([5b2a1fd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5b2a1fd41389d4484bce29a3f40af2b312705e7c))
+* **deps:** update dependency playwright to v1.61.0 ([fbafc09](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/fbafc09ecf343e9e1a029b63eebd0df51dde5644))
+* math colors are lost during DOCX to PDF conversion ([#192](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/192)) ([5911ce5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5911ce54ef74395558f9a9570f5eaf744f2285c3)), closes [#191](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/191)
+* preserve image sizes ([#193](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/193)) ([11d6fba](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/11d6fbafb7ec6879aa0ded1629023337ce64a46e))
+
 ## [2.3.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.0...v2.3.1) (2026-07-02)
 
 
