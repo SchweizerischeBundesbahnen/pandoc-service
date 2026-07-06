@@ -1328,3 +1328,100 @@ class TestMoveHeaderFooterReferencesToFirstSection:
         assert isinstance(result, bytes)
         result_doc = Document(io.BytesIO(result))
         assert len(result_doc.sections) == 2
+
+
+class TestReplaceFirstParagraphStyles:
+    """Tests for _replace_first_paragraph_styles function."""
+
+    @staticmethod
+    def _make_doc_with_styles(styles: list[str | None]) -> MagicMock:
+        """Build a mock Document whose body has paragraphs with given pStyle vals.
+
+        ``None`` means the paragraph has no ``<w:pPr>`` at all.
+        """
+        from lxml import etree
+
+        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        body = etree.Element(f"{{{W}}}body")
+        for style in styles:
+            p = etree.SubElement(body, f"{{{W}}}p")
+            if style is not None:
+                pPr = etree.SubElement(p, f"{{{W}}}pPr")
+                etree.SubElement(pPr, f"{{{W}}}pStyle", {f"{{{W}}}val": style})
+        doc = MagicMock()
+        doc.element.body = body
+        return doc
+
+    @staticmethod
+    def _get_styles(doc: MagicMock) -> list[str | None]:
+        """Extract the pStyle val from each paragraph, or None if absent."""
+        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        result = []
+        for p in doc.element.body.iterchildren(f"{{{W}}}p"):
+            pPr = p.find(f"{{{W}}}pPr")
+            if pPr is None:
+                result.append(None)
+                continue
+            pStyle = pPr.find(f"{{{W}}}pStyle")
+            if pStyle is None:
+                result.append(None)
+            else:
+                result.append(pStyle.get(f"{{{W}}}val"))
+        return result
+
+    def test_replaces_first_paragraph_style_with_body_text(self):
+        doc = self._make_doc_with_styles(["FirstParagraph"])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == ["BodyText"]
+
+    def test_replaces_multiple_first_paragraph_styles(self):
+        doc = self._make_doc_with_styles(["Heading1", "FirstParagraph", "BodyText", "FirstParagraph"])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == ["Heading1", "BodyText", "BodyText", "BodyText"]
+
+    def test_does_not_change_other_paragraph_styles(self):
+        doc = self._make_doc_with_styles(["Heading1", "Heading2", "BodyText", "ListParagraph"])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == ["Heading1", "Heading2", "BodyText", "ListParagraph"]
+
+    def test_handles_paragraph_without_properties(self):
+        doc = self._make_doc_with_styles([None, "FirstParagraph", None])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == [None, "BodyText", None]
+
+    def test_handles_empty_document(self):
+        doc = self._make_doc_with_styles([])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == []
+
+    def test_integration_with_real_docx(self):
+        """Integration test: add a heading + paragraph, convert, verify no FirstParagraph."""
+        import io
+
+        from docx import Document
+
+        doc = Document()
+        doc.add_heading("Test Heading", level=1)
+        p = doc.add_paragraph("Body after heading")
+        # Simulate pandoc's behavior by setting the style
+        p.style = doc.styles["Normal"]
+        p.style = doc.styles.add_style("First Paragraph", 1) if "First Paragraph" not in [s.name for s in doc.styles] else doc.styles["First Paragraph"]
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        result = DocxPostProcess.process(buf.getvalue())
+
+        result_doc = Document(io.BytesIO(result))
+        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        first_paragraph_replaced = False
+        for para in result_doc.element.body.iterchildren(f"{{{W}}}p"):
+            pPr = para.find(f"{{{W}}}pPr")
+            if pPr is None:
+                continue
+            pStyle = pPr.find(f"{{{W}}}pStyle")
+            if pStyle is not None:
+                val = pStyle.get(f"{{{W}}}val")
+                assert val != "FirstParagraph", "FirstParagraph style should have been replaced"
+                if val == "BodyText":
+                    first_paragraph_replaced = True
+        assert first_paragraph_replaced, "Expected at least one paragraph to be replaced with BodyText"
