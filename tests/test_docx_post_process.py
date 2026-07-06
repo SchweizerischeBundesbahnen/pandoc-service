@@ -1413,10 +1413,15 @@ class TestReplaceFirstParagraphStyles:
 
         result_doc = Document(io.BytesIO(result))
         W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        first_paragraph_replaced = False
         for para in result_doc.element.body.iterchildren(f"{{{W}}}p"):
             pPr = para.find(f"{{{W}}}pPr")
             if pPr is None:
                 continue
             pStyle = pPr.find(f"{{{W}}}pStyle")
             if pStyle is not None:
-                assert pStyle.get(f"{{{W}}}val") != "FirstParagraph", "FirstParagraph style should have been replaced"
+                val = pStyle.get(f"{{{W}}}val")
+                assert val != "FirstParagraph", "FirstParagraph style should have been replaced"
+                if val == "BodyText":
+                    first_paragraph_replaced = True
+        assert first_paragraph_replaced, "Expected at least one paragraph to be replaced with BodyText"

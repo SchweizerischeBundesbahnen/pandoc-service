@@ -70,7 +70,7 @@ def _replace_first_paragraph_styles(doc: DocumentObject) -> None:
     only that paragraph differs in style from subsequent ones.  Normalizing all
     such paragraphs to "Body Text" gives a uniform look.
     """
-    for paragraph in doc.element.body.iterchildren(f"{{{SCHEMA}}}p"):
+    for paragraph in doc.element.body.iter(f"{{{SCHEMA}}}p"):
         p_pr = paragraph.find(f"{{{SCHEMA}}}pPr")
         if p_pr is None:
             continue
