@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
     _move_header_footer_references_to_first_section(doc)
+    _replace_first_paragraph_styles(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc)
     apply_math_colors(doc)
@@ -59,6 +60,23 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
+
+
+def _replace_first_paragraph_styles(doc: DocumentObject) -> None:
+    """Replace pandoc's "First Paragraph" style with "Body Text".
+
+    Pandoc's DOCX writer automatically assigns "First Paragraph" to the first
+    paragraph after every heading.  This creates visual inconsistency because
+    only that paragraph differs in style from subsequent ones.  Normalizing all
+    such paragraphs to "Body Text" gives a uniform look.
+    """
+    for paragraph in doc.element.body.iterchildren(f"{{{SCHEMA}}}p"):
+        p_pr = paragraph.find(f"{{{SCHEMA}}}pPr")
+        if p_pr is None:
+            continue
+        p_style = p_pr.find(f"{{{SCHEMA}}}pStyle")
+        if p_style is not None and p_style.get(f"{{{SCHEMA}}}val") == "FirstParagraph":
+            p_style.set(f"{{{SCHEMA}}}val", "BodyText")
 
 
 def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:
