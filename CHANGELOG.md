@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.2...v2.3.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.139.0 ([eb2fabd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/eb2fabd8cd41bc912d6191a21e13b13ce871d31c))
+* **deps:** update dependency uvicorn to v0.50.0 ([147c054](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/147c0542ddd1438431e8e034175017d3f1d7dc53))
+* normalize First Paragraph style to Body Text in DOCX output ([#196](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/196)) ([f0cf505](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f0cf505bcb5df014e21d9729ebb1a90c759cb6a0)), closes [#195](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/195)
+* preserve table sizes when converting HTML to DOCX and DOCX to PDF ([#197](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/197)) ([b93130c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b93130c737cb2c1f44f0a229a34601b38ea0adf7))
+
 ## [2.3.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.1...v2.3.2) (2026-07-03)
 
 
