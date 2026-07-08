@@ -548,6 +548,37 @@ def test_caption_styled_paragraph_next_to_lookalike_is_detected(caplog):
     assert styles == ["Heading1", "Caption"]
 
 
+def test_pandoc_native_caption_styles_are_detected(caplog):
+    """Non-HTML sources bring pandoc's own caption styles — a markdown/docx
+    table caption is "TableCaption" and a figure caption is "ImageCaption".
+    Both must be found and get TC fields (the counter word need not appear in
+    the text, so classification comes from the style)."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'''
+    <w:body xmlns:w="{SCHEMA}">
+        <w:p>
+            <w:pPr><w:pStyle w:val="TableCaption"/></w:pPr>
+            <w:r><w:t>Demo table caption</w:t></w:r>
+        </w:p>
+        <w:p>
+            <w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr>
+            <w:r><w:t>Demo figure caption</w:t></w:r>
+        </w:p>
+    </w:body>
+    ''')
+    mock_doc.element.body = body
+
+    with caplog.at_level(logging.INFO):
+        add_table_of_contents_entries(mock_doc)
+
+    assert "Found 1 figure captions and 1 table captions" in caplog.text
+    # Both got TC field runs appended.
+    instr_texts = " ".join(t.text or "" for t in body.iter(f"{{{SCHEMA}}}instrText"))
+    assert instr_texts.count(" TC ") == 2
+    assert "\\f T" in instr_texts  # table caption
+    assert "\\f F" in instr_texts  # figure caption
+
+
 def test_add_toc_entries_inserts_toc_field_with_placeholder(caplog):
     """Test that TOC field is inserted when TOC_PLACEHOLDER is found."""
     mock_doc = MagicMock(spec=DocumentObject)

@@ -497,3 +497,25 @@ def test_absolute_width_table_flagged_for_tight_padding():
     pct = '<w:tblW w:w="2000" w:type="pct"/><w:jc w:val="left"/>'
     kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(pct, _table_cell(None, "a"), grid_widths=["4800"]))}))))
     assert "aw" not in kv
+
+
+def test_word_caption_with_seq_field_keeps_style():
+    """A genuine Word caption (numbered via a SEQ field) keeps its Caption style
+    so pandoc still numbers it and lists it; only literal-numbered Polarion
+    captions are neutralised."""
+    # Polarion-style: literal number, no field -> style stripped.
+    polarion = '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 My caption</w:t></w:r></w:p>'
+    root = _body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(polarion)})))
+    assert "Caption" not in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
+
+    # Word-style: SEQ field for the number -> style preserved.
+    word = (
+        '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>'
+        "<w:r><w:t>Table </w:t></w:r>"
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        '<w:r><w:instrText xml:space="preserve"> SEQ Table \\* ARABIC </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+        "<w:r><w:t>: My caption</w:t></w:r></w:p>"
+    )
+    root = _body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(word)})))
+    assert "Caption" in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]

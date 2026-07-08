@@ -15,12 +15,15 @@ XPATH_P_PR = ".//w:pPr"
 XPATH_P_STYLE = ".//w:pStyle"
 
 # Paragraph style id that marks a genuine caption. filters/html_captions.lua
-# sets it (only) on paragraphs that carry Polarion's <span data-sequence=...>
-# caption counter, so it is a reliable, language-independent signal. Keying off
-# it — rather than "does the text start with Table/Figure" — is what stops
-# headings ("Table test III"), cross-references ("Table 1 shows ...") and
-# labels ("Table 50px") from being mistaken for captions.
-CAPTION_STYLE_ID = "Caption"
+# sets it on paragraphs that carry Polarion's <span data-sequence=...> caption
+# counter. Non-HTML inputs bring their own caption styles: pandoc emits
+# "TableCaption"/"ImageCaption" for markdown/docx table & figure captions, and
+# Word uses "Caption". Keying off this set of caption STYLES — rather than "does
+# the text start with Table/Figure" — captures real captions from every source
+# while still excluding headings ("Table test III"), cross-references
+# ("Table 1 shows ...") and labels ("Table 50px"), which never carry a caption
+# style.
+CAPTION_STYLE_IDS = frozenset({"Caption", "TableCaption", "ImageCaption"})
 
 logger = logging.getLogger(__name__)
 
@@ -77,18 +80,22 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:
     table_paragraphs = []
 
     for para in body.findall(".//w:p", namespaces={"w": SCHEMA}):
-        # Only real captions are considered: filters/html_captions.lua has
-        # already stamped the "Caption" style on paragraphs that carry the
-        # Polarion caption counter span. Prose, headings and labels that merely
-        # start with "Table"/"Figure" never get that style, so they are ignored.
-        if _get_paragraph_style(para) != CAPTION_STYLE_ID:
+        # Only real captions are considered — those carrying a caption STYLE
+        # (Polarion's "Caption" from filters/html_captions.lua, Word's "Caption",
+        # or pandoc's own "TableCaption"/"ImageCaption"). Prose, headings and
+        # labels that merely start with "Table"/"Figure" never carry one, so
+        # they are ignored.
+        style = _get_paragraph_style(para)
+        if style not in CAPTION_STYLE_IDS:
             continue
 
         text_stripped = _get_paragraph_text(para).strip()
 
-        # Classify Table vs Figure from the caption's leading word (the counter
-        # span's sequence keyword surfaces there). Default to Table.
-        if text_stripped.startswith("Figure"):
+        # Classify Figure vs Table from the caption style, falling back to the
+        # leading word for the generic "Caption" style (Polarion/Word captions
+        # open with the "Figure"/"Table" sequence keyword). Default to Table.
+        is_figure = style == "ImageCaption" or (style != "TableCaption" and text_stripped.startswith("Figure"))
+        if is_figure:
             figure_paragraphs.append((para, text_stripped))
             _add_caption_style_and_tc_field(para, text_stripped, field_flag="F")
             logger.debug(f"Added TC field to figure caption: {text_stripped}")

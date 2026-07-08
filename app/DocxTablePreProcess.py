@@ -69,6 +69,9 @@ _PPR_TAG = f"{{{W_NS}}}pPr"
 _PSTYLE_TAG = f"{{{W_NS}}}pStyle"
 _R_TAG = f"{{{W_NS}}}r"
 _T_TAG = f"{{{W_NS}}}t"
+_FLDSIMPLE_TAG = f"{{{W_NS}}}fldSimple"
+_INSTRTEXT_TAG = f"{{{W_NS}}}instrText"
+_INSTR_ATTR = f"{{{W_NS}}}instr"
 _W_ATTR = f"{{{W_NS}}}w"
 _TYPE_ATTR = f"{{{W_NS}}}type"
 _VAL_ATTR = f"{{{W_NS}}}val"
@@ -202,11 +205,11 @@ def _make_sentinel_run(sentinel_text: str) -> ET.Element:
 
 
 def _is_positive_int(value: str | None) -> bool:
-    """True when *value* parses as a positive integer."""
-    try:
-        return int(value) > 0  # type: ignore[arg-type]
-    except TypeError, ValueError:
+    """True when *value* is a positive integer string (e.g. a ``w:w`` width)."""
+    if value is None:
         return False
+    stripped = value.strip()
+    return stripped.isdigit() and int(stripped) > 0
 
 
 def _row_column_count(tr: ET.Element) -> int:
@@ -428,16 +431,34 @@ def _tag_table_layout(tbl: ET.Element) -> bool:
     return True
 
 
-def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
-    """Strip the ``Caption`` style from paragraphs so pandoc does not turn them
-    into auto-numbered LaTeX ``\\caption`` blocks.
+def _has_sequence_field(para: ET.Element) -> bool:
+    """True when the paragraph numbers itself with a Word ``SEQ`` field.
 
-    A Polarion caption's text already contains its number ("Table 1 ..."); left
-    as a ``Caption``-styled paragraph, pandoc's DOCX reader attaches it to the
-    adjacent table and LaTeX prints "Table N: Table N ..." — the counter twice.
-    Dropping the style makes it a normal paragraph that renders its text once
-    (matching how the DOCX shows it). Only ``Caption`` is touched, not pandoc's
-    own ``TableCaption``/``ImageCaption`` (whose text has no embedded number).
+    A genuine Word caption carries its number as a ``SEQ`` field, so pandoc can
+    strip that label and re-number it (keeping it in a List of Tables/Figures).
+    A Polarion caption instead has the number as literal text, so there is no
+    field to find.
+    """
+    if any("SEQ" in (fld.get(_INSTR_ATTR) or "").upper() for fld in para.iter(_FLDSIMPLE_TAG)):
+        return True
+    return any(instr.text and "SEQ" in instr.text.upper() for instr in para.iter(_INSTRTEXT_TAG))
+
+
+def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
+    """Strip the ``Caption`` style from *Polarion* captions so pandoc does not
+    turn them into auto-numbered LaTeX ``\\caption`` blocks.
+
+    A Polarion caption's text already contains its number as literal text
+    ("Table 1 ..."); left as a ``Caption``-styled paragraph, pandoc's DOCX
+    reader attaches it to the adjacent table and LaTeX prints
+    "Table N: Table N ..." — the counter twice. Dropping the style makes it a
+    normal paragraph that renders its text once (matching how the DOCX shows it).
+
+    A genuine Word caption is left untouched: it numbers itself with a ``SEQ``
+    field, so pandoc re-numbers it correctly and can still list it in a
+    generated List of Tables/Figures. We therefore only neutralise captions
+    that have no ``SEQ`` field (i.e. the literal-numbered Polarion ones), and
+    never pandoc's own ``TableCaption``/``ImageCaption`` styles.
 
     Returns True when any paragraph was changed.
     """
@@ -447,7 +468,7 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
         if ppr is None:
             continue
         pstyle = ppr.find(_PSTYLE_TAG)
-        if pstyle is not None and pstyle.get(_VAL_ATTR) == _CAPTION_STYLE_VAL:
+        if pstyle is not None and pstyle.get(_VAL_ATTR) == _CAPTION_STYLE_VAL and not _has_sequence_field(para):
             ppr.remove(pstyle)
             changed = True
     return changed
