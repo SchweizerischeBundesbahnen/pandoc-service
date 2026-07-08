@@ -440,12 +440,16 @@ def test_enable_auto_update_fields_handles_exception(caplog):
 def test_add_toc_entries_finds_figure_captions(caplog):
     """Test that figure captions are found and processed."""
     mock_doc = MagicMock(spec=DocumentObject)
+    # Captions are identified by the "Caption" style (set upstream by
+    # filters/html_captions.lua from the Polarion caption span), not by text.
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
+            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
             <w:r><w:t>Figure 1: Test figure</w:t></w:r>
         </w:p>
         <w:p>
+            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
             <w:r><w:t>Figure 2: Another figure</w:t></w:r>
         </w:p>
     </w:body>
@@ -465,6 +469,7 @@ def test_add_toc_entries_finds_table_captions(caplog):
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
+            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
             <w:r><w:t>Table 1: Test table</w:t></w:r>
         </w:p>
     </w:body>
@@ -476,6 +481,102 @@ def test_add_toc_entries_finds_table_captions(caplog):
 
     # Verify logging indicates tables were found
     assert "Found 0 figure captions and 1 table captions" in caplog.text
+
+
+def test_paragraphs_that_only_start_with_table_or_figure_are_not_captions(caplog):
+    """Only paragraphs carrying the "Caption" style (set upstream from the
+    Polarion caption span) are captions. A heading ("Table test III"), a
+    cross-reference ("Table 1 shows ...") and a label ("Table 50px") all merely
+    start with the word — and even include a number — but must be left alone."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'''
+    <w:body xmlns:w="{SCHEMA}">
+        <w:p>
+            <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+            <w:r><w:t>Table test III</w:t></w:r>
+        </w:p>
+        <w:p>
+            <w:pPr><w:pStyle w:val="BodyText"/></w:pPr>
+            <w:r><w:t>Table 1 shows the results discussed above.</w:t></w:r>
+        </w:p>
+        <w:p>
+            <w:pPr><w:pStyle w:val="BodyText"/></w:pPr>
+            <w:r><w:t>Table 50px</w:t></w:r>
+        </w:p>
+        <w:p>
+            <w:pPr><w:pStyle w:val="Title"/></w:pPr>
+            <w:r><w:t>Figure skating results</w:t></w:r>
+        </w:p>
+    </w:body>
+    ''')
+    mock_doc.element.body = body
+
+    with caplog.at_level(logging.INFO):
+        add_table_of_contents_entries(mock_doc)
+
+    # None are captioned...
+    assert "Found 0 figure captions and 0 table captions" in caplog.text
+    # ...and every paragraph keeps its original style (nothing downgraded to Caption).
+    styles = [s.get(f"{{{SCHEMA}}}val") for s in body.findall(".//w:pStyle", namespaces={"w": SCHEMA})]
+    assert styles == ["Heading1", "BodyText", "BodyText", "Title"]
+
+
+def test_caption_styled_paragraph_next_to_lookalike_is_detected(caplog):
+    """A genuine caption (marked with the "Caption" style) is processed, while a
+    heading with the same 'Table' prefix sitting next to it is not."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'''
+    <w:body xmlns:w="{SCHEMA}">
+        <w:p>
+            <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+            <w:r><w:t>Table test III</w:t></w:r>
+        </w:p>
+        <w:p>
+            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
+            <w:r><w:t>Table 1: real caption</w:t></w:r>
+        </w:p>
+    </w:body>
+    ''')
+    mock_doc.element.body = body
+
+    with caplog.at_level(logging.INFO):
+        add_table_of_contents_entries(mock_doc)
+
+    assert "Found 0 figure captions and 1 table captions" in caplog.text
+    # The heading keeps Heading1; the caption keeps Caption.
+    styles = [s.get(f"{{{SCHEMA}}}val") for s in body.findall(".//w:pStyle", namespaces={"w": SCHEMA})]
+    assert styles == ["Heading1", "Caption"]
+
+
+def test_pandoc_native_caption_styles_are_detected(caplog):
+    """Non-HTML sources bring pandoc's own caption styles — a markdown/docx
+    table caption is "TableCaption" and a figure caption is "ImageCaption".
+    Both must be found and get TC fields (the counter word need not appear in
+    the text, so classification comes from the style)."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'''
+    <w:body xmlns:w="{SCHEMA}">
+        <w:p>
+            <w:pPr><w:pStyle w:val="TableCaption"/></w:pPr>
+            <w:r><w:t>Demo table caption</w:t></w:r>
+        </w:p>
+        <w:p>
+            <w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr>
+            <w:r><w:t>Demo figure caption</w:t></w:r>
+        </w:p>
+    </w:body>
+    ''')
+    mock_doc.element.body = body
+
+    with caplog.at_level(logging.INFO):
+        add_table_of_contents_entries(mock_doc)
+
+    assert "Found 1 figure captions and 1 table captions" in caplog.text
+    # Both got TC field runs appended.
+    instr_texts = " ".join(t.text or "" for t in body.iter(f"{{{SCHEMA}}}instrText"))
+    assert instr_texts.count(" TC ") == 2
+    assert "\\f T" in instr_texts  # table caption
+    assert "\\f F" in instr_texts  # figure caption
 
 
 def test_add_toc_entries_inserts_toc_field_with_placeholder(caplog):
@@ -516,9 +617,11 @@ def test_add_toc_entries_processes_both_figures_and_tables(caplog):
     body = parse_xml(f'''
     <w:body xmlns:w="{SCHEMA}">
         <w:p>
+            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
             <w:r><w:t>Figure 1: Test figure</w:t></w:r>
         </w:p>
         <w:p>
+            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
             <w:r><w:t>Table 1: Test table</w:t></w:r>
         </w:p>
     </w:body>
@@ -536,24 +639,25 @@ def test_full_workflow_with_figures_and_toc():
     """Integration test: document with figures and TOC_PLACEHOLDER."""
     from docx import Document
 
-    # Create a real document
+    # Create a real document. Captions are marked with the "Caption" style
+    # upstream (by filters/html_captions.lua); the post-processor keys off it.
     doc = Document()
     doc.add_paragraph("TOC_PLACEHOLDER")
-    doc.add_paragraph("Figure 1: Test figure caption")
-    doc.add_paragraph("Figure 2: Another figure")
+    doc.add_paragraph("Figure 1: Test figure caption", style="Caption")
+    doc.add_paragraph("Figure 2: Another figure", style="Caption")
 
     # Run the function
     add_table_of_contents_entries(doc)
 
-    # Verify Caption styles were added to figure paragraphs
+    # Verify the figure captions kept the Caption style and got TC fields.
     body = doc.element.body
     paras = body.findall(".//w:p", namespaces={"w": SCHEMA})
     figure_paras = [p for p in paras if "Figure" in _get_paragraph_text(p)]
 
     for para in figure_paras:
         p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-        if p_style is not None:
-            assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
+        assert p_style is not None
+        assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
 
 
 def test_full_workflow_with_tables_only():
@@ -561,21 +665,21 @@ def test_full_workflow_with_tables_only():
     from docx import Document
 
     doc = Document()
-    doc.add_paragraph("Table 1: Test table caption")
-    doc.add_paragraph("Table 2: Another table")
+    doc.add_paragraph("Table 1: Test table caption", style="Caption")
+    doc.add_paragraph("Table 2: Another table", style="Caption")
 
     # Run the function
     add_table_of_contents_entries(doc)
 
-    # Verify table captions got Caption style
+    # Verify table captions kept the Caption style and got TC fields.
     body = doc.element.body
     paras = body.findall(".//w:p", namespaces={"w": SCHEMA})
     table_paras = [p for p in paras if "Table" in _get_paragraph_text(p)]
 
     for para in table_paras:
         p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-        if p_style is not None:
-            assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
+        assert p_style is not None
+        assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
 
 
 def test_full_workflow_empty_document():
