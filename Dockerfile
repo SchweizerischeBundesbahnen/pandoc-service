@@ -125,6 +125,8 @@ COPY filters/docx_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_
 COPY filters/docx_lists_to_latex.lua "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
 COPY filters/docx_tables_to_latex.lua "/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
 COPY filters/html_lists.lua "/usr/local/share/pandoc/filters/html_lists.lua"
+COPY filters/html_tables_to_latex.lua "/usr/local/share/pandoc/filters/html_tables_to_latex.lua"
+COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:9082/health || exit 1

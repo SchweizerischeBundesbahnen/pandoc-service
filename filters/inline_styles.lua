@@ -583,6 +583,28 @@ local function inlines_to_openxml(inlines)
   return table.concat(parts)
 end
 
+-- True when `inlines` contains (at any depth) Polarion's caption counter span
+-- (<span data-sequence=... class="polarion-rte-caption">). This is the reliable
+-- signal that a paragraph is a real figure/table caption. A caption <p> also
+-- carries text-align, so it reaches this filter as a pandoc-para wrapper and
+-- would otherwise lose any paragraph style in the raw-OOXML rewrite below —
+-- leaving app/DocxReferencesPostProcess.py unable to recognise it structurally.
+-- (Captions without an alignment are handled separately by
+-- filters/html_captions.lua, which runs on the un-wrapped Para.)
+local function contains_caption_span(inlines)
+  for _, il in ipairs(inlines) do
+    if il.t == "Span" and il.classes then
+      for _, class in ipairs(il.classes) do
+        if class == "polarion-rte-caption" then return true end
+      end
+    end
+    if type(il.content) == "table" and contains_caption_span(il.content) then
+      return true
+    end
+  end
+  return false
+end
+
 -- Build the single OOXML <w:p> for a formatted paragraph, or nil to signal
 -- "fall back to the original Para". Both `twips` and `jc` are trusted here:
 -- callers MUST pass an already-validated non-negative integer (Lua number, not
@@ -598,6 +620,11 @@ local function build_para_w_p(inlines, twips, jc)
   -- dependent about out-of-order children (silent reorder, recovery warning,
   -- or dropping the child), so we emit them in canonical order.
   local ppr = {}
+  -- <w:pStyle> comes first in the CT_PPr sequence. Stamp "Caption" on genuine
+  -- captions so DocxReferencesPostProcess recognises them by style, not text.
+  if contains_caption_span(inlines) then
+    ppr[#ppr + 1] = '<w:pStyle w:val="Caption"/>'
+  end
   -- string.format("%d", n) round-trips a validated integer through Lua's
   -- printf, which emits only decimal digits (and an optional leading '-' we
   -- already ruled out). Concatenating the raw attribute string here instead

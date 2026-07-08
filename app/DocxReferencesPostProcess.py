@@ -13,6 +13,15 @@ SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSON
 # Common XPath expressions
 XPATH_P_PR = ".//w:pPr"
 XPATH_P_STYLE = ".//w:pStyle"
+
+# Paragraph style id that marks a genuine caption. filters/html_captions.lua
+# sets it (only) on paragraphs that carry Polarion's <span data-sequence=...>
+# caption counter, so it is a reliable, language-independent signal. Keying off
+# it — rather than "does the text start with Table/Figure" — is what stops
+# headings ("Table test III"), cross-references ("Table 1 shows ...") and
+# labels ("Table 50px") from being mistaken for captions.
+CAPTION_STYLE_ID = "Caption"
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,17 +77,25 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:
     table_paragraphs = []
 
     for para in body.findall(".//w:p", namespaces={"w": SCHEMA}):
-        text = _get_paragraph_text(para)
-        text_stripped = text.strip()
+        # Only real captions are considered: filters/html_captions.lua has
+        # already stamped the "Caption" style on paragraphs that carry the
+        # Polarion caption counter span. Prose, headings and labels that merely
+        # start with "Table"/"Figure" never get that style, so they are ignored.
+        if _get_paragraph_style(para) != CAPTION_STYLE_ID:
+            continue
 
+        text_stripped = _get_paragraph_text(para).strip()
+
+        # Classify Table vs Figure from the caption's leading word (the counter
+        # span's sequence keyword surfaces there). Default to Table.
         if text_stripped.startswith("Figure"):
             figure_paragraphs.append((para, text_stripped))
             _add_caption_style_and_tc_field(para, text_stripped, field_flag="F")
-            logger.debug(f"Added Caption style and TC field to figure: {text_stripped}")
-        elif text_stripped.startswith("Table"):
+            logger.debug(f"Added TC field to figure caption: {text_stripped}")
+        else:
             table_paragraphs.append((para, text_stripped))
             _add_caption_style_and_tc_field(para, text_stripped, field_flag="T")
-            logger.debug(f"Added Caption style and TC field to table: {text_stripped}")
+            logger.debug(f"Added TC field to table caption: {text_stripped}")
 
     logger.info(f"Found {len(figure_paragraphs)} figure captions and {len(table_paragraphs)} table captions")
     return figure_paragraphs, table_paragraphs

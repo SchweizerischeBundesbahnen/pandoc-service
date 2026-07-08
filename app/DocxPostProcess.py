@@ -11,9 +11,13 @@ from docx.oxml.ns import nsdecls
 from lxml import etree  # type: ignore
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from docx.document import Document as DocumentObject
     from docx.section import Section
     from docx.table import Table, _Cell
+
+    from app.HtmlTableLayout import TableLayout
 
 from app.DocxMathColorPostProcess import apply_math_colors
 from app.DocxReferencesPostProcess import add_table_of_contents_entries, enable_auto_update_fields
@@ -47,13 +51,37 @@ PAPER_SIZES = {
 }
 logger = logging.getLogger(__name__)
 
+# OOXML tblPr child element order (subset of CT_TblPrBase we touch). Used to
+# insert new properties at a schema-valid position so both Word and the
+# stricter LibreOffice accept the output regardless of which children pandoc
+# (or the inline_styles.lua table rebuild) already emitted.
+_TBLPR_CHILD_ORDER = [
+    "tblStyle",
+    "tblpPr",
+    "tblOverlap",
+    "bidiVisual",
+    "tblStyleRowBandSize",
+    "tblStyleColBandSize",
+    "tblW",
+    "jc",
+    "tblCellSpacing",
+    "tblInd",
+    "tblBorders",
+    "shd",
+    "tblLayout",
+    "tblCellMar",
+    "tblLook",
+    "tblCaption",
+    "tblDescription",
+]
 
-def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None) -> bytes:
+
+def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[TableLayout] | None = None) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
     _move_header_footer_references_to_first_section(doc)
     _replace_first_paragraph_styles(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
-    _replace_table_properties(doc)
+    _replace_table_properties(doc, table_layouts)
     apply_math_colors(doc)
     add_table_of_contents_entries(doc)
     enable_auto_update_fields(doc)
@@ -211,7 +239,22 @@ def _move_header_footer_references_to_first_section(doc: DocumentObject) -> None
         first_sect_pr.append(title_pg)
 
 
-def _replace_table_properties(doc: DocumentObject) -> None:  # NOSONAR  # needed by design
+def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayout] | None = None) -> None:  # NOSONAR  # needed by design
+    # Per-table width/alignment recovered from the HTML source (see
+    # app/HtmlTableLayout.py). The list is one entry per <table> in document
+    # order (depth-first, nested included) — the same order this function walks
+    # tables in — so a shared iterator lines them up index-for-index. Guard on
+    # an exact count match: if pandoc dropped or added a table the alignment
+    # would be off, so we skip applying layouts entirely and fall back to the
+    # previous 100 %/autofit default rather than mislabel tables.
+    layout_iter: Iterator[TableLayout] | None = None
+    if table_layouts:
+        table_count = len(doc.element.body.findall(".//w:tbl", namespaces={"w": SCHEMA}))
+        if table_count == len(table_layouts):
+            layout_iter = iter(table_layouts)
+        else:
+            logger.warning("HtmlTableLayout: %d layouts for %d tables; skipping width/alignment (fallback to defaults)", len(table_layouts), table_count)
+
     # Group tables by their section
     for target_index, section in enumerate(doc.sections):
         max_width = _get_available_content_width_for_section(section)
@@ -233,37 +276,103 @@ def _replace_table_properties(doc: DocumentObject) -> None:  # NOSONAR  # needed
 
         # Note: This gets all tables in the document section
         for table in tables_in_section:
-            _process_table(table, 0, max_width)
+            _process_table(table, 0, max_width, layout_iter)
 
 
-def _process_table(table: Table, parent_columns_count: int, max_width: int) -> None:
+def _process_table(table: Table, parent_columns_count: int, max_width: int, layout_iter: Iterator[TableLayout] | None = None) -> None:
     tbl = table._element
+    # Pull this table's layout first, before recursing into nested tables, so
+    # consumption order stays depth-first and matches HtmlTableLayout.extract.
+    layout = next(layout_iter, None) if layout_iter is not None else None
     columns_count = parent_columns_count + len(table.columns)
     table_properties = tbl.find(".//w:tblPr", namespaces={"w": SCHEMA})
     if table_properties is None:
         table_properties = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
         tbl.insert(0, table_properties)
 
-    # Set table width (5000 = 100%)
-    table_width = parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>')
-    old_table_width = table_properties.find(".//w:tblW", namespaces={"w": SCHEMA})
-    if old_table_width is not None:
-        table_properties.remove(old_table_width)
-    table_properties.append(table_width)
-
-    # Set table layout to autofit
-    table_layout = parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="autofit"/>')
-    old_table_layout = table_properties.find(".//w:tblLayout", namespaces={"w": SCHEMA})
-    if old_table_layout is not None:
-        table_properties.remove(old_table_layout)
-    table_properties.append(table_layout)
+    _apply_table_layout(tbl, table_properties, layout)
 
     # Process nested tables
     for row in table.rows:
         for cell in row.cells:
             _resize_images_in_cell(cell, max_width / columns_count)
             for sub_table in cell.tables:
-                _process_table(sub_table, columns_count, max_width)
+                _process_table(sub_table, columns_count, max_width, layout_iter)
+
+
+def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | None) -> None:
+    """Write width, alignment and indent onto a table's <w:tblPr>.
+
+    Default (no layout, or a layout carrying no width): 100 % width with
+    autofit layout — the historical behaviour that keeps every existing table
+    filling the text column. A percentage width keeps autofit (Word renders the
+    table at that fraction of the text column). An absolute width switches to
+    fixed layout and rescales the column grid so Word honours the exact size.
+    Alignment (<w:jc>) and left indent (<w:tblInd>) are applied when present.
+    """
+    # Width: pct keeps autofit; dxa needs fixed layout + a rescaled grid.
+    width_type, width_value, use_fixed_layout = "pct", 5000, False
+    if layout is not None and layout.width_type is not None and layout.width_value is not None:
+        width_type, width_value = layout.width_type, layout.width_value
+        use_fixed_layout = width_type == "dxa"
+        if use_fixed_layout:
+            _rescale_table_grid(tbl, width_value)
+
+    _set_tblpr_child(table_properties, parse_xml(f'<w:tblW {nsdecls("w")} w:w="{width_value}" w:type="{width_type}"/>'))
+
+    layout_type = "fixed" if use_fixed_layout else "autofit"
+    _set_tblpr_child(table_properties, parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="{layout_type}"/>'))
+
+    if layout is not None and layout.jc is not None:
+        _set_tblpr_child(table_properties, parse_xml(f'<w:jc {nsdecls("w")} w:val="{layout.jc}"/>'))
+
+    if layout is not None and layout.indent_twips is not None:
+        _set_tblpr_child(table_properties, parse_xml(f'<w:tblInd {nsdecls("w")} w:w="{layout.indent_twips}" w:type="dxa"/>'))
+
+
+def _set_tblpr_child(table_properties: Any, new_child: Any) -> None:
+    """Replace any existing child with the same tag and insert at a schema-valid position."""
+    local_name = etree.QName(new_child).localname
+    for existing in table_properties.findall(f"w:{local_name}", namespaces={"w": SCHEMA}):
+        table_properties.remove(existing)
+
+    order = _TBLPR_CHILD_ORDER.index(local_name)
+    for child in table_properties:
+        child_local = etree.QName(child).localname
+        if child_local in _TBLPR_CHILD_ORDER and _TBLPR_CHILD_ORDER.index(child_local) > order:
+            child.addprevious(new_child)
+            return
+    table_properties.append(new_child)
+
+
+def _rescale_table_grid(tbl: Any, target_twips: int) -> None:
+    """Scale the <w:tblGrid> column widths so they sum to target_twips.
+
+    Under fixed layout Word derives the rendered table width from the grid
+    column widths (not <w:tblW>), so an absolute table width only takes effect
+    once the grid is rescaled to match it. Proportional scaling preserves the
+    relative column sizing pandoc emitted; a zero/absent grid is distributed
+    evenly.
+    """
+    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    if grid is None:
+        return
+    columns = grid.findall("w:gridCol", namespaces={"w": SCHEMA})
+    if not columns:
+        return
+
+    width_attr = f"{{{SCHEMA}}}w"
+    widths = [int(col.get(width_attr) or 0) for col in columns]
+    total = sum(widths)
+
+    if total <= 0:
+        even = max(1, target_twips // len(columns))
+        for col in columns:
+            col.set(width_attr, str(even))
+        return
+
+    for col, width in zip(columns, widths, strict=False):
+        col.set(width_attr, str(max(1, round(width * target_twips / total))))
 
 
 def _get_available_content_width_for_section(section: Section) -> int:

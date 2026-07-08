@@ -365,8 +365,9 @@ def test_resize_images_in_cell():
         mock_extent.set.assert_any_call("cy", "2400")  # New height (aspect ratio maintained)
 
 
+@patch("app.DocxPostProcess._apply_table_layout")
 @patch("app.DocxPostProcess._resize_images_in_cell")
-def test_process_table_with_nested_tables(mock_resize_images):
+def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout):
     """Test that nested tables are processed correctly."""
 
     # Create mock tables and cells
@@ -462,8 +463,8 @@ def test_replace_table_properties(mock_get_width, mock_process_table):
 
     # Verify _process_table was called for tables in correct sections
     assert mock_process_table.call_count == 2
-    mock_process_table.assert_any_call(table1, 0, max_width)
-    mock_process_table.assert_any_call(table2, 0, max_width)
+    mock_process_table.assert_any_call(table1, 0, max_width, None)
+    mock_process_table.assert_any_call(table2, 0, max_width, None)
 
 
 def test_replace_size_and_orientation_both_none():
