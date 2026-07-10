@@ -62,6 +62,7 @@ FILTERS = {
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
+    "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
 }
 
 # List of allowed pandoc options for security
@@ -79,6 +80,7 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['html_lists']}",
     f"--lua-filter={FILTERS['html_tables_to_latex']}",
     f"--lua-filter={FILTERS['html_captions']}",
+    f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -579,6 +581,9 @@ def _build_pandoc_command(  # noqa: PLR0913
         cmd.append(f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}")
         cmd.append(f"--lua-filter={FILTERS['docx_lists_to_latex']}")
         cmd.append(f"--lua-filter={FILTERS['docx_tables_to_latex']}")
+        # Strip "Table N" / "Figure N" prefix from Caption blocks so LaTeX's
+        # own \caption counter doesn't duplicate the numbering.
+        cmd.append(f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}")
 
     if validated_options:
         cmd.extend(validated_options)

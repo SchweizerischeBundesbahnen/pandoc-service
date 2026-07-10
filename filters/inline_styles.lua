@@ -412,15 +412,44 @@ walk = function(inlines, props, vert_align)
     elseif t == "Subscript" then
       append_all(result, walk(inline.content, props, "subscript"))
     elseif t == "Span" then
-      -- Nested span: parse its style (if any) on top of inherited props,
-      -- then descend with the merged set. `attributes` may be nil when the
-      -- span has no key/value attributes at all, hence the `inline.attributes and ...`
-      -- guard (Lua's `and` short-circuits — if the left side is falsy
-      -- the whole expression is that falsy value, never an indexing error).
-      local style = inline.attributes and inline.attributes.style
-      local p = props
-      if style then p = merge_css(props, parse_style(style)) end
-      append_all(result, walk(inline.content, p, vert_align))
+      -- Check if this is Polarion's caption-counter span. If so, emit a
+      -- proper Word SEQ field instead of plain text so Word can renumber
+      -- captions and resolve cross-references.
+      local is_caption_span = false
+      if inline.classes then
+        for _, cls in ipairs(inline.classes) do
+          if cls == "polarion-rte-caption" then
+            is_caption_span = true
+            break
+          end
+        end
+      end
+      if is_caption_span then
+        local seq_type = inline.attributes and (inline.attributes["sequence"] or inline.attributes["data-sequence"])
+        if seq_type then
+          local number_text = pandoc.utils.stringify(inline.content)
+          result[#result + 1] = pandoc.RawInline("openxml",
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .. '<w:r><w:instrText xml:space="preserve"> SEQ '
+            .. escape_attr(seq_type) .. ' \\* ARABIC </w:instrText></w:r>'
+            .. '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .. '<w:r><w:t>' .. escape_xml(number_text) .. '</w:t></w:r>'
+            .. '<w:r><w:fldChar w:fldCharType="end"/></w:r>')
+        else
+          -- No sequence attribute — fall through to normal span handling.
+          local style = inline.attributes and inline.attributes.style
+          local p = props
+          if style then p = merge_css(props, parse_style(style)) end
+          append_all(result, walk(inline.content, p, vert_align))
+        end
+      else
+        -- Nested span: parse its style (if any) on top of inherited props,
+        -- then descend with the merged set.
+        local style = inline.attributes and inline.attributes.style
+        local p = props
+        if style then p = merge_css(props, parse_style(style)) end
+        append_all(result, walk(inline.content, p, vert_align))
+      end
     elseif t == "RawInline" then
       -- Already-OOXML content (e.g. produced by another filter or a previous
       -- pass): pass through verbatim. Format-mismatched RawInlines (latex/html
