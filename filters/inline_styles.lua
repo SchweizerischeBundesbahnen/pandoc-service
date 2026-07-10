@@ -425,23 +425,12 @@ walk = function(inlines, props, vert_align)
         end
       end
       if is_caption_span then
-        local seq_type = inline.attributes and (inline.attributes["sequence"] or inline.attributes["data-sequence"])
-        if seq_type then
-          local number_text = pandoc.utils.stringify(inline.content)
-          result[#result + 1] = pandoc.RawInline("openxml",
-            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-            .. '<w:r><w:instrText xml:space="preserve"> SEQ '
-            .. escape_attr(seq_type) .. ' \\* ARABIC </w:instrText></w:r>'
-            .. '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-            .. '<w:r><w:t>' .. escape_xml(number_text) .. '</w:t></w:r>'
-            .. '<w:r><w:fldChar w:fldCharType="end"/></w:r>')
-        else
-          -- No sequence attribute — fall through to normal span handling.
-          local style = inline.attributes and inline.attributes.style
-          local p = props
-          if style then p = merge_css(props, parse_style(style)) end
-          append_all(result, walk(inline.content, p, vert_align))
-        end
+        -- Don't consume the caption span here — pass it through unchanged
+        -- so html_captions.lua (which runs after this filter) can still
+        -- detect it and apply the "Caption" paragraph style. The SEQ field
+        -- replacement happens either in html_captions.lua or as a fallback
+        -- in the DOCX post-processor.
+        result[#result + 1] = inline
       else
         -- Nested span: parse its style (if any) on top of inherited props,
         -- then descend with the merged set.

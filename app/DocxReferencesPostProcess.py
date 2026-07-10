@@ -1,5 +1,6 @@
 import logging
 import re
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from docx.oxml import parse_xml
@@ -106,11 +107,23 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:
 
         text_stripped = _get_paragraph_text(para).strip()
 
-        # Classify Figure vs Table. Language-independent strategy:
+        # Classify Figure vs Table. Strategy (in priority order):
         # 1. Pandoc's own styles are unambiguous (ImageCaption / TableCaption).
-        # 2. For the generic "Caption" style, check whether the paragraph is
-        #    adjacent to a <w:tbl> element — if so it's a table caption.
-        is_figure = style == "ImageCaption" or (style != "TableCaption" and not _is_adjacent_to_table(para))
+        # 2. If a SEQ field already exists (from Lua filter), its identifier
+        #    comes from Polarion's data-sequence attribute. Table captions
+        #    always have a <w:tbl> nearby; if adjacency fails but a SEQ name
+        #    exists that is NOT "Figure", treat it as a table caption anyway
+        #    (Polarion would not set a table sequence on a figure).
+        # 3. Fall back to structural adjacency: if the next content element
+        #    is a <w:tbl>, it's a table caption; otherwise figure.
+        if style == "ImageCaption":
+            is_figure = True
+        elif style == "TableCaption" or _is_adjacent_to_table(para):
+            is_figure = False
+        else:
+            # No table nearby — check if an existing SEQ name hints at table
+            existing_seq = _get_seq_name(para)
+            is_figure = existing_seq is None or existing_seq == "Figure"
         seq_name = "Figure" if is_figure else "Table"
 
         # Ensure the caption number is a SEQ field (not plain text).
@@ -178,6 +191,16 @@ def _has_seq_field(para: Any) -> bool:
     return any(instr.text and "SEQ" in instr.text for instr in para.findall(".//w:instrText", namespaces={"w": SCHEMA}))
 
 
+def _get_seq_name(para: Any) -> str | None:
+    """Extract the SEQ field identifier from a paragraph (e.g. "Table", "Tabela")."""
+    for instr in para.findall(".//w:instrText", namespaces={"w": SCHEMA}):
+        if instr.text and "SEQ" in instr.text:
+            match = re.search(r"SEQ\s+(\S+)", instr.text)
+            if match:
+                return match.group(1)
+    return None
+
+
 def _ensure_seq_field(para: Any, seq_name: str) -> None:
     """Replace a plain-text caption number with a Word SEQ field.
 
@@ -185,36 +208,58 @@ def _ensure_seq_field(para: Any, seq_name: str) -> None:
     ``1`` with ``{SEQ Figure \\* ARABIC}`` so Word can auto-number captions.
     Does nothing if the paragraph already contains a SEQ field (e.g. one
     inserted by the Lua filter).
+
+    Only the run containing the first number is replaced; all other runs
+    (with formatting, links, etc.) are preserved.
     """
     if _has_seq_field(para):
         return
 
-    text = _get_paragraph_text(para).strip()
-    match = re.match(r"^(\D+?)(\d+)(.*)", text, re.DOTALL)
-    if not match:
-        return
+    ns = f'xmlns:w="{SCHEMA}"'
+    runs = list(para.findall("w:r", namespaces={"w": SCHEMA}))
 
-    prefix = match.group(1)
-    number = match.group(2)
-    suffix = match.group(3)
+    for run in runs:
+        t_el = run.find("w:t", namespaces={"w": SCHEMA})
+        if t_el is None or not t_el.text:
+            continue
+        match = re.search(r"\d+", t_el.text)
+        if not match:
+            continue
 
-    # Remove all existing runs (keep pPr and non-run children like bookmarks)
-    for run in list(para.findall("w:r", namespaces={"w": SCHEMA})):
+        number = match.group(0)
+        before = t_el.text[: match.start()]
+        after = t_el.text[match.end() :]
+
+        # Build replacement elements
+        replacements = []
+        if before:
+            r_before = parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(before)}</w:t></w:r>')
+            # Copy run properties if any
+            rpr = run.find("w:rPr", namespaces={"w": SCHEMA})
+            if rpr is not None:
+                r_before.insert(0, deepcopy(rpr))
+            replacements.append(r_before)
+
+        replacements.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="begin"/></w:r>'))
+        replacements.append(parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve"> SEQ {_escape_xml(seq_name)} \\* ARABIC </w:instrText></w:r>'))
+        replacements.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="separate"/></w:r>'))
+        replacements.append(parse_xml(f"<w:r {ns}><w:t>{_escape_xml(number)}</w:t></w:r>"))
+        replacements.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="end"/></w:r>'))
+
+        if after:
+            r_after = parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(after)}</w:t></w:r>')
+            rpr = run.find("w:rPr", namespaces={"w": SCHEMA})
+            if rpr is not None:
+                r_after.insert(0, deepcopy(rpr))
+            replacements.append(r_after)
+
+        # Insert replacements before the original run, then remove it
+        for repl in replacements:
+            run.addprevious(repl)
         para.remove(run)
 
-    ns = f'xmlns:w="{SCHEMA}"'
-
-    para.append(parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(prefix)}</w:t></w:r>'))
-    para.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="begin"/></w:r>'))
-    para.append(parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve"> SEQ {_escape_xml(seq_name)} \\* ARABIC </w:instrText></w:r>'))
-    para.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="separate"/></w:r>'))
-    para.append(parse_xml(f"<w:r {ns}><w:t>{_escape_xml(number)}</w:t></w:r>"))
-    para.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="end"/></w:r>'))
-
-    if suffix:
-        para.append(parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(suffix)}</w:t></w:r>'))
-
-    logger.debug(f"Replaced plain-text number with SEQ {seq_name} field in caption: {text}")
+        logger.debug(f"Replaced number {number} with SEQ {seq_name} field in caption run")
+        return
 
 
 def _ensure_caption_style(para: Any) -> None:

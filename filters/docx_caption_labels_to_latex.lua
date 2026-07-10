@@ -5,13 +5,16 @@
 --
 -- When pandoc reads a docx with a Caption-styled paragraph adjacent to a
 -- table, it absorbs the paragraph into the Table's Caption field and
--- emits \caption{...} in LaTeX. This causes two problems:
+-- emits \caption{...} in LaTeX. This causes problems:
 -- 1. LaTeX's \caption counter duplicates the numbering ("Table 1: Table 1 ...")
 -- 2. The caption moves inside the table environment (centered, different style)
+-- 3. Tables without our captions also get \caption from pandoc, causing
+--    counter mismatches across the document
 --
--- This filter extracts the caption content from the Table AST, clears
+-- This filter extracts ALL caption content from the Table AST, clears
 -- the Table's caption, and returns the caption as a regular paragraph
--- before the table — matching the expected PDF layout.
+-- before the table — matching the expected PDF layout where caption
+-- numbering is part of the visible text, not a LaTeX counter.
 --
 -- Only runs for the LaTeX writer (gated in PandocController on
 -- docx → pdf/latex).
