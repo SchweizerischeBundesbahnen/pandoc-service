@@ -32,7 +32,7 @@ dev = [
     "types-psutil==7.2.2.20260518",
 ]
 test = [
-    "tox==4.56.2",
+    "tox==4.56.3",
     "tox-uv==1.35.2",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.1.0",
