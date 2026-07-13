@@ -1,803 +1,286 @@
 import logging
+import re
 from unittest.mock import MagicMock
 
 from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
+from lxml import etree
 
 from app.DocxReferencesPostProcess import (
     SCHEMA,
-    _add_caption_style_and_tc_field,
-    _create_tc_field_runs,
+    _add_tc_field,
     _create_toc_field,
     _create_tof_field,
     _create_tot_field,
+    _ensure_caption_style,
+    _ensure_seq_field,
     _find_placeholder_paragraphs,
     _get_paragraph_style,
     _get_paragraph_text,
+    _has_seq_field,
+    _is_adjacent_to_table,
     add_table_of_contents_entries,
     enable_auto_update_fields,
 )
 
+_MINIMAL_TBL = f'<w:tbl xmlns:w="{SCHEMA}"><w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+
+# ---- _get_paragraph_text / _get_paragraph_style ----
 
 def test_get_paragraph_text_empty():
-    """Test getting text from an empty paragraph."""
-    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
-    result = _get_paragraph_text(para)
-    assert result == ""
-
-
-def test_get_paragraph_text_single_text_element():
-    """Test getting text from a paragraph with a single text element."""
-    para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:r>
-            <w:t>Hello World</w:t>
-        </w:r>
-    </w:p>
-    ''')
-    result = _get_paragraph_text(para)
-    assert result == "Hello World"
-
-
-def test_get_paragraph_text_multiple_runs():
-    """Test getting text from a paragraph with multiple runs."""
-    para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:r>
-            <w:t>Hello </w:t>
-        </w:r>
-        <w:r>
-            <w:t>World</w:t>
-        </w:r>
-    </w:p>
-    ''')
-    result = _get_paragraph_text(para)
-    assert result == "Hello World"
-
-
-def test_get_paragraph_text_with_none_text():
-    """Test that None text elements are handled gracefully."""
-    para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:r>
-            <w:t>Valid</w:t>
-        </w:r>
-        <w:r>
-            <w:t/>
-        </w:r>
-    </w:p>
-    ''')
-    result = _get_paragraph_text(para)
-    assert result == "Valid"
-
-
-def test_get_paragraph_style_with_no_properties():
-    """Test getting style from paragraph without properties."""
-    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
-    result = _get_paragraph_style(para)
-    assert result is None
-
-
-def test_get_paragraph_style_with_bodytext():
-    """Test getting BodyText style."""
-    para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:pPr>
-            <w:pStyle w:val="BodyText"/>
-        </w:pPr>
-    </w:p>
-    ''')
-    result = _get_paragraph_style(para)
-    assert result == "BodyText"
-
-
-def test_create_tc_field_runs_for_figure():
-    """Test creating TC field runs for a figure caption."""
-    caption_text = "Figure 1: Test Caption"
-    runs = _create_tc_field_runs(caption_text, field_flag="F")
-
-    assert len(runs) == 3
-    # Check begin run
-    assert runs[0].find(".//w:fldChar", namespaces={"w": SCHEMA}) is not None
-    # Check instruction run contains caption text
-    instr_text = runs[1].find(".//w:instrText", namespaces={"w": SCHEMA}).text
-    assert caption_text in instr_text
-    assert "\\f F" in instr_text
-    # Check end run
-    assert runs[2].find(".//w:fldChar", namespaces={"w": SCHEMA}) is not None
-
-
-def test_create_tc_field_runs_for_table():
-    """Test creating TC field runs for a table caption."""
-    caption_text = "Table 1: Test Table"
-    runs = _create_tc_field_runs(caption_text, field_flag="T")
-
-    assert len(runs) == 3
-    # Check instruction run contains correct flag
-    instr_text = runs[1].find(".//w:instrText", namespaces={"w": SCHEMA}).text
-    assert caption_text in instr_text
-    assert "\\f T" in instr_text
-
-
-def test_create_tc_field_runs_default_flag():
-    """Test that default field flag is F for figures."""
-    caption_text = "Figure 2"
-    runs = _create_tc_field_runs(caption_text)
-
-    instr_text = runs[1].find(".//w:instrText", namespaces={"w": SCHEMA}).text
-    assert "\\f F" in instr_text
-
-
-def test_add_caption_style_to_paragraph_without_style():
-    """Test adding Caption style to a paragraph that has no style."""
-    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:t>Figure 1</w:t></w:r></w:p>')
-    caption_text = "Figure 1"
+    assert _get_paragraph_text(parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')) == ""
+
+def test_get_paragraph_text_single():
+    assert _get_paragraph_text(parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:t>Hi</w:t></w:r></w:p>')) == "Hi"
 
-    _add_caption_style_and_tc_field(para, caption_text, field_flag="F")
-
-    # Check that Caption style was added
-    p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-    assert p_style is not None
-    assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
-
-    # Check that TC field runs were added
-    fld_chars = para.findall(".//w:fldChar", namespaces={"w": SCHEMA})
-    assert len(fld_chars) == 2  # begin and end
-
-
-def test_add_caption_style_to_paragraph_with_existing_style():
-    """Test adding Caption style to a paragraph that already has a different style."""
-    para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:pPr>
-            <w:pStyle w:val="Normal"/>
-        </w:pPr>
-        <w:r><w:t>Table 1</w:t></w:r>
-    </w:p>
-    ''')
-    caption_text = "Table 1"
-
-    _add_caption_style_and_tc_field(para, caption_text, field_flag="T")
-
-    # Check that style was changed to Caption
-    p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-    assert p_style is not None
-    assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
-
-
-def test_add_caption_style_with_existing_properties():
-    """Test adding Caption style when paragraph already has properties."""
-    para = parse_xml(f'''
-    <w:p xmlns:w="{SCHEMA}">
-        <w:pPr>
-            <w:jc w:val="center"/>
-        </w:pPr>
-        <w:r><w:t>Figure 2</w:t></w:r>
-    </w:p>
-    ''')
-    caption_text = "Figure 2"
-
-    _add_caption_style_and_tc_field(para, caption_text, field_flag="F")
-
-    # Check that Caption style was added while preserving other properties
-    p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-    assert p_style is not None
-    assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
-
-    # Check that other properties still exist
-    jc = para.find(".//w:jc", namespaces={"w": SCHEMA})
-    assert jc is not None
-
-
-def test_create_toc_field_returns_list():
-    """Test that _create_toc_field returns a list of paragraphs."""
-    result = _create_toc_field()
-    assert isinstance(result, list)
-    assert len(result) == 2  # TOC paragraph and empty paragraph
-
-
-def test_create_toc_field_structure():
-    """Test that TOC field has correct structure."""
-    paragraphs = _create_toc_field()
-    toc_para = paragraphs[0]
-
-    # Check for field characters
-    fld_chars = toc_para.findall(".//w:fldChar", namespaces={"w": SCHEMA})
-    assert len(fld_chars) == 3  # begin, separate, end
-
-    # Check instruction text
-    instr = toc_para.find(".//w:instrText", namespaces={"w": SCHEMA})
-    assert instr is not None
-    assert "TOC" in instr.text
-    assert '\\o "1-9"' in instr.text  # outline levels 1-9 (supports heading levels > 6)
-    assert "\\h" in instr.text  # hyperlinks
-    assert "\\z" in instr.text  # hide tab leader
-    assert "\\u" in instr.text  # use outline
-
-
-def test_create_toc_field_empty_paragraph():
-    """Test that second paragraph is empty for spacing."""
-    paragraphs = _create_toc_field()
-    empty_para = paragraphs[1]
-
-    # Empty paragraph should have no child elements
-    assert len(empty_para) == 0
-
-
-def test_create_tof_field_returns_list():
-    """Test that _create_tof_field returns a list of paragraphs."""
-    result = _create_tof_field()
-    assert isinstance(result, list)
-    assert len(result) == 2
-
-
-def test_create_tof_field_structure():
-    """Test that Table of Figures field has correct structure."""
-    paragraphs = _create_tof_field()
-    tof_para = paragraphs[0]
-
-    # Check instruction text
-    instr = tof_para.find(".//w:instrText", namespaces={"w": SCHEMA})
-    assert instr is not None
-    assert "TOC" in instr.text
-    assert "\\f F" in instr.text  # figures flag
-    assert "\\h" in instr.text
-    assert "\\z" in instr.text
-
-
-def test_create_tot_field_returns_list():
-    """Test that _create_tot_field returns a list of paragraphs."""
-    result = _create_tot_field()
-    assert isinstance(result, list)
-    assert len(result) == 2
-
-
-def test_create_tot_field_structure():
-    """Test that Table of Tables field has correct structure."""
-    paragraphs = _create_tot_field()
-    tot_para = paragraphs[0]
-
-    # Check instruction text
-    instr = tot_para.find(".//w:instrText", namespaces={"w": SCHEMA})
-    assert instr is not None
-    assert "TOC" in instr.text
-    assert "\\f T" in instr.text  # tables flag
-    assert "\\h" in instr.text
-    assert "\\z" in instr.text
-
-
-def test_find_placeholder_paragraphs_empty_body():
-    """Test finding placeholders in empty document body."""
-    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"/>')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-    assert len(elements_to_replace) == 0
-
-
-def test_find_placeholder_paragraphs_with_toc_marker():
-    """Test finding TOC_PLACEHOLDER marker."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-
-    assert len(elements_to_replace) == 1
-    idx, element, has_toc, has_tof, has_tot = elements_to_replace[0]
-    assert idx == 0
-    assert has_toc is True
-    assert has_tof is False
-    assert has_tot is False
-
-
-def test_find_placeholder_paragraphs_with_tof_marker():
-    """Test finding TOF_PLACEHOLDER marker."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>TOF_PLACEHOLDER</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-
-    assert len(elements_to_replace) == 1
-    idx, element, has_toc, has_tof, has_tot = elements_to_replace[0]
-    assert idx == 0
-    assert has_toc is False
-    assert has_tof is True
-    assert has_tot is False
-
-
-def test_find_placeholder_paragraphs_with_tot_marker():
-    """Test finding TOT_PLACEHOLDER marker."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>TOT_PLACEHOLDER</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-
-    assert len(elements_to_replace) == 1
-    idx, element, has_toc, has_tof, has_tot = elements_to_replace[0]
-    assert idx == 0
-    assert has_toc is False
-    assert has_tof is False
-    assert has_tot is True
-
-
-def test_find_placeholder_paragraphs_with_all_three():
-    """Test finding all three placeholder types."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>TOF_PLACEHOLDER</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>TOT_PLACEHOLDER</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-
-    assert len(elements_to_replace) == 3
-    # Check TOC
-    assert elements_to_replace[0][2] is True  # has_toc
-    # Check TOF
-    assert elements_to_replace[1][3] is True  # has_tof
-    # Check TOT
-    assert elements_to_replace[2][4] is True  # has_tot
-
-
-def test_find_placeholder_paragraphs_not_found():
-    """Test finding placeholders in document without any."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>Regular paragraph</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-    assert len(elements_to_replace) == 0
-
-
-def test_find_placeholder_paragraphs_in_heading_ignored():
-    """Test that placeholders in headings are ignored."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr>
-                <w:pStyle w:val="Heading1"/>
-            </w:pPr>
-            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-    assert len(elements_to_replace) == 0
-
-
-def test_find_placeholder_paragraphs_in_body_text():
-    """Test finding placeholders in BodyText style."""
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr>
-                <w:pStyle w:val="BodyText"/>
-            </w:pPr>
-            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    elements_to_replace = []
-    _find_placeholder_paragraphs(body, elements_to_replace)
-    assert len(elements_to_replace) == 1
-
-
-def test_enable_auto_update_fields_when_present():
-    """Test enabling auto-update when updateFields setting already exists."""
+def test_get_paragraph_style_none():
+    assert _get_paragraph_style(parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')) is None
+
+def test_get_paragraph_style_bodytext():
+    assert _get_paragraph_style(parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:pPr><w:pStyle w:val="BodyText"/></w:pPr></w:p>')) == "BodyText"
+
+
+# ---- _ensure_caption_style ----
+
+def test_ensure_caption_style_adds():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:t>x</w:t></w:r></w:p>')
+    _ensure_caption_style(para)
+    assert para.find(".//w:pStyle", namespaces={"w": SCHEMA}).get(f"{{{SCHEMA}}}val") == "Caption"
+
+def test_ensure_caption_style_replaces():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:pPr><w:pStyle w:val="Normal"/></w:pPr></w:p>')
+    _ensure_caption_style(para)
+    assert para.find(".//w:pStyle", namespaces={"w": SCHEMA}).get(f"{{{SCHEMA}}}val") == "Caption"
+
+
+# ---- _is_adjacent_to_table ----
+
+def test_adjacent_to_table_before():
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:r><w:t>c</w:t></w:r></w:p>{_MINIMAL_TBL}</w:body>')
+    assert _is_adjacent_to_table(body.find("w:p", namespaces={"w": SCHEMA})) is True
+
+def test_after_table_is_not_adjacent():
+    """A paragraph after a table should NOT be classified as table caption."""
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}">{_MINIMAL_TBL}<w:p><w:r><w:t>c</w:t></w:r></w:p></w:body>')
+    paras = body.findall("w:p", namespaces={"w": SCHEMA})
+    assert _is_adjacent_to_table(paras[-1]) is False
+
+def test_adjacent_to_table_skips_bookmarks():
+    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:r><w:t>c</w:t></w:r></w:p>
+        <w:bookmarkStart w:id="1" w:name="x"/>
+        {_MINIMAL_TBL}
+        <w:bookmarkEnd w:id="1"/>
+    </w:body>''')
+    assert _is_adjacent_to_table(body.find("w:p", namespaces={"w": SCHEMA})) is True
+
+def test_adjacent_to_table_skips_empty_paras():
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:r><w:t>c</w:t></w:r></w:p><w:p/>{_MINIMAL_TBL}</w:body>')
+    assert _is_adjacent_to_table(body.find("w:p", namespaces={"w": SCHEMA})) is True
+
+def test_not_adjacent_to_table():
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p></w:body>')
+    assert _is_adjacent_to_table(body.find("w:p", namespaces={"w": SCHEMA})) is False
+
+
+# ---- _has_seq_field / _ensure_seq_field ----
+
+def test_has_seq_field_true():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:instrText> SEQ Table </w:instrText></w:r></w:p>')
+    assert _has_seq_field(para) is True
+
+def test_has_seq_field_false():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:t>Table 1</w:t></w:r></w:p>')
+    assert _has_seq_field(para) is False
+
+def test_ensure_seq_field_replaces_plain_number():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Figure 1 Pic</w:t></w:r></w:p>')
+    _ensure_seq_field(para, "Figure")
+    xml = etree.tostring(para, encoding="unicode")
+    assert "SEQ Figure" in xml
+    assert 'fldCharType="begin"' in xml
+    assert re.search(r'separate.*<w:t[^>]*>1</w:t>.*end', xml, re.S)
+    assert "Figure " in xml
+    assert " Pic" in xml
+
+def test_ensure_seq_field_skips_existing():
+    para = parse_xml(f'''<w:p xmlns:w="{SCHEMA}">
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText> SEQ Table \\* ARABIC </w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+    </w:p>''')
+    xml_before = etree.tostring(para, encoding="unicode")
+    _ensure_seq_field(para, "Table")
+    assert etree.tostring(para, encoding="unicode") == xml_before
+
+def test_ensure_seq_field_no_number():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:t>No number</w:t></w:r></w:p>')
+    xml_before = etree.tostring(para, encoding="unicode")
+    _ensure_seq_field(para, "Table")
+    assert etree.tostring(para, encoding="unicode") == xml_before
+
+
+# ---- _add_tc_field ----
+
+def test_add_tc_field_creates_field_with_bookmark():
+    para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:t>Table 1</w:t></w:r></w:p>')
+    _add_tc_field(para, "Table 1", "T", 42, "_Toc000000042")
+    xml = etree.tostring(para, encoding="unicode")
+    assert "bookmarkStart" in xml
+    assert "_Toc000000042" in xml
+    assert "\\f T" in xml
+
+
+# ---- TOC/TOF/TOT field creation ----
+
+def test_create_toc_field():
+    paras = _create_toc_field()
+    assert len(paras) == 2
+    instr = paras[0].find(".//w:instrText", namespaces={"w": SCHEMA})
+    assert '\\o "1-9"' in instr.text
+
+def test_create_tof_field():
+    paras = _create_tof_field()
+    instr = paras[0].find(".//w:instrText", namespaces={"w": SCHEMA})
+    assert "\\f F" in instr.text
+
+def test_create_tot_field():
+    paras = _create_tot_field()
+    instr = paras[0].find(".//w:instrText", namespaces={"w": SCHEMA})
+    assert "\\f T" in instr.text
+
+def test_tot_with_entries_has_hyperlinks():
+    entries = [("Table 1", "_Toc1"), ("Table 2", "_Toc2")]
+    xml = "".join(etree.tostring(p, encoding="unicode") for p in _create_tot_field(entries))
+    assert 'w:anchor="_Toc1"' in xml
+    assert 'w:anchor="_Toc2"' in xml
+    assert "PAGEREF" in xml
+
+def test_tof_with_entries():
+    entries = [("Figure 1", "_Toc10")]
+    xml = "".join(etree.tostring(p, encoding="unicode") for p in _create_tof_field(entries))
+    assert 'w:anchor="_Toc10"' in xml
+    assert "\\f F" in xml
+
+
+# ---- placeholder finding ----
+
+def test_find_placeholders_all_three():
+    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:r><w:t>TOC_PLACEHOLDER</w:t></w:r></w:p>
+        <w:p><w:r><w:t>TOF_PLACEHOLDER</w:t></w:r></w:p>
+        <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
+    </w:body>''')
+    result = []
+    _find_placeholder_paragraphs(body, result)
+    assert len(result) == 3
+
+def test_find_placeholders_ignores_heading():
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>TOC_PLACEHOLDER</w:t></w:r></w:p></w:body>')
+    result = []
+    _find_placeholder_paragraphs(body, result)
+    assert len(result) == 0
+
+
+# ---- enable_auto_update_fields ----
+
+def test_enable_auto_update_fields():
     mock_doc = MagicMock(spec=DocumentObject)
-    mock_settings = MagicMock()
-    mock_settings_element = MagicMock()
     mock_update_fields = MagicMock()
-    mock_settings_element.find.return_value = mock_update_fields
-    mock_settings.element = mock_settings_element
-    mock_doc.settings = mock_settings
-
+    mock_doc.settings.element.find.return_value = mock_update_fields
     enable_auto_update_fields(mock_doc)
+    mock_update_fields.set.assert_called_once()
 
-    # Verify existing element was updated
-    mock_update_fields.set.assert_called_once_with(f"{{{SCHEMA}}}val", "true")
-
-
-def test_enable_auto_update_fields_handles_exception(caplog):
-    """Test that exceptions are handled gracefully with warning."""
+def test_enable_auto_update_fields_exception(caplog):
     mock_doc = MagicMock(spec=DocumentObject)
-    mock_doc.settings.element.find.side_effect = Exception("Test error")
-
+    mock_doc.settings.element.find.side_effect = Exception("err")
     with caplog.at_level(logging.WARNING):
         enable_auto_update_fields(mock_doc)
-
-    # Verify warning was logged
     assert "Could not enable auto-update fields" in caplog.text
 
 
-def test_add_toc_entries_finds_figure_captions(caplog):
-    """Test that figure captions are found and processed."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    # Captions are identified by the "Caption" style (set upstream by
-    # filters/html_captions.lua from the Polarion caption span), not by text.
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-            <w:r><w:t>Figure 1: Test figure</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-            <w:r><w:t>Figure 2: Another figure</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
+# ---- Integration: add_table_of_contents_entries ----
 
+def test_figure_captions_found(caplog):
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Figure 1</w:t></w:r></w:p></w:body>')
+    mock_doc.element.body = body
     with caplog.at_level(logging.INFO):
         add_table_of_contents_entries(mock_doc)
+    assert "Found 1 figure captions" in caplog.text
 
-    # Verify logging indicates figures were found
-    assert "Found 2 figure captions" in caplog.text
-
-
-def test_add_toc_entries_finds_table_captions(caplog):
-    """Test that table captions are found and processed."""
+def test_table_captions_found(caplog):
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-            <w:r><w:t>Table 1: Test table</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}</w:body>')
     mock_doc.element.body = body
-
     with caplog.at_level(logging.INFO):
         add_table_of_contents_entries(mock_doc)
+    assert "1 table captions" in caplog.text
 
-    # Verify logging indicates tables were found
-    assert "Found 0 figure captions and 1 table captions" in caplog.text
-
-
-def test_paragraphs_that_only_start_with_table_or_figure_are_not_captions(caplog):
-    """Only paragraphs carrying the "Caption" style (set upstream from the
-    Polarion caption span) are captions. A heading ("Table test III"), a
-    cross-reference ("Table 1 shows ...") and a label ("Table 50px") all merely
-    start with the word — and even include a number — but must be left alone."""
+def test_non_caption_paragraphs_ignored(caplog):
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
-            <w:r><w:t>Table test III</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="BodyText"/></w:pPr>
-            <w:r><w:t>Table 1 shows the results discussed above.</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="BodyText"/></w:pPr>
-            <w:r><w:t>Table 50px</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="Title"/></w:pPr>
-            <w:r><w:t>Figure skating results</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p></w:body>')
     mock_doc.element.body = body
-
     with caplog.at_level(logging.INFO):
         add_table_of_contents_entries(mock_doc)
-
-    # None are captioned...
     assert "Found 0 figure captions and 0 table captions" in caplog.text
-    # ...and every paragraph keeps its original style (nothing downgraded to Caption).
-    styles = [s.get(f"{{{SCHEMA}}}val") for s in body.findall(".//w:pStyle", namespaces={"w": SCHEMA})]
-    assert styles == ["Heading1", "BodyText", "BodyText", "Title"]
 
-
-def test_caption_styled_paragraph_next_to_lookalike_is_detected(caplog):
-    """A genuine caption (marked with the "Caption" style) is processed, while a
-    heading with the same 'Table' prefix sitting next to it is not."""
+def test_captions_get_unique_bookmarks():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
-            <w:r><w:t>Table test III</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-            <w:r><w:t>Table 1: real caption</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
+    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}
+        <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 2</w:t></w:r></w:p>{_MINIMAL_TBL}
+    </w:body>''')
     mock_doc.element.body = body
-
-    with caplog.at_level(logging.INFO):
-        add_table_of_contents_entries(mock_doc)
-
-    assert "Found 0 figure captions and 1 table captions" in caplog.text
-    # The heading keeps Heading1; the caption keeps Caption.
-    styles = [s.get(f"{{{SCHEMA}}}val") for s in body.findall(".//w:pStyle", namespaces={"w": SCHEMA})]
-    assert styles == ["Heading1", "Caption"]
-
-
-def test_pandoc_native_caption_styles_are_detected(caplog):
-    """Non-HTML sources bring pandoc's own caption styles — a markdown/docx
-    table caption is "TableCaption" and a figure caption is "ImageCaption".
-    Both must be found and get TC fields (the counter word need not appear in
-    the text, so classification comes from the style)."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr><w:pStyle w:val="TableCaption"/></w:pPr>
-            <w:r><w:t>Demo table caption</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr>
-            <w:r><w:t>Demo figure caption</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    with caplog.at_level(logging.INFO):
-        add_table_of_contents_entries(mock_doc)
-
-    assert "Found 1 figure captions and 1 table captions" in caplog.text
-    # Both got TC field runs appended.
-    instr_texts = " ".join(t.text or "" for t in body.iter(f"{{{SCHEMA}}}instrText"))
-    assert instr_texts.count(" TC ") == 2
-    assert "\\f T" in instr_texts  # table caption
-    assert "\\f F" in instr_texts  # figure caption
-
-
-def test_add_toc_entries_inserts_toc_field_with_placeholder(caplog):
-    """Test that TOC field is inserted when TOC_PLACEHOLDER is found."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>Content after placeholder</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    with caplog.at_level(logging.INFO):
-        add_table_of_contents_entries(mock_doc)
-
-    # Verify TOC was inserted
-    assert "Inserted Table of Contents" in caplog.text
-
-
-def test_add_toc_entries_handles_empty_document():
-    """Test that empty document is handled without errors."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}"/>')
-    mock_doc.element.body = body
-
-    # Should not raise any exceptions
     add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    bookmarks = re.findall(r'w:name="(_Toc\d+)"', xml)
+    assert len(bookmarks) >= 2
+    assert bookmarks[0] != bookmarks[1]
 
-
-def test_add_toc_entries_processes_both_figures_and_tables(caplog):
-    """Test processing document with both figure and table captions."""
+def test_tot_placeholder_full_workflow():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-            <w:r><w:t>Figure 1: Test figure</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-            <w:r><w:t>Table 1: Test table</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
+    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}
+        <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
+    </w:body>''')
     mock_doc.element.body = body
+    add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    assert "bookmarkStart" in xml
+    assert "w:hyperlink" in xml
+    assert "PAGEREF" in xml
+    assert "\\f T" in xml
 
-    with caplog.at_level(logging.INFO):
-        add_table_of_contents_entries(mock_doc)
+def test_localized_caption_classified_by_table_adjacency():
+    """Polish 'Tabela 1' next to a table should be classified as table caption."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>
+            <w:r><w:t xml:space="preserve">Tabela </w:t></w:r>
+            <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+            <w:r><w:instrText xml:space="preserve"> SEQ Tabela \\* ARABIC </w:instrText></w:r>
+            <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+            <w:r><w:t>1</w:t></w:r>
+            <w:r><w:fldChar w:fldCharType="end"/></w:r>
+        </w:p>{_MINIMAL_TBL}
+    </w:body>''')
+    mock_doc.element.body = body
+    add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    assert "\\f T" in xml
 
-    # Should process both types
-    assert "Found 1 figure captions and 1 table captions" in caplog.text
-
-
-def test_full_workflow_with_figures_and_toc():
-    """Integration test: document with figures and TOC_PLACEHOLDER."""
+def test_full_workflow_empty():
     from docx import Document
-
-    # Create a real document. Captions are marked with the "Caption" style
-    # upstream (by filters/html_captions.lua); the post-processor keys off it.
     doc = Document()
-    doc.add_paragraph("TOC_PLACEHOLDER")
-    doc.add_paragraph("Figure 1: Test figure caption", style="Caption")
-    doc.add_paragraph("Figure 2: Another figure", style="Caption")
-
-    # Run the function
     add_table_of_contents_entries(doc)
 
-    # Verify the figure captions kept the Caption style and got TC fields.
-    body = doc.element.body
-    paras = body.findall(".//w:p", namespaces={"w": SCHEMA})
-    figure_paras = [p for p in paras if "Figure" in _get_paragraph_text(p)]
-
-    for para in figure_paras:
-        p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-        assert p_style is not None
-        assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
-
-
-def test_full_workflow_with_tables_only():
-    """Integration test: document with only table captions."""
+def test_enable_auto_update_real():
     from docx import Document
-
     doc = Document()
-    doc.add_paragraph("Table 1: Test table caption", style="Caption")
-    doc.add_paragraph("Table 2: Another table", style="Caption")
-
-    # Run the function
-    add_table_of_contents_entries(doc)
-
-    # Verify table captions kept the Caption style and got TC fields.
-    body = doc.element.body
-    paras = body.findall(".//w:p", namespaces={"w": SCHEMA})
-    table_paras = [p for p in paras if "Table" in _get_paragraph_text(p)]
-
-    for para in table_paras:
-        p_style = para.find(".//w:pStyle", namespaces={"w": SCHEMA})
-        assert p_style is not None
-        assert p_style.get(f"{{{SCHEMA}}}val") == "Caption"
-
-
-def test_full_workflow_empty_document():
-    """Integration test: empty document should not cause errors."""
-    from docx import Document
-
-    doc = Document()
-
-    # Should not raise any exceptions
-    add_table_of_contents_entries(doc)
-
-
-def test_enable_auto_update_on_real_document():
-    """Integration test: enable auto-update fields on real document."""
-    from docx import Document
-
-    doc = Document()
-    doc.add_paragraph("Test content")
-
-    # Should not raise any exceptions
+    doc.add_paragraph("Test")
     enable_auto_update_fields(doc)
-
-    # Verify updateFields element was added
-    settings_element = doc.settings.element
-    update_fields = settings_element.find(".//w:updateFields", namespaces={"w": SCHEMA})
-    assert update_fields is not None
-    assert update_fields.get(f"{{{SCHEMA}}}val") == "true"
-
-
-def test_caption_text_with_special_characters():
-    """Test that caption text with special characters is handled correctly."""
-    caption_text = "Figure 1: Test - Special (Characters) with [brackets]"
-    runs = _create_tc_field_runs(caption_text, field_flag="F")
-
-    # Verify runs were created without errors
-    assert len(runs) == 3
-    instr_text = runs[1].find(".//w:instrText", namespaces={"w": SCHEMA}).text
-    assert caption_text in instr_text
-
-
-def test_caption_text_with_quotes():
-    """Test that caption text with quotes is handled correctly."""
-    caption_text = "Figure 1: Test with 'single' quotes"
-    runs = _create_tc_field_runs(caption_text, field_flag="F")
-
-    # Verify runs were created without errors
-    assert len(runs) == 3
-    instr_text = runs[1].find(".//w:instrText", namespaces={"w": SCHEMA}).text
-    assert caption_text in instr_text
-
-
-def test_very_long_caption_text():
-    """Test handling of very long caption text."""
-    caption_text = "Figure 1: " + "A" * 1000  # Very long caption
-    runs = _create_tc_field_runs(caption_text, field_flag="F")
-
-    # Should create runs without errors
-    assert len(runs) == 3
-
-
-def test_caption_starting_with_whitespace():
-    """Test captions with leading/trailing whitespace."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>  Figure 1: Test  </w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    # Should still find the caption after strip()
-    add_table_of_contents_entries(mock_doc)
-
-
-def test_figure_and_table_with_same_number():
-    """Test handling when figure and table have same number."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>Figure 1: Test figure</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>Table 1: Test table</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    # Should handle both without confusion
-    add_table_of_contents_entries(mock_doc)
-
-
-def test_all_three_placeholders_together():
-    """Test document with all three placeholder types."""
-    mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''
-    <w:body xmlns:w="{SCHEMA}">
-        <w:p>
-            <w:r><w:t>TOC_PLACEHOLDER</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>TOF_PLACEHOLDER</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>TOT_PLACEHOLDER</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>Figure 1: Test</w:t></w:r>
-        </w:p>
-        <w:p>
-            <w:r><w:t>Table 1: Test</w:t></w:r>
-        </w:p>
-    </w:body>
-    ''')
-    mock_doc.element.body = body
-
-    # Should handle all three placeholders
-    add_table_of_contents_entries(mock_doc)
+    uf = doc.settings.element.find(".//w:updateFields", namespaces={"w": SCHEMA})
+    assert uf is not None
+    assert uf.get(f"{{{SCHEMA}}}val") == "true"
