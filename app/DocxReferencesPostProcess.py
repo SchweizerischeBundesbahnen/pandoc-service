@@ -85,11 +85,11 @@ def _get_max_bookmark_id(body: Any) -> int:
             bm_id = int(bm.get(f"{{{SCHEMA}}}id", "0"))
             max_id = max(max_id, bm_id)
         except ValueError:
-            pass
+            logger.debug("Skipping bookmark with non-integer id: %r", bm.get(f"{{{SCHEMA}}}id"))
     return max_id
 
 
-def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901
+def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901  # NOSONAR
     """Find all figure and table captions, ensure SEQ fields, add TC fields with bookmarks.
 
     Returns two lists (figure_entries, table_entries) where each entry is
@@ -235,7 +235,7 @@ def _ensure_seq_field(para: Any, seq_name: str) -> None:
     if _has_seq_field(para):
         return
 
-    for run in list(para.findall("w:r", namespaces={"w": SCHEMA})):
+    for run in list(para.findall("w:r", namespaces={"w": SCHEMA})):  # NOSONAR — list() needed: loop body mutates para
         t_el = run.find("w:t", namespaces={"w": SCHEMA})
         if t_el is None or not t_el.text:
             continue
