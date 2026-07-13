@@ -89,7 +89,7 @@ def _get_max_bookmark_id(body: Any) -> int:
     return max_id
 
 
-def _find_and_process_captions(body: Any) -> tuple[list, list]:
+def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901
     """Find all figure and table captions, ensure SEQ fields, add TC fields with bookmarks.
 
     Returns two lists (figure_entries, table_entries) where each entry is
@@ -104,8 +104,6 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:
         style = _get_paragraph_style(para)
         if style not in CAPTION_STYLE_IDS:
             continue
-
-        text_stripped = _get_paragraph_text(para).strip()
 
         # Classify Figure vs Table. Strategy (in priority order):
         # 1. Pandoc's own styles are unambiguous (ImageCaption / TableCaption).
@@ -201,6 +199,28 @@ def _get_seq_name(para: Any) -> str | None:
     return None
 
 
+def _clone_run_with_text(run: Any, text: str) -> Any:
+    """Create a new run with the given text, copying rPr from the source run."""
+    ns = f'xmlns:w="{SCHEMA}"'
+    new_run = parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(text)}</w:t></w:r>')
+    rpr = run.find("w:rPr", namespaces={"w": SCHEMA})
+    if rpr is not None:
+        new_run.insert(0, deepcopy(rpr))
+    return new_run
+
+
+def _build_seq_field_runs(seq_name: str, number: str) -> list[Any]:
+    """Build the run elements for a SEQ field: begin, instrText, separate, value, end."""
+    ns = f'xmlns:w="{SCHEMA}"'
+    return [
+        parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="begin"/></w:r>'),
+        parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve"> SEQ {_escape_xml(seq_name)} \\* ARABIC </w:instrText></w:r>'),
+        parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="separate"/></w:r>'),
+        parse_xml(f"<w:r {ns}><w:t>{_escape_xml(number)}</w:t></w:r>"),
+        parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="end"/></w:r>'),
+    ]
+
+
 def _ensure_seq_field(para: Any, seq_name: str) -> None:
     """Replace a plain-text caption number with a Word SEQ field.
 
@@ -215,10 +235,7 @@ def _ensure_seq_field(para: Any, seq_name: str) -> None:
     if _has_seq_field(para):
         return
 
-    ns = f'xmlns:w="{SCHEMA}"'
-    runs = list(para.findall("w:r", namespaces={"w": SCHEMA}))
-
-    for run in runs:
+    for run in list(para.findall("w:r", namespaces={"w": SCHEMA})):
         t_el = run.find("w:t", namespaces={"w": SCHEMA})
         if t_el is None or not t_el.text:
             continue
@@ -230,30 +247,13 @@ def _ensure_seq_field(para: Any, seq_name: str) -> None:
         before = t_el.text[: match.start()]
         after = t_el.text[match.end() :]
 
-        # Build replacement elements
-        replacements = []
+        replacements: list[Any] = []
         if before:
-            r_before = parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(before)}</w:t></w:r>')
-            # Copy run properties if any
-            rpr = run.find("w:rPr", namespaces={"w": SCHEMA})
-            if rpr is not None:
-                r_before.insert(0, deepcopy(rpr))
-            replacements.append(r_before)
-
-        replacements.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="begin"/></w:r>'))
-        replacements.append(parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve"> SEQ {_escape_xml(seq_name)} \\* ARABIC </w:instrText></w:r>'))
-        replacements.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="separate"/></w:r>'))
-        replacements.append(parse_xml(f"<w:r {ns}><w:t>{_escape_xml(number)}</w:t></w:r>"))
-        replacements.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="end"/></w:r>'))
-
+            replacements.append(_clone_run_with_text(run, before))
+        replacements.extend(_build_seq_field_runs(seq_name, number))
         if after:
-            r_after = parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(after)}</w:t></w:r>')
-            rpr = run.find("w:rPr", namespaces={"w": SCHEMA})
-            if rpr is not None:
-                r_after.insert(0, deepcopy(rpr))
-            replacements.append(r_after)
+            replacements.append(_clone_run_with_text(run, after))
 
-        # Insert replacements before the original run, then remove it
         for repl in replacements:
             run.addprevious(repl)
         para.remove(run)
