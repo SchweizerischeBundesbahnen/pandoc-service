@@ -925,12 +925,12 @@ local function block_to_ooxml(block, jc_val)
         local link_runs = {}
         for _, lr in ipairs(link_inlines) do
           if lr.t == "RawInline" and lr.format == "openxml" then
-            -- Replace any existing <w:rPr>...</w:rPr> with just Hyperlink rStyle
+            -- Replace existing <w:rPr> with Hyperlink rStyle, and add rPr
+            -- to bare <w:r> runs that don't have one (a single lr.text may
+            -- contain multiple <w:r> elements).
             local text = lr.text
             text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
-            if not text:find("w:rPr") then
-              text = text:gsub("<w:r>", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
-            end
+            text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
             link_runs[#link_runs + 1] = text
           elseif lr.t == "Image" and lr.src and lr.src ~= "" then
             link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
@@ -974,7 +974,6 @@ local function cell_blocks_to_ooxml(blocks, jc_val)
   return table.concat(paras)
 end
 
--- Check if any cell in a list of Rows carries a style attribute.
 -- Check if any cell in a list of Rows carries a style attribute.
 local function rows_have_styles(rows)
   for _, row in ipairs(rows) do

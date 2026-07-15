@@ -109,6 +109,7 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
     text placeholder and this function resolves it using python-docx.
     """
     body = doc.element.body
+    doc_pr_id = max((int(dp.get("id", "0")) for dp in body.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}docPr")), default=0)
     for t_el in body.findall(f".//{{{SCHEMA}}}t"):
         if t_el.text is None:
             continue
@@ -131,18 +132,19 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
             r_id, img = doc.part.get_or_add_image(io.BytesIO(image_bytes))
             width = img.px_width * EMU_1_INCH // 96  # px to EMU at 96 dpi
             height = img.px_height * EMU_1_INCH // 96
+            doc_pr_id += 1
 
             # Build the drawing XML
             drawing_xml = (
                 f'<w:drawing {nsdecls("w", "wp", "a", "pic", "r")}>'
                 f'<wp:inline distT="0" distB="0" distL="0" distR="0">'
                 f'<wp:extent cx="{width}" cy="{height}"/>'
-                f'<wp:docPr id="1" name="Image"/>'
+                f'<wp:docPr id="{doc_pr_id}" name="Image"/>'
                 f"<a:graphic>"
                 f'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
                 f"<pic:pic>"
                 f"<pic:nvPicPr>"
-                f'<pic:cNvPr id="0" name="Image"/>'
+                f'<pic:cNvPr id="{doc_pr_id}" name="Image"/>'
                 f"<pic:cNvPicPr/>"
                 f"</pic:nvPicPr>"
                 f"<pic:blipFill>"
@@ -183,7 +185,10 @@ def _resolve_image_src(src: str) -> bytes | None:
             try:
                 return base64.b64decode(match.group(1))
             except Exception:
+                logger.warning("Failed to decode base64 image data")
                 return None
+    if src:
+        logger.warning("Unsupported image src scheme (only data: URIs are supported): %s", src[:80])
     return None
 
 
