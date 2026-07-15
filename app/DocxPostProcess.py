@@ -1,5 +1,7 @@
+import base64
 import io
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -83,11 +85,139 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc, table_layouts)
     apply_math_colors(doc)
+    _replace_image_placeholders(doc)
+    _replace_link_placeholders(doc)
     add_table_of_contents_entries(doc)
     enable_auto_update_fields(doc)
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
+
+
+_IMG_PLACEHOLDER_RE = re.compile(r"\{\{IMG:(.*?)\}\}")
+_HREF_PLACEHOLDER_RE = re.compile(r"\{\{HREF:(.*?)\}\}")
+
+RELATIONSHIPS_SCHEMA = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"  # NOSONAR
+
+
+def _replace_image_placeholders(doc: DocumentObject) -> None:
+    """Replace ``{{IMG:<src>}}`` placeholders with real embedded images.
+
+    The ``inline_styles.lua`` filter emits these markers when it rebuilds a
+    styled table as raw OOXML. Images can't be embedded in raw OOXML (they
+    need writer-level relationship entries), so the Lua filter writes a
+    text placeholder and this function resolves it using python-docx.
+    """
+    body = doc.element.body
+    doc_pr_id = max((int(dp.get("id", "0")) for dp in body.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}docPr")), default=0)
+    for t_el in body.findall(f".//{{{SCHEMA}}}t"):
+        if t_el.text is None:
+            continue
+        match = _IMG_PLACEHOLDER_RE.search(t_el.text)
+        if not match:
+            continue
+
+        src = match.group(1)
+        run_el = t_el.getparent()
+        if run_el is None or not run_el.tag.endswith("}r"):
+            continue
+
+        image_bytes = _resolve_image_src(src)
+        if image_bytes is None:
+            # Can't resolve — leave the placeholder text as alt-text fallback
+            t_el.text = t_el.text.replace(match.group(0), "[image]")
+            continue
+
+        try:
+            r_id, img = doc.part.get_or_add_image(io.BytesIO(image_bytes))
+            width = img.px_width * EMU_1_INCH // 96  # px to EMU at 96 dpi
+            height = img.px_height * EMU_1_INCH // 96
+            doc_pr_id += 1
+
+            # Build the drawing XML
+            drawing_xml = (
+                f'<w:drawing {nsdecls("w", "wp", "a", "pic", "r")}>'
+                f'<wp:inline distT="0" distB="0" distL="0" distR="0">'
+                f'<wp:extent cx="{width}" cy="{height}"/>'
+                f'<wp:docPr id="{doc_pr_id}" name="Image"/>'
+                f"<a:graphic>"
+                f'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+                f"<pic:pic>"
+                f"<pic:nvPicPr>"
+                f'<pic:cNvPr id="{doc_pr_id}" name="Image"/>'
+                f"<pic:cNvPicPr/>"
+                f"</pic:nvPicPr>"
+                f"<pic:blipFill>"
+                f'<a:blip r:embed="{r_id}"/>'
+                f"<a:stretch><a:fillRect/></a:stretch>"
+                f"</pic:blipFill>"
+                f"<pic:spPr>"
+                f"<a:xfrm>"
+                f'<a:off x="0" y="0"/>'
+                f'<a:ext cx="{width}" cy="{height}"/>'
+                f"</a:xfrm>"
+                f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+                f"</pic:spPr>"
+                f"</pic:pic>"
+                f"</a:graphicData>"
+                f"</a:graphic>"
+                f"</wp:inline>"
+                f"</w:drawing>"
+            )
+            drawing_el = parse_xml(drawing_xml)
+
+            # Replace the text run with the drawing
+            run_el.remove(t_el)
+            run_el.append(drawing_el)
+
+            logger.debug(f"Replaced image placeholder with embedded image ({img.px_width}x{img.px_height})")
+        except Exception as e:
+            logger.warning(f"Could not embed image from placeholder: {e}")
+            t_el.text = t_el.text.replace(match.group(0), "[image]")
+
+
+def _resolve_image_src(src: str) -> bytes | None:
+    """Resolve an image src to bytes. Supports data: URIs."""
+    if src.startswith("data:"):
+        # data:image/gif;base64,AAAA...
+        match = re.match(r"data:[^;]+;base64,(.*)", src)
+        if match:
+            try:
+                return base64.b64decode(match.group(1))
+            except Exception:
+                logger.warning("Failed to decode base64 image data")
+                return None
+    if src:
+        logger.warning("Unsupported image src scheme (only data: URIs are supported): %s", src[:80])
+    return None
+
+
+def _replace_link_placeholders(doc: DocumentObject) -> None:
+    """Replace ``{{HREF:<url>}}`` placeholders in hyperlink tooltips with real relationships.
+
+    The ``inline_styles.lua`` filter emits ``<w:hyperlink w:tooltip="{{HREF:url}}">``
+    when it rebuilds styled tables as raw OOXML. This function registers the
+    URL as a hyperlink relationship and sets the correct ``r:id``.
+    """
+    ns_w = f"{{{SCHEMA}}}"
+    ns_r = f"{{{RELATIONSHIPS_SCHEMA}}}"
+    body = doc.element.body
+
+    for hyperlink in body.findall(f".//{ns_w}hyperlink"):
+        tooltip = hyperlink.get(f"{ns_w}tooltip", "")
+        match = _HREF_PLACEHOLDER_RE.search(tooltip)
+        if not match:
+            continue
+
+        url = match.group(1)
+        try:
+            r_id = doc.part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True)  # NOSONAR
+            hyperlink.set(f"{ns_r}id", r_id)
+            hyperlink.attrib.pop(f"{ns_w}tooltip", None)
+            logger.debug(f"Resolved hyperlink placeholder to {url} (r:id={r_id})")
+        except Exception as e:
+            logger.warning(f"Could not resolve hyperlink placeholder: {e}")
+            hyperlink.attrib.pop(f"{ns_w}tooltip", None)
 
 
 def _replace_first_paragraph_styles(doc: DocumentObject) -> None:
@@ -290,7 +420,7 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
         table_properties = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
         tbl.insert(0, table_properties)
 
-    _apply_table_layout(tbl, table_properties, layout)
+    _apply_table_layout(tbl, table_properties, layout, max_width)
 
     # Process nested tables
     for row in table.rows:
@@ -300,23 +430,49 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
                 _process_table(sub_table, columns_count, max_width, layout_iter)
 
 
-def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | None) -> None:
-    """Write width, alignment and indent onto a table's <w:tblPr>.
+def _clamp_twips(width_twips: int, max_width_emu: int) -> int:
+    """Clamp a width in twips to the available page width (given in EMU)."""
+    if max_width_emu <= 0:
+        return width_twips
+    max_twips = max_width_emu // 635
+    if width_twips > max_twips:
+        logger.debug(f"Clamped table width from {width_twips} to {max_twips} twips")
+        return max_twips
+    return width_twips
 
-    Default (no layout, or a layout carrying no width): 100 % width with
-    autofit layout — the historical behaviour that keeps every existing table
-    filling the text column. A percentage width keeps autofit (Word renders the
-    table at that fraction of the text column). An absolute width switches to
-    fixed layout and rescales the column grid so Word honours the exact size.
-    Alignment (<w:jc>) and left indent (<w:tblInd>) are applied when present.
-    """
-    # Width: pct keeps autofit; dxa needs fixed layout + a rescaled grid.
-    width_type, width_value, use_fixed_layout = "pct", 5000, False
+
+def _clamp_existing_fixed_width(tbl: Any, table_properties: Any, max_width: int) -> None:
+    """Clamp a Lua-filter-set dxa width to the page width if it overflows."""
+    if max_width <= 0:
+        return
+    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    current = int(tbl_w.get(f"{{{SCHEMA}}}w", "0"))
+    clamped = _clamp_twips(current, max_width)
+    if clamped < current:
+        tbl_w.set(f"{{{SCHEMA}}}w", str(clamped))
+        _rescale_table_grid(tbl, clamped)
+
+
+def _resolve_layout_width(layout: TableLayout | None) -> tuple[str, int, bool]:
+    """Extract width parameters from an HtmlTableLayout, or return defaults."""
     if layout is not None and layout.width_type is not None and layout.width_value is not None:
-        width_type, width_value = layout.width_type, layout.width_value
-        use_fixed_layout = width_type == "dxa"
-        if use_fixed_layout:
-            _rescale_table_grid(tbl, width_value)
+        return layout.width_type, layout.width_value, layout.width_type == "dxa"
+    return "pct", 5000, False
+
+
+def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int = 0) -> None:
+    """Write width, alignment and indent onto a table's <w:tblPr>."""
+    has_layout = layout is not None and layout.width_type is not None and layout.width_value is not None
+
+    if not has_layout and _has_existing_fixed_width(table_properties):
+        _clamp_existing_fixed_width(tbl, table_properties, max_width)
+        return
+
+    width_type, width_value, use_fixed_layout = _resolve_layout_width(layout)
+
+    if use_fixed_layout:
+        width_value = _clamp_twips(width_value, max_width)
+        _rescale_table_grid(tbl, width_value)
 
     _set_tblpr_child(table_properties, parse_xml(f'<w:tblW {nsdecls("w")} w:w="{width_value}" w:type="{width_type}"/>'))
 
@@ -328,6 +484,15 @@ def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | N
 
     if layout is not None and layout.indent_twips is not None:
         _set_tblpr_child(table_properties, parse_xml(f'<w:tblInd {nsdecls("w")} w:w="{layout.indent_twips}" w:type="dxa"/>'))
+
+
+def _has_existing_fixed_width(table_properties: Any) -> bool:
+    """Return True if the table already has a fixed (dxa) width from the Lua filter."""
+    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    if tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") == "dxa":
+        w = tbl_w.get(f"{{{SCHEMA}}}w", "0")
+        return int(w) > 0
+    return False
 
 
 def _set_tblpr_child(table_properties: Any, new_child: Any) -> None:

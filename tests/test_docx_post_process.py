@@ -7,7 +7,15 @@ from docx.table import Table, _Cell
 from lxml import etree
 
 from app import DocxPostProcess
-from app.DocxPostProcess import SCHEMA, _process_table, _replace_table_properties
+from app.DocxPostProcess import (
+    SCHEMA,
+    _has_existing_fixed_width,
+    _process_table,
+    _replace_image_placeholders,
+    _replace_link_placeholders,
+    _replace_table_properties,
+    _resolve_image_src,
+)
 
 WORD_PROCESSING_ML_MAIN_SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PROCESSING_ML_MAIN_SCHEMA_IN_BRACKETS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -1426,3 +1434,248 @@ class TestReplaceFirstParagraphStyles:
                 if val == "BodyText":
                     first_paragraph_replaced = True
         assert first_paragraph_replaced, "Expected at least one paragraph to be replaced with BodyText"
+
+
+# ---- _resolve_image_src ----
+
+
+def test_resolve_image_src_data_uri():
+    """data: URI with base64-encoded 1x1 GIF should return bytes."""
+    gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    result = _resolve_image_src(f"data:image/gif;base64,{gif_b64}")
+    assert result is not None
+    assert result[:3] == b"GIF"
+
+
+def test_resolve_image_src_invalid_base64():
+    """data: URI with invalid base64 should return None."""
+    assert _resolve_image_src("data:image/png;base64,!!!invalid!!!") is None
+
+
+def test_resolve_image_src_http_unsupported():
+    """http:// URIs are not supported and should return None."""
+    assert _resolve_image_src("http://example.com/img.png") is None
+
+
+def test_resolve_image_src_empty():
+    """Empty string should return None."""
+    assert _resolve_image_src("") is None
+
+
+# ---- _replace_image_placeholders ----
+
+
+def test_replace_image_placeholder_with_data_uri():
+    """Image placeholder with data: URI should be replaced with w:drawing."""
+    from docx import Document
+
+    gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    doc = Document()
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+
+    _replace_image_placeholders(doc)
+
+    body_xml = etree.tostring(doc.element.body, encoding="unicode")
+    assert "w:drawing" in body_xml
+    assert "{{IMG:" not in body_xml
+
+
+def test_replace_image_placeholder_unsupported_src():
+    """Unsupported image src should be replaced with [image] text."""
+    from docx import Document
+
+    doc = Document()
+    doc.add_paragraph("{{IMG:http://example.com/img.png}}")
+
+    _replace_image_placeholders(doc)
+
+    body_xml = etree.tostring(doc.element.body, encoding="unicode")
+    assert "[image]" in body_xml
+    assert "{{IMG:" not in body_xml
+
+
+def test_replace_image_placeholder_unique_ids():
+    """Multiple image placeholders should get unique docPr IDs."""
+    from docx import Document
+
+    gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    doc = Document()
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+
+    _replace_image_placeholders(doc)
+
+    body_xml = etree.tostring(doc.element.body, encoding="unicode")
+    import re
+
+    ids = re.findall(r'docPr id="(\d+)"', body_xml)
+    assert len(ids) >= 2
+    assert ids[0] != ids[1]
+
+
+# ---- _replace_link_placeholders ----
+
+
+def test_replace_link_placeholder():
+    """HREF placeholder in hyperlink tooltip should be replaced with real r:id."""
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    body = doc.element.body
+    p = parse_xml(
+        f'<w:p {nsdecls("w")}>'
+        f'<w:hyperlink w:tooltip="{{{{HREF:http://example.com}}}}">'
+        f"<w:r><w:t>click</w:t></w:r>"
+        f"</w:hyperlink>"
+        f"</w:p>"
+    )
+    body.append(p)
+
+    _replace_link_placeholders(doc)
+
+    body_xml = etree.tostring(body, encoding="unicode")
+    assert "{{HREF:" not in body_xml
+    # r:id should be set on the hyperlink
+    ns_r = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    hyperlink = body.find(f".//{{{SCHEMA}}}hyperlink")
+    assert hyperlink is not None
+    assert hyperlink.get(f"{ns_r}id") is not None
+
+
+def test_replace_link_placeholder_no_match():
+    """Hyperlink without HREF placeholder should not be modified."""
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    body = doc.element.body
+    p = parse_xml(
+        f'<w:p {nsdecls("w")}>'
+        f'<w:hyperlink w:tooltip="Normal tooltip">'
+        f"<w:r><w:t>click</w:t></w:r>"
+        f"</w:hyperlink>"
+        f"</w:p>"
+    )
+    body.append(p)
+
+    _replace_link_placeholders(doc)
+
+    hyperlink = body.find(f".//{{{SCHEMA}}}hyperlink")
+    assert hyperlink.get(f"{{{SCHEMA}}}tooltip") == "Normal tooltip"
+
+
+# ---- _has_existing_fixed_width ----
+
+
+def test_has_existing_fixed_width_true():
+    """tblPr with tblW type=dxa and positive width should return True."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>')
+    assert _has_existing_fixed_width(tblPr) is True
+
+
+def test_has_existing_fixed_width_pct():
+    """tblPr with tblW type=pct should return False."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="pct"/></w:tblPr>')
+    assert _has_existing_fixed_width(tblPr) is False
+
+
+def test_has_existing_fixed_width_zero():
+    """tblPr with tblW type=dxa but w=0 should return False."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="0" w:type="dxa"/></w:tblPr>')
+    assert _has_existing_fixed_width(tblPr) is False
+
+
+def test_has_existing_fixed_width_missing():
+    """tblPr without tblW should return False."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+    assert _has_existing_fixed_width(tblPr) is False
+
+
+# ---- table width clamping ----
+
+
+def test_apply_table_layout_clamps_dxa_to_page_width():
+    """Fixed dxa width from HtmlTableLayout should be clamped to page width."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.DocxPostProcess import _apply_table_layout
+
+    tbl = parse_xml(
+        f'<w:tbl {nsdecls("w")}>'
+        f"<w:tblPr/>"
+        f"<w:tblGrid><w:gridCol w:w=\"5000\"/><w:gridCol w:w=\"5000\"/></w:tblGrid>"
+        f"</w:tbl>"
+    )
+    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+
+    layout = MagicMock()
+    layout.width_type = "dxa"
+    layout.width_value = 11070  # 738px, wider than page
+    layout.jc = None
+    layout.indent_twips = None
+
+    # max_width in EMU: 9360 twips * 635 = ~5943600
+    _apply_table_layout(tbl, tblPr, layout, max_width=5943600)
+
+    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
+    assert tblW is not None
+    actual_width = int(tblW.get(f"{{{SCHEMA}}}w"))
+    assert actual_width <= 9360  # clamped to page width
+
+
+def test_apply_table_layout_preserves_lua_fixed_width():
+    """Lua filter fixed width that fits should not be changed."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.DocxPostProcess import _apply_table_layout
+
+    tbl = parse_xml(
+        f'<w:tbl {nsdecls("w")}>'
+        f'<w:tblPr><w:tblW w:w="5000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
+        f"<w:tblGrid><w:gridCol w:w=\"2500\"/><w:gridCol w:w=\"2500\"/></w:tblGrid>"
+        f"</w:tbl>"
+    )
+    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+
+    _apply_table_layout(tbl, tblPr, None, max_width=5943600)
+
+    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
+    assert int(tblW.get(f"{{{SCHEMA}}}w")) == 5000  # unchanged
+
+
+def test_apply_table_layout_clamps_lua_fixed_width():
+    """Lua filter fixed width that overflows should be clamped."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.DocxPostProcess import _apply_table_layout
+
+    tbl = parse_xml(
+        f'<w:tbl {nsdecls("w")}>'
+        f'<w:tblPr><w:tblW w:w="11070" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
+        f"<w:tblGrid><w:gridCol w:w=\"5535\"/><w:gridCol w:w=\"5535\"/></w:tblGrid>"
+        f"</w:tbl>"
+    )
+    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+
+    _apply_table_layout(tbl, tblPr, None, max_width=5943600)
+
+    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
+    assert int(tblW.get(f"{{{SCHEMA}}}w")) <= 9360
