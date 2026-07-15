@@ -1471,7 +1471,7 @@ def test_replace_image_placeholder_with_data_uri():
 
     gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
     doc = Document()
-    p = doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
 
     _replace_image_placeholders(doc)
 

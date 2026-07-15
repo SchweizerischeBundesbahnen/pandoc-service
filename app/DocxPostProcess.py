@@ -430,45 +430,49 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
                 _process_table(sub_table, columns_count, max_width, layout_iter)
 
 
-def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int = 0) -> None:
-    """Write width, alignment and indent onto a table's <w:tblPr>.
+def _clamp_twips(width_twips: int, max_width_emu: int) -> int:
+    """Clamp a width in twips to the available page width (given in EMU)."""
+    if max_width_emu <= 0:
+        return width_twips
+    max_twips = max_width_emu // 635
+    if width_twips > max_twips:
+        logger.debug(f"Clamped table width from {width_twips} to {max_twips} twips")
+        return max_twips
+    return width_twips
 
-    Default (no layout, or a layout carrying no width): 100 % width with
-    autofit layout — the historical behaviour that keeps every existing table
-    filling the text column. A percentage width keeps autofit (Word renders the
-    table at that fraction of the text column). An absolute width switches to
-    fixed layout and rescales the column grid so Word honours the exact size.
-    Alignment (<w:jc>) and left indent (<w:tblInd>) are applied when present.
-    """
-    # Width: pct keeps autofit; dxa needs fixed layout + a rescaled grid.
-    # When no HtmlTableLayout is available, check whether the Lua filter
-    # (preserve_table_styles) already set a fixed width — if so, keep it.
-    if layout is not None and layout.width_type is not None and layout.width_value is not None:
-        width_type, width_value = layout.width_type, layout.width_value
-        use_fixed_layout = width_type == "dxa"
-        # Clamp absolute width to page width to prevent overflow
-        if use_fixed_layout and max_width > 0:
-            max_width_twips = max_width // 635
-            if width_value > max_width_twips:
-                logger.debug(f"Clamped HtmlTableLayout width from {width_value} to {max_width_twips} twips")
-                width_value = max_width_twips
-        if use_fixed_layout:
-            _rescale_table_grid(tbl, width_value)
-    elif _has_existing_fixed_width(table_properties):
-        # Lua filter already set a dxa width + fixed layout.
-        # Clamp to page width if it overflows.
-        # max_width is in EMU; tblW is in twips (dxa). 1 twip = 635 EMU.
-        if max_width > 0:
-            max_width_twips = max_width // 635
-            tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
-            current = int(tbl_w.get(f"{{{SCHEMA}}}w", "0"))
-            if current > max_width_twips:
-                tbl_w.set(f"{{{SCHEMA}}}w", str(max_width_twips))
-                _rescale_table_grid(tbl, max_width_twips)
-                logger.debug(f"Clamped table width from {current} to {max_width_twips} twips")
+
+def _clamp_existing_fixed_width(tbl: Any, table_properties: Any, max_width: int) -> None:
+    """Clamp a Lua-filter-set dxa width to the page width if it overflows."""
+    if max_width <= 0:
         return
-    else:
-        width_type, width_value, use_fixed_layout = "pct", 5000, False
+    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    current = int(tbl_w.get(f"{{{SCHEMA}}}w", "0"))
+    clamped = _clamp_twips(current, max_width)
+    if clamped < current:
+        tbl_w.set(f"{{{SCHEMA}}}w", str(clamped))
+        _rescale_table_grid(tbl, clamped)
+
+
+def _resolve_layout_width(layout: TableLayout | None) -> tuple[str, int, bool]:
+    """Extract width parameters from an HtmlTableLayout, or return defaults."""
+    if layout is not None and layout.width_type is not None and layout.width_value is not None:
+        return layout.width_type, layout.width_value, layout.width_type == "dxa"
+    return "pct", 5000, False
+
+
+def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int = 0) -> None:
+    """Write width, alignment and indent onto a table's <w:tblPr>."""
+    has_layout = layout is not None and layout.width_type is not None and layout.width_value is not None
+
+    if not has_layout and _has_existing_fixed_width(table_properties):
+        _clamp_existing_fixed_width(tbl, table_properties, max_width)
+        return
+
+    width_type, width_value, use_fixed_layout = _resolve_layout_width(layout)
+
+    if use_fixed_layout:
+        width_value = _clamp_twips(width_value, max_width)
+        _rescale_table_grid(tbl, width_value)
 
     _set_tblpr_child(table_properties, parse_xml(f'<w:tblW {nsdecls("w")} w:w="{width_value}" w:type="{width_type}"/>'))
 
