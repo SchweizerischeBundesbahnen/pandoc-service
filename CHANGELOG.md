@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.3...v2.3.4) (2026-07-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency uvicorn to v0.50.2 ([621a4fb](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/621a4fb06a3d8659fcf42faed54ede910b075eb7))
+* **deps:** update dependency uvicorn to v0.51.0 ([3613fd8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3613fd86c20f4affb3a7f76c8dabd726948e29b7))
+* preserve images and links in styled tables, fix table width over… ([#202](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/202)) ([eb3f32f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/eb3f32fcf7132c996bbfbe83b8ac0d60420a793f)), closes [#201](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/201)
+* replace plain-text caption numbers with SEQ fields and pre-filled TOF/TOT ([#200](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/200)) ([39cfd6e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/39cfd6ec55a652e068f8273579a8446cb4560ee0)), closes [#199](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/199)
+
 ## [2.3.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.2...v2.3.3) (2026-07-08)
 
 
