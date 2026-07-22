@@ -2,6 +2,11 @@
 
 import os
 
+# API version for compatibility checking with docx-exporter.
+# Increment this ONLY when making breaking changes to the API contract.
+# Minor updates and bug fixes should NOT change this version.
+API_VERSION = 1
+
 _TRUTHY_VALUES = ("true", "1", "yes", "on")
 
 

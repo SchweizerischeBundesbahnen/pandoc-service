@@ -12,6 +12,7 @@ from starlette.responses import Response
 from starlette.testclient import TestClient
 
 # Import the module to test
+from app.constants import API_VERSION
 from app.PandocController import (
     ALLOWED_PANDOC_OPTIONS,
     DEFAULT_CONVERSION_OPTIONS,
@@ -284,6 +285,7 @@ def test_version_endpoint():
         result = version()
 
         # Assertions
+        assert result.apiVersion == API_VERSION
         assert result.python == platform.python_version()
         assert result.pandoc == "3.1.9"
         assert result.pandocService == "1.0.0"
