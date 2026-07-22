@@ -25,6 +25,7 @@ from app.schema import VersionSchema
 
 from . import DocxLatexPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
 from .chromium_manager import get_chromium_manager
+from .constants import API_VERSION
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -338,6 +339,7 @@ def get_temp_directory_writability() -> str:
 )
 def version() -> VersionSchema:
     return VersionSchema(
+        apiVersion=API_VERSION,
         python=platform.python_version(),
         pandoc=get_pandoc_version(),
         pandocService=os.environ.get("PANDOC_SERVICE_VERSION"),

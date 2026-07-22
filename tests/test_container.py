@@ -294,11 +294,15 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     version_info = response.json()
 
     # Verify all expected fields are present
+    assert "apiVersion" in version_info
     assert "python" in version_info
     assert "pandoc" in version_info
     assert "pandocService" in version_info
     assert "timestamp" in version_info
     assert "chromium" in version_info
+
+    # API version is an integer contract version used by docx-exporter
+    assert isinstance(version_info["apiVersion"], int)
 
     # Verify that values are reasonable (not empty where required)
     assert version_info["python"], "Python version should not be empty"
