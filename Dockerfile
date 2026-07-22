@@ -1,10 +1,10 @@
 # Copy uv from official image (version matches weasyprint-service)
-FROM ghcr.io/astral-sh/uv:0.11.26@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5 AS uv-source
+FROM ghcr.io/astral-sh/uv:0.11.31@sha256:ecd4de2f060c64bea0ff8ecb182ddf46ba3fcccdc8a60cfdbaf20d1a047d7437 AS uv-source
 
 # Use debian:trixie-slim as base (same base as weasyprint-service / python:3.14-slim).
 # A glibc base is required because Playwright publishes no musllinux wheel, so the
 # Chromium used to rasterize embedded SVGs comes from Playwright's bundled browser.
-FROM debian:trixie-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2
+FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
 # Copy uv binary from source stage
@@ -120,9 +120,14 @@ COPY filters/heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.
 COPY filters/inline_styles.lua "/usr/local/share/pandoc/filters/inline_styles.lua"
 COPY filters/docx_text_decorations.lua "/usr/local/share/pandoc/filters/docx_text_decorations.lua"
 COPY filters/docx_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
+COPY filters/docx_math_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_math_colors_to_latex.lua"
 COPY filters/docx_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_paragraphs_to_latex.lua"
 COPY filters/docx_lists_to_latex.lua "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
+COPY filters/docx_tables_to_latex.lua "/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
 COPY filters/html_lists.lua "/usr/local/share/pandoc/filters/html_lists.lua"
+COPY filters/html_tables_to_latex.lua "/usr/local/share/pandoc/filters/html_tables_to_latex.lua"
+COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lua"
+COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/docx_caption_labels_to_latex.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:9082/health || exit 1

@@ -23,7 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxLatexPreProcess, DocxPostProcess, HtmlListsPreProcess, HtmlParagraphPreProcess, PptxPostProcess
+from . import DocxLatexPreProcess, DocxPostProcess, HtmlImagePreProcess, HtmlListsPreProcess, HtmlMathColorPreProcess, HtmlParagraphPreProcess, HtmlTableLayout, PptxPostProcess
 from .chromium_manager import get_chromium_manager
 from .constants import API_VERSION
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
@@ -56,9 +56,14 @@ FILTERS = {
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
     "docx_text_decorations": f"{FILTER_BASE_PATH}/docx_text_decorations.lua",
     "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
+    "docx_math_colors_to_latex": f"{FILTER_BASE_PATH}/docx_math_colors_to_latex.lua",
     "docx_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_paragraphs_to_latex.lua",
     "docx_lists_to_latex": f"{FILTER_BASE_PATH}/docx_lists_to_latex.lua",
+    "docx_tables_to_latex": f"{FILTER_BASE_PATH}/docx_tables_to_latex.lua",
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
+    "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
+    "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
+    "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
 }
 
 # List of allowed pandoc options for security
@@ -69,9 +74,14 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['inline_styles']}",
     f"--lua-filter={FILTERS['docx_text_decorations']}",
     f"--lua-filter={FILTERS['docx_colors_to_latex']}",
+    f"--lua-filter={FILTERS['docx_math_colors_to_latex']}",
     f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
     f"--lua-filter={FILTERS['docx_lists_to_latex']}",
+    f"--lua-filter={FILTERS['docx_tables_to_latex']}",
     f"--lua-filter={FILTERS['html_lists']}",
+    f"--lua-filter={FILTERS['html_tables_to_latex']}",
+    f"--lua-filter={FILTERS['html_captions']}",
+    f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
     "--track-changes=all",
     "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
@@ -539,10 +549,25 @@ def _build_pandoc_command(  # noqa: PLR0913
         # filter strips the marker paragraph that pandoc would otherwise emit
         # for those synthetic list items.
         cmd.append(f"--lua-filter={FILTERS['html_lists']}")
+        # Mark genuine Polarion captions (paragraphs carrying the
+        # <span data-sequence=...> counter) with the "Caption" style so
+        # DocxReferencesPostProcess recognises them structurally instead of by
+        # a leaky "text starts with Table/Figure" check. See
+        # filters/html_captions.lua.
+        cmd.append(f"--lua-filter={FILTERS['html_captions']}")
         # Opt-in: preserve CSS table cell styles (background-color, borders)
         # by rebuilding styled tables as raw OOXML via the Lua filter.
         if preserve_table_styles:
             cmd.extend(["-M", "preserve_table_styles=true"])
+
+    # html -> pdf/latex: recover table width and horizontal alignment from the
+    # <table style> that pandoc's HTML reader keeps in the Table Attr but the
+    # LaTeX writer ignores (every table would otherwise render content-width and
+    # centered). This is the LaTeX counterpart to the DOCX post-processing in
+    # DocxPostProcess/HtmlTableLayout. The filter emits raw LaTeX (longtable
+    # glue), so it is gated on the latex-producing targets.
+    if source_format == "html" and target_format in _LATEX_TARGET_FORMATS:
+        cmd.append(f"--lua-filter={FILTERS['html_tables_to_latex']}")
 
     # Companion filters to the DOCX color and paragraph-format preprocessors.
     # Both only emit raw LaTeX, so they are gated on the docx->latex path. Div
@@ -554,8 +579,13 @@ def _build_pandoc_command(  # noqa: PLR0913
         # before the colour filter turns those spans into \textcolor/\hl.
         cmd.append(f"--lua-filter={FILTERS['docx_text_decorations']}")
         cmd.append(f"--lua-filter={FILTERS['docx_colors_to_latex']}")
+        cmd.append(f"--lua-filter={FILTERS['docx_math_colors_to_latex']}")
         cmd.append(f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}")
         cmd.append(f"--lua-filter={FILTERS['docx_lists_to_latex']}")
+        cmd.append(f"--lua-filter={FILTERS['docx_tables_to_latex']}")
+        # Strip "Table N" / "Figure N" prefix from Caption blocks so LaTeX's
+        # own \caption counter doesn't duplicate the numbering.
+        cmd.append(f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}")
 
     if validated_options:
         cmd.extend(validated_options)
@@ -677,9 +707,15 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # reader (which drops <p>'s style attribute outright). See
     # app/HtmlParagraphPreProcess.py and the Div handler in
     # filters/inline_styles.lua for the full pipeline.
+    # Also give un-sized <img> an explicit px width/height read from the inlined
+    # image so pandoc renders it at the 96 dpi CSS reference (not its 72 dpi
+    # no-density fallback), honouring any CSS max-width. See
+    # app/HtmlImagePreProcess.py.
     if source_format == "html" and target_format == "docx":
         source_data = HtmlListsPreProcess.preprocess(source_data)
         source_data = HtmlParagraphPreProcess.preprocess(source_data)
+        source_data = HtmlMathColorPreProcess.preprocess(source_data)
+        source_data = HtmlImagePreProcess.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
@@ -785,6 +821,12 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
         if temp_template_filename is not None:
             options.append(f"--reference-doc={temp_template_filename}")
 
+        # Recover per-table width/alignment from the HTML before pandoc drops
+        # it, so the DOCX post-processor can restore it (pandoc keeps only an
+        # auto width and no alignment). Read from the original source: SVG
+        # rasterization below never touches tables.
+        table_layouts = HtmlTableLayout.extract(source) if source_format == "html" else None
+
         # Rasterize any embedded SVGs to PNG so Word gets a usable image
         # instead of the draw.io "Text is not SVG - cannot display" fallback.
         if source_format == "html":
@@ -793,7 +835,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, "docx", options, preserve_table_styles=preserve_table_styles)
 
-        response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation)
+        response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation, table_layouts)
 
         # Record success metrics
         duration_seconds = time.time() - conversion_start_time
@@ -958,6 +1000,12 @@ async def convert(  # noqa: PLR0913
         if target_format == "pdf":
             options.append("--pdf-engine=tectonic")
 
+        # Recover per-table width/alignment from the HTML before pandoc drops
+        # it (only relevant when producing DOCX; other writers handle table
+        # width natively). Read from the original source: SVG rasterization
+        # below never touches tables.
+        table_layouts = HtmlTableLayout.extract(source) if source_format == "html" and target_format == "docx" else None
+
         # Rasterize any embedded SVGs to PNG so renderers without full SVG
         # support (e.g. Word) get a usable image instead of a fallback warning.
         if source_format == "html":
@@ -966,7 +1014,7 @@ async def convert(  # noqa: PLR0913
         # Convert using subprocess instead of pandoc module
         output = run_pandoc_conversion(source, source_format, target_format, options, preserve_table_styles=preserve_table_styles)
 
-        response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation)
+        response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation, table_layouts)
 
         # Record success metrics
         duration_seconds = time.time() - conversion_start_time
@@ -990,10 +1038,10 @@ async def get_docx_source_data(source_content: starlette.datastructures.UploadFi
     return source_content
 
 
-def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None) -> Response:
+def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[HtmlTableLayout.TableLayout] | None = None) -> Response:  # noqa: PLR0913
     if target_format == "docx":
         post_process_start = time.time()
-        output = DocxPostProcess.process(output, paper_size, orientation)
+        output = DocxPostProcess.process(output, paper_size, orientation, table_layouts)
         observe_post_processing_duration("docx", time.time() - post_process_start)
     elif target_format == "pptx":
         # For PPTX, paper_size parameter is repurposed as slide_size

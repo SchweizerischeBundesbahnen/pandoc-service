@@ -1,4 +1,6 @@
 import logging
+import re
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from docx.oxml import parse_xml
@@ -13,16 +15,28 @@ SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSON
 # Common XPath expressions
 XPATH_P_PR = ".//w:pPr"
 XPATH_P_STYLE = ".//w:pStyle"
+
+# Paragraph style id that marks a genuine caption. filters/html_captions.lua
+# sets it on paragraphs that carry Polarion's <span data-sequence=...> caption
+# counter. Non-HTML inputs bring their own caption styles: pandoc emits
+# "TableCaption"/"ImageCaption" for markdown/docx table & figure captions, and
+# Word uses "Caption". Keying off this set of caption STYLES — rather than "does
+# the text start with Table/Figure" — captures real captions from every source
+# while still excluding headings ("Table test III"), cross-references
+# ("Table 1 shows ...") and labels ("Table 50px"), which never carry a caption
+# style.
+CAPTION_STYLE_IDS = frozenset({"Caption", "TableCaption", "ImageCaption"})
+
 logger = logging.getLogger(__name__)
 
 
 def add_table_of_contents_entries(doc: DocumentObject) -> None:
     """
     Add Table of Contents, Table of Figures and/or Table of Tables by:
-    1. Finding figure/table captions and adding TC fields
+    1. Finding figure/table captions, ensuring SEQ fields, adding TC fields with bookmarks
     2. Replacing TOC_PLACEHOLDER with Word TOC field
-    3. Replacing TOF_PLACEHOLDER with Word TOF field
-    4. Replacing TOT_PLACEHOLDER with Word TOT field
+    3. Replacing TOF_PLACEHOLDER with Word TOF field (with cached entries)
+    4. Replacing TOT_PLACEHOLDER with Word TOT field (with cached entries)
     """
     body = doc.element.body
 
@@ -42,51 +56,214 @@ def enable_auto_update_fields(doc: DocumentObject) -> None:
     This sets the updateFields flag in settings.xml
     """
     try:
-        # Access the settings part
         settings = doc.settings
         settings_element = settings.element
 
-        # Check if updateFields already exists
         update_fields = settings_element.find(".//w:updateFields", namespaces={"w": SCHEMA})
 
         if update_fields is None:
-            # Create the updateFields element
             update_fields = parse_xml(f'<w:updateFields {nsdecls("w")} w:val="true"/>')
             settings_element.append(update_fields)
             logger.info("Enabled auto-update of fields on document open")
         else:
-            # Update existing value
             update_fields.set(f"{{{SCHEMA}}}val", "true")
             logger.info("Updated existing auto-update fields setting")
     except Exception as e:
         logger.warning(f"Could not enable auto-update fields: {e}")
 
 
-def _find_and_process_captions(body: Any) -> tuple[list, list]:
-    """Find all figure and table captions and add TC fields to them."""
-    figure_paragraphs = []
-    table_paragraphs = []
+def _escape_xml(text: str) -> str:
+    """Escape characters that aren't safe inside XML element body or attributes."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def _get_max_bookmark_id(body: Any) -> int:
+    """Find the highest bookmark ID in the document to avoid ID conflicts."""
+    max_id = 0
+    for bm in body.findall(".//w:bookmarkStart", namespaces={"w": SCHEMA}):
+        try:
+            bm_id = int(bm.get(f"{{{SCHEMA}}}id", "0"))
+            max_id = max(max_id, bm_id)
+        except ValueError:
+            logger.debug("Skipping bookmark with non-integer id: %r", bm.get(f"{{{SCHEMA}}}id"))
+    return max_id
+
+
+def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901  # NOSONAR
+    """Find all figure and table captions, ensure SEQ fields, add TC fields with bookmarks.
+
+    Returns two lists (figure_entries, table_entries) where each entry is
+    a tuple ``(paragraph_element, caption_text, bookmark_name)``.
+    """
+    figure_paragraphs: list[tuple[Any, str, str]] = []
+    table_paragraphs: list[tuple[Any, str, str]] = []
+
+    bookmark_id = _get_max_bookmark_id(body)
 
     for para in body.findall(".//w:p", namespaces={"w": SCHEMA}):
-        text = _get_paragraph_text(para)
-        text_stripped = text.strip()
+        style = _get_paragraph_style(para)
+        if style not in CAPTION_STYLE_IDS:
+            continue
 
-        if text_stripped.startswith("Figure"):
-            figure_paragraphs.append((para, text_stripped))
-            _add_caption_style_and_tc_field(para, text_stripped, field_flag="F")
-            logger.debug(f"Added Caption style and TC field to figure: {text_stripped}")
-        elif text_stripped.startswith("Table"):
-            table_paragraphs.append((para, text_stripped))
-            _add_caption_style_and_tc_field(para, text_stripped, field_flag="T")
-            logger.debug(f"Added Caption style and TC field to table: {text_stripped}")
+        # Classify Figure vs Table. Strategy (in priority order):
+        # 1. Pandoc's own styles are unambiguous (ImageCaption / TableCaption).
+        # 2. If a SEQ field already exists (from Lua filter), its identifier
+        #    comes from Polarion's data-sequence attribute. Table captions
+        #    always have a <w:tbl> nearby; if adjacency fails but a SEQ name
+        #    exists that is NOT "Figure", treat it as a table caption anyway
+        #    (Polarion would not set a table sequence on a figure).
+        # 3. Fall back to structural adjacency: if the next content element
+        #    is a <w:tbl>, it's a table caption; otherwise figure.
+        if style == "ImageCaption":
+            is_figure = True
+        elif style == "TableCaption" or _is_adjacent_to_table(para):
+            is_figure = False
+        else:
+            # No table nearby — check if an existing SEQ name hints at table
+            existing_seq = _get_seq_name(para)
+            is_figure = existing_seq is None or existing_seq == "Figure"
+        seq_name = "Figure" if is_figure else "Table"
+
+        # Ensure the caption number is a SEQ field (not plain text).
+        _ensure_seq_field(para, seq_name)
+        # Re-read text after potential SEQ insertion (content may have changed)
+        text_stripped = _get_paragraph_text(para).strip()
+
+        # Ensure Caption style is set
+        _ensure_caption_style(para)
+
+        # Assign a unique bookmark for this caption's TC field
+        bookmark_id += 1
+        bookmark_name = f"_Toc{bookmark_id:09d}"
+
+        # Add TC field with bookmark at the end of the caption paragraph
+        field_flag = "F" if is_figure else "T"
+        _add_tc_field(para, text_stripped, field_flag, bookmark_id, bookmark_name)
+
+        if is_figure:
+            figure_paragraphs.append((para, text_stripped, bookmark_name))
+            logger.debug(f"Processed figure caption: {text_stripped}")
+        else:
+            table_paragraphs.append((para, text_stripped, bookmark_name))
+            logger.debug(f"Processed table caption: {text_stripped}")
 
     logger.info(f"Found {len(figure_paragraphs)} figure captions and {len(table_paragraphs)} table captions")
     return figure_paragraphs, table_paragraphs
 
 
-def _add_caption_style_and_tc_field(para: Any, caption_text: str, field_flag: str) -> None:
-    """Add Caption style and TC field to a paragraph."""
-    # Add or update paragraph style to Caption
+def _is_adjacent_to_table(para: Any) -> bool:
+    """Return True if the paragraph is followed by a w:tbl element.
+
+    This is a language-independent way to classify captions: table captions
+    sit **before** their table in the document body. Only the forward
+    direction is checked — a caption after a table (e.g. a figure caption
+    that happens to follow a table) must not be misclassified as a table
+    caption.
+
+    Skips non-content elements (bookmarkStart, bookmarkEnd, sectPr, empty
+    paragraphs) that pandoc/Word may insert between a caption and its table.
+    """
+    tbl_tag = f"{{{SCHEMA}}}tbl"
+    p_tag = f"{{{SCHEMA}}}p"
+    skip_tags = {
+        f"{{{SCHEMA}}}bookmarkStart",
+        f"{{{SCHEMA}}}bookmarkEnd",
+        f"{{{SCHEMA}}}sectPr",
+    }
+
+    def _is_empty_para(el: Any) -> bool:
+        return el.tag == p_tag and not _get_paragraph_text(el).strip()
+
+    def _should_skip(el: Any) -> bool:
+        return el.tag in skip_tags or _is_empty_para(el)
+
+    # Look forward only — table caption always precedes its table
+    el = para.getnext()
+    while el is not None and _should_skip(el):
+        el = el.getnext()
+    return el is not None and el.tag == tbl_tag
+
+
+def _has_seq_field(para: Any) -> bool:
+    """Return True if the paragraph already contains a SEQ field."""
+    return any(instr.text and "SEQ" in instr.text for instr in para.findall(".//w:instrText", namespaces={"w": SCHEMA}))
+
+
+def _get_seq_name(para: Any) -> str | None:
+    """Extract the SEQ field identifier from a paragraph (e.g. "Table", "Tabela")."""
+    for instr in para.findall(".//w:instrText", namespaces={"w": SCHEMA}):
+        if instr.text and "SEQ" in instr.text:
+            match = re.search(r"SEQ\s+(\S+)", instr.text)
+            if match:
+                return match.group(1)
+    return None
+
+
+def _clone_run_with_text(run: Any, text: str) -> Any:
+    """Create a new run with the given text, copying rPr from the source run."""
+    ns = f'xmlns:w="{SCHEMA}"'
+    new_run = parse_xml(f'<w:r {ns}><w:t xml:space="preserve">{_escape_xml(text)}</w:t></w:r>')
+    rpr = run.find("w:rPr", namespaces={"w": SCHEMA})
+    if rpr is not None:
+        new_run.insert(0, deepcopy(rpr))
+    return new_run
+
+
+def _build_seq_field_runs(seq_name: str, number: str) -> list[Any]:
+    """Build the run elements for a SEQ field: begin, instrText, separate, value, end."""
+    ns = f'xmlns:w="{SCHEMA}"'
+    return [
+        parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="begin"/></w:r>'),
+        parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve"> SEQ {_escape_xml(seq_name)} \\* ARABIC </w:instrText></w:r>'),
+        parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="separate"/></w:r>'),
+        parse_xml(f"<w:r {ns}><w:t>{_escape_xml(number)}</w:t></w:r>"),
+        parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="end"/></w:r>'),
+    ]
+
+
+def _ensure_seq_field(para: Any, seq_name: str) -> None:
+    """Replace a plain-text caption number with a Word SEQ field.
+
+    For a caption paragraph like ``Figure 1 My picture`` this replaces the
+    ``1`` with ``{SEQ Figure \\* ARABIC}`` so Word can auto-number captions.
+    Does nothing if the paragraph already contains a SEQ field (e.g. one
+    inserted by the Lua filter).
+
+    Only the run containing the first number is replaced; all other runs
+    (with formatting, links, etc.) are preserved.
+    """
+    if _has_seq_field(para):
+        return
+
+    for run in list(para.findall("w:r", namespaces={"w": SCHEMA})):  # NOSONAR — list() needed: loop body mutates para
+        t_el = run.find("w:t", namespaces={"w": SCHEMA})
+        if t_el is None or not t_el.text:
+            continue
+        match = re.search(r"\d+", t_el.text)
+        if not match:
+            continue
+
+        number = match.group(0)
+        before = t_el.text[: match.start()]
+        after = t_el.text[match.end() :]
+
+        replacements: list[Any] = []
+        if before:
+            replacements.append(_clone_run_with_text(run, before))
+        replacements.extend(_build_seq_field_runs(seq_name, number))
+        if after:
+            replacements.append(_clone_run_with_text(run, after))
+
+        for repl in replacements:
+            run.addprevious(repl)
+        para.remove(run)
+
+        logger.debug(f"Replaced number {number} with SEQ {seq_name} field in caption run")
+        return
+
+
+def _ensure_caption_style(para: Any) -> None:
+    """Ensure the paragraph has the Caption style set."""
     p_pr = para.find(XPATH_P_PR, namespaces={"w": SCHEMA})
     if p_pr is None:
         p_pr = parse_xml(f'<w:pPr {nsdecls("w")}><w:pStyle w:val="Caption"/></w:pPr>')
@@ -99,31 +276,40 @@ def _add_caption_style_and_tc_field(para: Any, caption_text: str, field_flag: st
         else:
             p_style.set(f"{{{SCHEMA}}}val", "Caption")
 
-    # Add TC field runs at the end of paragraph
-    tc_runs = _create_tc_field_runs(caption_text, field_flag=field_flag)
-    for run in tc_runs:
-        para.append(run)
+
+def _add_tc_field(para: Any, caption_text: str, field_flag: str, bookmark_id: int, bookmark_name: str) -> None:
+    """Add a TC field with embedded bookmark at the end of a caption paragraph.
+
+    The TC field marks this paragraph for collection by {TOC \\f T/F}.
+    A bookmark inside the TC instruction text lets cached TOF/TOT
+    entries hyperlink directly to this caption.
+    """
+    ns = f'xmlns:w="{SCHEMA}"'
+    escaped = _escape_xml(caption_text)
+
+    para.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="begin"/></w:r>'))
+    para.append(parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve"> TC "</w:instrText></w:r>'))
+    para.append(parse_xml(f'<w:bookmarkStart {ns} w:id="{bookmark_id}" w:name="{bookmark_name}"/>'))
+    para.append(parse_xml(f"<w:r {ns}><w:instrText>{escaped}</w:instrText></w:r>"))
+    para.append(parse_xml(f'<w:bookmarkEnd {ns} w:id="{bookmark_id}"/>'))
+    para.append(parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve">" \\f {field_flag} \\l "1" </w:instrText></w:r>'))
+    para.append(parse_xml(f'<w:r {ns}><w:fldChar w:fldCharType="end"/></w:r>'))
 
 
 def _find_elements_to_replace(body: Any) -> list:
     """Find all elements that need to be replaced with Word fields."""
     elements_to_replace: list = []
-
-    # Find TOC/TOF/TOT placeholder paragraphs
     _find_placeholder_paragraphs(body, elements_to_replace)
-
     return elements_to_replace
 
 
 def _find_placeholder_paragraphs(body: Any, elements_to_replace: list) -> None:
     """Find TOC_PLACEHOLDER, TOF_PLACEHOLDER, and TOT_PLACEHOLDER paragraphs."""
     for idx, element in enumerate(body):
-        # Check for placeholders in paragraphs
         if element.tag.endswith("}p"):
             text = _get_paragraph_text(element).strip()
             style = _get_paragraph_style(element)
 
-            # Only process placeholders in body text paragraphs, not in titles or headings
             if style not in ["BodyText", "FirstParagraph", None]:
                 continue
 
@@ -140,14 +326,11 @@ def _find_placeholder_paragraphs(body: Any, elements_to_replace: list) -> None:
 
 def _replace_elements_with_fields(body: Any, elements_to_replace: list, figure_paragraphs: list, table_paragraphs: list) -> None:
     """Replace found elements with Word field codes."""
-    # Sort by index in reverse order to maintain correct positions during removal
     for idx, element, has_toc, has_figure_links, has_table_links in sorted(elements_to_replace, key=lambda x: x[0], reverse=True):
-        # Remove element
         if element is not None:
             body.remove(element)
             logger.debug(f"Removed element at index {idx}")
 
-        # Insert replacement fields
         _insert_field_at_position(body, idx, has_toc, has_figure_links, has_table_links, figure_paragraphs, table_paragraphs)
 
 
@@ -160,53 +343,80 @@ def _insert_field_at_position(body: Any, idx: int, has_toc: bool, has_figure_lin
         logger.info(f"Inserted Table of Contents at index {idx}")
 
     if has_figure_links and figure_paragraphs:
-        tof_paragraphs = _create_tof_field()
+        figure_entries = [(text, bm) for _, text, bm in figure_paragraphs]
+        tof_paragraphs = _create_tof_field(figure_entries)
         for tof_para in reversed(tof_paragraphs):
             body.insert(idx, tof_para)
         logger.info(f"Inserted Table of Figures at index {idx}")
 
     if has_table_links and table_paragraphs:
-        tot_paragraphs = _create_tot_field()
+        table_entries = [(text, bm) for _, text, bm in table_paragraphs]
+        tot_paragraphs = _create_tot_field(table_entries)
         for tot_para in reversed(tot_paragraphs):
             body.insert(idx, tot_para)
         logger.info(f"Inserted Table of Tables at index {idx}")
 
 
 def _create_field(field_code: str) -> list[Any]:
-    """Create a Word field with specified field code.
-
-    Args:
-        field_code: The field instruction text (e.g., 'TOC \\o "1-3" \\h \\z \\u')
-
-    Returns:
-        List of paragraph elements containing the field
-    """
-    paragraphs = []
-
-    # Field paragraph
+    """Create a Word field with specified field code (no cached entries)."""
     field_para = parse_xml(f'''
     <w:p xmlns:w="{SCHEMA}">
-        <w:r>
-            <w:fldChar w:fldCharType="begin"/>
-        </w:r>
-        <w:r>
-            <w:instrText xml:space="preserve"> {field_code} </w:instrText>
-        </w:r>
-        <w:r>
-            <w:fldChar w:fldCharType="separate"/>
-        </w:r>
-        <w:r>
-            <w:fldChar w:fldCharType="end"/>
-        </w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText xml:space="preserve"> {field_code} </w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
     </w:p>
     ''')
-    paragraphs.append(field_para)
+    empty_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
+    return [field_para, empty_para]
 
-    # Add empty paragraph for spacing
+
+def _create_field_with_entries(field_code: str, entries: list[tuple[str, str]]) -> list[Any]:
+    """Create a Word field with pre-filled TOC entries (cached content)."""
+    if not entries:
+        return _create_field(field_code)
+
+    paragraphs: list[Any] = []
+
+    first_text, first_bm = entries[0]
+    first_para = parse_xml(
+        f'<w:p xmlns:w="{SCHEMA}">'
+        f'<w:pPr><w:pStyle w:val="TOC1"/></w:pPr>'
+        f'<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        f'<w:r><w:instrText xml:space="preserve"> {field_code} </w:instrText></w:r>'
+        f'<w:r><w:fldChar w:fldCharType="separate"/></w:r>' + _hyperlink_xml(first_text, first_bm) + "</w:p>"
+    )
+    paragraphs.append(first_para)
+
+    for text, bm in entries[1:]:
+        para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>' + _hyperlink_xml(text, bm) + "</w:p>")
+        paragraphs.append(para)
+
+    end_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>')
+    paragraphs.append(end_para)
+
     empty_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
     paragraphs.append(empty_para)
 
     return paragraphs
+
+
+def _hyperlink_xml(caption_text: str, bookmark_name: str) -> str:
+    """Build the raw OOXML for a TOC entry hyperlink with a PAGEREF field."""
+    escaped = _escape_xml(caption_text)
+    return (
+        f'<w:hyperlink w:anchor="{bookmark_name}" w:history="1">'
+        f'<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
+        f"<w:t>{escaped}</w:t></w:r>"
+        f"<w:r><w:rPr><w:webHidden/></w:rPr><w:tab/></w:r>"
+        f'<w:r><w:rPr><w:webHidden/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r>'
+        f"<w:r><w:rPr><w:webHidden/></w:rPr>"
+        f'<w:instrText xml:space="preserve"> PAGEREF {bookmark_name} \\h </w:instrText></w:r>'
+        f'<w:r><w:rPr><w:webHidden/></w:rPr><w:fldChar w:fldCharType="separate"/></w:r>'
+        f"<w:r><w:rPr><w:webHidden/></w:rPr><w:t>1</w:t></w:r>"
+        f'<w:r><w:rPr><w:webHidden/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>'
+        f"</w:hyperlink>"
+    )
 
 
 def _create_toc_field() -> list[Any]:
@@ -214,52 +424,20 @@ def _create_toc_field() -> list[Any]:
     return _create_field('TOC \\o "1-9" \\h \\z \\u')
 
 
-def _create_table_listing_field(field_type: str) -> list[Any]:
-    """Create TOC-based field paragraphs (TOF or TOT).
-
-    Args:
-        field_type: "F" for figures, "T" for tables
-
-    Returns:
-        List of paragraph elements
-    """
-    return _create_field(f"TOC \\h \\z \\f {field_type}")
+def _create_tof_field(entries: list[tuple[str, str]] | None = None) -> list[Any]:
+    """Create Table of Figures field paragraphs using TOC \\f F."""
+    field_code = "TOC \\h \\z \\f F"
+    if entries:
+        return _create_field_with_entries(field_code, entries)
+    return _create_field(field_code)
 
 
-def _create_tof_field() -> list[Any]:
-    """Create Table of Figures field paragraphs."""
-    return _create_table_listing_field("F")
-
-
-def _create_tot_field() -> list[Any]:
-    """Create Table of Tables field paragraphs."""
-    return _create_table_listing_field("T")
-
-
-def _create_tc_field_runs(caption_text: str, field_flag: str = "F") -> list[Any]:
-    """Create TC (Table of Contents Entry) field runs for a caption.
-
-    Args:
-        caption_text: The caption text (e.g., "Figure 1", "Table 1")
-        field_flag: The field flag - "F" for figures, "T" for tables
-    """
-    runs = []
-
-    # Begin run
-    begin_run = parse_xml(f'<w:r xmlns:w="{SCHEMA}"><w:fldChar w:fldCharType="begin"/></w:r>')
-    runs.append(begin_run)
-
-    # Instruction run
-    instr_run = parse_xml(f'''<w:r xmlns:w="{SCHEMA}">
-        <w:instrText xml:space="preserve"> TC "{caption_text}" \\f {field_flag} \\l "1" </w:instrText>
-    </w:r>''')
-    runs.append(instr_run)
-
-    # End run
-    end_run = parse_xml(f'<w:r xmlns:w="{SCHEMA}"><w:fldChar w:fldCharType="end"/></w:r>')
-    runs.append(end_run)
-
-    return runs
+def _create_tot_field(entries: list[tuple[str, str]] | None = None) -> list[Any]:
+    """Create Table of Tables field paragraphs using TOC \\f T."""
+    field_code = "TOC \\h \\z \\f T"
+    if entries:
+        return _create_field_with_entries(field_code, entries)
+    return _create_field(field_code)
 
 
 def _get_paragraph_text(para: Any) -> str:

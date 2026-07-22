@@ -52,6 +52,46 @@ local function parse_style(style)
   return props
 end
 
+-- Validate a CSS image dimension (the value of `width:`/`height:` in an
+-- <img style="...">). Returns the value unchanged when it is a number with a
+-- unit pandoc's image-size parser understands (px, in, cm, mm, pt, pc, % — or
+-- unitless, which pandoc treats as px), else nil. Font-relative/viewport units
+-- (em, ex, vw, vh, ...) are rejected: pandoc can't turn them into a concrete
+-- <wp:extent>, so we leave the image unsized rather than emit garbage. Only a
+-- validated value ever reaches the node attribute (never raw style text).
+local SUPPORTED_IMG_UNITS = { [""] = true, px = true, ["in"] = true, cm = true, mm = true, pt = true, pc = true, ["%"] = true }
+local function image_dim(value)
+  if not value then return nil end
+  -- A number (optional decimals) followed by an optional unit: either letters
+  -- (px, in, cm, ...) or a literal "%". Surrounding whitespace is tolerated.
+  local num, unit = value:match("^%s*(%d+%.?%d*)%s*([%a%%]*)%s*$")
+  if num and SUPPORTED_IMG_UNITS[unit] then
+    return num .. unit
+  end
+  return nil
+end
+
+-- Pandoc's HTML reader leaves <img style="width:..;height:.."> as an opaque
+-- `style` attribute, and the DOCX writer sizes images only from the node's
+-- `width`/`height` attributes — so CSS-sized images come out at native size.
+-- Copy validated CSS width/height onto those attributes (a node-attribute tweak,
+-- not the writer's unreachable embedding pipeline). Never overwrite an existing
+-- width/height attribute (an <img width=..> or the value app/svg_processor.py
+-- sets for rasterised SVGs); set only the side(s) given so the writer keeps the
+-- aspect ratio when just one is present. Mutates the Image in place.
+local function apply_image_style_dimensions(img)
+  local style = img.attributes and img.attributes.style
+  if not style then return end
+  local props = parse_style(style)
+  for _, dim in ipairs({ "width", "height" }) do
+    local cur = img.attributes[dim]
+    if not cur or cur == "" then
+      local v = image_dim(props[dim])
+      if v then img.attributes[dim] = v end
+    end
+  end
+end
+
 -- Accept "#RRGGBB", "RRGGBB", "#RGB", "RGB", or "rgb(r,g,b)" and return
 -- the canonical 6-char uppercase hex string Word expects ("FF0000"), or
 -- nil when the value can't be parsed.
@@ -372,15 +412,44 @@ walk = function(inlines, props, vert_align)
     elseif t == "Subscript" then
       append_all(result, walk(inline.content, props, "subscript"))
     elseif t == "Span" then
-      -- Nested span: parse its style (if any) on top of inherited props,
-      -- then descend with the merged set. `attributes` may be nil when the
-      -- span has no key/value attributes at all, hence the `inline.attributes and ...`
-      -- guard (Lua's `and` short-circuits — if the left side is falsy
-      -- the whole expression is that falsy value, never an indexing error).
-      local style = inline.attributes and inline.attributes.style
-      local p = props
-      if style then p = merge_css(props, parse_style(style)) end
-      append_all(result, walk(inline.content, p, vert_align))
+      -- Check if this is Polarion's caption-counter span. If so, emit a
+      -- proper Word SEQ field instead of plain text so Word can renumber
+      -- captions and resolve cross-references.
+      local is_caption_span = false
+      if inline.classes then
+        for _, cls in ipairs(inline.classes) do
+          if cls == "polarion-rte-caption" then
+            is_caption_span = true
+            break
+          end
+        end
+      end
+      if is_caption_span then
+        -- Emit the SEQ field as raw OOXML so inlines_to_openxml succeeds
+        -- and build_para_w_p can apply paragraph alignment. The Caption
+        -- style is added by contains_caption_span() in build_para_w_p,
+        -- and as a fallback by html_captions.lua for non-aligned captions.
+        local seq_type = inline.attributes and (inline.attributes["sequence"] or inline.attributes["data-sequence"])
+        if seq_type then
+          local number_text = pandoc.utils.stringify(inline.content)
+          result[#result + 1] = pandoc.RawInline("openxml",
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .. '<w:r><w:instrText xml:space="preserve"> SEQ '
+            .. escape_attr(seq_type) .. ' \\* ARABIC </w:instrText></w:r>'
+            .. '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .. '<w:r><w:t>' .. escape_xml(number_text) .. '</w:t></w:r>'
+            .. '<w:r><w:fldChar w:fldCharType="end"/></w:r>')
+        else
+          result[#result + 1] = inline
+        end
+      else
+        -- Nested span: parse its style (if any) on top of inherited props,
+        -- then descend with the merged set.
+        local style = inline.attributes and inline.attributes.style
+        local p = props
+        if style then p = merge_css(props, parse_style(style)) end
+        append_all(result, walk(inline.content, p, vert_align))
+      end
     elseif t == "RawInline" then
       -- Already-OOXML content (e.g. produced by another filter or a previous
       -- pass): pass through verbatim. Format-mismatched RawInlines (latex/html
@@ -410,6 +479,13 @@ walk = function(inlines, props, vert_align)
       -- accessible from a Lua filter, so we MUST pass the node through
       -- untouched. Stringifying would silently drop the image (alt text
       -- only) and is exactly the bug we just fixed.
+      --
+      -- ...but we still copy CSS width/height onto the node's width/height
+      -- attributes so the writer sizes it (see apply_image_style_dimensions).
+      -- filter.Image does this for standalone images; doing it here too covers
+      -- images that sit inside a styled span (idempotent — it never overwrites
+      -- an already-set dimension).
+      apply_image_style_dimensions(inline)
       result[#result + 1] = inline
     else
       -- Anything else (Note, Cite, Math, Quoted, SmallCaps, ...) needs
@@ -454,6 +530,13 @@ function filter.Span(el)
   if not el.attributes.style then return nil end
   local props = merge_css({}, parse_style(el.attributes.style))
   return walk(el.content, props, nil)
+end
+
+-- Standalone images (the common case — an <img style="width:.."> not wrapped in
+-- a styled span) never enter walk(), so size them here from their CSS style.
+function filter.Image(el)
+  apply_image_style_dimensions(el)
+  return el
 end
 
 -- True if any descendant inline is a Span carrying a `style` attribute.
@@ -529,6 +612,28 @@ local function inlines_to_openxml(inlines)
   return table.concat(parts)
 end
 
+-- True when `inlines` contains (at any depth) Polarion's caption counter span
+-- (<span data-sequence=... class="polarion-rte-caption">). This is the reliable
+-- signal that a paragraph is a real figure/table caption. A caption <p> also
+-- carries text-align, so it reaches this filter as a pandoc-para wrapper and
+-- would otherwise lose any paragraph style in the raw-OOXML rewrite below —
+-- leaving app/DocxReferencesPostProcess.py unable to recognise it structurally.
+-- (Captions without an alignment are handled separately by
+-- filters/html_captions.lua, which runs on the un-wrapped Para.)
+local function contains_caption_span(inlines)
+  for _, il in ipairs(inlines) do
+    if il.t == "Span" and il.classes then
+      for _, class in ipairs(il.classes) do
+        if class == "polarion-rte-caption" then return true end
+      end
+    end
+    if type(il.content) == "table" and contains_caption_span(il.content) then
+      return true
+    end
+  end
+  return false
+end
+
 -- Build the single OOXML <w:p> for a formatted paragraph, or nil to signal
 -- "fall back to the original Para". Both `twips` and `jc` are trusted here:
 -- callers MUST pass an already-validated non-negative integer (Lua number, not
@@ -544,6 +649,11 @@ local function build_para_w_p(inlines, twips, jc)
   -- dependent about out-of-order children (silent reorder, recovery warning,
   -- or dropping the child), so we emit them in canonical order.
   local ppr = {}
+  -- <w:pStyle> comes first in the CT_PPr sequence. Stamp "Caption" on genuine
+  -- captions so DocxReferencesPostProcess recognises them by style, not text.
+  if contains_caption_span(inlines) then
+    ppr[#ppr + 1] = '<w:pStyle w:val="Caption"/>'
+  end
   -- string.format("%d", n) round-trips a validated integer through Lua's
   -- printf, which emits only decimal digits (and an optional leading '-' we
   -- already ruled out). Concatenating the raw attribute string here instead
@@ -798,14 +908,45 @@ local function block_to_ooxml(block, jc_val)
     for _, r in ipairs(runs) do
       if r.t == "RawInline" and r.format == "openxml" then
         run_parts[#run_parts + 1] = r.text
+      elseif r.t == "Image" and r.src and r.src ~= "" then
+        -- Images need writer-level relationship handling. Emit a
+        -- placeholder for the Python post-processor.
+        run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
+          .. "{{IMG:" .. escape_xml(r.src) .. "}}"
+          .. "</w:t></w:r>"
+      elseif r.t == "Link" then
+        -- Links need writer-level .rels entries for the hyperlink target.
+        -- Emit a <w:hyperlink> with a placeholder tooltip that encodes the
+        -- URL. The Python post-processor registers the real relationship.
+        -- Walk the link content, then replace rPr with just Hyperlink rStyle
+        -- so the link renders blue/underlined. Inline CSS colors would
+        -- override the Hyperlink style, so we strip them.
+        local link_inlines = walk(r.content, {}, nil)
+        local link_runs = {}
+        for _, lr in ipairs(link_inlines) do
+          if lr.t == "RawInline" and lr.format == "openxml" then
+            -- Replace existing <w:rPr> with Hyperlink rStyle, and add rPr
+            -- to bare <w:r> runs that don't have one (a single lr.text may
+            -- contain multiple <w:r> elements).
+            local text = lr.text
+            text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
+            text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
+            link_runs[#link_runs + 1] = text
+          elseif lr.t == "Image" and lr.src and lr.src ~= "" then
+            link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
+              .. "{{IMG:" .. escape_xml(lr.src) .. "}}"
+              .. "</w:t></w:r>"
+          else
+            link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
+              .. '<w:t xml:space="preserve">'
+              .. escape_xml(pandoc.utils.stringify(lr)) .. "</w:t></w:r>"
+          end
+        end
+        run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
+          .. escape_attr(r.target) .. '}}">'
+          .. table.concat(link_runs) .. "</w:hyperlink>"
       else
-        -- Known limitation: Link and Image nodes returned by walk() are not
-        -- RawInline("openxml") — they need writer-level relationship handling
-        -- that raw OOXML can't reproduce. Links lose their hyperlink target
-        -- (text is preserved) and Images are reduced to alt-text. Nested
-        -- tables and lists also hit this path. This is acceptable for the
-        -- opt-in table-style feature; the alternative would be to fall back
-        -- the entire table to the default writer, losing all cell styling.
+        -- Nested tables, lists, etc. — fall back to plain text.
         run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
           .. escape_xml(pandoc.utils.stringify(r))
           .. "</w:t></w:r>"
@@ -944,12 +1085,33 @@ function filter.Table(tbl)
   local xml = {}
   xml[#xml + 1] = "<w:tbl>"
 
-  -- Table properties: 100 % width, autofit layout, default single-line
-  -- borders matching Pandoc's default DOCX writer output. Without these,
-  -- tables that only set background-color (no per-cell border) would
-  -- render with no gridlines at all.
+  -- Determine table width from the HTML style attribute.
+  -- - Percentage (e.g. "100%") → pct (fiftieths of a percent, so 100% = 5000)
+  -- - Pixel value (e.g. "738px") → dxa (twips, 1px ≈ 15 twips at 96 dpi)
+  -- - No width / unrecognised → default to 100 % (5000 pct)
+  local tbl_style = tbl.attr and tbl.attr.attributes and tbl.attr.attributes.style
+  local tbl_w_val = "5000"
+  local tbl_w_type = "pct"
+  local tbl_total_twips = nil  -- set when we know a fixed width in twips
+
+  if tbl_style then
+    local pct = tbl_style:match("width:%s*(%d+)%%")
+    local px = tbl_style:match("width:%s*(%d+)px")
+    if pct then
+      tbl_w_val = tostring(math.floor(tonumber(pct) * 50))
+      tbl_w_type = "pct"
+    elseif px then
+      tbl_total_twips = math.floor(tonumber(px) * 15)  -- 1px ≈ 15 twips
+      tbl_w_val = tostring(tbl_total_twips)
+      tbl_w_type = "dxa"
+    end
+  end
+
+  -- Table properties with default single-line borders matching Pandoc's
+  -- default DOCX writer output. Without these, tables that only set
+  -- background-color (no per-cell border) render with no gridlines.
   xml[#xml + 1] = "<w:tblPr>"
-  xml[#xml + 1] = '<w:tblW w:w="5000" w:type="pct"/>'
+  xml[#xml + 1] = '<w:tblW w:w="' .. tbl_w_val .. '" w:type="' .. tbl_w_type .. '"/>'
   xml[#xml + 1] = "<w:tblBorders>"
   xml[#xml + 1] = '<w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
   xml[#xml + 1] = '<w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
@@ -958,12 +1120,26 @@ function filter.Table(tbl)
   xml[#xml + 1] = '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
   xml[#xml + 1] = '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
   xml[#xml + 1] = "</w:tblBorders>"
-  xml[#xml + 1] = '<w:tblLayout w:type="autofit"/>'
+  if tbl_total_twips then
+    xml[#xml + 1] = '<w:tblLayout w:type="fixed"/>'
+  else
+    xml[#xml + 1] = '<w:tblLayout w:type="autofit"/>'
+  end
   xml[#xml + 1] = "</w:tblPr>"
 
-  -- Grid columns (widths left to autofit).
+  -- Grid columns. When colspecs provide fractional widths, use them;
+  -- otherwise distribute the total width evenly across columns.
   xml[#xml + 1] = "<w:tblGrid>"
-  for _ = 1, num_cols do xml[#xml + 1] = "<w:gridCol/>" end
+  for i = 1, num_cols do
+    local cw = tbl.colspecs[i] and tbl.colspecs[i][2]
+    if cw and tbl_total_twips then
+      xml[#xml + 1] = '<w:gridCol w:w="' .. math.floor(cw * tbl_total_twips) .. '"/>'
+    elseif tbl_total_twips then
+      xml[#xml + 1] = '<w:gridCol w:w="' .. math.floor(tbl_total_twips / num_cols) .. '"/>'
+    else
+      xml[#xml + 1] = "<w:gridCol/>"
+    end
+  end
   xml[#xml + 1] = "</w:tblGrid>"
 
   -- Rows

@@ -7,7 +7,15 @@ from docx.table import Table, _Cell
 from lxml import etree
 
 from app import DocxPostProcess
-from app.DocxPostProcess import SCHEMA, _process_table, _replace_table_properties
+from app.DocxPostProcess import (
+    SCHEMA,
+    _has_existing_fixed_width,
+    _process_table,
+    _replace_image_placeholders,
+    _replace_link_placeholders,
+    _replace_table_properties,
+    _resolve_image_src,
+)
 
 WORD_PROCESSING_ML_MAIN_SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD_PROCESSING_ML_MAIN_SCHEMA_IN_BRACKETS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -365,8 +373,9 @@ def test_resize_images_in_cell():
         mock_extent.set.assert_any_call("cy", "2400")  # New height (aspect ratio maintained)
 
 
+@patch("app.DocxPostProcess._apply_table_layout")
 @patch("app.DocxPostProcess._resize_images_in_cell")
-def test_process_table_with_nested_tables(mock_resize_images):
+def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout):
     """Test that nested tables are processed correctly."""
 
     # Create mock tables and cells
@@ -462,8 +471,8 @@ def test_replace_table_properties(mock_get_width, mock_process_table):
 
     # Verify _process_table was called for tables in correct sections
     assert mock_process_table.call_count == 2
-    mock_process_table.assert_any_call(table1, 0, max_width)
-    mock_process_table.assert_any_call(table2, 0, max_width)
+    mock_process_table.assert_any_call(table1, 0, max_width, None)
+    mock_process_table.assert_any_call(table2, 0, max_width, None)
 
 
 def test_replace_size_and_orientation_both_none():
@@ -1328,3 +1337,345 @@ class TestMoveHeaderFooterReferencesToFirstSection:
         assert isinstance(result, bytes)
         result_doc = Document(io.BytesIO(result))
         assert len(result_doc.sections) == 2
+
+
+class TestReplaceFirstParagraphStyles:
+    """Tests for _replace_first_paragraph_styles function."""
+
+    @staticmethod
+    def _make_doc_with_styles(styles: list[str | None]) -> MagicMock:
+        """Build a mock Document whose body has paragraphs with given pStyle vals.
+
+        ``None`` means the paragraph has no ``<w:pPr>`` at all.
+        """
+        from lxml import etree
+
+        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        body = etree.Element(f"{{{W}}}body")
+        for style in styles:
+            p = etree.SubElement(body, f"{{{W}}}p")
+            if style is not None:
+                pPr = etree.SubElement(p, f"{{{W}}}pPr")
+                etree.SubElement(pPr, f"{{{W}}}pStyle", {f"{{{W}}}val": style})
+        doc = MagicMock()
+        doc.element.body = body
+        return doc
+
+    @staticmethod
+    def _get_styles(doc: MagicMock) -> list[str | None]:
+        """Extract the pStyle val from each paragraph, or None if absent."""
+        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        result = []
+        for p in doc.element.body.iterchildren(f"{{{W}}}p"):
+            pPr = p.find(f"{{{W}}}pPr")
+            if pPr is None:
+                result.append(None)
+                continue
+            pStyle = pPr.find(f"{{{W}}}pStyle")
+            if pStyle is None:
+                result.append(None)
+            else:
+                result.append(pStyle.get(f"{{{W}}}val"))
+        return result
+
+    def test_replaces_first_paragraph_style_with_body_text(self):
+        doc = self._make_doc_with_styles(["FirstParagraph"])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == ["BodyText"]
+
+    def test_replaces_multiple_first_paragraph_styles(self):
+        doc = self._make_doc_with_styles(["Heading1", "FirstParagraph", "BodyText", "FirstParagraph"])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == ["Heading1", "BodyText", "BodyText", "BodyText"]
+
+    def test_does_not_change_other_paragraph_styles(self):
+        doc = self._make_doc_with_styles(["Heading1", "Heading2", "BodyText", "ListParagraph"])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == ["Heading1", "Heading2", "BodyText", "ListParagraph"]
+
+    def test_handles_paragraph_without_properties(self):
+        doc = self._make_doc_with_styles([None, "FirstParagraph", None])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == [None, "BodyText", None]
+
+    def test_handles_empty_document(self):
+        doc = self._make_doc_with_styles([])
+        DocxPostProcess._replace_first_paragraph_styles(doc)
+        assert self._get_styles(doc) == []
+
+    def test_integration_with_real_docx(self):
+        """Integration test: add a heading + paragraph, convert, verify no FirstParagraph."""
+        import io
+
+        from docx import Document
+
+        doc = Document()
+        doc.add_heading("Test Heading", level=1)
+        p = doc.add_paragraph("Body after heading")
+        # Simulate pandoc's behavior by setting the style
+        p.style = doc.styles["Normal"]
+        p.style = doc.styles.add_style("First Paragraph", 1) if "First Paragraph" not in [s.name for s in doc.styles] else doc.styles["First Paragraph"]
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        result = DocxPostProcess.process(buf.getvalue())
+
+        result_doc = Document(io.BytesIO(result))
+        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        first_paragraph_replaced = False
+        for para in result_doc.element.body.iterchildren(f"{{{W}}}p"):
+            pPr = para.find(f"{{{W}}}pPr")
+            if pPr is None:
+                continue
+            pStyle = pPr.find(f"{{{W}}}pStyle")
+            if pStyle is not None:
+                val = pStyle.get(f"{{{W}}}val")
+                assert val != "FirstParagraph", "FirstParagraph style should have been replaced"
+                if val == "BodyText":
+                    first_paragraph_replaced = True
+        assert first_paragraph_replaced, "Expected at least one paragraph to be replaced with BodyText"
+
+
+# ---- _resolve_image_src ----
+
+
+def test_resolve_image_src_data_uri():
+    """data: URI with base64-encoded 1x1 GIF should return bytes."""
+    gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    result = _resolve_image_src(f"data:image/gif;base64,{gif_b64}")
+    assert result is not None
+    assert result[:3] == b"GIF"
+
+
+def test_resolve_image_src_invalid_base64():
+    """data: URI with invalid base64 should return None."""
+    assert _resolve_image_src("data:image/png;base64,!!!invalid!!!") is None
+
+
+def test_resolve_image_src_http_unsupported():
+    """http:// URIs are not supported and should return None."""
+    assert _resolve_image_src("http://example.com/img.png") is None
+
+
+def test_resolve_image_src_empty():
+    """Empty string should return None."""
+    assert _resolve_image_src("") is None
+
+
+# ---- _replace_image_placeholders ----
+
+
+def test_replace_image_placeholder_with_data_uri():
+    """Image placeholder with data: URI should be replaced with w:drawing."""
+    from docx import Document
+
+    gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    doc = Document()
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+
+    _replace_image_placeholders(doc)
+
+    body_xml = etree.tostring(doc.element.body, encoding="unicode")
+    assert "w:drawing" in body_xml
+    assert "{{IMG:" not in body_xml
+
+
+def test_replace_image_placeholder_unsupported_src():
+    """Unsupported image src should be replaced with [image] text."""
+    from docx import Document
+
+    doc = Document()
+    doc.add_paragraph("{{IMG:http://example.com/img.png}}")
+
+    _replace_image_placeholders(doc)
+
+    body_xml = etree.tostring(doc.element.body, encoding="unicode")
+    assert "[image]" in body_xml
+    assert "{{IMG:" not in body_xml
+
+
+def test_replace_image_placeholder_unique_ids():
+    """Multiple image placeholders should get unique docPr IDs."""
+    from docx import Document
+
+    gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    doc = Document()
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+
+    _replace_image_placeholders(doc)
+
+    body_xml = etree.tostring(doc.element.body, encoding="unicode")
+    import re
+
+    ids = re.findall(r'docPr id="(\d+)"', body_xml)
+    assert len(ids) >= 2
+    assert ids[0] != ids[1]
+
+
+# ---- _replace_link_placeholders ----
+
+
+def test_replace_link_placeholder():
+    """HREF placeholder in hyperlink tooltip should be replaced with real r:id."""
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    body = doc.element.body
+    p = parse_xml(
+        f'<w:p {nsdecls("w")}>'
+        f'<w:hyperlink w:tooltip="{{{{HREF:http://example.com}}}}">'
+        f"<w:r><w:t>click</w:t></w:r>"
+        f"</w:hyperlink>"
+        f"</w:p>"
+    )
+    body.append(p)
+
+    _replace_link_placeholders(doc)
+
+    body_xml = etree.tostring(body, encoding="unicode")
+    assert "{{HREF:" not in body_xml
+    # r:id should be set on the hyperlink
+    ns_r = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    hyperlink = body.find(f".//{{{SCHEMA}}}hyperlink")
+    assert hyperlink is not None
+    assert hyperlink.get(f"{ns_r}id") is not None
+
+
+def test_replace_link_placeholder_no_match():
+    """Hyperlink without HREF placeholder should not be modified."""
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    body = doc.element.body
+    p = parse_xml(
+        f'<w:p {nsdecls("w")}>'
+        f'<w:hyperlink w:tooltip="Normal tooltip">'
+        f"<w:r><w:t>click</w:t></w:r>"
+        f"</w:hyperlink>"
+        f"</w:p>"
+    )
+    body.append(p)
+
+    _replace_link_placeholders(doc)
+
+    hyperlink = body.find(f".//{{{SCHEMA}}}hyperlink")
+    assert hyperlink.get(f"{{{SCHEMA}}}tooltip") == "Normal tooltip"
+
+
+# ---- _has_existing_fixed_width ----
+
+
+def test_has_existing_fixed_width_true():
+    """tblPr with tblW type=dxa and positive width should return True."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>')
+    assert _has_existing_fixed_width(tblPr) is True
+
+
+def test_has_existing_fixed_width_pct():
+    """tblPr with tblW type=pct should return False."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="pct"/></w:tblPr>')
+    assert _has_existing_fixed_width(tblPr) is False
+
+
+def test_has_existing_fixed_width_zero():
+    """tblPr with tblW type=dxa but w=0 should return False."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="0" w:type="dxa"/></w:tblPr>')
+    assert _has_existing_fixed_width(tblPr) is False
+
+
+def test_has_existing_fixed_width_missing():
+    """tblPr without tblW should return False."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+    assert _has_existing_fixed_width(tblPr) is False
+
+
+# ---- table width clamping ----
+
+
+def test_apply_table_layout_clamps_dxa_to_page_width():
+    """Fixed dxa width from HtmlTableLayout should be clamped to page width."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.DocxPostProcess import _apply_table_layout
+
+    tbl = parse_xml(
+        f'<w:tbl {nsdecls("w")}>'
+        f"<w:tblPr/>"
+        f"<w:tblGrid><w:gridCol w:w=\"5000\"/><w:gridCol w:w=\"5000\"/></w:tblGrid>"
+        f"</w:tbl>"
+    )
+    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+
+    layout = MagicMock()
+    layout.width_type = "dxa"
+    layout.width_value = 11070  # 738px, wider than page
+    layout.jc = None
+    layout.indent_twips = None
+
+    # max_width in EMU: 9360 twips * 635 = ~5943600
+    _apply_table_layout(tbl, tblPr, layout, max_width=5943600)
+
+    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
+    assert tblW is not None
+    actual_width = int(tblW.get(f"{{{SCHEMA}}}w"))
+    assert actual_width <= 9360  # clamped to page width
+
+
+def test_apply_table_layout_preserves_lua_fixed_width():
+    """Lua filter fixed width that fits should not be changed."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.DocxPostProcess import _apply_table_layout
+
+    tbl = parse_xml(
+        f'<w:tbl {nsdecls("w")}>'
+        f'<w:tblPr><w:tblW w:w="5000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
+        f"<w:tblGrid><w:gridCol w:w=\"2500\"/><w:gridCol w:w=\"2500\"/></w:tblGrid>"
+        f"</w:tbl>"
+    )
+    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+
+    _apply_table_layout(tbl, tblPr, None, max_width=5943600)
+
+    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
+    assert int(tblW.get(f"{{{SCHEMA}}}w")) == 5000  # unchanged
+
+
+def test_apply_table_layout_clamps_lua_fixed_width():
+    """Lua filter fixed width that overflows should be clamped."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.DocxPostProcess import _apply_table_layout
+
+    tbl = parse_xml(
+        f'<w:tbl {nsdecls("w")}>'
+        f'<w:tblPr><w:tblW w:w="11070" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
+        f"<w:tblGrid><w:gridCol w:w=\"5535\"/><w:gridCol w:w=\"5535\"/></w:tblGrid>"
+        f"</w:tbl>"
+    )
+    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+
+    _apply_table_layout(tbl, tblPr, None, max_width=5943600)
+
+    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
+    assert int(tblW.get(f"{{{SCHEMA}}}w")) <= 9360

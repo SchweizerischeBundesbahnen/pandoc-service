@@ -22,7 +22,7 @@ services:
       retries: 3
 
   prometheus:
-    image: prom/prometheus:latest@sha256:a75c5a35bc21d7afe69551eefa3cb1e1fb1775fe759408007a66b54ec3de1f29
+    image: prom/prometheus:latest@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
     ports:
       - "9090:9090"
     volumes:
@@ -39,7 +39,7 @@ services:
       - pandoc-service
 
   grafana:
-    image: grafana/grafana:latest@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
+    image: grafana/grafana:latest@sha256:1c1bd67c54c5fcf6e759897852b5a584191bd6796e8d328a5ace457799801261
     ports:
       - "3000:3000"
     environment:

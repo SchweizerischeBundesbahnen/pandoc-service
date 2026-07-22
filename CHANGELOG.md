@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.3.4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.3...v2.3.4) (2026-07-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency uvicorn to v0.50.2 ([621a4fb](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/621a4fb06a3d8659fcf42faed54ede910b075eb7))
+* **deps:** update dependency uvicorn to v0.51.0 ([3613fd8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3613fd86c20f4affb3a7f76c8dabd726948e29b7))
+* preserve images and links in styled tables, fix table width over… ([#202](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/202)) ([eb3f32f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/eb3f32fcf7132c996bbfbe83b8ac0d60420a793f)), closes [#201](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/201)
+* replace plain-text caption numbers with SEQ fields and pre-filled TOF/TOT ([#200](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/200)) ([39cfd6e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/39cfd6ec55a652e068f8273579a8446cb4560ee0)), closes [#199](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/199)
+
+## [2.3.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.2...v2.3.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.139.0 ([eb2fabd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/eb2fabd8cd41bc912d6191a21e13b13ce871d31c))
+* **deps:** update dependency uvicorn to v0.50.0 ([147c054](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/147c0542ddd1438431e8e034175017d3f1d7dc53))
+* normalize First Paragraph style to Body Text in DOCX output ([#196](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/196)) ([f0cf505](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f0cf505bcb5df014e21d9729ebb1a90c759cb6a0)), closes [#195](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/195)
+* preserve table sizes when converting HTML to DOCX and DOCX to PDF ([#197](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/197)) ([b93130c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b93130c737cb2c1f44f0a229a34601b38ea0adf7))
+
+## [2.3.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.1...v2.3.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.138.2 ([5b2a1fd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5b2a1fd41389d4484bce29a3f40af2b312705e7c))
+* **deps:** update dependency playwright to v1.61.0 ([fbafc09](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/fbafc09ecf343e9e1a029b63eebd0df51dde5644))
+* math colors are lost during DOCX to PDF conversion ([#192](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/192)) ([5911ce5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5911ce54ef74395558f9a9570f5eaf744f2285c3)), closes [#191](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/191)
+* preserve image sizes ([#193](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/193)) ([11d6fba](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/11d6fbafb7ec6879aa0ded1629023337ce64a46e))
+
+## [2.3.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.0...v2.3.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* math formula color is lost when converting HTML to DOCX ([#186](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/186)) ([acd5676](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/acd5676071640f6bfbe7295c0eba45dffc2e63b1)), closes [#185](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/185)
+* preserve table cell backgrounds and fix empty tables in DOCX to … ([#189](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/189)) ([b20407f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b20407f0180ce0e9c860283b04007d6980e49a0e)), closes [#188](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/188)
+
 ## [2.3.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.2.2...v2.3.0) (2026-06-30)
 
 

@@ -1,5 +1,7 @@
+import base64
 import io
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -11,10 +13,15 @@ from docx.oxml.ns import nsdecls
 from lxml import etree  # type: ignore
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from docx.document import Document as DocumentObject
     from docx.section import Section
     from docx.table import Table, _Cell
 
+    from app.HtmlTableLayout import TableLayout
+
+from app.DocxMathColorPostProcess import apply_math_colors
 from app.DocxReferencesPostProcess import add_table_of_contents_entries, enable_auto_update_fields
 
 # Patch the python-docx parser to handle large XML documents (> 10MB)
@@ -46,17 +53,188 @@ PAPER_SIZES = {
 }
 logger = logging.getLogger(__name__)
 
+# OOXML tblPr child element order (subset of CT_TblPrBase we touch). Used to
+# insert new properties at a schema-valid position so both Word and the
+# stricter LibreOffice accept the output regardless of which children pandoc
+# (or the inline_styles.lua table rebuild) already emitted.
+_TBLPR_CHILD_ORDER = [
+    "tblStyle",
+    "tblpPr",
+    "tblOverlap",
+    "bidiVisual",
+    "tblStyleRowBandSize",
+    "tblStyleColBandSize",
+    "tblW",
+    "jc",
+    "tblCellSpacing",
+    "tblInd",
+    "tblBorders",
+    "shd",
+    "tblLayout",
+    "tblCellMar",
+    "tblLook",
+    "tblCaption",
+    "tblDescription",
+]
 
-def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None) -> bytes:
+
+def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[TableLayout] | None = None) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
     _move_header_footer_references_to_first_section(doc)
+    _replace_first_paragraph_styles(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
-    _replace_table_properties(doc)
+    _replace_table_properties(doc, table_layouts)
+    apply_math_colors(doc)
+    _replace_image_placeholders(doc)
+    _replace_link_placeholders(doc)
     add_table_of_contents_entries(doc)
     enable_auto_update_fields(doc)
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
+
+
+_IMG_PLACEHOLDER_RE = re.compile(r"\{\{IMG:(.*?)\}\}")
+_HREF_PLACEHOLDER_RE = re.compile(r"\{\{HREF:(.*?)\}\}")
+
+RELATIONSHIPS_SCHEMA = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"  # NOSONAR
+
+
+def _replace_image_placeholders(doc: DocumentObject) -> None:
+    """Replace ``{{IMG:<src>}}`` placeholders with real embedded images.
+
+    The ``inline_styles.lua`` filter emits these markers when it rebuilds a
+    styled table as raw OOXML. Images can't be embedded in raw OOXML (they
+    need writer-level relationship entries), so the Lua filter writes a
+    text placeholder and this function resolves it using python-docx.
+    """
+    body = doc.element.body
+    doc_pr_id = max((int(dp.get("id", "0")) for dp in body.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}docPr")), default=0)
+    for t_el in body.findall(f".//{{{SCHEMA}}}t"):
+        if t_el.text is None:
+            continue
+        match = _IMG_PLACEHOLDER_RE.search(t_el.text)
+        if not match:
+            continue
+
+        src = match.group(1)
+        run_el = t_el.getparent()
+        if run_el is None or not run_el.tag.endswith("}r"):
+            continue
+
+        image_bytes = _resolve_image_src(src)
+        if image_bytes is None:
+            # Can't resolve — leave the placeholder text as alt-text fallback
+            t_el.text = t_el.text.replace(match.group(0), "[image]")
+            continue
+
+        try:
+            r_id, img = doc.part.get_or_add_image(io.BytesIO(image_bytes))
+            width = img.px_width * EMU_1_INCH // 96  # px to EMU at 96 dpi
+            height = img.px_height * EMU_1_INCH // 96
+            doc_pr_id += 1
+
+            # Build the drawing XML
+            drawing_xml = (
+                f'<w:drawing {nsdecls("w", "wp", "a", "pic", "r")}>'
+                f'<wp:inline distT="0" distB="0" distL="0" distR="0">'
+                f'<wp:extent cx="{width}" cy="{height}"/>'
+                f'<wp:docPr id="{doc_pr_id}" name="Image"/>'
+                f"<a:graphic>"
+                f'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+                f"<pic:pic>"
+                f"<pic:nvPicPr>"
+                f'<pic:cNvPr id="{doc_pr_id}" name="Image"/>'
+                f"<pic:cNvPicPr/>"
+                f"</pic:nvPicPr>"
+                f"<pic:blipFill>"
+                f'<a:blip r:embed="{r_id}"/>'
+                f"<a:stretch><a:fillRect/></a:stretch>"
+                f"</pic:blipFill>"
+                f"<pic:spPr>"
+                f"<a:xfrm>"
+                f'<a:off x="0" y="0"/>'
+                f'<a:ext cx="{width}" cy="{height}"/>'
+                f"</a:xfrm>"
+                f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+                f"</pic:spPr>"
+                f"</pic:pic>"
+                f"</a:graphicData>"
+                f"</a:graphic>"
+                f"</wp:inline>"
+                f"</w:drawing>"
+            )
+            drawing_el = parse_xml(drawing_xml)
+
+            # Replace the text run with the drawing
+            run_el.remove(t_el)
+            run_el.append(drawing_el)
+
+            logger.debug(f"Replaced image placeholder with embedded image ({img.px_width}x{img.px_height})")
+        except Exception as e:
+            logger.warning(f"Could not embed image from placeholder: {e}")
+            t_el.text = t_el.text.replace(match.group(0), "[image]")
+
+
+def _resolve_image_src(src: str) -> bytes | None:
+    """Resolve an image src to bytes. Supports data: URIs."""
+    if src.startswith("data:"):
+        # data:image/gif;base64,AAAA...
+        match = re.match(r"data:[^;]+;base64,(.*)", src)
+        if match:
+            try:
+                return base64.b64decode(match.group(1))
+            except Exception:
+                logger.warning("Failed to decode base64 image data")
+                return None
+    if src:
+        logger.warning("Unsupported image src scheme (only data: URIs are supported): %s", src[:80])
+    return None
+
+
+def _replace_link_placeholders(doc: DocumentObject) -> None:
+    """Replace ``{{HREF:<url>}}`` placeholders in hyperlink tooltips with real relationships.
+
+    The ``inline_styles.lua`` filter emits ``<w:hyperlink w:tooltip="{{HREF:url}}">``
+    when it rebuilds styled tables as raw OOXML. This function registers the
+    URL as a hyperlink relationship and sets the correct ``r:id``.
+    """
+    ns_w = f"{{{SCHEMA}}}"
+    ns_r = f"{{{RELATIONSHIPS_SCHEMA}}}"
+    body = doc.element.body
+
+    for hyperlink in body.findall(f".//{ns_w}hyperlink"):
+        tooltip = hyperlink.get(f"{ns_w}tooltip", "")
+        match = _HREF_PLACEHOLDER_RE.search(tooltip)
+        if not match:
+            continue
+
+        url = match.group(1)
+        try:
+            r_id = doc.part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True)  # NOSONAR
+            hyperlink.set(f"{ns_r}id", r_id)
+            hyperlink.attrib.pop(f"{ns_w}tooltip", None)
+            logger.debug(f"Resolved hyperlink placeholder to {url} (r:id={r_id})")
+        except Exception as e:
+            logger.warning(f"Could not resolve hyperlink placeholder: {e}")
+            hyperlink.attrib.pop(f"{ns_w}tooltip", None)
+
+
+def _replace_first_paragraph_styles(doc: DocumentObject) -> None:
+    """Replace pandoc's "First Paragraph" style with "Body Text".
+
+    Pandoc's DOCX writer automatically assigns "First Paragraph" to the first
+    paragraph after every heading.  This creates visual inconsistency because
+    only that paragraph differs in style from subsequent ones.  Normalizing all
+    such paragraphs to "Body Text" gives a uniform look.
+    """
+    for paragraph in doc.element.body.iter(f"{{{SCHEMA}}}p"):
+        p_pr = paragraph.find(f"{{{SCHEMA}}}pPr")
+        if p_pr is None:
+            continue
+        p_style = p_pr.find(f"{{{SCHEMA}}}pStyle")
+        if p_style is not None and p_style.get(f"{{{SCHEMA}}}val") == "FirstParagraph":
+            p_style.set(f"{{{SCHEMA}}}val", "BodyText")
 
 
 def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:
@@ -191,7 +369,22 @@ def _move_header_footer_references_to_first_section(doc: DocumentObject) -> None
         first_sect_pr.append(title_pg)
 
 
-def _replace_table_properties(doc: DocumentObject) -> None:  # NOSONAR  # needed by design
+def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayout] | None = None) -> None:  # NOSONAR  # needed by design
+    # Per-table width/alignment recovered from the HTML source (see
+    # app/HtmlTableLayout.py). The list is one entry per <table> in document
+    # order (depth-first, nested included) — the same order this function walks
+    # tables in — so a shared iterator lines them up index-for-index. Guard on
+    # an exact count match: if pandoc dropped or added a table the alignment
+    # would be off, so we skip applying layouts entirely and fall back to the
+    # previous 100 %/autofit default rather than mislabel tables.
+    layout_iter: Iterator[TableLayout] | None = None
+    if table_layouts:
+        table_count = len(doc.element.body.findall(".//w:tbl", namespaces={"w": SCHEMA}))
+        if table_count == len(table_layouts):
+            layout_iter = iter(table_layouts)
+        else:
+            logger.warning("HtmlTableLayout: %d layouts for %d tables; skipping width/alignment (fallback to defaults)", len(table_layouts), table_count)
+
     # Group tables by their section
     for target_index, section in enumerate(doc.sections):
         max_width = _get_available_content_width_for_section(section)
@@ -213,37 +406,138 @@ def _replace_table_properties(doc: DocumentObject) -> None:  # NOSONAR  # needed
 
         # Note: This gets all tables in the document section
         for table in tables_in_section:
-            _process_table(table, 0, max_width)
+            _process_table(table, 0, max_width, layout_iter)
 
 
-def _process_table(table: Table, parent_columns_count: int, max_width: int) -> None:
+def _process_table(table: Table, parent_columns_count: int, max_width: int, layout_iter: Iterator[TableLayout] | None = None) -> None:
     tbl = table._element
+    # Pull this table's layout first, before recursing into nested tables, so
+    # consumption order stays depth-first and matches HtmlTableLayout.extract.
+    layout = next(layout_iter, None) if layout_iter is not None else None
     columns_count = parent_columns_count + len(table.columns)
     table_properties = tbl.find(".//w:tblPr", namespaces={"w": SCHEMA})
     if table_properties is None:
         table_properties = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
         tbl.insert(0, table_properties)
 
-    # Set table width (5000 = 100%)
-    table_width = parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>')
-    old_table_width = table_properties.find(".//w:tblW", namespaces={"w": SCHEMA})
-    if old_table_width is not None:
-        table_properties.remove(old_table_width)
-    table_properties.append(table_width)
-
-    # Set table layout to autofit
-    table_layout = parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="autofit"/>')
-    old_table_layout = table_properties.find(".//w:tblLayout", namespaces={"w": SCHEMA})
-    if old_table_layout is not None:
-        table_properties.remove(old_table_layout)
-    table_properties.append(table_layout)
+    _apply_table_layout(tbl, table_properties, layout, max_width)
 
     # Process nested tables
     for row in table.rows:
         for cell in row.cells:
             _resize_images_in_cell(cell, max_width / columns_count)
             for sub_table in cell.tables:
-                _process_table(sub_table, columns_count, max_width)
+                _process_table(sub_table, columns_count, max_width, layout_iter)
+
+
+def _clamp_twips(width_twips: int, max_width_emu: int) -> int:
+    """Clamp a width in twips to the available page width (given in EMU)."""
+    if max_width_emu <= 0:
+        return width_twips
+    max_twips = max_width_emu // 635
+    if width_twips > max_twips:
+        logger.debug(f"Clamped table width from {width_twips} to {max_twips} twips")
+        return max_twips
+    return width_twips
+
+
+def _clamp_existing_fixed_width(tbl: Any, table_properties: Any, max_width: int) -> None:
+    """Clamp a Lua-filter-set dxa width to the page width if it overflows."""
+    if max_width <= 0:
+        return
+    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    current = int(tbl_w.get(f"{{{SCHEMA}}}w", "0"))
+    clamped = _clamp_twips(current, max_width)
+    if clamped < current:
+        tbl_w.set(f"{{{SCHEMA}}}w", str(clamped))
+        _rescale_table_grid(tbl, clamped)
+
+
+def _resolve_layout_width(layout: TableLayout | None) -> tuple[str, int, bool]:
+    """Extract width parameters from an HtmlTableLayout, or return defaults."""
+    if layout is not None and layout.width_type is not None and layout.width_value is not None:
+        return layout.width_type, layout.width_value, layout.width_type == "dxa"
+    return "pct", 5000, False
+
+
+def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int = 0) -> None:
+    """Write width, alignment and indent onto a table's <w:tblPr>."""
+    has_layout = layout is not None and layout.width_type is not None and layout.width_value is not None
+
+    if not has_layout and _has_existing_fixed_width(table_properties):
+        _clamp_existing_fixed_width(tbl, table_properties, max_width)
+        return
+
+    width_type, width_value, use_fixed_layout = _resolve_layout_width(layout)
+
+    if use_fixed_layout:
+        width_value = _clamp_twips(width_value, max_width)
+        _rescale_table_grid(tbl, width_value)
+
+    _set_tblpr_child(table_properties, parse_xml(f'<w:tblW {nsdecls("w")} w:w="{width_value}" w:type="{width_type}"/>'))
+
+    layout_type = "fixed" if use_fixed_layout else "autofit"
+    _set_tblpr_child(table_properties, parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="{layout_type}"/>'))
+
+    if layout is not None and layout.jc is not None:
+        _set_tblpr_child(table_properties, parse_xml(f'<w:jc {nsdecls("w")} w:val="{layout.jc}"/>'))
+
+    if layout is not None and layout.indent_twips is not None:
+        _set_tblpr_child(table_properties, parse_xml(f'<w:tblInd {nsdecls("w")} w:w="{layout.indent_twips}" w:type="dxa"/>'))
+
+
+def _has_existing_fixed_width(table_properties: Any) -> bool:
+    """Return True if the table already has a fixed (dxa) width from the Lua filter."""
+    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    if tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") == "dxa":
+        w = tbl_w.get(f"{{{SCHEMA}}}w", "0")
+        return int(w) > 0
+    return False
+
+
+def _set_tblpr_child(table_properties: Any, new_child: Any) -> None:
+    """Replace any existing child with the same tag and insert at a schema-valid position."""
+    local_name = etree.QName(new_child).localname
+    for existing in table_properties.findall(f"w:{local_name}", namespaces={"w": SCHEMA}):
+        table_properties.remove(existing)
+
+    order = _TBLPR_CHILD_ORDER.index(local_name)
+    for child in table_properties:
+        child_local = etree.QName(child).localname
+        if child_local in _TBLPR_CHILD_ORDER and _TBLPR_CHILD_ORDER.index(child_local) > order:
+            child.addprevious(new_child)
+            return
+    table_properties.append(new_child)
+
+
+def _rescale_table_grid(tbl: Any, target_twips: int) -> None:
+    """Scale the <w:tblGrid> column widths so they sum to target_twips.
+
+    Under fixed layout Word derives the rendered table width from the grid
+    column widths (not <w:tblW>), so an absolute table width only takes effect
+    once the grid is rescaled to match it. Proportional scaling preserves the
+    relative column sizing pandoc emitted; a zero/absent grid is distributed
+    evenly.
+    """
+    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    if grid is None:
+        return
+    columns = grid.findall("w:gridCol", namespaces={"w": SCHEMA})
+    if not columns:
+        return
+
+    width_attr = f"{{{SCHEMA}}}w"
+    widths = [int(col.get(width_attr) or 0) for col in columns]
+    total = sum(widths)
+
+    if total <= 0:
+        even = max(1, target_twips // len(columns))
+        for col in columns:
+            col.set(width_attr, str(even))
+        return
+
+    for col, width in zip(columns, widths, strict=False):
+        col.set(width_attr, str(max(1, round(width * target_twips / total))))
 
 
 def _get_available_content_width_for_section(section: Section) -> int:

@@ -110,36 +110,23 @@ def preprocess(source: bytes) -> bytes:
     that has nothing to rewrite — returns the original bytes unchanged.
     """
     try:
-        fragments = html.fragments_fromstring(source)
+        # document_fromstring (not fragments_fromstring) so a full HTML document
+        # keeps its <head>: the exporter sends <head><title>...</title>, which
+        # pandoc renders with the "Title" style. fragments_fromstring drops the
+        # head, so re-serializing after wrapping a paragraph would lose the title
+        # (it falls back to "First Paragraph"). It also gives every <p> a real
+        # parent (<body>), so getparent()/insert() work without a synthetic root.
+        # A bare fragment is harmlessly wrapped in <html><body>, and we only
+        # re-serialize at all when a paragraph was actually wrapped.
+        doc = html.document_fromstring(source)
     except _PARSE_FAILURES:
         logger.warning("HtmlParagraphPreProcess: HTML parse failed; passing input through")
         return source
 
-    # Top-level <p> fragments have no parent, so we couldn't reparent them
-    # with their wrapping <div>. Hang every fragment off a synthetic root
-    # while we walk so getparent()/insert() works uniformly — then drop the
-    # root on the way out.
-    synthetic_root = etree.Element("__pandoc_para_root__")
-    leading_text: str | None = None
-    for frag in fragments:
-        if hasattr(frag, "tag"):
-            synthetic_root.append(frag)
-        # fragments_fromstring may emit a leading text node as a plain str.
-        elif leading_text is None:
-            leading_text = frag
-        else:
-            leading_text += frag
-
-    rewrote = _wrap_formatted_paragraphs(synthetic_root)
-    if not rewrote:
+    if not _wrap_formatted_paragraphs(doc):
         return source
 
-    parts: list[bytes] = []
-    if leading_text:
-        parts.append(leading_text.encode("utf-8"))
-    for child in synthetic_root:
-        parts.append(html.tostring(child, encoding="utf-8"))
-    return b"".join(parts)
+    return html.tostring(doc, encoding="utf-8")
 
 
 def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
