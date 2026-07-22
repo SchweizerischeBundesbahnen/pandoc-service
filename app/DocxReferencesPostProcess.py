@@ -16,16 +16,49 @@ SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSON
 XPATH_P_PR = ".//w:pPr"
 XPATH_P_STYLE = ".//w:pStyle"
 
-# Paragraph style id that marks a genuine caption. filters/html_captions.lua
-# sets it on paragraphs that carry Polarion's <span data-sequence=...> caption
-# counter. Non-HTML inputs bring their own caption styles: pandoc emits
-# "TableCaption"/"ImageCaption" for markdown/docx table & figure captions, and
+# Word paragraph style applied to (and marking) caption paragraphs.
+CAPTION_STYLE = "Caption"
+
+# Caption styles pandoc's own writers emit for markdown/docx table & figure captions.
+TABLE_CAPTION_STYLE = "TableCaption"
+IMAGE_CAPTION_STYLE = "ImageCaption"
+
+# Paragraph style ids that mark a genuine caption. filters/html_captions.lua
+# sets CAPTION_STYLE on paragraphs that carry Polarion's <span data-sequence=...>
+# caption counter. Non-HTML inputs bring their own caption styles: pandoc emits
+# TableCaption/ImageCaption for markdown/docx table & figure captions, and
 # Word uses "Caption". Keying off this set of caption STYLES — rather than "does
 # the text start with Table/Figure" — captures real captions from every source
 # while still excluding headings ("Table test III"), cross-references
 # ("Table 1 shows ...") and labels ("Table 50px"), which never carry a caption
 # style.
-CAPTION_STYLE_IDS = frozenset({"Caption", "TableCaption", "ImageCaption"})
+CAPTION_STYLE_IDS = frozenset({CAPTION_STYLE, TABLE_CAPTION_STYLE, IMAGE_CAPTION_STYLE})
+
+# Placeholder paragraph texts the HTML producer (docx-exporter) emits for the
+# ToC (table of contents), ToF (table of figures) and ToT (table of tables)
+# macros.
+TOC_PLACEHOLDER = "TOC_PLACEHOLDER"
+TOF_PLACEHOLDER = "TOF_PLACEHOLDER"
+TOT_PLACEHOLDER = "TOT_PLACEHOLDER"
+
+# Placeholder kinds (parsed from the placeholder texts above)
+KIND_TOC = "toc"
+KIND_TOF = "tof"
+KIND_TOT = "tot"
+
+# Paragraph styles a placeholder paragraph may carry; placeholders inside
+# titles/headings are ignored
+PLACEHOLDER_PARAGRAPH_STYLES = ("BodyText", "FirstParagraph", None)
+
+# Caption sequence identifiers assigned when a caption does not already carry
+# one (standard Polarion sequences)
+FIGURE_SEQUENCE = "Figure"
+TABLE_SEQUENCE = "Table"
+
+# Word field instruction codes for all generated fields
+TOC_FIELD_CODE = 'TOC \\o "1-9" \\h \\z \\u'
+TOF_FIELD_CODE = "TOC \\h \\z \\f F"
+TOT_FIELD_CODE = "TOC \\h \\z \\f T"
 
 logger = logging.getLogger(__name__)
 
@@ -114,15 +147,15 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901  #
         #    (Polarion would not set a table sequence on a figure).
         # 3. Fall back to structural adjacency: if the next content element
         #    is a <w:tbl>, it's a table caption; otherwise figure.
-        if style == "ImageCaption":
+        if style == IMAGE_CAPTION_STYLE:
             is_figure = True
-        elif style == "TableCaption" or _is_adjacent_to_table(para):
+        elif style == TABLE_CAPTION_STYLE or _is_adjacent_to_table(para):
             is_figure = False
         else:
             # No table nearby — check if an existing SEQ name hints at table
             existing_seq = _get_seq_name(para)
-            is_figure = existing_seq is None or existing_seq == "Figure"
-        seq_name = "Figure" if is_figure else "Table"
+            is_figure = existing_seq is None or existing_seq == FIGURE_SEQUENCE
+        seq_name = FIGURE_SEQUENCE if is_figure else TABLE_SEQUENCE
 
         # Ensure the caption number is a SEQ field (not plain text).
         _ensure_seq_field(para, seq_name)
@@ -130,7 +163,7 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901  #
         text_stripped = _get_paragraph_text(para).strip()
 
         # Ensure Caption style is set
-        _ensure_caption_style(para)
+        _set_paragraph_style(para, CAPTION_STYLE)
 
         # Assign a unique bookmark for this caption's TC field
         bookmark_id += 1
@@ -262,19 +295,19 @@ def _ensure_seq_field(para: Any, seq_name: str) -> None:
         return
 
 
-def _ensure_caption_style(para: Any) -> None:
-    """Ensure the paragraph has the Caption style set."""
+def _set_paragraph_style(para: Any, style_name: str) -> None:
+    """Set (or replace) the paragraph style, creating pPr when missing."""
     p_pr = para.find(XPATH_P_PR, namespaces={"w": SCHEMA})
     if p_pr is None:
-        p_pr = parse_xml(f'<w:pPr {nsdecls("w")}><w:pStyle w:val="Caption"/></w:pPr>')
+        p_pr = parse_xml(f'<w:pPr {nsdecls("w")}><w:pStyle w:val="{style_name}"/></w:pPr>')
         para.insert(0, p_pr)
+        return
+    p_style = p_pr.find(XPATH_P_STYLE, namespaces={"w": SCHEMA})
+    if p_style is None:
+        p_style = parse_xml(f'<w:pStyle {nsdecls("w")} w:val="{style_name}"/>')
+        p_pr.insert(0, p_style)
     else:
-        p_style = p_pr.find(XPATH_P_STYLE, namespaces={"w": SCHEMA})
-        if p_style is None:
-            p_style = parse_xml(f'<w:pStyle {nsdecls("w")} w:val="Caption"/>')
-            p_pr.insert(0, p_style)
-        else:
-            p_style.set(f"{{{SCHEMA}}}val", "Caption")
+        p_style.set(f"{{{SCHEMA}}}val", style_name)
 
 
 def _add_tc_field(para: Any, caption_text: str, field_flag: str, bookmark_id: int, bookmark_name: str) -> None:
@@ -303,58 +336,65 @@ def _find_elements_to_replace(body: Any) -> list:
     return elements_to_replace
 
 
+def _parse_placeholder(text: str) -> str | None:
+    """Map a placeholder paragraph text to its kind (KIND_TOC / KIND_TOF /
+    KIND_TOT), or None when the text is not a placeholder."""
+    return {
+        TOC_PLACEHOLDER: KIND_TOC,
+        TOF_PLACEHOLDER: KIND_TOF,
+        TOT_PLACEHOLDER: KIND_TOT,
+    }.get(text)
+
+
 def _find_placeholder_paragraphs(body: Any, elements_to_replace: list) -> None:
-    """Find TOC_PLACEHOLDER, TOF_PLACEHOLDER, and TOT_PLACEHOLDER paragraphs."""
+    """Find TOC/TOF/TOT placeholder paragraphs."""
     for idx, element in enumerate(body):
         if element.tag.endswith("}p"):
             text = _get_paragraph_text(element).strip()
             style = _get_paragraph_style(element)
 
-            if style not in ["BodyText", "FirstParagraph", None]:
+            # Only process placeholders in body text paragraphs, not in titles or headings
+            if style not in PLACEHOLDER_PARAGRAPH_STYLES:
                 continue
 
-            if text == "TOC_PLACEHOLDER":
-                elements_to_replace.append((idx, element, True, False, False))
-                logger.info(f"Found TOC_PLACEHOLDER at index {idx}, will replace with TOC field")
-            elif text == "TOF_PLACEHOLDER":
-                elements_to_replace.append((idx, element, False, True, False))
-                logger.info(f"Found TOF_PLACEHOLDER at index {idx}, will replace with TOF field")
-            elif text == "TOT_PLACEHOLDER":
-                elements_to_replace.append((idx, element, False, False, True))
-                logger.info(f"Found TOT_PLACEHOLDER at index {idx}, will replace with TOT field")
+            kind = _parse_placeholder(text)
+            if kind is not None:
+                elements_to_replace.append((idx, element, kind))
+                logger.info(f"Found {text} at index {idx}, will replace with a {kind} field")
 
 
 def _replace_elements_with_fields(body: Any, elements_to_replace: list, figure_paragraphs: list, table_paragraphs: list) -> None:
     """Replace found elements with Word field codes."""
-    for idx, element, has_toc, has_figure_links, has_table_links in sorted(elements_to_replace, key=lambda x: x[0], reverse=True):
-        if element is not None:
-            body.remove(element)
-            logger.debug(f"Removed element at index {idx}")
+    # Sort by index in reverse order to maintain correct positions during removal
+    for idx, element, kind in sorted(elements_to_replace, key=lambda x: x[0], reverse=True):
+        body.remove(element)
+        logger.debug(f"Removed element at index {idx}")
 
-        _insert_field_at_position(body, idx, has_toc, has_figure_links, has_table_links, figure_paragraphs, table_paragraphs)
+        _insert_field_at_position(body, idx, kind, figure_paragraphs, table_paragraphs)
 
 
-def _insert_field_at_position(body: Any, idx: int, has_toc: bool, has_figure_links: bool, has_table_links: bool, figure_paragraphs: list, table_paragraphs: list) -> None:  # noqa: PLR0913
-    """Insert appropriate Word fields at the specified position."""
-    if has_toc:
-        toc_paragraphs = _create_toc_field()
-        for toc_para in reversed(toc_paragraphs):
-            body.insert(idx, toc_para)
+def _insert_field_at_position(body: Any, idx: int, kind: str, figure_paragraphs: list, table_paragraphs: list) -> None:
+    """Insert the Word field for one placeholder at the specified position.
+
+    A table of figures/tables with no entries is skipped entirely (the
+    placeholder is still removed by the caller)."""
+    if kind == KIND_TOC:
+        _insert_paragraphs(body, idx, _create_toc_field())
         logger.info(f"Inserted Table of Contents at index {idx}")
-
-    if has_figure_links and figure_paragraphs:
+    elif kind == KIND_TOF and figure_paragraphs:
         figure_entries = [(text, bm) for _, text, bm in figure_paragraphs]
-        tof_paragraphs = _create_tof_field(figure_entries)
-        for tof_para in reversed(tof_paragraphs):
-            body.insert(idx, tof_para)
+        _insert_paragraphs(body, idx, _create_tof_field(figure_entries))
         logger.info(f"Inserted Table of Figures at index {idx}")
-
-    if has_table_links and table_paragraphs:
+    elif kind == KIND_TOT and table_paragraphs:
         table_entries = [(text, bm) for _, text, bm in table_paragraphs]
-        tot_paragraphs = _create_tot_field(table_entries)
-        for tot_para in reversed(tot_paragraphs):
-            body.insert(idx, tot_para)
+        _insert_paragraphs(body, idx, _create_tot_field(table_entries))
         logger.info(f"Inserted Table of Tables at index {idx}")
+
+
+def _insert_paragraphs(body: Any, idx: int, paragraphs: list[Any]) -> None:
+    """Insert paragraphs at the given body position, preserving their order."""
+    for para in reversed(paragraphs):
+        body.insert(idx, para)
 
 
 def _create_field(field_code: str) -> list[Any]:
@@ -421,23 +461,24 @@ def _hyperlink_xml(caption_text: str, bookmark_name: str) -> str:
 
 def _create_toc_field() -> list[Any]:
     """Create Table of Contents field paragraphs."""
-    return _create_field('TOC \\o "1-9" \\h \\z \\u')
+    return _create_field(TOC_FIELD_CODE)
+
+
+def _create_listing_field(field_code: str, entries: list[tuple[str, str]] | None) -> list[Any]:
+    """Create a table-of listing field, pre-filled when entries are given."""
+    if entries:
+        return _create_field_with_entries(field_code, entries)
+    return _create_field(field_code)
 
 
 def _create_tof_field(entries: list[tuple[str, str]] | None = None) -> list[Any]:
     """Create Table of Figures field paragraphs using TOC \\f F."""
-    field_code = "TOC \\h \\z \\f F"
-    if entries:
-        return _create_field_with_entries(field_code, entries)
-    return _create_field(field_code)
+    return _create_listing_field(TOF_FIELD_CODE, entries)
 
 
 def _create_tot_field(entries: list[tuple[str, str]] | None = None) -> list[Any]:
     """Create Table of Tables field paragraphs using TOC \\f T."""
-    field_code = "TOC \\h \\z \\f T"
-    if entries:
-        return _create_field_with_entries(field_code, entries)
-    return _create_field(field_code)
+    return _create_listing_field(TOT_FIELD_CODE, entries)
 
 
 def _get_paragraph_text(para: Any) -> str:
