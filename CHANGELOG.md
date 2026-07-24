@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.4.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.4...v2.4.0) (2026-07-24)
+
+
+### Features
+
+* expose api version in version endpoint ([#206](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/206)) ([b7944a5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b7944a5e73cf52228bc29a9f6c90f4efb51621c0)), closes [#205](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/205)
+
+
+### Bug Fixes
+
+* **deps:** update dependency asgiref to v3.12.1 ([217a5e4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/217a5e4835fee8906a04ae82edcc8b06fb3ee2b4))
+* **deps:** update dependency fastapi to v0.139.1 ([85db400](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/85db4000dee2ac861b1e1573a0ce351512d8ac19))
+* **deps:** update dependency fastapi to v0.139.2 ([0116326](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/0116326aeeb72c76c63999f685a2f350f7f48eff))
+
 ## [2.3.4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.3...v2.3.4) (2026-07-15)
 
 
