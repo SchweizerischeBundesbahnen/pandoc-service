@@ -24,7 +24,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pre-commit==4.6.0",
+    "pre-commit==4.6.1",
     "ruff==0.15.22",
     "mypy==2.3.0",
     "anyio==4.14.2",  # Explicit for mypy type checking (transitive from starlette)
