@@ -1,5 +1,5 @@
 # Copy uv from official image (version matches weasyprint-service)
-FROM ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 AS uv-source
+FROM ghcr.io/astral-sh/uv:0.12.1@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded AS uv-source
 
 # Use debian:trixie-slim as base (same base as weasyprint-service / python:3.14-slim).
 # A glibc base is required because Playwright publishes no musllinux wheel, so the
