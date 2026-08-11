@@ -101,7 +101,7 @@ def enable_auto_update_fields(doc: DocumentObject) -> None:
         else:
             update_fields.set(f"{{{SCHEMA}}}val", "true")
             logger.info("Updated existing auto-update fields setting")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - auto-update fields is a nice-to-have, not a requirement
         logger.warning(f"Could not enable auto-update fields: {e}")
 
 
@@ -122,7 +122,7 @@ def _get_max_bookmark_id(body: Any) -> int:
     return max_id
 
 
-def _find_and_process_captions(body: Any) -> tuple[list, list]:  # noqa: C901  # NOSONAR
+def _find_and_process_captions(body: Any) -> tuple[list, list]:  # NOSONAR
     """Find all figure and table captions, ensure SEQ fields, add TC fields with bookmarks.
 
     Returns two lists (figure_entries, table_entries) where each entry is
@@ -483,10 +483,7 @@ def _create_tot_field(entries: list[tuple[str, str]] | None = None) -> list[Any]
 
 def _get_paragraph_text(para: Any) -> str:
     """Extract text content from a paragraph element."""
-    texts = []
-    for t in para.findall(".//w:t", namespaces={"w": SCHEMA}):
-        if t.text:
-            texts.append(t.text)
+    texts = [t.text for t in para.findall(".//w:t", namespaces={"w": SCHEMA}) if t.text]
     return "".join(texts)
 
 

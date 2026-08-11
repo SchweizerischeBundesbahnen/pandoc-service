@@ -6,8 +6,8 @@ import pytest
 from docx.table import Table, _Cell
 from lxml import etree
 
-from app import DocxPostProcess
-from app.DocxPostProcess import (
+from app import docx_post_process
+from app.docx_post_process import (
     SCHEMA,
     _has_existing_fixed_width,
     _process_table,
@@ -135,7 +135,7 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
     else:
         mock_cell.tables = []
 
-    # Set up mock cell XML with image if needed
+        # Set up mock cell XML with image if needed
     if has_image:
         mock_cell._tc.xml = f'''
         <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
@@ -181,7 +181,7 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
         </w:tc>
         '''
 
-    # Connect the mocks together
+        # Connect the mocks together
     mock_row.cells = [mock_cell]
     mock_table.rows = [mock_row]
     mock_doc.tables = [mock_table]
@@ -189,25 +189,7 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
     return mock_doc
 
 
-@patch("app.DocxPostProcess.etree.fromstring")
-def test_replace_table_properties(mock_fromstring):
-    # Create a mock document to return from our Document constructor
-    mock_doc = create_mock_document_with_table()
-
-    # Create a mock XML tree that will be returned from fromstring
-    mock_tree = MagicMock()
-    # Return empty list for extent elements to avoid image resizing
-    mock_tree.findall.return_value = []
-    mock_fromstring.return_value = mock_tree
-
-    # Call the function under test
-    DocxPostProcess._replace_table_properties(mock_doc)
-
-    # Verify that table properties were accessed
-    assert mock_doc.tables[0]._element.find.called
-
-
-@patch("app.DocxPostProcess.etree.fromstring")
+@patch("app.docx_post_process.etree.fromstring")
 def test_nested_tables(mock_fromstring):
     # Create a mock document with nested tables
     mock_doc = create_mock_document_with_table(has_nested_table=True)
@@ -219,7 +201,7 @@ def test_nested_tables(mock_fromstring):
     mock_fromstring.return_value = mock_tree
 
     # Call the function under test
-    DocxPostProcess._replace_table_properties(mock_doc)
+    docx_post_process._replace_table_properties(mock_doc)
 
     # Verify we processed the nested table by checking if cell.tables was accessed
     assert len(mock_doc.tables[0].rows[0].cells[0].tables) > 0
@@ -231,13 +213,13 @@ def test_document_without_tables():
     mock_doc.tables = []
     # Add sections for _get_available_content_width
     mock_section = MagicMock()
-    mock_section.page_width = DocxPostProcess.DOCX_LETTER_WIDTH_EMU
-    mock_section.left_margin = DocxPostProcess.DOCX_LETTER_SIDE_MARGIN
-    mock_section.right_margin = DocxPostProcess.DOCX_LETTER_SIDE_MARGIN
+    mock_section.page_width = docx_post_process.DOCX_LETTER_WIDTH_EMU
+    mock_section.left_margin = docx_post_process.DOCX_LETTER_SIDE_MARGIN
+    mock_section.right_margin = docx_post_process.DOCX_LETTER_SIDE_MARGIN
     mock_doc.sections = [mock_section]
 
     # Call the function under test
-    DocxPostProcess._replace_table_properties(mock_doc)
+    docx_post_process._replace_table_properties(mock_doc)
 
     # Verify we checked the tables collection
     assert len(mock_doc.tables) == 0
@@ -277,7 +259,7 @@ def test_resize_images_in_cell_no_resizing_needed():
     max_width = 500000  # Larger than small_image_width
 
     # Call the function
-    DocxPostProcess._resize_images_in_cell(cell, max_width)
+    docx_post_process._resize_images_in_cell(cell, max_width)
 
     # Verify that clear_content was not called (which would indicate the image was modified)
     mock_tc.clear_content.assert_not_called()
@@ -311,7 +293,6 @@ def test_resize_images_in_cell_resizing_needed():
     # Set up the mock for lxml etree parsing - create elements that mimic the real ones
 
     # Parse the XML to create a real tree
-    # ruff: noqa: S320
     tree = etree.fromstring(large_image_xml)
 
     # Find the wp:extent element to use with the real function
@@ -328,10 +309,10 @@ def test_resize_images_in_cell_resizing_needed():
     max_width = 500000  # Smaller than large_image_width
 
     # Call the function
-    with patch("app.DocxPostProcess.etree.fromstring", return_value=tree):
-        DocxPostProcess._resize_images_in_cell(cell, max_width)
+    with patch("app.docx_post_process.etree.fromstring", return_value=tree):
+        docx_post_process._resize_images_in_cell(cell, max_width)
 
-    # Verify that clear_content was called (which indicates the image was modified)
+        # Verify that clear_content was called (which indicates the image was modified)
     mock_tc.clear_content.assert_called_once()
 
     # Check that the image dimensions were actually updated in the element tree
@@ -358,12 +339,12 @@ def test_resize_images_in_cell():
     mock_tree.findall.return_value = [mock_extent]
 
     # Patch etree.fromstring to return our mock
-    with patch("app.DocxPostProcess.etree.fromstring", return_value=mock_tree):
+    with patch("app.docx_post_process.etree.fromstring", return_value=mock_tree):
         # Use a reasonable max width value that will trigger resizing
         max_image_width = 4000.0  # Smaller than the image width
 
         # Call resize_images_in_cell directly
-        DocxPostProcess._resize_images_in_cell(cell, max_image_width)
+        docx_post_process._resize_images_in_cell(cell, max_image_width)
 
         # Verify that the image was resized
         assert mock_extent.set.call_count == 2  # cx and cy set
@@ -373,8 +354,8 @@ def test_resize_images_in_cell():
         mock_extent.set.assert_any_call("cy", "2400")  # New height (aspect ratio maintained)
 
 
-@patch("app.DocxPostProcess._apply_table_layout")
-@patch("app.DocxPostProcess._resize_images_in_cell")
+@patch("app.docx_post_process._apply_table_layout")
+@patch("app.docx_post_process._resize_images_in_cell")
 def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout):
     """Test that nested tables are processed correctly."""
 
@@ -398,7 +379,7 @@ def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout)
     main_table._element.find.return_value = None
 
     # Set up property mocks to track XML manipulation
-    with patch("app.DocxPostProcess.parse_xml") as mock_parse_xml:
+    with patch("app.docx_post_process.parse_xml") as mock_parse_xml:
         mock_tbl_props = MagicMock()
         mock_parse_xml.return_value = mock_tbl_props
 
@@ -428,9 +409,9 @@ def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout)
             pass
 
 
-@patch("app.DocxPostProcess._process_table")
-@patch("app.DocxPostProcess._get_available_content_width_for_section")
-def test_replace_table_properties(mock_get_width, mock_process_table):
+@patch("app.docx_post_process._process_table")
+@patch("app.docx_post_process._get_available_content_width_for_section")
+def test_replace_table_properties_by_section(mock_get_width, mock_process_table):
     """Test that _replace_table_properties processes tables by section correctly."""
 
     # Create mock document and sections
@@ -482,7 +463,7 @@ def test_replace_size_and_orientation_both_none():
     mock_doc.sections = [mock_section]
 
     # Call with both None
-    DocxPostProcess._replace_size_and_orientation(mock_doc, None, None)
+    docx_post_process._replace_size_and_orientation(mock_doc, None, None)
 
     # Verify no modifications were attempted
     mock_section._sectPr.find.assert_not_called()
@@ -492,220 +473,220 @@ def test_replace_size_and_orientation_set_paper_size_only():
     """Test setting paper size without changing orientation."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
     # Set up existing paper size element
-    mock_pgSz.get.return_value = None  # No existing orientation
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.return_value = None  # No existing orientation
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with paper_size = A4
-    DocxPostProcess._replace_size_and_orientation(mock_doc, "A4", None)
+    docx_post_process._replace_size_and_orientation(mock_doc, "A4", None)
 
     # Verify pgSz was updated with A4 dimensions (portrait)
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "11906")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "11906")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
 
 
 def test_replace_size_and_orientation_set_orientation_only():
     """Test setting orientation without changing paper size."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
     # Set up existing paper size element with portrait dimensions (width < height)
     # The get method is called twice: once for width, once for height
-    mock_pgSz.get.side_effect = ["11906", "16838"]  # portrait: width=11906, height=16838
-    mock_pgSz.attrib = {}
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.side_effect = ["11906", "16838"]  # portrait: width=11906, height=16838
+    mock_pg_sz.attrib = {}
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = landscape
-    DocxPostProcess._replace_size_and_orientation(mock_doc, None, "landscape")
+    docx_post_process._replace_size_and_orientation(mock_doc, None, "landscape")
 
     # Verify dimensions were swapped (portrait to landscape)
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "16838")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "11906")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "16838")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "11906")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
 
 
 def test_replace_size_and_orientation_both_parameters():
     """Test setting both paper size and orientation."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
     # Need to provide return values for the get calls:
     # 1. _set_paper_size calls get() once for existing orient attribute -> None
     # 2. _set_orientation calls get() for width -> "12240" (LETTER portrait width, set by _set_paper_size)
     # 3. _set_orientation calls get() for height -> "15840" (LETTER portrait height, set by _set_paper_size)
-    mock_pgSz.get.side_effect = [None, "12240", "15840"]
-    mock_pgSz.attrib = {}
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.side_effect = [None, "12240", "15840"]
+    mock_pg_sz.attrib = {}
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with paper_size = LETTER and orientation = landscape
-    DocxPostProcess._replace_size_and_orientation(mock_doc, "LETTER", "landscape")
+    docx_post_process._replace_size_and_orientation(mock_doc, "LETTER", "landscape")
 
     # Verify LETTER portrait dimensions were set first by _set_paper_size
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
     # Then verify they were swapped for landscape by _set_orientation
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "15840")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "12240")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "15840")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "12240")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
 
 
 def test_set_paper_size_unsupported():
     """Test that unsupported paper size raises ValueError."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Test with unsupported paper size
     with pytest.raises(ValueError, match="Unsupported paper size: TABLOID"):
-        DocxPostProcess._replace_size_and_orientation(mock_doc, "TABLOID", None)
+        docx_post_process._replace_size_and_orientation(mock_doc, "TABLOID", None)
 
 
 def test_set_paper_size_case_insensitive():
     """Test that paper size is case-insensitive."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
-    mock_pgSz.get.return_value = None
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.return_value = None
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with lowercase paper size
-    DocxPostProcess._replace_size_and_orientation(mock_doc, "a4", None)
+    docx_post_process._replace_size_and_orientation(mock_doc, "a4", None)
 
     # Verify A4 dimensions were set
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "11906")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "11906")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")
 
 
-def test_set_paper_size_creates_pgSz_if_missing():
+def test_set_paper_size_creates_pg_sz_if_missing():
     """Test that pgSz element is created if it doesn't exist."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
+    mock_sect_pr = MagicMock()
 
     # pgSz doesn't exist
-    mock_sectPr.find.return_value = None
-    mock_section._sectPr = mock_sectPr
+    mock_sect_pr.find.return_value = None
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
-    with patch("app.DocxPostProcess.parse_xml") as mock_parse_xml:
-        mock_new_pgSz = MagicMock()
-        mock_new_pgSz.get.return_value = None
-        mock_parse_xml.return_value = mock_new_pgSz
+    with patch("app.docx_post_process.parse_xml") as mock_parse_xml:
+        mock_new_pg_sz = MagicMock()
+        mock_new_pg_sz.get.return_value = None
+        mock_parse_xml.return_value = mock_new_pg_sz
 
         # Call with paper_size = A5
-        DocxPostProcess._replace_size_and_orientation(mock_doc, "A5", None)
+        docx_post_process._replace_size_and_orientation(mock_doc, "A5", None)
 
         # Verify parse_xml was called to create new pgSz
         mock_parse_xml.assert_called_once()
         # Verify the new pgSz was appended
-        mock_sectPr.append.assert_called_once_with(mock_new_pgSz)
+        mock_sect_pr.append.assert_called_once_with(mock_new_pg_sz)
 
 
 def test_set_paper_size_preserves_landscape_orientation():
     """Test that existing landscape orientation is preserved when changing paper size."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
     # Existing page has landscape orientation
-    mock_pgSz.get.return_value = "landscape"
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.return_value = "landscape"
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with new paper_size but no orientation parameter
-    DocxPostProcess._replace_size_and_orientation(mock_doc, "A3", None)
+    docx_post_process._replace_size_and_orientation(mock_doc, "A3", None)
 
     # Verify A3 dimensions were set in landscape (swapped)
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "23811")  # height becomes width
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")  # width becomes height
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "23811")  # height becomes width
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "16838")  # width becomes height
     # Verify landscape orientation was preserved
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
 
 
-def test_set_orientation_creates_pgSz_if_missing():
+def test_set_orientation_creates_pg_sz_if_missing():
     """Test that pgSz element is created with LETTER default if missing."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
+    mock_sect_pr = MagicMock()
 
     # pgSz doesn't exist
-    mock_sectPr.find.return_value = None
-    mock_section._sectPr = mock_sectPr
+    mock_sect_pr.find.return_value = None
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
-    with patch("app.DocxPostProcess.parse_xml") as mock_parse_xml:
-        mock_new_pgSz = MagicMock()
+    with patch("app.docx_post_process.parse_xml") as mock_parse_xml:
+        mock_new_pg_sz = MagicMock()
         # Simulate getting width and height from the newly created element (LETTER portrait)
-        mock_new_pgSz.get.side_effect = ["12240", "15840"]  # width, then height
-        mock_new_pgSz.attrib = {}
-        mock_parse_xml.return_value = mock_new_pgSz
+        mock_new_pg_sz.get.side_effect = ["12240", "15840"]  # width, then height
+        mock_new_pg_sz.attrib = {}
+        mock_parse_xml.return_value = mock_new_pg_sz
 
         # Call with orientation only
-        DocxPostProcess._replace_size_and_orientation(mock_doc, None, "landscape")
+        docx_post_process._replace_size_and_orientation(mock_doc, None, "landscape")
 
         # Verify parse_xml was called to create pgSz with LETTER dimensions
         mock_parse_xml.assert_called_once()
         # Verify the new pgSz was appended
-        mock_sectPr.append.assert_called_once_with(mock_new_pgSz)
+        mock_sect_pr.append.assert_called_once_with(mock_new_pg_sz)
         # Verify dimensions were swapped for landscape
-        mock_new_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "15840")
-        mock_new_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "12240")
+        mock_new_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "15840")
+        mock_new_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "12240")
 
 
 def test_set_orientation_portrait_removes_orient_attribute():
     """Test that orient attribute is removed for portrait orientation."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
     # Set up existing landscape page (width > height)
-    mock_pgSz.get.side_effect = ["15840", "12240"]  # landscape: width=15840, height=12240
-    mock_pgSz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.side_effect = ["15840", "12240"]  # landscape: width=15840, height=12240
+    mock_pg_sz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = portrait
-    DocxPostProcess._replace_size_and_orientation(mock_doc, None, "portrait")
+    docx_post_process._replace_size_and_orientation(mock_doc, None, "portrait")
 
     # Verify dimensions were swapped back to portrait
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", "12240")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", "15840")
     # Verify orient attribute was removed
-    assert f"{{{SCHEMA}}}orient" not in mock_pgSz.attrib
+    assert f"{{{SCHEMA}}}orient" not in mock_pg_sz.attrib
 
 
 def test_set_orientation_no_swap_if_already_correct():
     """Test that dimensions aren't swapped if orientation is already correct."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
     # Set up existing landscape page (width > height)
     width = "16838"
@@ -716,21 +697,21 @@ def test_set_orientation_no_swap_if_already_correct():
         call_count[0] += 1
         if call_count[0] == 1:  # First call for width
             return width
-        else:  # Second call for height
-            return height
+        # Second call for height
+        return height
 
-    mock_pgSz.get.side_effect = get_side_effect
-    mock_pgSz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.side_effect = get_side_effect
+    mock_pg_sz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = landscape (already landscape)
-    DocxPostProcess._replace_size_and_orientation(mock_doc, None, "landscape")
+    docx_post_process._replace_size_and_orientation(mock_doc, None, "landscape")
 
     # Verify dimensions were NOT swapped (set should not be called with swapped values)
     # The orient attribute should still be set
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}orient", "landscape")
 
 
 def test_replace_size_and_orientation_multiple_sections():
@@ -738,27 +719,27 @@ def test_replace_size_and_orientation_multiple_sections():
     mock_doc = MagicMock()
     mock_section1 = MagicMock()
     mock_section2 = MagicMock()
-    mock_sectPr1 = MagicMock()
-    mock_sectPr2 = MagicMock()
-    mock_pgSz1 = MagicMock()
-    mock_pgSz2 = MagicMock()
+    mock_sect_pr1 = MagicMock()
+    mock_sect_pr2 = MagicMock()
+    mock_pg_sz1 = MagicMock()
+    mock_pg_sz2 = MagicMock()
 
-    mock_pgSz1.get.return_value = None
-    mock_pgSz2.get.return_value = None
-    mock_sectPr1.find.return_value = mock_pgSz1
-    mock_sectPr2.find.return_value = mock_pgSz2
-    mock_section1._sectPr = mock_sectPr1
-    mock_section2._sectPr = mock_sectPr2
+    mock_pg_sz1.get.return_value = None
+    mock_pg_sz2.get.return_value = None
+    mock_sect_pr1.find.return_value = mock_pg_sz1
+    mock_sect_pr2.find.return_value = mock_pg_sz2
+    mock_section1._sectPr = mock_sect_pr1
+    mock_section2._sectPr = mock_sect_pr2
     mock_doc.sections = [mock_section1, mock_section2]
 
     # Call with paper_size = B5
-    DocxPostProcess._replace_size_and_orientation(mock_doc, "B5", None)
+    docx_post_process._replace_size_and_orientation(mock_doc, "B5", None)
 
     # Verify both sections were updated
-    mock_pgSz1.set.assert_any_call(f"{{{SCHEMA}}}w", "9979")
-    mock_pgSz1.set.assert_any_call(f"{{{SCHEMA}}}h", "14144")
-    mock_pgSz2.set.assert_any_call(f"{{{SCHEMA}}}w", "9979")
-    mock_pgSz2.set.assert_any_call(f"{{{SCHEMA}}}h", "14144")
+    mock_pg_sz1.set.assert_any_call(f"{{{SCHEMA}}}w", "9979")
+    mock_pg_sz1.set.assert_any_call(f"{{{SCHEMA}}}h", "14144")
+    mock_pg_sz2.set.assert_any_call(f"{{{SCHEMA}}}w", "9979")
+    mock_pg_sz2.set.assert_any_call(f"{{{SCHEMA}}}h", "14144")
 
 
 @pytest.mark.parametrize(
@@ -780,20 +761,20 @@ def test_all_supported_paper_sizes(paper_size, expected_width, expected_height):
     """Test that all supported paper sizes are correctly applied."""
     mock_doc = MagicMock()
     mock_section = MagicMock()
-    mock_sectPr = MagicMock()
-    mock_pgSz = MagicMock()
+    mock_sect_pr = MagicMock()
+    mock_pg_sz = MagicMock()
 
-    mock_pgSz.get.return_value = None
-    mock_sectPr.find.return_value = mock_pgSz
-    mock_section._sectPr = mock_sectPr
+    mock_pg_sz.get.return_value = None
+    mock_sect_pr.find.return_value = mock_pg_sz
+    mock_section._sectPr = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with the specified paper_size
-    DocxPostProcess._replace_size_and_orientation(mock_doc, paper_size, None)
+    docx_post_process._replace_size_and_orientation(mock_doc, paper_size, None)
 
     # Verify the correct dimensions were set
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}w", expected_width)
-    mock_pgSz.set.assert_any_call(f"{{{SCHEMA}}}h", expected_height)
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}w", expected_width)
+    mock_pg_sz.set.assert_any_call(f"{{{SCHEMA}}}h", expected_height)
 
 
 @pytest.mark.parametrize(
@@ -812,10 +793,10 @@ def test_main_function(argv, expected_exit, paper_size, orientation):
     with (
         patch.object(sys, "argv", argv),
         patch("pathlib.Path.open", mock_open(read_data=fake_docx_content)) as mock_file,
-        patch("app.DocxPostProcess.process", return_value=modified_content) as mock_process,
-        patch("app.DocxPostProcess.logger") as mock_logging,
+        patch("app.docx_post_process.process", return_value=modified_content) as mock_process,
+        patch("app.docx_post_process.logger") as mock_logging,
     ):
-        result = DocxPostProcess.main()
+        result = docx_post_process.main()
 
         if expected_exit:
             assert result == 1
@@ -835,18 +816,19 @@ def test_main_function_rejects_path_outside_working_directory():
         patch.object(sys, "argv", ["script.py", outside_path]),
         patch("pathlib.Path.cwd", return_value=fixed_cwd),
         patch("pathlib.Path.open", mock_open()) as mock_file,
-        patch("app.DocxPostProcess.process") as mock_process,
-        patch("app.DocxPostProcess.logger") as mock_logging,
+        patch("app.docx_post_process.process") as mock_process,
+        patch("app.docx_post_process.logger") as mock_logging,
     ):
-        result = DocxPostProcess.main()
+        result = docx_post_process.main()
 
         assert result == 1
         mock_process.assert_not_called()
         mock_file.assert_not_called()
         mock_logging.error.assert_called_once()
 
+        # Integration tests for the process() function to ensure 100% coverage
 
-# Integration tests for the process() function to ensure 100% coverage
+
 class TestProcessFunction:
     """Integration tests that call the process() function directly."""
 
@@ -865,7 +847,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Call process with no parameters
-        result = DocxPostProcess.process(input_bytes)
+        result = docx_post_process.process(input_bytes)
 
         # Verify result is valid bytes
         assert isinstance(result, bytes)
@@ -885,7 +867,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Call process with paper_size
-        result = DocxPostProcess.process(input_bytes, paper_size="A4")
+        result = docx_post_process.process(input_bytes, paper_size="A4")
 
         # Verify result is valid bytes
         assert isinstance(result, bytes)
@@ -905,7 +887,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Call process with orientation
-        result = DocxPostProcess.process(input_bytes, orientation="landscape")
+        result = docx_post_process.process(input_bytes, orientation="landscape")
 
         # Verify result is valid bytes
         assert isinstance(result, bytes)
@@ -925,7 +907,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Call process with both parameters
-        result = DocxPostProcess.process(input_bytes, paper_size="LETTER", orientation="portrait")
+        result = docx_post_process.process(input_bytes, paper_size="LETTER", orientation="portrait")
 
         # Verify result is valid bytes
         assert isinstance(result, bytes)
@@ -947,7 +929,7 @@ class TestProcessFunction:
         input_bytes = docx_bytes.getvalue()
 
         # Process the document
-        result = DocxPostProcess.process(input_bytes, paper_size="A4", orientation="landscape")
+        result = docx_post_process.process(input_bytes, paper_size="A4", orientation="landscape")
 
         # Verify we can open the result as a valid DOCX
         result_doc = Document(io.BytesIO(result))
@@ -958,7 +940,7 @@ class TestProcessFunction:
 def test_parser_supports_large_xml_documents():
     """Test that the XML parser is configured to handle large documents (XML_PARSE_HUGE).
 
-    This test verifies that the parser patch in DocxPostProcess enables huge_tree=True,
+    This test verifies that the parser patch in docx_post_process enables huge_tree=True,
     which is required to parse DOCX files with XML content exceeding 10MB.
     Without this patch, lxml raises 'Buffer size limit exceeded' errors.
     """
@@ -993,20 +975,20 @@ def test_process_document_with_large_content():
     for _ in range(10):
         doc.add_paragraph(large_text)
 
-    # Add a table with content
+        # Add a table with content
     table = doc.add_table(rows=5, cols=5)
     for row in table.rows:
         for cell in row.cells:
             cell.text = "Cell content " * 100
 
-    # Save to bytes
+            # Save to bytes
     docx_bytes = io.BytesIO()
     doc.save(docx_bytes)
     docx_bytes.seek(0)
     input_bytes = docx_bytes.getvalue()
 
     # Process should succeed without raising XMLSyntaxError
-    result = DocxPostProcess.process(input_bytes, paper_size="A4")
+    result = docx_post_process.process(input_bytes, paper_size="A4")
 
     # Verify result is valid
     assert isinstance(result, bytes)
@@ -1082,7 +1064,7 @@ def test_resize_images_in_cell_handles_large_xml():
     # This should NOT raise XMLSyntaxError: Buffer size limit exceeded
     # If _huge_tree_parser is not used, this would fail with:
     # lxml.etree.XMLSyntaxError: Resource limit exceeded: Buffer size limit exceeded
-    DocxPostProcess._resize_images_in_cell(cell, max_width)
+    docx_post_process._resize_images_in_cell(cell, max_width)
 
     # Verify the function completed without raising an exception
     # (no resizing needed since image width < max_width, so clear_content not called)
@@ -1098,7 +1080,7 @@ class TestMoveHeaderFooterReferencesToFirstSection:
         mock_section = MagicMock()
         mock_doc.sections = [mock_section]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Should return early without accessing sectPr
         mock_section._sectPr.findall.assert_not_called()
@@ -1108,181 +1090,181 @@ class TestMoveHeaderFooterReferencesToFirstSection:
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section already has header references
         mock_header_ref = MagicMock()
-        mock_sectPr1.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_sect_pr1.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Should not remove anything from last section
-        mock_sectPr2.remove.assert_not_called()
+        mock_sect_pr2.remove.assert_not_called()
 
     def test_first_section_already_has_footer_refs(self):
         """Test that no changes are made if first section already has footer refs."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section already has footer references
         mock_footer_ref = MagicMock()
-        mock_sectPr1.findall.side_effect = lambda tag, namespaces: [mock_footer_ref] if "footer" in tag else []
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_sect_pr1.findall.side_effect = lambda tag, namespaces: [mock_footer_ref] if "footer" in tag else []
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Should not remove anything from last section
-        mock_sectPr2.remove.assert_not_called()
+        mock_sect_pr2.remove.assert_not_called()
 
     def test_moves_header_refs_from_last_to_first(self):
         """Test that header references are moved from last to first section."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section has no refs
-        mock_sectPr1.findall.return_value = []
-        mock_sectPr1.find.return_value = None
+        mock_sect_pr1.findall.return_value = []
+        mock_sect_pr1.find.return_value = None
 
         # Last section has header refs
         mock_header_ref = MagicMock()
-        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
-        mock_sectPr2.find.return_value = None
+        mock_sect_pr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_sect_pr2.find.return_value = None
 
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Verify header ref was removed from last section and inserted into first
-        mock_sectPr2.remove.assert_called_with(mock_header_ref)
-        mock_sectPr1.insert.assert_called_with(0, mock_header_ref)
+        mock_sect_pr2.remove.assert_called_with(mock_header_ref)
+        mock_sect_pr1.insert.assert_called_with(0, mock_header_ref)
 
     def test_moves_footer_refs_from_last_to_first(self):
         """Test that footer references are moved from last to first section."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section has no refs
-        mock_sectPr1.findall.return_value = []
-        mock_sectPr1.find.return_value = None
+        mock_sect_pr1.findall.return_value = []
+        mock_sect_pr1.find.return_value = None
 
         # Last section has footer refs
         mock_footer_ref = MagicMock()
-        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_footer_ref] if "footer" in tag else []
-        mock_sectPr2.find.return_value = None
+        mock_sect_pr2.findall.side_effect = lambda tag, namespaces: [mock_footer_ref] if "footer" in tag else []
+        mock_sect_pr2.find.return_value = None
 
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Verify footer ref was removed from last section and inserted into first
-        mock_sectPr2.remove.assert_called_with(mock_footer_ref)
-        mock_sectPr1.insert.assert_called_with(0, mock_footer_ref)
+        mock_sect_pr2.remove.assert_called_with(mock_footer_ref)
+        mock_sect_pr1.insert.assert_called_with(0, mock_footer_ref)
 
     def test_moves_title_pg_from_last_to_first(self):
         """Test that titlePg element is moved from last to first section."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section has no refs
-        mock_sectPr1.findall.return_value = []
+        mock_sect_pr1.findall.return_value = []
 
         # Last section has header refs and titlePg
         mock_header_ref = MagicMock()
         mock_title_pg = MagicMock()
-        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
-        mock_sectPr2.find.side_effect = lambda tag, namespaces: mock_title_pg if "titlePg" in tag else None
+        mock_sect_pr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_sect_pr2.find.side_effect = lambda tag, namespaces: mock_title_pg if "titlePg" in tag else None
 
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Verify titlePg was removed from last section and appended to first
-        mock_sectPr2.remove.assert_any_call(mock_title_pg)
-        mock_sectPr1.append.assert_called_with(mock_title_pg)
+        mock_sect_pr2.remove.assert_any_call(mock_title_pg)
+        mock_sect_pr1.append.assert_called_with(mock_title_pg)
 
     def test_no_title_pg_to_move(self):
         """Test that function handles missing titlePg gracefully."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section has no refs
-        mock_sectPr1.findall.return_value = []
+        mock_sect_pr1.findall.return_value = []
 
         # Last section has header refs but no titlePg
         mock_header_ref = MagicMock()
-        mock_sectPr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
-        mock_sectPr2.find.return_value = None  # No titlePg
+        mock_sect_pr2.findall.side_effect = lambda tag, namespaces: [mock_header_ref] if "header" in tag else []
+        mock_sect_pr2.find.return_value = None  # No titlePg
 
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Should not call append for titlePg
-        mock_sectPr1.append.assert_not_called()
+        mock_sect_pr1.append.assert_not_called()
 
     def test_no_refs_in_last_section(self):
         """Test that function handles empty refs gracefully."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # Both sections have no refs
-        mock_sectPr1.findall.return_value = []
-        mock_sectPr2.findall.return_value = []
-        mock_sectPr2.find.return_value = None
+        mock_sect_pr1.findall.return_value = []
+        mock_sect_pr2.findall.return_value = []
+        mock_sect_pr2.find.return_value = None
 
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Should not modify anything
-        mock_sectPr1.insert.assert_not_called()
-        mock_sectPr2.remove.assert_not_called()
+        mock_sect_pr1.insert.assert_not_called()
+        mock_sect_pr2.remove.assert_not_called()
 
     def test_multiple_header_footer_refs(self):
         """Test moving multiple header/footer refs (first, default, even types)."""
         mock_doc = MagicMock()
         mock_section1 = MagicMock()
         mock_section2 = MagicMock()
-        mock_sectPr1 = MagicMock()
-        mock_sectPr2 = MagicMock()
+        mock_sect_pr1 = MagicMock()
+        mock_sect_pr2 = MagicMock()
 
         # First section has no refs
-        mock_sectPr1.findall.return_value = []
-        mock_sectPr1.find.return_value = None
+        mock_sect_pr1.findall.return_value = []
+        mock_sect_pr1.find.return_value = None
 
         # Last section has multiple header and footer refs
         mock_header_first = MagicMock()
@@ -1294,22 +1276,22 @@ class TestMoveHeaderFooterReferencesToFirstSection:
         def findall_side_effect(tag, namespaces):
             if "header" in tag:
                 return [mock_header_first, mock_header_default, mock_header_even]
-            elif "footer" in tag:
+            if "footer" in tag:
                 return [mock_footer_first, mock_footer_default]
             return []
 
-        mock_sectPr2.findall.side_effect = findall_side_effect
-        mock_sectPr2.find.return_value = None
+        mock_sect_pr2.findall.side_effect = findall_side_effect
+        mock_sect_pr2.find.return_value = None
 
-        mock_section1._sectPr = mock_sectPr1
-        mock_section2._sectPr = mock_sectPr2
+        mock_section1._sectPr = mock_sect_pr1
+        mock_section2._sectPr = mock_sect_pr2
         mock_doc.sections = [mock_section1, mock_section2]
 
-        DocxPostProcess._move_header_footer_references_to_first_section(mock_doc)
+        docx_post_process._move_header_footer_references_to_first_section(mock_doc)
 
         # Verify all refs were moved
-        assert mock_sectPr2.remove.call_count == 5  # 3 headers + 2 footers
-        assert mock_sectPr1.insert.call_count == 5
+        assert mock_sect_pr2.remove.call_count == 5  # 3 headers + 2 footers
+        assert mock_sect_pr1.insert.call_count == 5
 
     def test_integration_with_real_docx(self):
         """Integration test with real DOCX document having multiple sections."""
@@ -1331,7 +1313,7 @@ class TestMoveHeaderFooterReferencesToFirstSection:
         docx_bytes.seek(0)
 
         # Process the document
-        result = DocxPostProcess.process(docx_bytes.getvalue())
+        result = docx_post_process.process(docx_bytes.getvalue())
 
         # Verify result is valid
         assert isinstance(result, bytes)
@@ -1350,13 +1332,13 @@ class TestReplaceFirstParagraphStyles:
         """
         from lxml import etree
 
-        W = WORD_PROCESSING_ML_MAIN_SCHEMA
-        body = etree.Element(f"{{{W}}}body")
+        ns = WORD_PROCESSING_ML_MAIN_SCHEMA
+        body = etree.Element(f"{{{ns}}}body")
         for style in styles:
-            p = etree.SubElement(body, f"{{{W}}}p")
+            p = etree.SubElement(body, f"{{{ns}}}p")
             if style is not None:
-                pPr = etree.SubElement(p, f"{{{W}}}pPr")
-                etree.SubElement(pPr, f"{{{W}}}pStyle", {f"{{{W}}}val": style})
+                p_pr = etree.SubElement(p, f"{{{ns}}}pPr")
+                etree.SubElement(p_pr, f"{{{ns}}}pStyle", {f"{{{ns}}}val": style})
         doc = MagicMock()
         doc.element.body = body
         return doc
@@ -1364,43 +1346,43 @@ class TestReplaceFirstParagraphStyles:
     @staticmethod
     def _get_styles(doc: MagicMock) -> list[str | None]:
         """Extract the pStyle val from each paragraph, or None if absent."""
-        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        ns = WORD_PROCESSING_ML_MAIN_SCHEMA
         result = []
-        for p in doc.element.body.iterchildren(f"{{{W}}}p"):
-            pPr = p.find(f"{{{W}}}pPr")
-            if pPr is None:
+        for p in doc.element.body.iterchildren(f"{{{ns}}}p"):
+            p_pr = p.find(f"{{{ns}}}pPr")
+            if p_pr is None:
                 result.append(None)
                 continue
-            pStyle = pPr.find(f"{{{W}}}pStyle")
-            if pStyle is None:
+            p_style = p_pr.find(f"{{{ns}}}pStyle")
+            if p_style is None:
                 result.append(None)
             else:
-                result.append(pStyle.get(f"{{{W}}}val"))
+                result.append(p_style.get(f"{{{ns}}}val"))
         return result
 
     def test_replaces_first_paragraph_style_with_body_text(self):
         doc = self._make_doc_with_styles(["FirstParagraph"])
-        DocxPostProcess._replace_first_paragraph_styles(doc)
+        docx_post_process._replace_first_paragraph_styles(doc)
         assert self._get_styles(doc) == ["BodyText"]
 
     def test_replaces_multiple_first_paragraph_styles(self):
         doc = self._make_doc_with_styles(["Heading1", "FirstParagraph", "BodyText", "FirstParagraph"])
-        DocxPostProcess._replace_first_paragraph_styles(doc)
+        docx_post_process._replace_first_paragraph_styles(doc)
         assert self._get_styles(doc) == ["Heading1", "BodyText", "BodyText", "BodyText"]
 
     def test_does_not_change_other_paragraph_styles(self):
         doc = self._make_doc_with_styles(["Heading1", "Heading2", "BodyText", "ListParagraph"])
-        DocxPostProcess._replace_first_paragraph_styles(doc)
+        docx_post_process._replace_first_paragraph_styles(doc)
         assert self._get_styles(doc) == ["Heading1", "Heading2", "BodyText", "ListParagraph"]
 
     def test_handles_paragraph_without_properties(self):
         doc = self._make_doc_with_styles([None, "FirstParagraph", None])
-        DocxPostProcess._replace_first_paragraph_styles(doc)
+        docx_post_process._replace_first_paragraph_styles(doc)
         assert self._get_styles(doc) == [None, "BodyText", None]
 
     def test_handles_empty_document(self):
         doc = self._make_doc_with_styles([])
-        DocxPostProcess._replace_first_paragraph_styles(doc)
+        docx_post_process._replace_first_paragraph_styles(doc)
         assert self._get_styles(doc) == []
 
     def test_integration_with_real_docx(self):
@@ -1418,25 +1400,24 @@ class TestReplaceFirstParagraphStyles:
 
         buf = io.BytesIO()
         doc.save(buf)
-        result = DocxPostProcess.process(buf.getvalue())
+        result = docx_post_process.process(buf.getvalue())
 
         result_doc = Document(io.BytesIO(result))
-        W = WORD_PROCESSING_ML_MAIN_SCHEMA
+        ns = WORD_PROCESSING_ML_MAIN_SCHEMA
         first_paragraph_replaced = False
-        for para in result_doc.element.body.iterchildren(f"{{{W}}}p"):
-            pPr = para.find(f"{{{W}}}pPr")
-            if pPr is None:
+        for para in result_doc.element.body.iterchildren(f"{{{ns}}}p"):
+            p_pr = para.find(f"{{{ns}}}pPr")
+            if p_pr is None:
                 continue
-            pStyle = pPr.find(f"{{{W}}}pStyle")
-            if pStyle is not None:
-                val = pStyle.get(f"{{{W}}}val")
+            p_style = p_pr.find(f"{{{ns}}}pStyle")
+            if p_style is not None:
+                val = p_style.get(f"{{{ns}}}val")
                 assert val != "FirstParagraph", "FirstParagraph style should have been replaced"
                 if val == "BodyText":
                     first_paragraph_replaced = True
         assert first_paragraph_replaced, "Expected at least one paragraph to be replaced with BodyText"
 
-
-# ---- _resolve_image_src ----
+        # ---- _resolve_image_src ----
 
 
 def test_resolve_image_src_data_uri():
@@ -1461,8 +1442,7 @@ def test_resolve_image_src_empty():
     """Empty string should return None."""
     assert _resolve_image_src("") is None
 
-
-# ---- _replace_image_placeholders ----
+    # ---- _replace_image_placeholders ----
 
 
 def test_replace_image_placeholder_with_data_uri():
@@ -1512,8 +1492,7 @@ def test_replace_image_placeholder_unique_ids():
     assert len(ids) >= 2
     assert ids[0] != ids[1]
 
-
-# ---- _replace_link_placeholders ----
+    # ---- _replace_link_placeholders ----
 
 
 def test_replace_link_placeholder():
@@ -1524,13 +1503,7 @@ def test_replace_link_placeholder():
 
     doc = Document()
     body = doc.element.body
-    p = parse_xml(
-        f'<w:p {nsdecls("w")}>'
-        f'<w:hyperlink w:tooltip="{{{{HREF:http://example.com}}}}">'
-        f"<w:r><w:t>click</w:t></w:r>"
-        f"</w:hyperlink>"
-        f"</w:p>"
-    )
+    p = parse_xml(f'<w:p {nsdecls("w")}><w:hyperlink w:tooltip="{{{{HREF:http://example.com}}}}"><w:r><w:t>click</w:t></w:r></w:hyperlink></w:p>')
     body.append(p)
 
     _replace_link_placeholders(doc)
@@ -1552,13 +1525,7 @@ def test_replace_link_placeholder_no_match():
 
     doc = Document()
     body = doc.element.body
-    p = parse_xml(
-        f'<w:p {nsdecls("w")}>'
-        f'<w:hyperlink w:tooltip="Normal tooltip">'
-        f"<w:r><w:t>click</w:t></w:r>"
-        f"</w:hyperlink>"
-        f"</w:p>"
-    )
+    p = parse_xml(f'<w:p {nsdecls("w")}><w:hyperlink w:tooltip="Normal tooltip"><w:r><w:t>click</w:t></w:r></w:hyperlink></w:p>')
     body.append(p)
 
     _replace_link_placeholders(doc)
@@ -1566,8 +1533,7 @@ def test_replace_link_placeholder_no_match():
     hyperlink = body.find(f".//{{{SCHEMA}}}hyperlink")
     assert hyperlink.get(f"{{{SCHEMA}}}tooltip") == "Normal tooltip"
 
-
-# ---- _has_existing_fixed_width ----
+    # ---- _has_existing_fixed_width ----
 
 
 def test_has_existing_fixed_width_true():
@@ -1575,8 +1541,8 @@ def test_has_existing_fixed_width_true():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>')
-    assert _has_existing_fixed_width(tblPr) is True
+    tbl_pr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>')
+    assert _has_existing_fixed_width(tbl_pr) is True
 
 
 def test_has_existing_fixed_width_pct():
@@ -1584,8 +1550,8 @@ def test_has_existing_fixed_width_pct():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="pct"/></w:tblPr>')
-    assert _has_existing_fixed_width(tblPr) is False
+    tbl_pr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="5000" w:type="pct"/></w:tblPr>')
+    assert _has_existing_fixed_width(tbl_pr) is False
 
 
 def test_has_existing_fixed_width_zero():
@@ -1593,8 +1559,8 @@ def test_has_existing_fixed_width_zero():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="0" w:type="dxa"/></w:tblPr>')
-    assert _has_existing_fixed_width(tblPr) is False
+    tbl_pr = parse_xml(f'<w:tblPr {nsdecls("w")}><w:tblW w:w="0" w:type="dxa"/></w:tblPr>')
+    assert _has_existing_fixed_width(tbl_pr) is False
 
 
 def test_has_existing_fixed_width_missing():
@@ -1602,27 +1568,21 @@ def test_has_existing_fixed_width_missing():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}/>')
-    assert _has_existing_fixed_width(tblPr) is False
+    tbl_pr = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
+    assert _has_existing_fixed_width(tbl_pr) is False
 
-
-# ---- table width clamping ----
+    # ---- table width clamping ----
 
 
 def test_apply_table_layout_clamps_dxa_to_page_width():
-    """Fixed dxa width from HtmlTableLayout should be clamped to page width."""
+    """Fixed dxa width from html_table_layout should be clamped to page width."""
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    from app.DocxPostProcess import _apply_table_layout
+    from app.docx_post_process import _apply_table_layout
 
-    tbl = parse_xml(
-        f'<w:tbl {nsdecls("w")}>'
-        f"<w:tblPr/>"
-        f"<w:tblGrid><w:gridCol w:w=\"5000\"/><w:gridCol w:w=\"5000\"/></w:tblGrid>"
-        f"</w:tbl>"
-    )
-    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+    tbl = parse_xml(f'<w:tbl {nsdecls("w")}><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/><w:gridCol w:w="5000"/></w:tblGrid></w:tbl>')
+    tbl_pr = tbl.find(f"{{{SCHEMA}}}tblPr")
 
     layout = MagicMock()
     layout.width_type = "dxa"
@@ -1631,11 +1591,11 @@ def test_apply_table_layout_clamps_dxa_to_page_width():
     layout.indent_twips = None
 
     # max_width in EMU: 9360 twips * 635 = ~5943600
-    _apply_table_layout(tbl, tblPr, layout, max_width=5943600)
+    _apply_table_layout(tbl, tbl_pr, layout, max_width=5943600)
 
-    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
-    assert tblW is not None
-    actual_width = int(tblW.get(f"{{{SCHEMA}}}w"))
+    tbl_w = tbl_pr.find(f"{{{SCHEMA}}}tblW")
+    assert tbl_w is not None
+    actual_width = int(tbl_w.get(f"{{{SCHEMA}}}w"))
     assert actual_width <= 9360  # clamped to page width
 
 
@@ -1644,20 +1604,15 @@ def test_apply_table_layout_preserves_lua_fixed_width():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    from app.DocxPostProcess import _apply_table_layout
+    from app.docx_post_process import _apply_table_layout
 
-    tbl = parse_xml(
-        f'<w:tbl {nsdecls("w")}>'
-        f'<w:tblPr><w:tblW w:w="5000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
-        f"<w:tblGrid><w:gridCol w:w=\"2500\"/><w:gridCol w:w=\"2500\"/></w:tblGrid>"
-        f"</w:tbl>"
-    )
-    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+    tbl = parse_xml(f'<w:tbl {nsdecls("w")}><w:tblPr><w:tblW w:w="5000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid></w:tbl>')
+    tbl_pr = tbl.find(f"{{{SCHEMA}}}tblPr")
 
-    _apply_table_layout(tbl, tblPr, None, max_width=5943600)
+    _apply_table_layout(tbl, tbl_pr, None, max_width=5943600)
 
-    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
-    assert int(tblW.get(f"{{{SCHEMA}}}w")) == 5000  # unchanged
+    tbl_w = tbl_pr.find(f"{{{SCHEMA}}}tblW")
+    assert int(tbl_w.get(f"{{{SCHEMA}}}w")) == 5000  # unchanged
 
 
 def test_apply_table_layout_clamps_lua_fixed_width():
@@ -1665,17 +1620,12 @@ def test_apply_table_layout_clamps_lua_fixed_width():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    from app.DocxPostProcess import _apply_table_layout
+    from app.docx_post_process import _apply_table_layout
 
-    tbl = parse_xml(
-        f'<w:tbl {nsdecls("w")}>'
-        f'<w:tblPr><w:tblW w:w="11070" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>'
-        f"<w:tblGrid><w:gridCol w:w=\"5535\"/><w:gridCol w:w=\"5535\"/></w:tblGrid>"
-        f"</w:tbl>"
-    )
-    tblPr = tbl.find(f"{{{SCHEMA}}}tblPr")
+    tbl = parse_xml(f'<w:tbl {nsdecls("w")}><w:tblPr><w:tblW w:w="11070" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="5535"/><w:gridCol w:w="5535"/></w:tblGrid></w:tbl>')
+    tbl_pr = tbl.find(f"{{{SCHEMA}}}tblPr")
 
-    _apply_table_layout(tbl, tblPr, None, max_width=5943600)
+    _apply_table_layout(tbl, tbl_pr, None, max_width=5943600)
 
-    tblW = tblPr.find(f"{{{SCHEMA}}}tblW")
-    assert int(tblW.get(f"{{{SCHEMA}}}w")) <= 9360
+    tbl_w = tbl_pr.find(f"{{{SCHEMA}}}tblW")
+    assert int(tbl_w.get(f"{{{SCHEMA}}}w")) <= 9360

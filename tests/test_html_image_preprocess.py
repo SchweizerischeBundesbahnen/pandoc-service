@@ -1,4 +1,4 @@
-"""Unit tests for ``app.HtmlImagePreProcess``.
+"""Unit tests for ``app.html_image_pre_process``.
 
 The preprocessor gives un-sized ``<img>`` elements an explicit px width/height
 read from their inlined image bytes, so pandoc renders them at the 96 dpi CSS
@@ -12,7 +12,7 @@ import base64
 import struct
 import zlib
 
-from app import HtmlImagePreProcess
+from app import html_image_pre_process
 
 # --- helpers --------------------------------------------------------------
 
@@ -51,7 +51,7 @@ def _img(png: bytes, style: str = "", extra: str = "") -> bytes:
 def test_unsized_image_gets_native_px_dimensions():
     """No style at all: width/height set to the image's pixel size (rendered at
     96 dpi by pandoc)."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(300, 150)))
+    out = html_image_pre_process.preprocess(_img(_png(300, 150)))
     assert b'width="300px"' in out
     assert b'height="150px"' in out
 
@@ -59,7 +59,7 @@ def test_unsized_image_gets_native_px_dimensions():
 def test_density_metadata_is_ignored():
     """A pHYs density must NOT change the emitted px size — we normalise on the
     pixel count so the physical size is pixels/96in regardless of embedded dpi."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(300, 150, dpi=72)))
+    out = html_image_pre_process.preprocess(_img(_png(300, 150, dpi=72)))
     assert b'width="300px"' in out and b'height="150px"' in out
 
 
@@ -68,26 +68,26 @@ def test_density_metadata_is_ignored():
 
 def test_max_width_wider_than_image_does_not_clamp():
     """max-width above the image's native width leaves it at native size."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(512, 512), "max-width:650px;"))
+    out = html_image_pre_process.preprocess(_img(_png(512, 512), "max-width:650px;"))
     assert b'width="512px"' in out and b'height="512px"' in out
 
 
 def test_max_width_narrower_than_image_clamps_keeping_ratio():
     """A 400x200 image with max-width:200px scales to 200x100 (ratio kept)."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(400, 200), "max-width:200px;"))
+    out = html_image_pre_process.preprocess(_img(_png(400, 200), "max-width:200px;"))
     assert b'width="200px"' in out and b'height="100px"' in out
 
 
 def test_max_height_clamps():
     """max-height constrains too, keeping aspect ratio."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(400, 200), "max-height:50px;"))
+    out = html_image_pre_process.preprocess(_img(_png(400, 200), "max-height:50px;"))
     assert b'width="100px"' in out and b'height="50px"' in out
 
 
 def test_relative_max_width_is_ignored():
     """A % / em max-width has no fixed px value here, so no clamp is applied —
     the image keeps its native size."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(300, 150), "max-width:80%;"))
+    out = html_image_pre_process.preprocess(_img(_png(300, 150), "max-width:80%;"))
     assert b'width="300px"' in out and b'height="150px"' in out
 
 
@@ -96,7 +96,7 @@ def test_relative_max_width_is_ignored():
 
 def test_existing_width_attribute_is_untouched():
     """An explicit width attribute wins; we do not add our own."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(300, 150), extra=' width="99"'))
+    out = html_image_pre_process.preprocess(_img(_png(300, 150), extra=' width="99"'))
     assert b'width="99"' in out
     assert b'width="300px"' not in out
 
@@ -104,7 +104,7 @@ def test_existing_width_attribute_is_untouched():
 def test_explicit_css_width_left_to_lua_filter():
     """A CSS width/height is handled by filters/inline_styles.lua; this
     preprocessor must not also set an attribute for it."""
-    out = HtmlImagePreProcess.preprocess(_img(_png(300, 150), "width:120px;"))
+    out = html_image_pre_process.preprocess(_img(_png(300, 150), "width:120px;"))
     # style is preserved, and no width/height *attribute* was injected.
     assert b"width:120px" in out
     assert b'width="' not in out.split(b"<img")[1].split(b">")[0]
@@ -113,27 +113,27 @@ def test_explicit_css_width_left_to_lua_filter():
 def test_non_data_uri_src_is_untouched():
     """We can't read a remote/attachment reference, so leave it alone."""
     src = b'<p><img src="http://example.com/x.png"></p>'
-    assert HtmlImagePreProcess.preprocess(src) == src
+    assert html_image_pre_process.preprocess(src) == src
 
 
 def test_svg_data_uri_is_left_to_svg_processor():
     """SVG data URIs are handled earlier by app.svg_processor; skip them."""
     src = b'<p><img src="data:image/svg+xml;base64,PHN2Zy8+"></p>'
-    assert HtmlImagePreProcess.preprocess(src) == src
+    assert html_image_pre_process.preprocess(src) == src
 
 
 def test_corrupt_base64_is_passed_through():
     src = b'<p><img src="data:image/png;base64,@@@not-base64@@@"></p>'
-    assert HtmlImagePreProcess.preprocess(src) == src
+    assert html_image_pre_process.preprocess(src) == src
 
 
 def test_unparseable_input_passed_through():
-    assert HtmlImagePreProcess.preprocess(b"\xff\xfe not html") == b"\xff\xfe not html"
+    assert html_image_pre_process.preprocess(b"\xff\xfe not html") == b"\xff\xfe not html"
 
 
 def test_image_free_html_unchanged():
     src = b"<p>no images here</p>"
-    assert HtmlImagePreProcess.preprocess(src) == src
+    assert html_image_pre_process.preprocess(src) == src
 
 
 def test_full_document_head_is_preserved_when_sizing():
@@ -143,7 +143,7 @@ def test_full_document_head_is_preserved_when_sizing():
     "First Paragraph"."""
     png = _png(300, 150)
     src = ("<html><head><title>Document Title</title></head><body><p>intro</p>" + _img(png).decode() + "</body></html>").encode()
-    out = HtmlImagePreProcess.preprocess(src)
+    out = html_image_pre_process.preprocess(src)
     assert b"<title>Document Title</title>" in out, f"head/title dropped: {out[:120]!r}"
     assert b'width="300px"' in out and b'height="150px"' in out  # image still sized
 
@@ -151,8 +151,8 @@ def test_full_document_head_is_preserved_when_sizing():
 def test_idempotent():
     """Running twice yields the same output (the second pass sees width/height
     attributes already set and skips)."""
-    once = HtmlImagePreProcess.preprocess(_img(_png(300, 150)))
-    twice = HtmlImagePreProcess.preprocess(once)
+    once = html_image_pre_process.preprocess(_img(_png(300, 150)))
+    twice = html_image_pre_process.preprocess(once)
     assert once == twice
 
 
@@ -161,18 +161,18 @@ def test_idempotent():
 
 def test_reads_gif_dimensions():
     gif = b"GIF89a" + struct.pack("<HH", 20, 10) + b"\x00" * 7
-    assert HtmlImagePreProcess._read_raster_size(gif) == (20, 10)
+    assert html_image_pre_process._read_raster_size(gif) == (20, 10)
 
 
 def test_reads_bmp_dimensions():
     bmp = b"BM" + b"\x00" * 16 + struct.pack("<ii", 25, 15) + b"\x00" * 4
-    assert HtmlImagePreProcess._read_raster_size(bmp) == (25, 15)
+    assert html_image_pre_process._read_raster_size(bmp) == (25, 15)
 
 
 def test_reads_jpeg_dimensions():
     jpeg = b"\xff\xd8" + b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + b"\xff\xc0\x00\x11\x08" + struct.pack(">HH", 30, 40) + b"\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01"
-    assert HtmlImagePreProcess._read_raster_size(jpeg) == (40, 30)
+    assert html_image_pre_process._read_raster_size(jpeg) == (40, 30)
 
 
 def test_unknown_format_returns_none():
-    assert HtmlImagePreProcess._read_raster_size(b"not an image at all!!") is None
+    assert html_image_pre_process._read_raster_size(b"not an image at all!!") is None

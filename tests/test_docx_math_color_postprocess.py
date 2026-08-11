@@ -1,8 +1,8 @@
-"""Unit tests for ``app.DocxMathColorPostProcess.apply_math_colors``.
+"""Unit tests for ``app.docx_math_color_post_process.apply_math_colors``.
 
 These verify the *decode* half of the math-color shim: given a ``Document`` whose OMML
 carries ``@@PMC:RRGGBB@@`` / ``@@PMCEND@@`` marker runs (as pandoc emits them from the
-``\\text{}`` markers ``HtmlMathColorPreProcess`` injects), ``apply_math_colors`` adds
+``\\text{}`` markers ``html_math_color_pre_process`` injects), ``apply_math_colors`` adds
 ``<w:color>`` to the runs between each marker pair and deletes the markers, mutating the
 document in place. The encoder is tested in ``test_html_math_color_preprocess.py`` and the
 full round-trip through pandoc in ``test_math_color_integration.py``.
@@ -16,7 +16,7 @@ from docx import Document
 from docx.oxml import parse_xml
 from lxml import etree
 
-from app.DocxMathColorPostProcess import apply_math_colors
+from app.docx_math_color_post_process import apply_math_colors
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"

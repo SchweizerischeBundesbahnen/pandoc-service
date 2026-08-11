@@ -61,7 +61,7 @@ def preprocess(source: bytes) -> bytes:
         # only re-serialize at all when an orphan list was actually wrapped.
         doc = html.document_fromstring(source)
     except _PARSE_FAILURES:
-        logger.warning("HtmlListsPreProcess: HTML parse failed; passing input through")
+        logger.warning("html_lists_pre_process: HTML parse failed; passing input through")
         return source
 
     if not _wrap_orphan_lists(doc):

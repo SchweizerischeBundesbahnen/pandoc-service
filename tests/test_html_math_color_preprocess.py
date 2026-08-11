@@ -1,4 +1,4 @@
-"""Unit tests for ``app.HtmlMathColorPreProcess``.
+"""Unit tests for ``app.html_math_color_pre_process``.
 
 These verify the *encode* half of the math-color shim: that ``\\color`` /
 ``\\textcolor`` inside ``<script type="math/tex">`` blocks are
@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import re
 
-from app import HtmlMathColorPreProcess
-from app.HtmlMathColorPreProcess import MARKER_END, MARKER_PREFIX, MARKER_SUFFIX
+from app import html_math_color_pre_process
+from app.html_math_color_pre_process import MARKER_END, MARKER_PREFIX, MARKER_SUFFIX
 
 _SCRIPT_OPEN = '<html><body><p><script type="math/tex; mode=display">'
 _SCRIPT_CLOSE = "</script></p></body></html>"
@@ -23,7 +23,7 @@ _SCRIPT_CLOSE = "</script></p></body></html>"
 def _encode_body(latex: str) -> str:
     """Run one math formula through preprocess() and return the rewritten script body."""
     html = (_SCRIPT_OPEN + latex + _SCRIPT_CLOSE).encode("utf-8")
-    out = HtmlMathColorPreProcess.preprocess(html).decode("utf-8")
+    out = html_math_color_pre_process.preprocess(html).decode("utf-8")
     match = re.search(r'mode=display">(.*)</script>', out, re.DOTALL)
     assert match, f"script body not found in output: {out!r}"
     return match.group(1)
@@ -128,17 +128,17 @@ def test_unbalanced_content_brace_leaves_command_untouched() -> None:
 def test_color_outside_math_script_is_untouched() -> None:
     # \textcolor in ordinary HTML text (not a math script) must not be rewritten.
     html = b"<html><body><p>literal \\textcolor{red}{x} here</p></body></html>"
-    assert HtmlMathColorPreProcess.preprocess(html) == html
+    assert html_math_color_pre_process.preprocess(html) == html
 
 
 def test_no_color_returns_input_unchanged() -> None:
     html = (_SCRIPT_OPEN + "\\frac{a}{b}" + _SCRIPT_CLOSE).encode("utf-8")
-    assert HtmlMathColorPreProcess.preprocess(html) is html or HtmlMathColorPreProcess.preprocess(html) == html
+    assert html_math_color_pre_process.preprocess(html) is html or html_math_color_pre_process.preprocess(html) == html
 
 
 def test_multiple_scripts_each_rewritten() -> None:
     html = b'<script type="math/tex">\\color{red}{a}</script>X<script type="math/tex; mode=display">\\textcolor{blue}{b}</script>'
-    out = HtmlMathColorPreProcess.preprocess(html).decode("utf-8")
+    out = html_math_color_pre_process.preprocess(html).decode("utf-8")
     assert _start("FF0000") + "a" + _END in out
     assert _start("0000FF") + "b" + _END in out
     assert "X" in out
@@ -146,10 +146,10 @@ def test_multiple_scripts_each_rewritten() -> None:
 
 def test_non_utf8_input_passes_through() -> None:
     garbage = b"\xff\xfe\\textcolor{red}{x}"
-    assert HtmlMathColorPreProcess.preprocess(garbage) == garbage
+    assert html_math_color_pre_process.preprocess(garbage) == garbage
 
 
 def test_single_quoted_script_type() -> None:
     html = b"<script type='math/tex'>\\color{red}{a}</script>"
-    out = HtmlMathColorPreProcess.preprocess(html).decode("utf-8")
+    out = html_math_color_pre_process.preprocess(html).decode("utf-8")
     assert _start("FF0000") + "a" + _END in out

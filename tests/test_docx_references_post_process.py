@@ -6,27 +6,27 @@ from docx.document import Document as DocumentObject
 from docx.oxml import parse_xml
 from lxml import etree
 
-from app.DocxReferencesPostProcess import (
+from app.docx_references_post_process import (
     KIND_TOC,
     KIND_TOF,
     KIND_TOT,
     SCHEMA,
     TOF_FIELD_CODE,
-    _create_field_with_entries,
-    _get_max_bookmark_id,
-    _get_seq_name,
-    _parse_placeholder,
     _add_tc_field,
+    _create_field_with_entries,
     _create_toc_field,
     _create_tof_field,
     _create_tot_field,
-    _set_paragraph_style,
     _ensure_seq_field,
     _find_placeholder_paragraphs,
+    _get_max_bookmark_id,
     _get_paragraph_style,
     _get_paragraph_text,
+    _get_seq_name,
     _has_seq_field,
     _is_adjacent_to_table,
+    _parse_placeholder,
+    _set_paragraph_style,
     add_table_of_contents_entries,
     enable_auto_update_fields,
 )
@@ -122,7 +122,7 @@ def test_ensure_seq_field_replaces_plain_number():
     xml = etree.tostring(para, encoding="unicode")
     assert "SEQ Figure" in xml
     assert 'fldCharType="begin"' in xml
-    assert re.search(r"separate.*<w:t[^>]*>1</w:t>.*end", xml, re.S)
+    assert re.search(r"separate.*<w:t[^>]*>1</w:t>.*end", xml, re.DOTALL)
     assert "Figure " in xml
     assert " Pic" in xml
 

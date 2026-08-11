@@ -450,11 +450,12 @@ class ChromiumManager:
         try:
             is_healthy = self.is_running() and self._browser is not None and self._browser.is_connected()
             self._metrics.record_health_check(is_healthy)
-            return is_healthy
         except Exception as e:  # noqa: BLE001
             self.log.error("Health check failed: %s", e)
-            self._metrics.record_health_check(False)
+            self._metrics.record_health_check(is_healthy=False)
             return False
+        else:
+            return is_healthy
 
     def get_version(self) -> str | None:
         """
@@ -471,10 +472,11 @@ class ChromiumManager:
             # Extract version number from "HeadlessChrome/131.0.6778.69" format
             if "/" in version_string:
                 return version_string.split("/")[1]
-            return version_string
         except Exception as e:  # noqa: BLE001
             self.log.error("Failed to get Chromium version: %s", e)
             return None
+        else:
+            return version_string
 
     async def restart(self) -> None:
         """
@@ -567,12 +569,11 @@ class ChromiumManager:
                 duration_ms = (time.time() - start_time) * 1000
                 self._metrics.record_svg_success(duration_ms)
                 increment_svg_conversion_success(duration_ms / 1000.0)  # Convert ms to seconds
-                return result
             except TimeoutError:
                 last_error = TimeoutError(f"Conversion timed out after {self.conversion_timeout} seconds")
                 self.log.error("SVG conversion timed out (attempt %d/%d): %d seconds", attempt + 1, self.max_conversion_retries, self.conversion_timeout)
                 await self._handle_conversion_retry(attempt, last_error, "timeout")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - any conversion failure feeds the retry loop
                 last_error = e
                 self.log.warning(
                     "SVG conversion failed (attempt %d/%d): %s. Attempting to restart Chromium...",
@@ -581,6 +582,8 @@ class ChromiumManager:
                     str(e),
                 )
                 await self._handle_conversion_retry(attempt, e, "conversion error")
+            else:
+                return result
 
         # If we get here, all retries failed
         self._metrics.record_svg_failure()
@@ -607,7 +610,7 @@ class ChromiumManager:
         try:
             await self.restart()
             self.log.info("Chromium restarted successfully after %s", error_type)
-        except Exception as restart_error:
+        except Exception as restart_error:  # noqa: BLE001 - a failed restart is re-raised as RuntimeError
             self.log.error("Failed to restart Chromium: %s", restart_error)
             raise RuntimeError(f"Chromium restart failed after {error_type}: {restart_error}") from error
 

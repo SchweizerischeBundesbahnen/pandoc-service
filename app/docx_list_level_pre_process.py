@@ -20,8 +20,8 @@ strips the sentinel, and pushes any under-nested sublist to its intended depth
 with marker-less wrapper levels. The Private-Use-Area delimiters never collide
 with real document text.
 
-This is the list-level companion to :mod:`app.DocxColorPreProcess` /
-:mod:`app.DocxParagraphPreProcess`; it runs on the same docx→latex path and is
+This is the list-level companion to :mod:`app.docx_color_pre_process` /
+:mod:`app.docx_paragraph_pre_process`; it runs on the same docx→latex path and is
 independent of them (list paragraphs carry ``<w:numPr>``, not colour/jc/ind).
 """
 
@@ -62,7 +62,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
 
     changed = False
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_changed = _rewrite_part(entries[part])
+        rewritten, part_changed = rewrite_part(entries[part])
         if part_changed:
             entries[part] = rewritten
             changed = True
@@ -115,7 +115,7 @@ def _make_sentinel_run(level: int) -> ET.Element:
     return run
 
 
-def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Tag every list paragraph in one body part. Returns (new_bytes, changed)."""
     tree = parse_xml(xml_bytes)
     if tree is None:
@@ -133,8 +133,8 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
         if _already_tagged(para):
             # Idempotent: a previous pass already prepended a sentinel run.
             continue
-        # Insert the sentinel run as the first run of the paragraph, after the
-        # <w:pPr> (which must stay the first child of <w:p>) when present.
+            # Insert the sentinel run as the first run of the paragraph, after the
+            # <w:pPr> (which must stay the first child of <w:p>) when present.
         insert_at = 1 if next(iter(para)) is ppr else 0
         para.insert(insert_at, _make_sentinel_run(level))
         changed = True

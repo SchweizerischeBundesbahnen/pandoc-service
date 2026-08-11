@@ -61,11 +61,11 @@ bash tests/shell/test_pandoc_service.sh
 ## Architecture Overview
 
 ### Core Components
-- **app/PandocController.py**: FastAPI application with REST endpoints and conversion logic
-- **app/PandocServiceApplication.py**: Application entry point with logging setup
-- **app/DocxPostProcess.py**: DOCX-specific post-processing (tables, images)
-- **app/DocxReferencesPostProcess.py**: DOCX table-of-contents and field update post-processing
-- **app/PptxPostProcess.py**: PPTX slide size post-processing
+- **app/pandoc_controller.py**: FastAPI application with REST endpoints and conversion logic
+- **app/pandoc_service_application.py**: Application entry point with logging setup
+- **app/docx_post_process.py**: DOCX-specific post-processing (tables, images)
+- **app/docx_references_post_process.py**: DOCX table-of-contents and field update post-processing
+- **app/pptx_post_process.py**: PPTX slide size post-processing
 - **app/schema.py**: Pydantic models for API responses
 - **app/svg_processor.py**: Finds SVGs in incoming HTML and rasterizes them to PNG (port of weasyprint-service's `SvgProcessor`)
 - **app/chromium_manager.py**: Persistent headless Chromium (Playwright) used for SVG→PNG, with metrics, retries and a health-monitor loop (port of weasyprint-service's `ChromiumManager`)

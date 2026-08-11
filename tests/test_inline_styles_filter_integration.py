@@ -203,7 +203,7 @@ def test_superscript_wrapping_styled_span_keeps_both(test_parameters: TestParame
 # Paragraph formatting (Div handler) — see filter.Div in filters/inline_styles.lua
 # ---------------------------------------------------------------------------
 #
-# These tests cover the contract with app/HtmlParagraphPreProcess.py: a
+# These tests cover the contract with app/html_paragraph_pre_process.py: a
 # <div class="pandoc-para" data-indent-twips="N" data-text-align="..."><p>...</p></div>
 # wrapper becomes a raw OOXML <w:p> carrying <w:pPr><w:ind w:left="N"/>
 # <w:jc w:val="..."/></w:pPr> and the original inlines rendered as <w:r> runs.
@@ -437,7 +437,7 @@ def test_unknown_align_value_is_rejected(test_parameters: TestParameters):
 # Security: data-indent-twips validation
 # ---------------------------------------------------------------------------
 #
-# The HtmlParagraphPreProcess preprocessor only ever writes integer values into
+# The html_paragraph_pre_process preprocessor only ever writes integer values into
 # data-indent-twips, but an HTTP caller can submit HTML that already contains
 # `<div class="pandoc-para" data-indent-twips="…">` with arbitrary content.
 # Without validation that value is concatenated straight into a
@@ -543,7 +543,7 @@ def test_valid_integer_twips_values_still_work(test_parameters: TestParameters):
 #   * filters/inline_styles.lua (Image handler) copies a CSS width/height from
 #     an <img style="..."> onto the node's width/height attributes, which the
 #     DOCX writer honours.
-#   * app/HtmlImagePreProcess.py sizes images that have NO explicit width/height
+#   * app/html_image_pre_process.py sizes images that have NO explicit width/height
 #     from their intrinsic pixels at 96 dpi (honouring max-width), so pandoc
 #     doesn't fall back to its 72 dpi no-density guess (~1.33x too large).
 # The per-unit / format details are unit-tested in tests/test_html_image_preprocess.py;

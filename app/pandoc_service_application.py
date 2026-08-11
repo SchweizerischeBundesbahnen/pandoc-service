@@ -1,10 +1,10 @@
 import argparse
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
-from app import PandocController
+from app import pandoc_controller
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def setup_logging() -> Path:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Create log filename with timestamp
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    current_time = datetime.now(tz=UTC).strftime("%Y-%m-%d_%H-%M-%S")
     log_file = log_dir / f"pandoc-service_{current_time}.log"
 
     # Configure logging format
@@ -78,7 +78,7 @@ def main() -> None:
     The service port can be specified via command line argument (defaults to 9082).
 
     The metrics server lifecycle is managed by FastAPI's lifespan context manager
-    in PandocController, ensuring proper startup and cleanup.
+    in pandoc_controller, ensuring proper startup and cleanup.
     """
     parser = argparse.ArgumentParser(description="Pandoc service")
     parser.add_argument("--port", default=9082, type=int, required=False, help="Service port")
@@ -88,7 +88,7 @@ def main() -> None:
     logger.info("Pandoc service listening port: %d", args.port)
 
     # Start the server - metrics server lifecycle is managed by FastAPI lifespan
-    PandocController.start_server(args.port)
+    pandoc_controller.start_server(args.port)
 
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # px dimension makes pandoc render the image at this dpi.
 _CSS_DPI = 96
 
-# See HtmlListsPreProcess for why these are named tuples rather than inline
+# See html_lists_pre_process for why these are named tuples rather than inline
 # except-literals (ruff-format / PEP 758 interaction on Python 3.14).
 _PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
 _DECODE_FAILURES = (binascii.Error, ValueError)
@@ -75,7 +75,7 @@ def preprocess(source: bytes) -> bytes:
         # same), and we only re-serialize at all when an image was actually sized.
         doc = html.document_fromstring(source)
     except _PARSE_FAILURES:
-        logger.warning("HtmlImagePreProcess: HTML parse failed; passing input through")
+        logger.warning("html_image_pre_process: HTML parse failed; passing input through")
         return source
 
     if not _size_images(doc):

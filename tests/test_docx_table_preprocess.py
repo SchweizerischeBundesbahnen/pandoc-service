@@ -1,4 +1,4 @@
-"""Unit tests for ``app.DocxTablePreProcess``.
+"""Unit tests for ``app.docx_table_pre_process``.
 
 Each test builds a minimal DOCX zip in memory containing a single
 ``word/document.xml`` and inspects the rewritten XML — same synthetic-fixture
@@ -10,12 +10,12 @@ from __future__ import annotations
 import io
 import zipfile
 from pathlib import Path
-from xml.etree import ElementTree as ET  # noqa: S405
+from xml.etree import ElementTree as ET
 
 import pytest
 
-from app import DocxTablePreProcess
-from app.DocxTablePreProcess import SENTINEL_CLOSE, SENTINEL_OPEN
+from app import docx_table_pre_process
+from app.docx_table_pre_process import SENTINEL_CLOSE, SENTINEL_OPEN
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 ET.register_namespace("w", W_NS)
@@ -65,7 +65,7 @@ def _plain_para(text: str = "para") -> str:
 
 def _body(blob: bytes) -> ET.Element:
     with zipfile.ZipFile(io.BytesIO(blob)) as zf:
-        return ET.fromstring(zf.read("word/document.xml"))  # noqa: S314
+        return ET.fromstring(zf.read("word/document.xml"))
 
 
 def _first_run_text(para: ET.Element) -> str | None:
@@ -92,7 +92,7 @@ def test_gridcol_without_width_gets_default_width():
             )
         }
     )
-    result = DocxTablePreProcess.preprocess(blob)
+    result = docx_table_pre_process.preprocess(blob)
     root = _body(result)
     grid_cols = root.findall(f".//{{{W_NS}}}gridCol")
     assert len(grid_cols) == 2
@@ -111,14 +111,14 @@ def test_gridcol_with_existing_width_is_not_changed():
             )
         }
     )
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_mixed_gridcol_widths_only_fills_missing():
     """Only gridCols without w:w get the default; existing widths are kept."""
     tbl_xml = '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
     blob = _pack({"word/document.xml": _doc(tbl_xml)})
-    result = DocxTablePreProcess.preprocess(blob)
+    result = docx_table_pre_process.preprocess(blob)
     root = _body(result)
     grid_cols = root.findall(f".//{{{W_NS}}}gridCol")
     assert grid_cols[0].get(f"{{{W_NS}}}w") == "3000"  # unchanged
@@ -136,7 +136,7 @@ def test_table_without_tblgrid_gets_one_created():
             )
         }
     )
-    root = _body(DocxTablePreProcess.preprocess(blob))
+    root = _body(docx_table_pre_process.preprocess(blob))
     grid_cols = root.findall(f".//{{{W_NS}}}gridCol")
     assert len(grid_cols) == 2
     assert all(int(c.get(f"{{{W_NS}}}w")) > 0 for c in grid_cols)
@@ -146,7 +146,7 @@ def test_grid_is_padded_to_column_count():
     """A grid with fewer <w:gridCol> than the row's cells is padded so pandoc
     sees every column (a short grid otherwise yields a partial, narrow table)."""
     tbl = '<w:tbl><w:tblGrid><w:gridCol w:w="4800"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-    root = _body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(tbl)})))
+    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(tbl)})))
     grid_cols = root.findall(f".//{{{W_NS}}}gridCol")
     assert len(grid_cols) == 3
     assert all(int(c.get(f"{{{W_NS}}}w")) > 0 for c in grid_cols)
@@ -163,7 +163,7 @@ def test_cell_with_background_gets_sentinel():
             )
         }
     )
-    result = DocxTablePreProcess.preprocess(blob)
+    result = docx_table_pre_process.preprocess(blob)
     para = _body(result).find(f".//{{{W_NS}}}p")
     assert _first_run_text(para) == _sentinel("D9EAF7")
     texts = [t.text for t in para.iter(f"{{{W_NS}}}t")]
@@ -178,7 +178,7 @@ def test_lowercase_hex_is_uppercased():
             )
         }
     )
-    para = _body(DocxTablePreProcess.preprocess(blob)).find(f".//{{{W_NS}}}p")
+    para = _body(docx_table_pre_process.preprocess(blob)).find(f".//{{{W_NS}}}p")
     assert _first_run_text(para) == _sentinel("D9EAF7")
 
 
@@ -194,7 +194,7 @@ def test_multiple_cells_tagged_independently():
             )
         }
     )
-    paras = _body(DocxTablePreProcess.preprocess(blob)).findall(f".//{{{W_NS}}}p")
+    paras = _body(docx_table_pre_process.preprocess(blob)).findall(f".//{{{W_NS}}}p")
     assert _first_run_text(paras[0]) == _sentinel("F4CCCC")
     assert _first_run_text(paras[1]) == _sentinel("D9EAD3")
 
@@ -203,7 +203,7 @@ def test_sentinel_inserted_after_ppr():
     """When the cell's first paragraph has <w:pPr>, sentinel goes after it."""
     cell_xml = '<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="AABBCC"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc>'
     blob = _pack({"word/document.xml": _doc(f'<w:tbl><w:tblGrid><w:gridCol w:w="4800"/></w:tblGrid><w:tr>{cell_xml}</w:tr></w:tbl>')})
-    para = _body(DocxTablePreProcess.preprocess(blob)).find(f".//{{{W_NS}}}p")
+    para = _body(docx_table_pre_process.preprocess(blob)).find(f".//{{{W_NS}}}p")
     children = list(para)
     assert children[0].tag == f"{{{W_NS}}}pPr"
     assert children[1].tag == f"{{{W_NS}}}r"  # sentinel run right after pPr
@@ -222,7 +222,7 @@ def test_cell_without_tcpr_is_untouched():
             )
         }
     )
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_white_background_is_skipped():
@@ -234,24 +234,24 @@ def test_white_background_is_skipped():
             )
         }
     )
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_auto_fill_is_skipped():
     cell = '<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>'
     blob = _pack({"word/document.xml": _doc(f'<w:tbl><w:tblGrid><w:gridCol w:w="4800"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl>')})
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_cell_without_shd_is_untouched():
     cell = '<w:tc><w:tcPr><w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>'
     blob = _pack({"word/document.xml": _doc(f'<w:tbl><w:tblGrid><w:gridCol w:w="4800"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl>')})
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_document_without_tables_returned_unchanged():
     blob = _pack({"word/document.xml": _doc(_plain_para("hello"))})
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_mixed_doc_only_tags_styled_cells():
@@ -263,7 +263,7 @@ def test_mixed_doc_only_tags_styled_cells():
             )
         }
     )
-    result = DocxTablePreProcess.preprocess(blob)
+    result = docx_table_pre_process.preprocess(blob)
     root = _body(result)
     paras = root.findall(f".//{{{W_NS}}}p")
     assert _first_run_text(paras[0]) == "intro"
@@ -282,8 +282,8 @@ def test_preprocess_is_idempotent():
             )
         }
     )
-    once = DocxTablePreProcess.preprocess(blob)
-    assert DocxTablePreProcess.preprocess(once) == once
+    once = docx_table_pre_process.preprocess(blob)
+    assert docx_table_pre_process.preprocess(once) == once
     para = _body(once).find(f".//{{{W_NS}}}p")
     assert [t.text for t in para.iter(f"{{{W_NS}}}t")] == [_sentinel("AABBCC"), "x"]
 
@@ -296,29 +296,29 @@ def test_gridcol_fix_is_idempotent():
             )
         }
     )
-    once = DocxTablePreProcess.preprocess(blob)
-    assert DocxTablePreProcess.preprocess(once) == once
+    once = docx_table_pre_process.preprocess(blob)
+    assert docx_table_pre_process.preprocess(once) == once
 
 
 def test_non_docx_input_is_returned_unchanged():
-    assert DocxTablePreProcess.preprocess(b"not a zip") == b"not a zip"
+    assert docx_table_pre_process.preprocess(b"not a zip") == b"not a zip"
 
 
 def test_zip_without_body_parts_returned_unchanged():
     blob = _pack({"word/styles.xml": b"<x/>", "docProps/core.xml": b"<x/>"})
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_malformed_document_xml_returned_unchanged():
     blob = _pack({"word/document.xml": b"<w:document><unclosed>"})
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_invalid_hex_fill_is_ignored():
     """Non-hex fill values (theme refs, named colours) are not encoded."""
     cell = '<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="accent1"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>'
     blob = _pack({"word/document.xml": _doc(f'<w:tbl><w:tblGrid><w:gridCol w:w="4800"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl>')})
-    assert DocxTablePreProcess.preprocess(blob) == blob
+    assert docx_table_pre_process.preprocess(blob) == blob
 
 
 def test_both_gridcol_fix_and_sentinel_applied():
@@ -330,7 +330,7 @@ def test_both_gridcol_fix_and_sentinel_applied():
             )
         }
     )
-    result = DocxTablePreProcess.preprocess(blob)
+    result = docx_table_pre_process.preprocess(blob)
     root = _body(result)
     # Grid widths filled in
     grid_cols = root.findall(f".//{{{W_NS}}}gridCol")
@@ -348,7 +348,7 @@ def test_real_docx_with_table_styles():
         pytest.skip("Fixture not available: test_convert_live_doc_with_table_with_inline_style.docx")
 
     blob = fixture.read_bytes()
-    result = DocxTablePreProcess.preprocess(blob)
+    result = docx_table_pre_process.preprocess(blob)
     assert result != blob
 
     root = _body(result)
@@ -389,7 +389,7 @@ def _first_cell_sentinel_kv(root: ET.Element) -> dict[str, str]:
 def test_percentage_width_tagged_on_first_cell():
     tblpr = '<w:tblW w:w="2000" w:type="pct"/><w:jc w:val="left"/>'
     blob = _pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell(None, "a"), grid_widths=["4800"]))})
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob)))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob)))
     assert kv.get("tw") == "0.4000"
     assert kv.get("ta") == "left"
 
@@ -400,7 +400,7 @@ def test_full_width_table_is_tagged():
     force it full-width and flush-left."""
     tblpr = '<w:tblW w:w="5000" w:type="pct"/><w:jc w:val="left"/>'
     blob = _pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell(None, "a"), grid_widths=["4800"]))})
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob)))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob)))
     assert kv.get("tw") == "1.0000"
     assert kv.get("ta") == "left"
 
@@ -409,7 +409,7 @@ def test_center_and_right_alignment_carried():
     for val, expected in (("center", "center"), ("right", "right")):
         tblpr = f'<w:tblW w:w="1250" w:type="pct"/><w:jc w:val="{val}"/>'
         blob = _pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell(None, "a"), grid_widths=["4800"]))})
-        kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob)))
+        kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob)))
         assert kv.get("tw") == "0.2500"
         assert kv.get("ta") == expected
 
@@ -418,7 +418,7 @@ def test_absolute_dxa_width_becomes_fraction():
     """50px == 750 twips against the 9360-twip reference ~= 0.08 of the line."""
     tblpr = '<w:tblW w:w="750" w:type="dxa"/><w:jc w:val="left"/>'
     blob = _pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell(None, "a"), grid_widths=["4800"]))})
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob)))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob)))
     assert kv.get("tw") == "0.0801"
 
 
@@ -426,7 +426,7 @@ def test_table_width_merges_with_cell_background():
     """A narrow table whose first cell is also shaded gets one merged sentinel."""
     tblpr = '<w:tblW w:w="2000" w:type="pct"/><w:jc w:val="left"/>'
     blob = _pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell("F0F0F0", "a"), grid_widths=["4800"]))})
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob)))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob)))
     assert kv.get("tw") == "0.4000"
     assert kv.get("ta") == "left"
     assert kv.get("bg") == "F0F0F0"
@@ -436,7 +436,7 @@ def test_table_without_tblw_carries_alignment_only():
     """No <w:tblW> -> no width fraction, but the alignment is still carried so a
     left/right table is not left to pandoc's centered default."""
     blob = _pack({"word/document.xml": _doc(_table_with_pr('<w:jc w:val="left"/>', _table_cell(None, "a"), grid_widths=["4800"]))})
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob)))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob)))
     assert "tw" not in kv
     assert kv.get("ta") == "left"
 
@@ -444,7 +444,7 @@ def test_table_without_tblw_carries_alignment_only():
 def test_table_with_no_layout_at_all_is_not_tagged():
     """A table with neither <w:tblW> nor <w:jc> gets no layout sentinel."""
     blob = _pack({"word/document.xml": _doc(_table_with_pr("", _table_cell(None, "a"), grid_widths=["4800"]))})
-    assert _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(blob))) == {}
+    assert _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(blob))) == {}
 
 
 def test_zero_width_gridcols_are_normalised():
@@ -457,7 +457,7 @@ def test_zero_width_gridcols_are_normalised():
         "<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>"
         "<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
     )
-    root = _body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(tbl)})))
+    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(tbl)})))
     widths = [int(c.get(f"{{{W_NS}}}w")) for c in root.iter(f"{{{W_NS}}}gridCol")]
     assert all(w > 0 for w in widths)
 
@@ -470,7 +470,7 @@ def test_caption_paragraph_style_is_stripped():
     into an auto-numbered LaTeX \\caption (its text already has the number)."""
     para = '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 My caption</w:t></w:r></w:p>'
     blob = _pack({"word/document.xml": _doc(para)})
-    root = _body(DocxTablePreProcess.preprocess(blob))
+    root = _body(docx_table_pre_process.preprocess(blob))
     styles = [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
     assert "Caption" not in styles
     # The text is preserved.
@@ -482,7 +482,7 @@ def test_non_caption_paragraph_styles_are_left_alone():
     for style in ("TableCaption", "ImageCaption", "BodyText"):
         para = f'<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
         blob = _pack({"word/document.xml": _doc(para)})
-        root = _body(DocxTablePreProcess.preprocess(blob))
+        root = _body(docx_table_pre_process.preprocess(blob))
         styles = [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
         assert style in styles
 
@@ -491,11 +491,11 @@ def test_absolute_width_table_flagged_for_tight_padding():
     """A dxa (absolute px/pt) width carries aw=1 so the filter tightens its
     inter-column padding; a percentage width does not."""
     dxa = '<w:tblW w:w="750" w:type="dxa"/><w:jc w:val="left"/>'
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(dxa, _table_cell(None, "a"), grid_widths=["4800"]))}))))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(dxa, _table_cell(None, "a"), grid_widths=["4800"]))}))))
     assert kv.get("aw") == "1"
 
     pct = '<w:tblW w:w="2000" w:type="pct"/><w:jc w:val="left"/>'
-    kv = _first_cell_sentinel_kv(_body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(pct, _table_cell(None, "a"), grid_widths=["4800"]))}))))
+    kv = _first_cell_sentinel_kv(_body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(pct, _table_cell(None, "a"), grid_widths=["4800"]))}))))
     assert "aw" not in kv
 
 
@@ -505,7 +505,7 @@ def test_word_caption_with_seq_field_keeps_style():
     captions are neutralised."""
     # Polarion-style: literal number, no field -> style stripped.
     polarion = '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 My caption</w:t></w:r></w:p>'
-    root = _body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(polarion)})))
+    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(polarion)})))
     assert "Caption" not in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
 
     # Word-style: SEQ field for the number -> style preserved.
@@ -517,5 +517,5 @@ def test_word_caption_with_seq_field_keeps_style():
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
         "<w:r><w:t>: My caption</w:t></w:r></w:p>"
     )
-    root = _body(DocxTablePreProcess.preprocess(_pack({"word/document.xml": _doc(word)})))
+    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(word)})))
     assert "Caption" in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]

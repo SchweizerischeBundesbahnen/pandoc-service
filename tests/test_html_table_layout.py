@@ -1,8 +1,8 @@
-"""Unit tests for :mod:`app.HtmlTableLayout`.
+"""Unit tests for :mod:`app.html_table_layout`.
 
-Each test feeds a small HTML fragment to :func:`HtmlTableLayout.extract` and
+Each test feeds a small HTML fragment to :func:`html_table_layout.extract` and
 checks the recovered :class:`TableLayout` list, plus a couple of tests that run
-the extracted layouts through :func:`app.DocxPostProcess.process` end-to-end to
+the extracted layouts through :func:`app.docx_post_process.process` end-to-end to
 confirm the width/alignment lands in the resulting ``<w:tblPr>``.
 """
 
@@ -16,8 +16,8 @@ import zipfile
 
 import pytest
 
-from app import DocxPostProcess, HtmlTableLayout
-from app.HtmlTableLayout import MAX_PCT, TableLayout, extract
+from app import docx_post_process, html_table_layout
+from app.html_table_layout import MAX_PCT, TableLayout, extract
 
 
 def _table(style: str) -> str:
@@ -132,7 +132,7 @@ def test_table_layout_is_empty_helper():
     assert TableLayout(jc="center").is_empty is False
 
 
-# ----------------------- end-to-end through DocxPostProcess -----------------------
+# ----------------------- end-to-end through docx_post_process -----------------------
 
 # Resolve pandoc to an absolute path (satisfies ruff S607) and skip the
 # end-to-end tests when the binary isn't installed; the extraction tests above
@@ -142,7 +142,7 @@ requires_pandoc = pytest.mark.skipif(_PANDOC is None, reason="pandoc binary not 
 
 
 def _pandoc_html_to_docx(html: str) -> bytes:
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [_PANDOC, "-f", "html", "-t", "docx", "-o", "-"],
         input=html.encode(),
         capture_output=True,
@@ -153,8 +153,8 @@ def _pandoc_html_to_docx(html: str) -> bytes:
 
 def _tbl_props_xml(html_body: str) -> str:
     html = f"<html><head><title>t</title></head><body>{html_body}</body></html>"
-    layouts = HtmlTableLayout.extract(html)
-    processed = DocxPostProcess.process(_pandoc_html_to_docx(html), None, None, layouts)
+    layouts = html_table_layout.extract(html)
+    processed = docx_post_process.process(_pandoc_html_to_docx(html), None, None, layouts)
     return zipfile.ZipFile(io.BytesIO(processed)).read("word/document.xml").decode()
 
 
@@ -162,7 +162,7 @@ def _tbl_props_xml(html_body: str) -> str:
 def test_end_to_end_percentage_width_applied():
     body = '<table style="width: 40%; margin-left: 0px; margin-right: auto;"><tr><td>x</td></tr></table>'
     document_xml = _tbl_props_xml(body)
-    props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.S).group(0)
+    props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.DOTALL).group(0)
     assert '<w:tblW w:w="2000" w:type="pct"/>' in props
     assert '<w:jc w:val="left"/>' in props
     assert '<w:tblLayout w:type="autofit"/>' in props
@@ -171,7 +171,7 @@ def test_end_to_end_percentage_width_applied():
 @requires_pandoc
 def test_end_to_end_centered_table():
     body = '<table style="width: 25%; margin-left: auto; margin-right: auto;"><tr><td>x</td></tr></table>'
-    props = re.search(r"<w:tblPr>.*?</w:tblPr>", _tbl_props_xml(body), re.S).group(0)
+    props = re.search(r"<w:tblPr>.*?</w:tblPr>", _tbl_props_xml(body), re.DOTALL).group(0)
     assert '<w:tblW w:w="1250" w:type="pct"/>' in props
     assert '<w:jc w:val="center"/>' in props
 
@@ -180,10 +180,10 @@ def test_end_to_end_centered_table():
 def test_end_to_end_absolute_width_uses_fixed_layout_and_rescaled_grid():
     body = '<table style="width: 100px; margin-left: 0px; margin-right: auto;"><tr><td>a</td><td>b</td></tr></table>'
     document_xml = _tbl_props_xml(body)
-    props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.S).group(0)
+    props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.DOTALL).group(0)
     assert '<w:tblW w:w="1500" w:type="dxa"/>' in props
     assert '<w:tblLayout w:type="fixed"/>' in props
-    grid = re.search(r"<w:tblGrid>.*?</w:tblGrid>", document_xml, re.S).group(0)
+    grid = re.search(r"<w:tblGrid>.*?</w:tblGrid>", document_xml, re.DOTALL).group(0)
     col_widths = [int(w) for w in re.findall(r'w:w="(\d+)"', grid)]
     assert sum(col_widths) == 1500  # 100px * 15 twips, distributed across columns
 
@@ -192,7 +192,7 @@ def test_end_to_end_absolute_width_uses_fixed_layout_and_rescaled_grid():
 def test_end_to_end_default_when_no_layouts_keeps_full_width():
     """A table with no style still fills the column (backwards-compatible)."""
     body = "<table><tr><td>x</td></tr></table>"
-    props = re.search(r"<w:tblPr>.*?</w:tblPr>", _tbl_props_xml(body), re.S).group(0)
+    props = re.search(r"<w:tblPr>.*?</w:tblPr>", _tbl_props_xml(body), re.DOTALL).group(0)
     assert '<w:tblW w:w="5000" w:type="pct"/>' in props
     assert '<w:tblLayout w:type="autofit"/>' in props
 
@@ -204,8 +204,8 @@ def test_count_mismatch_falls_back_to_defaults():
     docx = _pandoc_html_to_docx("<html><head><title>t</title></head><body><table><tr><td>x</td></tr></table></body></html>")
     # Deliberately pass too many layouts (2 for 1 table).
     bogus = [TableLayout(width_type="pct", width_value=2000), TableLayout(width_type="pct", width_value=1000)]
-    processed = DocxPostProcess.process(docx, None, None, bogus)
+    processed = docx_post_process.process(docx, None, None, bogus)
     document_xml = zipfile.ZipFile(io.BytesIO(processed)).read("word/document.xml").decode()
-    props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.S).group(0)
+    props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.DOTALL).group(0)
     assert '<w:tblW w:w="5000" w:type="pct"/>' in props
     assert "w:jc" not in props

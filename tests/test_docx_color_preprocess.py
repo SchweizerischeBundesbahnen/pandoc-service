@@ -1,4 +1,4 @@
-"""Unit tests for ``app.DocxColorPreProcess``.
+"""Unit tests for ``app.docx_color_pre_process``.
 
 Each test builds a minimal DOCX zip in memory containing a single
 ``word/document.xml`` plus the bare ``word/styles.xml`` skeleton, runs the
@@ -12,9 +12,9 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from xml.etree import ElementTree as ET  # noqa: S405
+from xml.etree import ElementTree as ET
 
-from app import DocxColorPreProcess
+from app import docx_color_pre_process
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 ET.register_namespace("w", W_NS)
@@ -46,11 +46,11 @@ def _run(rpr_inner: str, text: str = "x") -> str:
 
 
 def _styles(blob: bytes) -> ET.Element:
-    return ET.fromstring(_unpack(blob)["word/styles.xml"])  # noqa: S314
+    return ET.fromstring(_unpack(blob)["word/styles.xml"])
 
 
 def _body(blob: bytes) -> ET.Element:
-    return ET.fromstring(_unpack(blob)["word/document.xml"])  # noqa: S314
+    return ET.fromstring(_unpack(blob)["word/document.xml"])
 
 
 def _style_ids(styles_root: ET.Element) -> list[str]:
@@ -70,7 +70,7 @@ def test_preprocess_plain_docx_returns_input_unchanged():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     assert result == blob
 
@@ -83,7 +83,7 @@ def test_preprocess_rewrites_fg_color_to_synthetic_style():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     body = _body(result)
     # Original <w:color> is removed.
@@ -102,7 +102,7 @@ def test_preprocess_rewrites_shd_to_synthetic_style():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     body = _body(result)
     assert body.find(f".//{{{W_NS}}}shd") is None
@@ -118,7 +118,7 @@ def test_preprocess_rewrites_highlight_preserving_named_value():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     body = _body(result)
     assert body.find(f".//{{{W_NS}}}highlight") is None
@@ -136,7 +136,7 @@ def test_preprocess_captures_font_size():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     body = _body(result)
     assert body.find(f".//{{{W_NS}}}sz") is None, "direct <w:sz> must be stripped from the run"
@@ -153,7 +153,7 @@ def test_preprocess_preserves_distinct_complex_script_size():
             "word/styles.xml": EMPTY_STYLES_XML,
         }
     )
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
     assert _rstyle_vals(_body(result)) == ["PandocColor__SZ_32__SZCS_28"]
     # The registered style keeps the distinct szCs value (28), not 32.
     styles = _styles(result)
@@ -169,7 +169,7 @@ def test_preprocess_combines_color_and_size():
             "word/styles.xml": EMPTY_STYLES_XML,
         }
     )
-    body = _body(DocxColorPreProcess.preprocess(blob))
+    body = _body(docx_color_pre_process.preprocess(blob))
     assert _rstyle_vals(body) == ["PandocColor__FG_FF0000__SZ_20"]
 
 
@@ -185,7 +185,7 @@ def test_preprocess_combines_fg_bg_highlight_into_single_style():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     expected = "PandocColor__FG_0000FF__BG_C0C0C0__HL_yellow"
     assert _rstyle_vals(_body(result)) == [expected]
@@ -202,7 +202,7 @@ def test_preprocess_deduplicates_styles_across_runs():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     assert _rstyle_vals(_body(result)) == ["PandocColor__FG_FF0000"] * 3
     style_ids = _style_ids(_styles(result))
@@ -223,7 +223,7 @@ def test_preprocess_replaces_existing_rstyle():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     assert _rstyle_vals(_body(result)) == ["PandocColor__FG_FF0000"]
 
@@ -243,9 +243,9 @@ def test_preprocess_processes_header_and_footer_parts():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
-    header_root = ET.fromstring(_unpack(result)["word/header1.xml"])  # noqa: S314
+    header_root = ET.fromstring(_unpack(result)["word/header1.xml"])
     assert _rstyle_vals(header_root) == ["PandocColor__FG_123456"]
     assert "PandocColor__FG_123456" in _style_ids(_styles(result))
 
@@ -260,7 +260,7 @@ def test_preprocess_skips_w_color_auto():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     # Same bytes — no preprocessing happened.
     assert result == blob
@@ -277,13 +277,13 @@ def test_preprocess_skips_theme_color_reference():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
     assert result == blob
 
 
 def test_preprocess_skips_invalid_zip():
     """Not a zip — return bytes unchanged."""
-    result = DocxColorPreProcess.preprocess(b"definitely not a docx")
+    result = docx_color_pre_process.preprocess(b"definitely not a docx")
     assert result == b"definitely not a docx"
 
 
@@ -292,7 +292,7 @@ def test_preprocess_skips_docx_without_styles_part():
     don't even try to add styles to it."""
     blob = _pack({"word/document.xml": _doc(_run('<w:color w:val="FF0000"/>', "x"))})
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     assert result == blob
 
@@ -308,7 +308,7 @@ def test_preprocess_synthetic_style_carries_matching_rpr():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     styles = _styles(result)
     style_el = styles.find(f".//{{{W_NS}}}style[@{{{W_NS}}}styleId='PandocColor__FG_ABCDEF']")
@@ -328,7 +328,7 @@ def test_preprocess_normalizes_lowercase_hex():
         }
     )
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     assert _rstyle_vals(_body(result)) == ["PandocColor__FG_ABCDEF", "PandocColor__FG_ABCDEF"]
     assert _style_ids(_styles(result)).count("PandocColor__FG_ABCDEF") == 1
@@ -344,8 +344,8 @@ def test_preprocess_idempotent_on_already_preprocessed_input():
         }
     )
 
-    once = DocxColorPreProcess.preprocess(blob)
-    twice = DocxColorPreProcess.preprocess(once)
+    once = docx_color_pre_process.preprocess(blob)
+    twice = docx_color_pre_process.preprocess(once)
 
     # Comparing bytes is fragile across zip member ordering / mtime so we
     # compare the parsed body instead.
@@ -383,7 +383,7 @@ def test_preprocess_preserves_drawing_namespace_prefixes():
     ).encode("utf-8")
     blob = _pack({"word/document.xml": body, "word/styles.xml": EMPTY_STYLES_XML})
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
     doc_xml = _unpack(result)["word/document.xml"].decode("utf-8")
 
     # All three drawing-related prefixes must survive serialization.
@@ -404,7 +404,7 @@ def test_preprocess_real_fixture_round_trip():
 
     blob = Path(__file__).resolve().parent.joinpath("data/colored.docx").read_bytes()
 
-    result = DocxColorPreProcess.preprocess(blob)
+    result = docx_color_pre_process.preprocess(blob)
 
     body_xml = _unpack(result)["word/document.xml"].decode("utf-8")
     # Direct color/shd/highlight have been removed from body runs.

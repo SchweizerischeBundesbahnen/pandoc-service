@@ -1,7 +1,7 @@
 import logging
 import sys
 
-from app import PandocServiceApplication
+from app import pandoc_service_application
 
 
 def test_main_runs(monkeypatch, tmp_path):
@@ -12,7 +12,7 @@ def test_main_runs(monkeypatch, tmp_path):
     monkeypatch.setenv("LOG_DIR", str(log_dir))
 
     # Mock command line arguments
-    monkeypatch.setattr(sys, "argv", ["PandocServiceApplication.py", "--port", "9999"])
+    monkeypatch.setattr(sys, "argv", ["pandoc_service_application.py", "--port", "9999"])
 
     # Set up fake server
     logger = logging.getLogger("test")
@@ -20,10 +20,10 @@ def test_main_runs(monkeypatch, tmp_path):
     def fake_start_server(port):
         logger.info(f"Fake server started on port {port}")
 
-    monkeypatch.setattr(PandocServiceApplication.PandocController, "start_server", fake_start_server)
+    monkeypatch.setattr(pandoc_service_application.pandoc_controller, "start_server", fake_start_server)
 
     # Run main and verify
-    PandocServiceApplication.main()
+    pandoc_service_application.main()
 
     # Verify log directory was created
     assert log_dir.exists()

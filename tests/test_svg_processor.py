@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from bs4 import BeautifulSoup
-from defusedxml import ElementTree as DET
+from defusedxml import ElementTree as det  # noqa: N813 - defusedxml exposes ElementTree as a module
 
-from app import PandocController
+from app import pandoc_controller
 from app.chromium_manager import ChromiumManager
 from app.svg_processor import SvgProcessor
 
@@ -37,7 +37,7 @@ def _svg_data_url(svg: str) -> str:
     ],
 )
 def test_parse_svg_dimension(svg_content, dimension, expected):
-    svg = DET.fromstring(svg_content)
+    svg = det.fromstring(svg_content)
     assert SvgProcessor().get_svg_dimension(svg, dimension) == expected
 
 
@@ -52,7 +52,7 @@ def test_parse_svg_dimension(svg_content, dimension, expected):
     ],
 )
 def test_parse_viewbox(svg_content, expected):
-    assert SvgProcessor().parse_viewbox(DET.fromstring(svg_content)) == expected
+    assert SvgProcessor().parse_viewbox(det.fromstring(svg_content)) == expected
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_parse_viewbox(svg_content, expected):
     ],
 )
 def test_extract_svg_dimensions(svg_content, expected_width, expected_height):
-    width, height, _ = SvgProcessor().extract_svg_dimensions_as_px(DET.fromstring(svg_content))
+    width, height, _ = SvgProcessor().extract_svg_dimensions_as_px(det.fromstring(svg_content))
     assert (width, height) == (expected_width, expected_height)
 
 
@@ -79,7 +79,7 @@ def test_extract_svg_dimensions(svg_content, expected_width, expected_height):
 )
 def test_extract_svg_dimensions_relative_units_error(svg_content, expected_error):
     with pytest.raises(ValueError, match=expected_error):
-        SvgProcessor().extract_svg_dimensions_as_px(DET.fromstring(svg_content))
+        SvgProcessor().extract_svg_dimensions_as_px(det.fromstring(svg_content))
 
 
 @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ def test_extract_svg_dimensions_relative_units_error(svg_content, expected_error
 )
 def test_extract_svg_dimensions_relative_units(svg_content, expected_width, expected_height):
     processor = SvgProcessor()
-    width, height, updated = processor.extract_svg_dimensions_as_px(DET.fromstring(svg_content))
+    width, height, updated = processor.extract_svg_dimensions_as_px(det.fromstring(svg_content))
     assert (width, height) == (expected_width, expected_height)
     content = processor.svg_to_string(updated)
     assert f'width="{width}px"' in content
@@ -158,7 +158,7 @@ def test_calculate_special_unit():
 
 def test_replace_svg_size_attributes():
     processor = SvgProcessor()
-    svg = DET.fromstring('<svg width="100" height="100"></svg>')
+    svg = det.fromstring('<svg width="100" height="100"></svg>')
     result = processor.svg_to_string(processor.replace_svg_size_attributes(svg, 200, 300))
     assert 'width="200px"' in result
     assert 'height="300px"' in result
@@ -183,7 +183,7 @@ def test_apply_img_dimensions_from_svg():
     processor = SvgProcessor()
     soup = BeautifulSoup('<img style="width: 500px; height: 300px; color: red;">', "html.parser")
     node = soup.find("img")
-    svg = DET.fromstring('<svg width="100" height="200"></svg>')
+    svg = det.fromstring('<svg width="100" height="200"></svg>')
     processor._apply_img_dimensions_from_svg(node, svg)
     assert node.get("width") == "100px"
     style = node.get("style")
@@ -222,14 +222,14 @@ def test_parse_data_url_base64_valid():
 @pytest.mark.asyncio
 async def test_replace_svg_with_png_invalid_dimensions_returns_original():
     # No width/height/viewBox -> dimensions undefined -> original SVG returned unchanged.
-    mime, _ = await SvgProcessor().replace_svg_with_png(DET.fromstring("<svg></svg>"))
+    mime, _ = await SvgProcessor().replace_svg_with_png(det.fromstring("<svg></svg>"))
     assert mime == SvgProcessor.IMAGE_SVG
 
 
 @pytest.mark.asyncio
 async def test_replace_svg_with_png_no_manager_returns_original():
     # Valid dimensions but no ChromiumManager -> cannot rasterize -> original SVG.
-    mime, _ = await SvgProcessor(chromium_manager=None).replace_svg_with_png(DET.fromstring('<svg width="100" height="100"></svg>'))
+    mime, _ = await SvgProcessor(chromium_manager=None).replace_svg_with_png(det.fromstring('<svg width="100" height="100"></svg>'))
     assert mime == SvgProcessor.IMAGE_SVG
 
 
@@ -238,7 +238,7 @@ async def test_replace_svg_with_png_cdp_failure_returns_original():
     # A CDP conversion failure is swallowed and falls back to the original SVG.
     manager = MagicMock()
     manager.convert_svg_to_png = AsyncMock(side_effect=RuntimeError("cdp boom"))
-    mime, _ = await SvgProcessor(chromium_manager=manager).replace_svg_with_png(DET.fromstring('<svg width="100" height="100"></svg>'))
+    mime, _ = await SvgProcessor(chromium_manager=manager).replace_svg_with_png(det.fromstring('<svg width="100" height="100"></svg>'))
     assert mime == SvgProcessor.IMAGE_SVG
 
 
@@ -288,38 +288,38 @@ async def test_process_svg_passes_through_non_svg():
         await manager.stop()
 
 
-# ---------------- PandocController.preprocess_html_svgs ----------------
+# ---------------- pandoc_controller.preprocess_html_svgs ----------------
 
 
 def test_is_svg_conversion_enabled_default_and_disabled():
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}):
-        assert PandocController.is_svg_conversion_enabled() is True
+        assert pandoc_controller.is_svg_conversion_enabled() is True
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "false"}):
-        assert PandocController.is_svg_conversion_enabled() is False
+        assert pandoc_controller.is_svg_conversion_enabled() is False
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "0"}):
-        assert PandocController.is_svg_conversion_enabled() is False
+        assert pandoc_controller.is_svg_conversion_enabled() is False
 
 
 @pytest.mark.asyncio
 async def test_preprocess_html_svgs_disabled_returns_unchanged():
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "false"}):
         source = "<html><body><img src='data:image/svg+xml;base64,Zm9v'></body></html>"
-        assert await PandocController.preprocess_html_svgs(source) == source
+        assert await pandoc_controller.preprocess_html_svgs(source) == source
 
 
 @pytest.mark.asyncio
 async def test_preprocess_html_svgs_no_svg_returns_unchanged():
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}):
         source = "<html><body><p>no svg here</p></body></html>"
-        assert await PandocController.preprocess_html_svgs(source) == source
+        assert await pandoc_controller.preprocess_html_svgs(source) == source
 
 
 @pytest.mark.asyncio
 async def test_preprocess_html_svgs_browser_not_running_returns_unchanged():
     manager = ChromiumManager()  # constructed but not started -> is_running() is False
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
         source = "<html><body><img src='data:image/svg+xml;base64,Zm9v'></body></html>"
-        assert await PandocController.preprocess_html_svgs(source) == source
+        assert await pandoc_controller.preprocess_html_svgs(source) == source
 
 
 @pytest.mark.asyncio
@@ -329,8 +329,8 @@ async def test_preprocess_html_svgs_renders_svg_to_png_str_input():
     try:
         svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100"/></svg>'
         source = f'<html><body><img src="{_svg_data_url(svg)}"></body></html>'
-        with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-            result = await PandocController.preprocess_html_svgs(source)
+        with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+            result = await pandoc_controller.preprocess_html_svgs(source)
         assert isinstance(result, str)
         assert "data:image/png;base64," in result
     finally:
@@ -344,8 +344,8 @@ async def test_preprocess_html_svgs_renders_svg_to_png_bytes_input():
     try:
         svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100"/></svg>'
         source = f'<html><body><img src="{_svg_data_url(svg)}"></body></html>'.encode()
-        with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-            result = await PandocController.preprocess_html_svgs(source)
+        with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+            result = await pandoc_controller.preprocess_html_svgs(source)
         assert isinstance(result, bytes)
         assert b"data:image/png;base64," in result
     finally:
@@ -359,8 +359,8 @@ async def test_preprocess_html_svgs_with_scale_factor_renders_png():
     try:
         svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100"/></svg>'
         source = f'<html><body><img src="{_svg_data_url(svg)}"></body></html>'
-        with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-            result = await PandocController.preprocess_html_svgs(source, scale_factor=2.0)
+        with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+            result = await pandoc_controller.preprocess_html_svgs(source, scale_factor=2.0)
         assert "data:image/png;base64," in result
     finally:
         await manager.stop()
@@ -382,47 +382,47 @@ def _mock_manager(running=True, start_error=None):
 @pytest.mark.asyncio
 async def test_start_chromium_disabled_does_not_start():
     manager = _mock_manager()
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "false"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-        await PandocController._start_chromium()
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "false"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+        await pandoc_controller._start_chromium()
     manager.start.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_start_chromium_enabled_starts():
     manager = _mock_manager()
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-        await PandocController._start_chromium()
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+        await pandoc_controller._start_chromium()
     manager.start.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_start_chromium_swallows_start_error():
     manager = _mock_manager(start_error=RuntimeError("no browser"))
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
         # Must not raise: SVG rasterization is best effort.
-        await PandocController._start_chromium()
+        await pandoc_controller._start_chromium()
 
 
 @pytest.mark.asyncio
 async def test_stop_chromium_stops_when_running():
     manager = _mock_manager(running=True)
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-        await PandocController._stop_chromium()
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+        await pandoc_controller._stop_chromium()
     manager.stop.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_stop_chromium_noop_when_not_running():
     manager = _mock_manager(running=False)
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=manager):
-        await PandocController._stop_chromium()
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=manager):
+        await pandoc_controller._stop_chromium()
     manager.stop.assert_not_called()
 
 
 def test_get_chromium_health_states():
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "false"}):
-        assert PandocController.get_chromium_health() == "disabled"
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=_mock_manager(running=True)):
-        assert PandocController.get_chromium_health() == "available"
-    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(PandocController, "get_chromium_manager", return_value=_mock_manager(running=False)):
-        assert PandocController.get_chromium_health() == "stopped"
+        assert pandoc_controller.get_chromium_health() == "disabled"
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=_mock_manager(running=True)):
+        assert pandoc_controller.get_chromium_health() == "available"
+    with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=_mock_manager(running=False)):
+        assert pandoc_controller.get_chromium_health() == "stopped"

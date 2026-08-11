@@ -191,8 +191,8 @@ def initialize_pandoc_info(pandoc_version: str, service_version: str) -> None:
     """
     pandoc_info.info(
         {
-            "version": pandoc_version if pandoc_version else "unknown",
-            "service_version": service_version if service_version else "unknown",
+            "version": pandoc_version or "unknown",
+            "service_version": service_version or "unknown",
         }
     )
 
@@ -279,7 +279,7 @@ def update_gauges_from_chromium_manager(chromium_manager: ChromiumManager) -> No
 
         logger.debug("Prometheus gauges updated from ChromiumManager")
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("Failed to update Prometheus gauges: %s", e)
 
 

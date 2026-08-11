@@ -57,30 +57,30 @@ def preprocess(docx_bytes: bytes) -> bytes:
         logger.warning("Input is not a valid zip / DOCX; skipping color preprocess")
         return docx_bytes
 
-    # Without styles.xml there's nowhere to register the synthetic styles
-    # we'd want to reference, so bail out early rather than fabricate one.
+        # Without styles.xml there's nowhere to register the synthetic styles
+        # we'd want to reference, so bail out early rather than fabricate one.
     if STYLES_PART not in entries:
         logger.debug("DOCX has no %s; skipping color preprocess", STYLES_PART)
         return docx_bytes
 
-    # Collected across all body parts and deduplicated by style_id so
-    # styles.xml gets one <w:style> per unique fg/bg/highlight combo even
-    # if many runs reference it.
+        # Collected across all body parts and deduplicated by style_id so
+        # styles.xml gets one <w:style> per unique fg/bg/highlight combo even
+        # if many runs reference it.
     needed_styles: dict[str, _StyleSpec] = {}
 
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_styles = _rewrite_part(entries[part])
+        rewritten, part_styles = rewrite_part(entries[part])
         if part_styles:
             entries[part] = rewritten
             needed_styles.update(part_styles)
 
-    # Fast path: no colored runs anywhere. Returning the original bytes
-    # (instead of a re-zipped equivalent) preserves the original
-    # compression layout and avoids touching styles.xml unnecessarily.
+            # Fast path: no colored runs anywhere. Returning the original bytes
+            # (instead of a re-zipped equivalent) preserves the original
+            # compression layout and avoids touching styles.xml unnecessarily.
     if not needed_styles:
         return docx_bytes
 
-    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, _build_style_element)
+    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, build_style_element)
     return repack(entries)
 
 
@@ -169,8 +169,8 @@ def _extract_run_colors(rpr: ET.Element) -> tuple[str | None, str | None, str | 
         fg = None
     if bg == "AUTO":
         bg = None
-    # highlight="none" is the OOXML idiom for "no highlight set"; some
-    # editors emit it explicitly rather than omitting the element.
+        # highlight="none" is the OOXML idiom for "no highlight set"; some
+        # editors emit it explicitly rather than omitting the element.
     if highlight == "none":
         highlight = None
     return fg, bg, highlight, size, size_cs
@@ -210,7 +210,7 @@ def _replace_run_color_props(rpr: ET.Element, style_id: str) -> None:
     rpr.insert(0, new_rstyle)
 
 
-def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
+def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used)."""
     tree = parse_xml(xml_bytes)
     if tree is None:
@@ -235,10 +235,10 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
         styles_used[style_id] = _StyleSpec(style_id, fg, bg, highlight, size, size_cs)
         _replace_run_color_props(rpr, style_id)
 
-    # Skip the re-serialize roundtrip when nothing changed. ET.tostring
-    # reformats namespace declarations and attribute order, so even a
-    # no-op rewrite would produce different bytes — undesirable for diffs
-    # and unnecessary work.
+        # Skip the re-serialize roundtrip when nothing changed. ET.tostring
+        # reformats namespace declarations and attribute order, so even a
+        # no-op rewrite would produce different bytes — undesirable for diffs
+        # and unnecessary work.
     if not styles_used:
         return xml_bytes, {}
 
@@ -259,20 +259,19 @@ def _normalize_hex(value: str | None) -> str | None:
     stripped = value.strip()
     if stripped.lower() == "auto":
         return "AUTO"
-    # Accept "RRGGBB", "#RRGGBB". The OOXML schema specifies bare
-    # ``RRGGBB``, but the leading ``#`` shows up in the wild from
-    # third-party tools, so accept it. Anything else (theme color refs
-    # like ``accent1``, named CSS colors, malformed strings) we
-    # conservatively drop — we can't produce a usable hex from them and
-    # rather have no color than the wrong one.
-    if stripped.startswith("#"):
-        stripped = stripped[1:]
+        # Accept "RRGGBB", "#RRGGBB". The OOXML schema specifies bare
+        # ``RRGGBB``, but the leading ``#`` shows up in the wild from
+        # third-party tools, so accept it. Anything else (theme color refs
+        # like ``accent1``, named CSS colors, malformed strings) we
+        # conservatively drop — we can't produce a usable hex from them and
+        # rather have no color than the wrong one.
+    stripped = stripped.removeprefix("#")
     if len(stripped) == HEX_COLOR_LENGTH and all(c in _HEX_DIGITS for c in stripped):
         return stripped.upper()
     return None
 
 
-def _build_style_element(spec: _StyleSpec) -> ET.Element:
+def build_style_element(spec: _StyleSpec) -> ET.Element:
     # w:type="character" — a *character* style, not paragraph/table; the
     # only kind that can be referenced by <w:rStyle> on a run.
     # w:customStyle="1" — flags this as a user/tool-defined style rather

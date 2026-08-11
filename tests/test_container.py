@@ -1,18 +1,18 @@
 import io
 import logging
-import os
-import subprocess
 import time
 from pathlib import Path
 from typing import NamedTuple
 
 import docker
-import pytest
 import requests
 from docker.models.containers import Container
 from docx import Document
 from docx.shared import RGBColor
+
 from tests.test_pptx_post_process import find_presentation_information
+
+logger = logging.getLogger(__name__)
 
 # Constants for Docker resources
 TEST_IMAGE_NAME = "pandoc-service-test"
@@ -80,25 +80,25 @@ class TestParameters(NamedTuple):
 def _stop_and_remove_container(container: Container) -> None:
     """Helper function to stop and remove a single container."""
     try:
-        logging.info(f"Stopping container: {container.name}")
+        logger.info(f"Stopping container: {container.name}")
         container.stop(timeout=1)
     except docker.errors.APIError as e:
-        logging.warning(f"Could not stop container {container.name}: {e}")
+        logger.warning(f"Could not stop container {container.name}: {e}")
 
     try:
-        logging.info(f"Removing container: {container.name}")
+        logger.info(f"Removing container: {container.name}")
         container.remove(force=True)
     except docker.errors.APIError as e:
-        logging.error(f"Error removing container {container.name}: {e}")
+        logger.error(f"Error removing container {container.name}: {e}")
 
 
 def _remove_image(image) -> None:
     """Helper function to remove a single image."""
     try:
-        logging.info(f"Removing image: {image.tags}")
+        logger.info(f"Removing image: {image.tags}")
         image.remove(force=True)
     except docker.errors.APIError as e:
-        logging.error(f"Error removing image {image.tags}: {e}")
+        logger.error(f"Error removing image {image.tags}: {e}")
 
 
 def _is_test_related_container(container: Container) -> bool:
@@ -124,7 +124,7 @@ def _cleanup_containers(client: docker.DockerClient) -> None:
             if _is_test_related_container(container):
                 _stop_and_remove_container(container)
     except docker.errors.APIError as e:
-        logging.error(f"Error listing containers: {e}")
+        logger.error(f"Error listing containers: {e}")
 
 
 def _cleanup_images(client: docker.DockerClient) -> None:
@@ -135,7 +135,7 @@ def _cleanup_images(client: docker.DockerClient) -> None:
             if _is_test_related_image(image):
                 _remove_image(image)
     except docker.errors.APIError as e:
-        logging.error(f"Error listing images: {e}")
+        logger.error(f"Error listing images: {e}")
 
 
 def _verify_containers(client: docker.DockerClient) -> None:
@@ -145,12 +145,12 @@ def _verify_containers(client: docker.DockerClient) -> None:
         remaining_test = [c for c in remaining if _is_test_related_container(c)]
 
         if remaining_test:
-            logging.warning(f"Found {len(remaining_test)} test-related containers still remaining after cleanup")
+            logger.warning(f"Found {len(remaining_test)} test-related containers still remaining after cleanup")
             for container in remaining_test:
-                logging.warning(f"Remaining container: {container.name} ({container.id})")
+                logger.warning(f"Remaining container: {container.name} ({container.id})")
                 _stop_and_remove_container(container)
-    except Exception as e:
-        logging.error(f"Error in container verification: {e}")
+    except Exception as e:  # noqa: BLE001 - verification reports rather than raises
+        logger.error(f"Error in container verification: {e}")
 
 
 def _verify_images(client: docker.DockerClient) -> None:
@@ -160,12 +160,12 @@ def _verify_images(client: docker.DockerClient) -> None:
         remaining_test_images = [i for i in remaining_images if _is_test_related_image(i)]
 
         if remaining_test_images:
-            logging.warning(f"Found {len(remaining_test_images)} test-related images still remaining after cleanup")
+            logger.warning(f"Found {len(remaining_test_images)} test-related images still remaining after cleanup")
             for image in remaining_test_images:
-                logging.warning(f"Remaining image: {image.id} (tags: {image.tags})")
+                logger.warning(f"Remaining image: {image.id} (tags: {image.tags})")
                 _remove_image(image)
-    except Exception as e:
-        logging.error(f"Error in image verification: {e}")
+    except Exception as e:  # noqa: BLE001 - same, for the image check
+        logger.error(f"Error in image verification: {e}")
 
 
 def cleanup_docker_resources():
@@ -202,10 +202,10 @@ def wait_for_container_ready(container: Container, max_wait_time: int = 60) -> N
         try:
             response = requests.get(f"{base_url}/version", timeout=2)
             if response.status_code == 200:
-                logging.info("Container is ready")
+                logger.info("Container is ready")
                 return
         except requests.exceptions.RequestException as e:
-            logging.debug(f"Container not ready yet, retrying: {e}")
+            logger.debug(f"Container not ready yet, retrying: {e}")
         time.sleep(1)
 
     # Timeout reached, print logs for debugging
@@ -255,9 +255,7 @@ def test_convert_html_to_docx(test_parameters: TestParameters) -> None:
 
     document = Document(io.BytesIO(response.content))
 
-    paragraphs = []
-    for paragraph in document.paragraphs:
-        paragraphs.append(paragraph.text)
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
 
     expected_paragraphs = [
         "Simple html with an ordered list",
@@ -324,12 +322,13 @@ def __send_request(base_url: str, request_session: requests.Session, source_form
     try:
         response = request_session.request(method="POST", url=url, data=payload, files=files, verify=True)
         if response.status_code // 100 != 2:
-            logging.error(f"Error: Unexpected response: '{response}'")
-            logging.error(f"Error: Response content: '{response.content}'")
-        return response
+            logger.error(f"Error: Unexpected response: '{response}'")
+            logger.error(f"Error: Response content: '{response.content}'")
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error: {e}")
+        logger.error(f"Error: {e}")
         raise
+    else:
+        return response
 
 
 def __send_docx_with_template_request(base_url: str, request_session: requests.Session, source_format: str, data, template=None) -> requests.Response:
@@ -340,12 +339,13 @@ def __send_docx_with_template_request(base_url: str, request_session: requests.S
     try:
         response = request_session.request(method="POST", url=url, files=files, verify=True)
         if response.status_code // 100 != 2:
-            logging.error(f"Error: Unexpected response: '{response}'")
-            logging.error(f"Error: Response content: '{response.content}'")
-        return response
+            logger.error(f"Error: Unexpected response: '{response}'")
+            logger.error(f"Error: Response content: '{response.content}'")
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error: {e}")
+        logger.error(f"Error: {e}")
         raise
+    else:
+        return response
 
 
 def __assert_doc_contains_specific_headers_color(color, doc_content):
@@ -368,8 +368,7 @@ def __assert_doc_contains_specific_headers_color(color, doc_content):
 
 def __load_test_file(file_path: str) -> str:
     with Path(file_path).open(encoding="utf-8") as file:
-        file_content = file.read()
-        return file_content
+        return file.read()
 
 
 def __send_pptx_with_template_request(base_url: str, request_session: requests.Session, source_format: str, data, template=None) -> requests.Response:
@@ -380,12 +379,13 @@ def __send_pptx_with_template_request(base_url: str, request_session: requests.S
     try:
         response = request_session.request(method="POST", url=url, files=files, verify=True)
         if response.status_code // 100 != 2:
-            logging.error(f"Error: Unexpected response: '{response}'")
-            logging.error(f"Error: Response content: '{response.content}'")
-        return response
+            logger.error(f"Error: Unexpected response: '{response}'")
+            logger.error(f"Error: Response content: '{response.content}'")
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error: {e}")
+        logger.error(f"Error: {e}")
         raise
+    else:
+        return response
 
 
 def test_container_no_error_logs(test_parameters: TestParameters) -> None:

@@ -33,8 +33,8 @@ Sentinel format (PUA delimiters U+E010 / U+E011), a ``;``-separated key map::
 (left/center/right) are table-level and live on the first cell (merged into
 its sentinel if it also carries ``bg``).
 
-This is the table companion to :mod:`app.DocxColorPreProcess` /
-:mod:`app.DocxParagraphPreProcess`; it runs on the same docx->latex path
+This is the table companion to :mod:`app.docx_color_pre_process` /
+:mod:`app.docx_paragraph_pre_process`; it runs on the same docx->latex path
 and is independent of them (table cells carry ``<w:tcPr>``, not
 run/paragraph properties).
 """
@@ -82,7 +82,7 @@ _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 _MAX_PCT = 5000.0
 # Reference text width in twips for turning an absolute (dxa) table width into a
 # line fraction: Letter (8.5in) minus 1in margins each side = 6.5in = 9360 twips.
-# Matches the Letter assumption in app/DocxPostProcess.py and the 468pt used by
+# Matches the Letter assumption in app/docx_post_process.py and the 468pt used by
 # filters/html_tables_to_latex.lua. Best-effort for absolute widths (same caveat).
 _REFERENCE_WIDTH_TWIPS = 9360.0
 # Map an OOXML <w:jc w:val> to a canonical alignment token.
@@ -118,7 +118,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
 
     changed = False
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_changed = _rewrite_part(entries[part])
+        rewritten, part_changed = rewrite_part(entries[part])
         if part_changed:
             entries[part] = rewritten
             changed = True
@@ -140,8 +140,7 @@ def _normalize_hex(value: str | None) -> str | None:
     stripped = value.strip()
     if stripped.lower() == "auto":
         return None
-    if stripped.startswith("#"):
-        stripped = stripped[1:]
+    stripped = stripped.removeprefix("#")
     if len(stripped) == HEX_COLOR_LENGTH and all(c in _HEX_DIGITS for c in stripped):
         upper = stripped.upper()
         if upper == "FFFFFF":
@@ -264,7 +263,7 @@ def _fix_grid_col_widths(tbl: ET.Element) -> bool:
             col.set(_W_ATTR, _DEFAULT_GRIDCOL_WIDTH)
             changed = True
 
-    # Add any missing columns so pandoc sees the full width, not a subset.
+            # Add any missing columns so pandoc sees the full width, not a subset.
     for _ in range(len(grid_cols), num_cols):
         col = ET.SubElement(tblgrid, _GRIDCOL_TAG)
         col.set(_W_ATTR, _DEFAULT_GRIDCOL_WIDTH)
@@ -474,7 +473,7 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
     return changed
 
 
-def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Fix grid-column widths, tag styled table cells, carry table width/
     alignment, and neutralise caption styles in one body part.
 
