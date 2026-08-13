@@ -1,4 +1,4 @@
-"""Unit tests for ``app.DocxLatexPreProcess`` (the single-pass orchestrator).
+"""Unit tests for ``app.docx_latex_pre_process`` (the single-pass orchestrator).
 
 It must produce the same package as chaining the three standalone docx→latex
 preprocessors, but in one unzip/re-zip so an image-heavy document's media is
@@ -10,7 +10,7 @@ from __future__ import annotations
 import io
 import zipfile
 
-from app import DocxColorPreProcess, DocxLatexPreProcess, DocxListLevelPreProcess, DocxMathColorPreProcess, DocxParagraphPreProcess, DocxTablePreProcess
+from app import docx_color_pre_process, docx_latex_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_paragraph_pre_process, docx_table_pre_process
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
@@ -44,8 +44,8 @@ _BODY = _doc(
 def test_single_pass_matches_sequential_preprocessors():
     blob = _pack({"word/document.xml": _BODY, "word/styles.xml": STYLES, "word/media/img.png": b"\x89PNG" + b"\x00" * 500})
 
-    sequential = DocxMathColorPreProcess.preprocess(DocxTablePreProcess.preprocess(DocxListLevelPreProcess.preprocess(DocxParagraphPreProcess.preprocess(DocxColorPreProcess.preprocess(blob)))))
-    single = DocxLatexPreProcess.preprocess(blob)
+    sequential = docx_math_color_pre_process.preprocess(docx_table_pre_process.preprocess(docx_list_level_pre_process.preprocess(docx_paragraph_pre_process.preprocess(docx_color_pre_process.preprocess(blob)))))
+    single = docx_latex_pre_process.preprocess(blob)
 
     seq_entries, single_entries = _entries(sequential), _entries(single)
     assert set(seq_entries) == set(single_entries)
@@ -56,7 +56,7 @@ def test_single_pass_matches_sequential_preprocessors():
 
 def test_media_is_preserved_and_changes_applied():
     blob = _pack({"word/document.xml": _BODY, "word/styles.xml": STYLES, "word/media/img.png": b"PNGDATA"})
-    out = _entries(DocxLatexPreProcess.preprocess(blob))
+    out = _entries(docx_latex_pre_process.preprocess(blob))
     # media untouched
     assert out["word/media/img.png"] == b"PNGDATA"
     # the run now references a synthetic style (colour + size captured)
@@ -73,7 +73,7 @@ def test_math_colour_applied_without_styles_xml():
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="{W_NS}" xmlns:m="{M_NS}"><w:body><w:p><m:oMath><m:r><w:rPr><w:color w:val="FF0000"/></w:rPr><m:t>E</m:t></m:r></m:oMath></w:p></w:body></w:document>'
     ).encode()
     blob = _pack({"word/document.xml": math_body})
-    out = _entries(DocxLatexPreProcess.preprocess(blob))["word/document.xml"]
+    out = _entries(docx_latex_pre_process.preprocess(blob))["word/document.xml"]
     # The colour is encoded as markers and the direct <w:color> stripped.
     assert b"PMCzzzFF0000zzzEzzzPMCENDzzz" in out
     assert b"<w:color" not in out
@@ -84,16 +84,16 @@ def test_unchanged_document_returns_original_bytes():
     the original bytes rather than a re-zipped copy."""
     plain = _doc("<w:p><w:r><w:t>plain</w:t></w:r></w:p>")
     blob = _pack({"word/document.xml": plain, "word/styles.xml": STYLES})
-    assert DocxLatexPreProcess.preprocess(blob) == blob
+    assert docx_latex_pre_process.preprocess(blob) == blob
 
 
 def test_non_docx_returned_unchanged():
-    assert DocxLatexPreProcess.preprocess(b"not a zip") == b"not a zip"
+    assert docx_latex_pre_process.preprocess(b"not a zip") == b"not a zip"
 
 
 def test_no_body_parts_returned_unchanged():
     blob = _pack({"word/styles.xml": STYLES})
-    assert DocxLatexPreProcess.preprocess(blob) == blob
+    assert docx_latex_pre_process.preprocess(blob) == blob
 
 
 def test_single_pass_includes_table_cell_preprocessing():
@@ -103,8 +103,8 @@ def test_single_pass_includes_table_cell_preprocessing():
     )
     blob = _pack({"word/document.xml": body_with_table, "word/styles.xml": STYLES})
 
-    sequential = DocxTablePreProcess.preprocess(blob)
-    single = DocxLatexPreProcess.preprocess(blob)
+    sequential = docx_table_pre_process.preprocess(blob)
+    single = docx_latex_pre_process.preprocess(blob)
 
     seq_entries, single_entries = _entries(sequential), _entries(single)
     assert set(seq_entries) == set(single_entries)

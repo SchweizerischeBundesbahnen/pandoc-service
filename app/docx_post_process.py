@@ -10,7 +10,7 @@ from docx import Document
 from docx.oxml import parse_xml
 from docx.oxml import parser as docx_parser
 from docx.oxml.ns import nsdecls
-from lxml import etree  # type: ignore
+from lxml import etree  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -19,10 +19,10 @@ if TYPE_CHECKING:
     from docx.section import Section
     from docx.table import Table, _Cell
 
-    from app.HtmlTableLayout import TableLayout
+    from app.html_table_layout import TableLayout
 
-from app.DocxMathColorPostProcess import apply_math_colors
-from app.DocxReferencesPostProcess import add_table_of_contents_entries, enable_auto_update_fields
+from app.docx_math_color_post_process import apply_math_colors
+from app.docx_references_post_process import add_table_of_contents_entries, enable_auto_update_fields
 
 # Patch the python-docx parser to handle large XML documents (> 10MB)
 # This enables the XML_PARSE_HUGE flag to avoid "Buffer size limit exceeded" errors
@@ -136,7 +136,7 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
 
             # Build the drawing XML
             drawing_xml = (
-                f'<w:drawing {nsdecls("w", "wp", "a", "pic", "r")}>'
+                f"<w:drawing {nsdecls('w', 'wp', 'a', 'pic', 'r')}>"
                 f'<wp:inline distT="0" distB="0" distL="0" distR="0">'
                 f'<wp:extent cx="{width}" cy="{height}"/>'
                 f'<wp:docPr id="{doc_pr_id}" name="Image"/>'
@@ -171,7 +171,7 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
             run_el.append(drawing_el)
 
             logger.debug(f"Replaced image placeholder with embedded image ({img.px_width}x{img.px_height})")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a placeholder that will not embed leaves the document unchanged
             logger.warning(f"Could not embed image from placeholder: {e}")
             t_el.text = t_el.text.replace(match.group(0), "[image]")
 
@@ -184,7 +184,7 @@ def _resolve_image_src(src: str) -> bytes | None:
         if match:
             try:
                 return base64.b64decode(match.group(1))
-            except Exception:
+            except Exception:  # noqa: BLE001 - undecodable image data leaves the document unchanged
                 logger.warning("Failed to decode base64 image data")
                 return None
     if src:
@@ -215,7 +215,7 @@ def _replace_link_placeholders(doc: DocumentObject) -> None:
             hyperlink.set(f"{ns_r}id", r_id)
             hyperlink.attrib.pop(f"{ns_w}tooltip", None)
             logger.debug(f"Resolved hyperlink placeholder to {url} (r:id={r_id})")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - an unresolvable hyperlink leaves the document unchanged
             logger.warning(f"Could not resolve hyperlink placeholder: {e}")
             hyperlink.attrib.pop(f"{ns_w}tooltip", None)
 
@@ -243,7 +243,7 @@ def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = 
         return
 
     for section in doc.sections:
-        sect_pr = section._sectPr
+        sect_pr = section._sectPr  # noqa: SLF001 - python-docx exposes no public API for this element
         pg_sz = sect_pr.find(".//w:pgSz", namespaces={"w": SCHEMA})
 
         if paper_size is not None:
@@ -340,8 +340,8 @@ def _move_header_footer_references_to_first_section(doc: DocumentObject) -> None
     if len(doc.sections) <= 1:
         return  # Nothing to fix if there's only one section
 
-    first_sect_pr = doc.sections[0]._sectPr
-    last_sect_pr = doc.sections[-1]._sectPr
+    first_sect_pr = doc.sections[0]._sectPr  # noqa: SLF001 - python-docx exposes no public API for this element
+    last_sect_pr = doc.sections[-1]._sectPr  # noqa: SLF001 - python-docx exposes no public API for this element
 
     # Check if first section already has header/footer references
     existing_headers = first_sect_pr.findall("w:headerReference", namespaces={"w": SCHEMA})
@@ -371,7 +371,7 @@ def _move_header_footer_references_to_first_section(doc: DocumentObject) -> None
 
 def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayout] | None = None) -> None:  # NOSONAR  # needed by design
     # Per-table width/alignment recovered from the HTML source (see
-    # app/HtmlTableLayout.py). The list is one entry per <table> in document
+    # app/html_table_layout.py). The list is one entry per <table> in document
     # order (depth-first, nested included) — the same order this function walks
     # tables in — so a shared iterator lines them up index-for-index. Guard on
     # an exact count match: if pandoc dropped or added a table the alignment
@@ -383,7 +383,7 @@ def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayo
         if table_count == len(table_layouts):
             layout_iter = iter(table_layouts)
         else:
-            logger.warning("HtmlTableLayout: %d layouts for %d tables; skipping width/alignment (fallback to defaults)", len(table_layouts), table_count)
+            logger.warning("html_table_layout: %d layouts for %d tables; skipping width/alignment (fallback to defaults)", len(table_layouts), table_count)
 
     # Group tables by their section
     for target_index, section in enumerate(doc.sections):
@@ -400,7 +400,7 @@ def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayo
             # Table element
             elif element.tag.endswith("tbl") and current_section_index == target_index:
                 for table in doc.tables:
-                    if table._element == element:
+                    if table._element == element:  # noqa: SLF001 - python-docx exposes no public API for this element
                         tables_in_section.append(table)
                         break
 
@@ -410,9 +410,9 @@ def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayo
 
 
 def _process_table(table: Table, parent_columns_count: int, max_width: int, layout_iter: Iterator[TableLayout] | None = None) -> None:
-    tbl = table._element
+    tbl = table._element  # noqa: SLF001 - python-docx exposes no public API for this element
     # Pull this table's layout first, before recursing into nested tables, so
-    # consumption order stays depth-first and matches HtmlTableLayout.extract.
+    # consumption order stays depth-first and matches html_table_layout.extract.
     layout = next(layout_iter, None) if layout_iter is not None else None
     columns_count = parent_columns_count + len(table.columns)
     table_properties = tbl.find(".//w:tblPr", namespaces={"w": SCHEMA})
@@ -454,7 +454,7 @@ def _clamp_existing_fixed_width(tbl: Any, table_properties: Any, max_width: int)
 
 
 def _resolve_layout_width(layout: TableLayout | None) -> tuple[str, int, bool]:
-    """Extract width parameters from an HtmlTableLayout, or return defaults."""
+    """Extract width parameters from an html_table_layout, or return defaults."""
     if layout is not None and layout.width_type is not None and layout.width_value is not None:
         return layout.width_type, layout.width_value, layout.width_type == "dxa"
     return "pct", 5000, False
@@ -549,8 +549,7 @@ def _get_available_content_width_for_section(section: Section) -> int:
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
-    cell_xml = cell._tc.xml
-    # ruff: noqa: S320
+    cell_xml = cell._tc.xml  # noqa: SLF001 - python-docx exposes no public API for this element
     # Use huge_tree parser to handle cells with large content (e.g., base64-encoded images > 10MB)
     tree = etree.fromstring(cell_xml, docx_parser.oxml_parser)
 
@@ -582,19 +581,21 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
 
     # If any modification was made, update the cell XML
     if modified:
-        cell._tc.clear_content()
+        cell._tc.clear_content()  # noqa: SLF001 - python-docx exposes no public API for this element
         for child in tree.iterchildren():
-            cell._tc.append(child)
+            cell._tc.append(child)  # noqa: SLF001 - python-docx exposes no public API for this element
+
+
+# Command line shape for the manual entry point below.
+MIN_ARGS = 2  # script name + docx path
+MAX_ARGS = 4  # script name + docx path + paper_size + orientation
+DOCX_PATH_ARG_INDEX = 1
+PAPER_SIZE_ARG_INDEX = 2
+ORIENTATION_ARG_INDEX = 3
 
 
 # Just for manual test purposes. Accepts path to docx to process.
 def main() -> int:
-    MIN_ARGS = 2  # script name + docx path
-    MAX_ARGS = 4  # script name + docx path + paper_size + orientation
-    DOCX_PATH_ARG_INDEX = 1
-    PAPER_SIZE_ARG_INDEX = 2
-    ORIENTATION_ARG_INDEX = 3
-
     if not (MIN_ARGS <= len(sys.argv) <= MAX_ARGS):
         logger.info("Usage: <path_to_docx> [paper_size] [orientation]")
         return 1

@@ -6,7 +6,7 @@ Polarion caption sequences are arbitrary names — a German instance emits
 "Tabelle 1 ...", which does NOT start with "Table". The old text-prefix
 heuristic silently produced an empty Table of Tables for such documents.
 The current pipeline (filters/html_captions.lua marks captions by the
-Polarion caption span; DocxReferencesPostProcess keys on the Caption style)
+Polarion caption span; docx_references_post_process keys on the Caption style)
 must handle them like any other caption.
 
 These tests run the whole chain through the service container and assert on

@@ -1,11 +1,12 @@
 import io
-from defusedxml import ElementTree
-from zipfile import ZipFile
 import re
+from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
+from defusedxml import ElementTree
 
-from app.PptxPostProcess import SLIDE_SIZES, _apply_slide_size, process, PPTX_NAMESPACE, inches_to_emu
+from app.pptx_post_process import PPTX_NAMESPACE, SLIDE_SIZES, _apply_slide_size, inches_to_emu, process
 
 SLIDE_PATH_PATTERN = re.compile(r"ppt/slides/[a-zA-Z0-9]+.xml")
 
@@ -16,7 +17,7 @@ def create_test_pptx() -> bytes:
     Test PPTX includes one slide and one text box reading "Test Content"
 
     """
-    with open("tests/default.pptx", "rb") as default_pres:
+    with Path("tests/default.pptx").open("rb") as default_pres:
         return default_pres.read()
 
 

@@ -9,12 +9,14 @@ import pytest
 import requests
 
 from tests.test_container import (
-    TEST_IMAGE_FULL,
     TEST_CONTAINER_NAME,
+    TEST_IMAGE_FULL,
     TestParameters,
     cleanup_docker_resources,
     wait_for_container_ready,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(autouse=True)
@@ -36,15 +38,15 @@ def cleanup_session():
     """Session-level fixture to ensure cleanup happens before and after all tests."""
     try:
         cleanup_docker_resources()
-    except Exception as e:
-        logging.error(f"Error in pre-test cleanup: {e}")
+    except Exception as e:  # noqa: BLE001 - pre-test cleanup is best effort
+        logger.error(f"Error in pre-test cleanup: {e}")
 
     yield
 
     try:
         cleanup_docker_resources()
     except Exception as e:
-        logging.error(f"Error in post-test cleanup: {e}")
+        logger.error(f"Error in post-test cleanup: {e}")
         raise
 
 
@@ -68,27 +70,27 @@ def pandoc_container():
         yield container
 
     except Exception as e:
-        logging.error(f"Error in container setup: {e}")
+        logger.error(f"Error in container setup: {e}")
         raise
 
     finally:
         try:
             if container:
-                logging.info("Cleaning up test container...")
+                logger.info("Cleaning up test container...")
                 try:
                     container.stop(timeout=1)
                 except docker.errors.APIError as e:
-                    logging.warning(f"Could not stop container: {e}")
+                    logger.warning(f"Could not stop container: {e}")
 
                 try:
                     container.remove(force=True)
                 except docker.errors.APIError as e:
-                    logging.error(f"Could not remove container: {e}")
+                    logger.error(f"Could not remove container: {e}")
 
             cleanup_docker_resources()
 
-        except Exception as e:
-            logging.error(f"Error in container cleanup: {e}")
+        except Exception as e:  # noqa: BLE001 - container cleanup is best effort
+            logger.error(f"Error in container cleanup: {e}")
 
 
 @pytest.fixture(scope="session")

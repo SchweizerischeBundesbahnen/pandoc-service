@@ -8,8 +8,8 @@ Why an integration test (vs. the mocked encode/decode unit tests): the shim only
 works if the ``\\text{}`` markers survive pandoc's ``texmath`` conversion as distinct
 OMML runs, with the colored content as separate runs between them. That contract
 lives in ``texmath`` and could shift with a pandoc bump; only a real round-trip
-catches such a regression. See ``app/HtmlMathColorPreProcess.py`` and
-``app/DocxMathColorPostProcess.py``.
+catches such a regression. See ``app/html_math_color_pre_process.py`` and
+``app/docx_math_color_post_process.py``.
 """
 
 import zipfile

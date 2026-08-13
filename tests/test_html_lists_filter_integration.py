@@ -1,6 +1,6 @@
 """End-to-end integration tests for the html-lists pipeline.
 
-These exercise the preprocessor (``app.HtmlListsPreProcess``) plus the Lua
+These exercise the preprocessor (``app.html_lists_pre_process``) plus the Lua
 filter (``filters/html_lists.lua``) together by converting HTML → DOCX through
 the pandoc-service container (which applies both the preprocessor and the Lua
 filter automatically for HTML→DOCX conversions), then inspecting the resulting
@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import zipfile
 from io import BytesIO
-from xml.etree import ElementTree as ET  # noqa: S405
-
-import pytest
+from xml.etree import ElementTree as ET
 
 from tests.test_container import TestParameters
 
@@ -32,7 +30,7 @@ FILTER_PATH = "/usr/local/share/pandoc/filters/html_lists.lua"
 def _convert_html_to_docx(test_parameters: TestParameters, html: str) -> bytes:
     """Convert HTML to DOCX via the pandoc-service container API.
 
-    The service automatically applies the HtmlListsPreProcess preprocessor
+    The service automatically applies the html_lists_pre_process preprocessor
     and the html_lists.lua filter for HTML→DOCX conversions.
 
     Returns the raw DOCX bytes.
@@ -52,15 +50,15 @@ def _list_paragraphs(doc_xml: bytes) -> list[tuple[str, str, str]]:
     doc = ET.fromstring(doc_xml)
     out: list[tuple[str, str, str]] = []
     for p in doc.iter(f"{{{W_NS}}}p"):
-        numPr = p.find(f".//{{{W_NS}}}numPr")
-        if numPr is None:
+        num_pr = p.find(f".//{{{W_NS}}}numPr")
+        if num_pr is None:
             continue
-        ilvl_el = numPr.find(f"{{{W_NS}}}ilvl")
-        numId_el = numPr.find(f"{{{W_NS}}}numId")
+        ilvl_el = num_pr.find(f"{{{W_NS}}}ilvl")
+        num_id_el = num_pr.find(f"{{{W_NS}}}numId")
         ilvl = ilvl_el.get(f"{{{W_NS}}}val") if ilvl_el is not None else ""
-        numId = numId_el.get(f"{{{W_NS}}}val") if numId_el is not None else ""
+        num_id = num_id_el.get(f"{{{W_NS}}}val") if num_id_el is not None else ""
         text = "".join(t.text or "" for t in p.iter(f"{{{W_NS}}}t"))
-        out.append((ilvl, numId, text))
+        out.append((ilvl, num_id, text))
     return out
 
 
@@ -81,10 +79,10 @@ def test_polarion_orphan_ol_does_not_emit_stray_marker(test_parameters: TestPara
     paragraphs = _list_paragraphs(doc_xml)
     assert len(paragraphs) == 3, f"expected exactly 3 numbered paragraphs (Level 1 / Level 3 / Level 2); got {len(paragraphs)}: {paragraphs!r} — a stray empty marker paragraph was emitted, the html_lists.lua filter did not strip it"
     # And every list paragraph has real text content — no empties.
-    for ilvl, numId, text in paragraphs:
-        assert text.strip(), f"empty list paragraph found at ilvl={ilvl} numId={numId} — filter didn't suppress the marker"
+    for ilvl, num_id, text in paragraphs:
+        assert text.strip(), f"empty list paragraph found at ilvl={ilvl} numId={num_id} — filter didn't suppress the marker"
 
-    # Sanity: depths are 1 / 3 / 2 (zero-indexed: 0 / 2 / 1).
+        # Sanity: depths are 1 / 3 / 2 (zero-indexed: 0 / 2 / 1).
     ilvls = [ilvl for ilvl, _, _ in paragraphs]
     assert ilvls == ["0", "2", "1"], f"expected ilvls 0/2/1, got {ilvls}"
 

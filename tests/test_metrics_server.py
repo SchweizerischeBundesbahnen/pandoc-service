@@ -181,9 +181,8 @@ class TestMetricsServer:
 
             fake_server.serve = _never_ready_serve
 
-            with patch("app.metrics_server.uvicorn.Server", return_value=fake_server), patch("app.metrics_server.STARTUP_TIMEOUT_SECONDS", 0.05):
-                with pytest.raises(TimeoutError, match="failed to start"):
-                    await server.start()
+            with patch("app.metrics_server.uvicorn.Server", return_value=fake_server), patch("app.metrics_server.STARTUP_TIMEOUT_SECONDS", 0.05), pytest.raises(TimeoutError, match="failed to start"):
+                await server.start()
 
             assert server.is_running is False
 

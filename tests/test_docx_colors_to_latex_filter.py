@@ -4,7 +4,7 @@ Companion to ``test_inline_styles_filter_integration.py``: runs pandoc inside
 the pandoc-service container with the Lua filter loaded and asserts that the
 LaTeX output contains the expected ``\\textcolor`` / ``\\colorbox`` raw commands
 for runs carrying the synthetic ``custom-style`` attribute the
-``DocxColorPreProcess`` preprocessor produces.
+``docx_color_pre_process`` preprocessor produces.
 
 The test runs the full preprocessor + pandoc + filter pipeline on the
 checked-in ``tests/data/colored.docx`` fixture, which contains:
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from docker.models.containers import Container
 
-from app import DocxColorPreProcess
+from app import docx_color_pre_process
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
@@ -46,7 +46,7 @@ def _run_pandoc_in_container(container: Container, cmd: str, input_bytes: bytes 
 
 def _convert_docx_to_latex(container: Container, docx_bytes: bytes) -> str:
     """Run the full preprocess + pandoc + filter pipeline, return LaTeX."""
-    preprocessed = DocxColorPreProcess.preprocess(docx_bytes)
+    preprocessed = docx_color_pre_process.preprocess(docx_bytes)
     _run_pandoc_in_container(container, "mkdir -p /tmp/test", input_bytes=None, input_file=None)
     _run_pandoc_in_container(container, "true", input_bytes=preprocessed, input_file="/tmp/test/in.docx")
     return _run_pandoc_in_container(
@@ -122,7 +122,7 @@ def test_soul_package_added_to_header_includes(test_parameters: TestParameters):
     """The filter must inject \\usepackage{soul} into the preamble so \\hl
     is defined when tectonic processes the document. Requires --standalone
     so pandoc emits a full document with header-includes applied."""
-    preprocessed = DocxColorPreProcess.preprocess(FIXTURE_PATH.read_bytes())
+    preprocessed = docx_color_pre_process.preprocess(FIXTURE_PATH.read_bytes())
     stdout = _md_to_latex_standalone(test_parameters.container, preprocessed)
     assert "\\usepackage{soul}" in stdout, stdout
     # Both underline mechanisms must be pinned to the same fixed depth so an
@@ -141,7 +141,7 @@ def test_superscript_subscript_routed_to_ulem_for_box_safety(test_parameters: Te
     \\uline/\\sout *locally* — globally \\ul/\\st stay soul so ordinary
     underlined/struck text is unchanged (no document-wide line-break/hyphenation
     regression). Requires --standalone so header-includes are emitted."""
-    preprocessed = DocxColorPreProcess.preprocess(FIXTURE_PATH.read_bytes())
+    preprocessed = docx_color_pre_process.preprocess(FIXTURE_PATH.read_bytes())
     stdout = _md_to_latex_standalone(test_parameters.container, preprocessed)
     flat = _flatten_whitespace(stdout)
     assert "\\usepackage[normalem]{ulem}" in flat, flat

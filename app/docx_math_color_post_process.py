@@ -1,13 +1,13 @@
-r"""Decode math color markers into real OMML color (companion to HtmlMathColorPreProcess).
+r"""Decode math color markers into real OMML color (companion to html_math_color_pre_process).
 
-``HtmlMathColorPreProcess`` rewrites ``\color``/``\textcolor`` inside math scripts
+``html_math_color_pre_process`` rewrites ``\color``/``\textcolor`` inside math scripts
 into ``\text{@@PMC:RRGGBB@@}...\text{@@PMCEND@@}`` markers before pandoc runs,
 because ``texmath`` cannot carry color through to OMML. Pandoc emits each
 ``\text{}`` marker as its own ``<m:r>`` run, with the formerly-colored content as
 separate runs between the start and end markers in document order.
 
 :func:`apply_math_colors` walks the OMML runs of the document **in place** (it operates
-on the lxml tree ``DocxPostProcess`` has already parsed, so there is no extra
+on the lxml tree ``docx_post_process`` has already parsed, so there is no extra
 serialize/parse round-trip), maintaining a stack of active colors:
 
 * a run whose text is a start marker pushes its color and is deleted;
@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 from lxml import etree  # type: ignore[import-untyped]
 
-from app.HtmlMathColorPreProcess import MARKER_END, MARKER_PREFIX, MARKER_SUFFIX
+from app.html_math_color_pre_process import MARKER_END, MARKER_PREFIX, MARKER_SUFFIX
 
 if TYPE_CHECKING:
     from docx.document import Document as DocumentObject
@@ -49,8 +49,8 @@ def apply_math_colors(doc: DocumentObject) -> None:
     """Colorize the math runs between marker pairs and remove the markers, mutating the
     document in place. A document with no markers is left untouched.
 
-    Kept parallel to ``DocxReferencesPostProcess.add_table_of_contents_entries``: a public
-    function that takes the ``Document`` and is called directly from ``DocxPostProcess.process``.
+    Kept parallel to ``docx_references_post_process.add_table_of_contents_entries``: a public
+    function that takes the ``Document`` and is called directly from ``docx_post_process.process``.
     """
     color_stack: list[str] = []
     marker_runs: list[etree._Element] = []

@@ -1,7 +1,7 @@
 """Shared OOXML/zip plumbing for the DOCX preprocessors.
 
-``DocxColorPreProcess``, ``DocxParagraphPreProcess`` and
-``DocxListLevelPreProcess`` all rewrite body parts of a DOCX package before
+``docx_color_pre_process``, ``docx_paragraph_pre_process`` and
+``docx_list_level_pre_process`` all rewrite body parts of a DOCX package before
 pandoc reads it. This module factors out the boilerplate they share: the
 WordprocessingML namespace, the canonical-prefix registration, the set of parts
 that may contain runs/paragraphs, and reading/repacking the zip.

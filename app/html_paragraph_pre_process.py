@@ -120,7 +120,7 @@ def preprocess(source: bytes) -> bytes:
         # re-serialize at all when a paragraph was actually wrapped.
         doc = html.document_fromstring(source)
     except _PARSE_FAILURES:
-        logger.warning("HtmlParagraphPreProcess: HTML parse failed; passing input through")
+        logger.warning("html_paragraph_pre_process: HTML parse failed; passing input through")
         return source
 
     if not _wrap_formatted_paragraphs(doc):

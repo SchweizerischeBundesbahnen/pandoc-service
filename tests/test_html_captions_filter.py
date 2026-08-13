@@ -5,7 +5,7 @@ paragraph styles in the produced ``document.xml``. The filter marks a paragraph
 with the "Caption" style iff it carries Polarion's caption counter span
 (``<span data-sequence=... class="polarion-rte-caption">``); everything else —
 headings, cross-references, size labels — must be left unstyled so
-``DocxReferencesPostProcess`` never mistakes them for captions.
+``docx_references_post_process`` never mistakes them for captions.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ _FILTER = "filters/html_captions.lua"
 
 def _styles_by_text(body: str) -> dict[str, str | None]:
     html = f"<html><head><title>t</title></head><body>{body}</body></html>"
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [_PANDOC, "-f", "html", "-t", "docx", "--lua-filter", _FILTER, "-o", "-"],
         input=html.encode(),
         capture_output=True,
@@ -34,7 +34,7 @@ def _styles_by_text(body: str) -> dict[str, str | None]:
     )
     document_xml = zipfile.ZipFile(io.BytesIO(completed.stdout)).read("word/document.xml").decode()
     result: dict[str, str | None] = {}
-    for match in re.finditer(r"<w:p\b.*?</w:p>", document_xml, re.S):
+    for match in re.finditer(r"<w:p\b.*?</w:p>", document_xml, re.DOTALL):
         para = match.group(0)
         style = re.search(r'<w:pStyle w:val="([^"]+)"', para)
         text = "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", para)).strip()
@@ -84,7 +84,7 @@ def test_only_the_caption_is_marked_among_lookalikes():
 def _document_xml(body: str) -> str:
     """Run pandoc with the caption filter and return raw document.xml."""
     html = f"<html><head><title>t</title></head><body>{body}</body></html>"
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [_PANDOC, "-f", "html", "-t", "docx", "--lua-filter", _FILTER, "-o", "-"],
         input=html.encode(),
         capture_output=True,
@@ -96,28 +96,28 @@ def _document_xml(body: str) -> str:
 def test_table_caption_contains_seq_field():
     """Caption number must be wrapped in a SEQ Table field, not plain text."""
     xml = _document_xml(_CAPTION_P)
-    assert 'SEQ Table' in xml
-    assert 'w:fldChar' in xml
+    assert "SEQ Table" in xml
+    assert "w:fldChar" in xml
 
 
 def test_figure_caption_contains_seq_field():
     """Figure caption number must use SEQ Figure field."""
     xml = _document_xml(_FIGURE_CAPTION_P)
-    assert 'SEQ Figure' in xml
-    assert 'w:fldChar' in xml
+    assert "SEQ Figure" in xml
+    assert "w:fldChar" in xml
 
 
 def test_seq_field_has_cached_number():
     """The SEQ field should contain the original number as cached display value."""
     xml = _document_xml(_CAPTION_P)
     # Between fldChar separate and end there should be a <w:t>1</w:t>
-    assert re.search(r'fldCharType="separate".*?<w:t[^>]*>1</w:t>.*?fldCharType="end"', xml, re.S)
+    assert re.search(r'fldCharType="separate".*?<w:t[^>]*>1</w:t>.*?fldCharType="end"', xml, re.DOTALL)
 
 
 def test_non_docx_target_is_untouched():
     """The filter only acts for the docx writer (defensive FORMAT gate)."""
     html = f"<html><body>{_CAPTION_P}</body></html>"
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [_PANDOC, "-f", "html", "-t", "latex", "--lua-filter", _FILTER],
         input=html.encode(),
         capture_output=True,

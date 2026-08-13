@@ -13,7 +13,7 @@ from starlette.testclient import TestClient
 
 # Import the module to test
 from app.constants import API_VERSION
-from app.PandocController import (
+from app.pandoc_controller import (
     ALLOWED_PANDOC_OPTIONS,
     DEFAULT_CONVERSION_OPTIONS,
     FILTERS,
@@ -207,7 +207,7 @@ def _run_conversion_capturing_cmd(source_data, source_format, target_format):
         patch("pathlib.Path.open", mock_open(read_data=b"output")),
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("app.PandocController.DocxLatexPreProcess.preprocess", side_effect=lambda b: b) as mock_pre,
+        patch("app.pandoc_controller.docx_latex_pre_process.preprocess", side_effect=lambda b: b) as mock_pre,
     ):
         mock_subprocess.return_value.returncode = 0
 
@@ -273,7 +273,7 @@ def test_version_endpoint():
     with (
         patch("subprocess.run") as mock_subprocess,
         patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0", "PANDOC_SERVICE_BUILD_TIMESTAMP": "2024-03-27"}),
-        patch("app.PandocController.get_chromium_manager") as mock_get_manager,
+        patch("app.pandoc_controller.get_chromium_manager") as mock_get_manager,
     ):
         # Mock subprocess run result
         mock_process = MagicMock()
@@ -311,7 +311,7 @@ def test_version_endpoint_with_subprocess_error():
 
 def test_get_tectonic_availability_available():
     """Return available when tectonic command succeeds."""
-    with patch("app.PandocController.subprocess.run") as mock_subprocess:
+    with patch("app.pandoc_controller.subprocess.run") as mock_subprocess:
         mock_subprocess.return_value = MagicMock(returncode=0)
 
         result = get_tectonic_availability()
@@ -322,7 +322,7 @@ def test_get_tectonic_availability_available():
 
 def test_get_tectonic_availability_unavailable():
     """Return unavailable when subprocess error occurs."""
-    with patch("app.PandocController.subprocess.run", side_effect=FileNotFoundError("not found")):
+    with patch("app.pandoc_controller.subprocess.run", side_effect=FileNotFoundError("not found")):
         result = get_tectonic_availability()
 
         assert result == "unavailable"
@@ -330,7 +330,7 @@ def test_get_tectonic_availability_unavailable():
 
 def test_get_tectonic_availability_unknown_on_unexpected_error():
     """Return unknown when an unexpected error occurs."""
-    with patch("app.PandocController.subprocess.run", side_effect=RuntimeError("not found")):
+    with patch("app.pandoc_controller.subprocess.run", side_effect=RuntimeError("not found")):
         result = get_tectonic_availability()
 
         assert result == "unknown"
@@ -352,7 +352,7 @@ def test_get_temp_directory_writability_unwritable(tmp_path: Path):
     mock_cm.__enter__.return_value = mock_probe
     mock_cm.__exit__.return_value = None
 
-    with patch("app.PandocController.tempfile.NamedTemporaryFile", return_value=mock_cm):
+    with patch("app.pandoc_controller.tempfile.NamedTemporaryFile", return_value=mock_cm):
         result = get_temp_directory_writability()
 
     assert result == "unwritable"
@@ -361,9 +361,9 @@ def test_get_temp_directory_writability_unwritable(tmp_path: Path):
 def test_health_endpoint_healthy():
     """Test health endpoint directly. All healthy outputs"""
     with (
-        patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
-        patch("app.PandocController.get_tectonic_availability", return_value="available"),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
+        patch("app.pandoc_controller.get_temp_directory_writability", return_value="writable"),
+        patch("app.pandoc_controller.get_tectonic_availability", return_value="available"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.1.9"),
     ):
         test_client = TestClient(app)
         response = test_client.get("/health")
@@ -378,9 +378,9 @@ def test_health_endpoint_healthy():
 def test_health_endpoint_unhealthy_temp_unwritable():
     """Test health endpoint directly. Two unhealthy outputs"""
     with (
-        patch("app.PandocController.get_temp_directory_writability", return_value="unwritable"),
-        patch("app.PandocController.get_tectonic_availability", return_value="available"),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
+        patch("app.pandoc_controller.get_temp_directory_writability", return_value="unwritable"),
+        patch("app.pandoc_controller.get_tectonic_availability", return_value="available"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.1.9"),
     ):
         test_client = TestClient(app)
         response = test_client.get("/health")
@@ -395,9 +395,9 @@ def test_health_endpoint_unhealthy_temp_unwritable():
 def test_health_endpoint_unhealthy_unknown_tectonic_error():
     """Test health endpoint directly. Two unhealthy outputs"""
     with (
-        patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
-        patch("app.PandocController.get_tectonic_availability", return_value="unknown"),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
+        patch("app.pandoc_controller.get_temp_directory_writability", return_value="writable"),
+        patch("app.pandoc_controller.get_tectonic_availability", return_value="unknown"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.1.9"),
     ):
         test_client = TestClient(app)
         response = test_client.get("/health")
@@ -412,9 +412,9 @@ def test_health_endpoint_unhealthy_unknown_tectonic_error():
 def test_health_endpoint_unhealthy_pandoc_unavailable():
     """Test health endpoint directly. Two unhealthy outputs"""
     with (
-        patch("app.PandocController.get_temp_directory_writability", return_value="writable"),
-        patch("app.PandocController.get_tectonic_availability", return_value="available"),
-        patch("app.PandocController.get_pandoc_version", return_value=None),
+        patch("app.pandoc_controller.get_temp_directory_writability", return_value="writable"),
+        patch("app.pandoc_controller.get_tectonic_availability", return_value="available"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value=None),
     ):
         test_client = TestClient(app)
         response = test_client.get("/health")
@@ -473,12 +473,12 @@ def test_process_error():
     assert "ValueError" in response.body.decode("utf-8")
 
     # Test with exception that has a message attribute
-    class CustomException(Exception):
+    class CustomError(Exception):
         def __init__(self, message):
             self.message = message
             super().__init__(message)
 
-    custom_exception = CustomException("Custom error message")
+    custom_exception = CustomError("Custom error message")
     response = process_error(custom_exception, "Custom error", 400)
 
     assert response.status_code == 400
@@ -488,8 +488,8 @@ def test_process_error():
 def test_postprocess_and_build_response():
     """Test the postprocess_and_build_response function."""
     with (
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
-        patch("app.DocxPostProcess.process", return_value=b"Processed DOCX content"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.1.9"),
+        patch("app.docx_post_process.process", return_value=b"Processed DOCX content"),
         patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0"}),
     ):
         # Create test data
@@ -517,7 +517,7 @@ def test_postprocess_and_build_response():
         assert response.body == pdf_content
 
 
-def create_mock_docx(files: dict[str, bytes] = None) -> bytes:
+def create_mock_docx(files: dict[str, bytes] | None = None) -> bytes:
     """Create a minimal valid DOCX file for testing with additional required files
 
     :param files: Optional dictionary of additional files to include in the DOCX
@@ -623,7 +623,7 @@ def test_run_pandoc_conversion_with_string_input():
 def test_convert_with_encoding():
     """Test the convert endpoint with encoding parameter."""
     # Create patches for the required functions
-    with patch("app.PandocController.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+    with patch("app.pandoc_controller.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
         mock_response = Response(b"<html>Test</html>", media_type="text/html", status_code=200)
         mock_postprocess.return_value = mock_response
@@ -643,7 +643,7 @@ def test_convert_with_encoding():
 def test_convert_with_custom_filename():
     """Test the convert endpoint with custom filename parameter."""
     # Create patches for the required functions
-    with patch("app.PandocController.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+    with patch("app.pandoc_controller.run_pandoc_conversion", return_value=b"<html>Test</html>") as mock_convert, patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
         mock_response = Response(b"<html>Test</html>", media_type="text/html", status_code=200)
         mock_postprocess.return_value = mock_response
@@ -663,7 +663,7 @@ def test_convert_with_custom_filename():
 def test_convert_docx_with_ref_source_text():
     """Test convert_docx_with_ref function using text in form data."""
     # Create patches for the required functions
-    with patch("app.PandocController.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+    with patch("app.pandoc_controller.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
         mock_response = Response(b"DOCX content", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status_code=200)
         mock_postprocess.return_value = mock_response
@@ -695,7 +695,7 @@ def test_convert_docx_with_ref_source_text():
 def test_convert_docx_with_ref_no_template():
     """Test convert_docx_with_ref function without template file."""
     # Create patches for the required functions
-    with patch("app.PandocController.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+    with patch("app.pandoc_controller.run_pandoc_conversion", return_value=b"DOCX content") as mock_convert, patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess:
         # Set up mock for Response
         mock_response = Response(b"DOCX content", media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", status_code=200)
         mock_postprocess.return_value = mock_response
@@ -733,7 +733,7 @@ def test_convert_docx_with_ref_no_template():
 
 def test_convert_docx_to_pdf_with_custom_filename():
     """Test DOCX to PDF conversion with custom filename and PDF engine."""
-    with patch("app.PandocController.run_pandoc_conversion", return_value=b"%PDF-test") as mock_convert, patch("app.PandocController.postprocess_and_build_response") as mock_postprocess:
+    with patch("app.pandoc_controller.run_pandoc_conversion", return_value=b"%PDF-test") as mock_convert, patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess:
         mock_response = Response(content=b"%PDF-test", media_type="application/pdf", status_code=200)
         mock_postprocess.return_value = mock_response
 
@@ -759,7 +759,7 @@ def test_convert_docx_to_pdf_with_custom_filename():
 
 def test_convert_docx_with_ref_exception():
     """Test convert_docx_with_ref with an exception during conversion."""
-    with patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion:
+    with patch("app.pandoc_controller.run_pandoc_conversion") as mock_run_conversion:
         # Setup mock to raise an exception
         mock_run_conversion.side_effect = ValueError("Test error")
 
@@ -951,8 +951,8 @@ def test_convert_docx_with_ref_no_source_file():
 def test_postprocess_and_build_response_with_headers():
     """Test postprocess_and_build_response with all headers."""
     with (
-        patch("app.DocxPostProcess.process", side_effect=lambda x, y=None, z=None, layouts=None: x),
-        patch("app.PandocController.get_pandoc_version", return_value="3.1.9"),
+        patch("app.docx_post_process.process", side_effect=lambda x, y=None, z=None, layouts=None: x),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.1.9"),
         patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0"}),
     ):
         # Test with DOCX format (triggers postprocessing)
@@ -1012,7 +1012,7 @@ def test_get_docx_template_with_path_handling():
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", side_effect=[False, True]),  # False for initial check, True for finally
         patch("pathlib.Path.unlink"),
-        patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
+        patch("app.pandoc_controller.anyio.open_file", return_value=async_context_manager),
         patch("fastapi.responses.StreamingResponse") as mock_send_file,
     ):
         # Mock the anyio.run_process to avoid calling the real pandoc
@@ -1035,8 +1035,8 @@ def test_get_docx_template_with_path_handling():
 def test_convert_endpoint_with_custom_file_extension():
     """Test convert endpoint with custom file extension."""
     with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
+        patch("app.pandoc_controller.run_pandoc_conversion") as mock_run_conversion,
+        patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess,
     ):
         # Set up mocks
         mock_run_conversion.return_value = b"Converted content"
@@ -1060,8 +1060,8 @@ def test_convert_endpoint_with_custom_file_extension():
 def test_docx_with_template_encoding():
     """Test convert_docx_with_ref with encoding parameter and file source."""
     with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
+        patch("app.pandoc_controller.run_pandoc_conversion") as mock_run_conversion,
+        patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess,
         patch("anyio.open_file") as mock_anyio_open,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
@@ -1108,7 +1108,7 @@ def test_request_body_too_large():
     """Test that the middleware returns 413 when request body exceeds size limit."""
     data_limit = 1024
     large_body = "x" * (data_limit + 1)
-    with patch("app.PandocController.data_limit", data_limit):
+    with patch("app.pandoc_controller.data_limit", data_limit):
         client = TestClient(app)
         response = client.post("/test-endpoint", content=large_body)
 
@@ -1119,8 +1119,8 @@ def test_request_body_too_large():
 def test_docx_with_extended_options():
     """Test DOCX conversion with template and custom options."""
     with (
-        patch("app.PandocController.run_pandoc_conversion") as mock_run_conversion,
-        patch("app.PandocController.postprocess_and_build_response") as mock_postprocess,
+        patch("app.pandoc_controller.run_pandoc_conversion") as mock_run_conversion,
+        patch("app.pandoc_controller.postprocess_and_build_response") as mock_postprocess,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
@@ -1178,7 +1178,7 @@ def test_get_request_body_limit_mb_negative():
     """Test get_request_body_limit_mb with negative value (invalid)."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "-100"}),
-        patch("app.PandocController.logger.warning") as mock_warning,
+        patch("app.pandoc_controller.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
@@ -1190,7 +1190,7 @@ def test_get_request_body_limit_mb_numeric_with_whitespace():
     """Test get_request_body_limit_mb with numeric string containing whitespace."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": " 1000 "}),
-        patch("app.PandocController.logger.warning") as mock_warning,
+        patch("app.pandoc_controller.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         # int() in Python handles leading/trailing whitespace
@@ -1202,7 +1202,7 @@ def test_get_request_body_limit_mb_special_characters():
     """Test get_request_body_limit_mb with special characters."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "1000MB"}),
-        patch("app.PandocController.logger.warning") as mock_warning,
+        patch("app.pandoc_controller.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
@@ -1214,7 +1214,7 @@ def test_get_request_body_limit_mb_hex_string():
     """Test get_request_body_limit_mb with hexadecimal string."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "0x100"}),
-        patch("app.PandocController.logger.warning") as mock_warning,
+        patch("app.pandoc_controller.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500  # Should use default
@@ -1233,7 +1233,7 @@ def test_get_request_body_limit_mb_logging_message_content():
     """Test that logging messages contain appropriate information."""
     with (
         patch.dict(os.environ, {"REQUEST_BODY_LIMIT_MB": "-1"}),
-        patch("app.PandocController.logger.warning") as mock_warning,
+        patch("app.pandoc_controller.logger.warning") as mock_warning,
     ):
         result = get_request_body_limit_mb()
         assert result == 500
@@ -1258,7 +1258,7 @@ def test_get_docx_template_uses_async_file_io():
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("app.PandocController.anyio.open_file", return_value=async_context_manager) as mock_open_file,
+        patch("app.pandoc_controller.anyio.open_file", return_value=async_context_manager) as mock_open_file,
     ):
         process_mock = MagicMock()
         process_mock.returncode = 0
@@ -1290,7 +1290,7 @@ def test_get_docx_template_async_file_read():
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
-        patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
+        patch("app.pandoc_controller.anyio.open_file", return_value=async_context_manager),
     ):
         process_mock = MagicMock()
         process_mock.returncode = 0
@@ -1318,7 +1318,7 @@ def test_get_docx_template_cleanup_on_success():
         patch("anyio.run_process") as mock_run_process,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink") as mock_unlink,
-        patch("app.PandocController.anyio.open_file", return_value=async_context_manager),
+        patch("app.pandoc_controller.anyio.open_file", return_value=async_context_manager),
     ):
         process_mock = MagicMock()
         process_mock.returncode = 0
@@ -1391,7 +1391,7 @@ def test_get_pptx_template():
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink"),
         patch("anyio.open_file") as mock_open_file,
-        patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.8.3"),
     ):
         # Mock the anyio.run_process to avoid calling the real pandoc
         process_mock = MagicMock()
@@ -1424,7 +1424,7 @@ def test_convert_pptx_with_template():
         patch("anyio.open_file") as mock_anyio_open,
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.8.3"),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -1468,7 +1468,7 @@ def test_convert_pptx_without_template():
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.open", create=True) as mock_path_open,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
-        patch("app.PandocController.get_pandoc_version", return_value="3.8.3"),
+        patch("app.pandoc_controller.get_pandoc_version", return_value="3.8.3"),
     ):
         # Setup mocks for tempfile
         mock_source_file = MagicMock()
@@ -1497,7 +1497,7 @@ def test_convert_pptx_without_template():
 
 def test_postprocess_and_build_response_pptx():
     """Test postprocess_and_build_response with PPTX format."""
-    with patch("app.PptxPostProcess.process") as mock_pptx_process:
+    with patch("app.pptx_post_process.process") as mock_pptx_process:
         mock_pptx_process.return_value = b"processed_pptx_content"
 
         output = b"raw_pptx_content"
@@ -1507,7 +1507,7 @@ def test_postprocess_and_build_response_pptx():
 
         response = postprocess_and_build_response(output, target_format, file_name, slide_size, None)
 
-        # Verify PptxPostProcess.process was called
+        # Verify pptx_post_process.process was called
         mock_pptx_process.assert_called_once_with(output, slide_size)
 
         # Verify response properties

@@ -28,7 +28,7 @@ _FILTER = "filters/html_tables_to_latex.lua"
 
 def _html_to_latex(body: str) -> str:
     html = f"<html><head><title>t</title></head><body>{body}</body></html>"
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [_PANDOC, "-f", "html", "-t", "latex", "--lua-filter", _FILTER],
         input=html.encode(),
         capture_output=True,
@@ -87,7 +87,7 @@ def test_table_without_style_is_untouched():
 def test_non_latex_target_is_untouched():
     """The filter is a no-op for non-LaTeX writers (defensive FORMAT gate)."""
     html = f"<html><body>{_table('width: 40%; margin-left: auto; margin-right: auto;')}</body></html>"
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [_PANDOC, "-f", "html", "-t", "html", "--lua-filter", _FILTER],
         input=html.encode(),
         capture_output=True,

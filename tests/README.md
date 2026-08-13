@@ -13,7 +13,7 @@ This directory contains all tests for the pandoc-service project. The testing is
 
 ### Python Tests
 
-- `test_pandoc_controller.py`: Unit tests for the PandocController functionality
+- `test_pandoc_controller.py`: Unit tests for the pandoc_controller functionality
 - `test_container.py`: Integration tests for the Docker container
 
 ### Shell Tests

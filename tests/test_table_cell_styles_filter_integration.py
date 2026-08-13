@@ -96,9 +96,7 @@ def test_cell_border_rgb_color_with_spaces(test_parameters: TestParameters):
 
     bottoms = _find_all(root, ".//w:tc/w:tcPr/w:tcBorders/w:bottom")
     assert len(bottoms) >= 1
-    assert bottoms[0].get(f"{{{W_NS}}}color") == "FF0000", (
-        f"expected FF0000 for rgb(255,0,0), got {bottoms[0].get(f'{{{W_NS}}}color')}"
-    )
+    assert bottoms[0].get(f"{{{W_NS}}}color") == "FF0000", f"expected FF0000 for rgb(255,0,0), got {bottoms[0].get(f'{{{W_NS}}}color')}"
 
 
 def test_cell_border_dotted(test_parameters: TestParameters):

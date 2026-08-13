@@ -2,7 +2,7 @@
 
 Runs pandoc inside the pandoc-service container with the filter loaded and
 asserts the LaTeX output for a ``Div`` carrying the synthetic
-``custom-style="PandocPara__..."`` attribute the ``DocxParagraphPreProcess``
+``custom-style="PandocPara__..."`` attribute the ``docx_paragraph_pre_process``
 preprocessor produces. The AST shape is built via a markdown fenced div
 (``::: {custom-style="..."}``), which pandoc turns into exactly that ``Div``
 node — so the test is pandoc-only and needs no DOCX fixture or tectonic.

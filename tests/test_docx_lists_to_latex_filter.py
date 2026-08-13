@@ -2,7 +2,7 @@
 
 Runs the real ``pandoc`` binary inside the pandoc-service container with the
 filter on a native AST that mimics what the docx reader produces for a Polarion
-"irregular" list once ``DocxListLevelPreProcess`` has tagged each item with its
+"irregular" list once ``docx_list_level_pre_process`` has tagged each item with its
 true ``<w:ilvl>`` (a leading ``\\uE000<level>\\uE001`` sentinel ``Str``).
 Pandoc-only — no DOCX fixture or tectonic needed.
 """
@@ -14,8 +14,8 @@ from tests.test_container import TestParameters
 PANDOC_PATH = "/usr/local/bin/pandoc"
 FILTER_PATH = "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
 
-OPEN = "\uE000"
-CLOSE = "\uE001"
+OPEN = "\ue000"
+CLOSE = "\ue001"
 
 
 def _tag(level: int) -> str:

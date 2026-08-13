@@ -7,7 +7,7 @@ equations (OMML) through its ``texmath`` library. ``texmath`` discards ``\color`
 color output — so a colored math run reaches Word black, or not at all.
 
 This preprocessor is the *encode* half of a two-step shim (the *decode* half is
-``app/DocxMathColorPostProcess.py``). For every math script it rewrites
+``app/docx_math_color_post_process.py``). For every math script it rewrites
 
     \color{NAME}{X}   \textcolor[HTML]{RRGGBB}{X}
 
@@ -18,7 +18,7 @@ into
 The ``\text{...}`` markers are plain text that ``texmath`` keeps as distinct OMML
 runs (verified: each ``\text{}`` becomes one ``<m:r><m:t>...</m:t></m:r>``), with
 the formerly-colored content sitting as separate runs between the start and end
-markers in document order. ``DocxMathColorPostProcess`` then walks the OMML runs,
+markers in document order. ``docx_math_color_post_process`` then walks the OMML runs,
 turns each start/end marker pair into a ``<w:color>`` on the runs between them,
 and deletes the marker runs.
 
@@ -49,7 +49,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Marker sentinels. Shared with app/DocxMathColorPostProcess.py, which parses them
+# Marker sentinels. Shared with app/docx_math_color_post_process.py, which parses them
 # back out. Chosen to (a) survive texmath intact inside \text{} as a single run and
 # (b) be vanishingly unlikely to collide with real formula text. The start marker
 # carries the resolved 6-hex color; the end marker is generic (the decoder uses a
@@ -129,7 +129,7 @@ def preprocess(source: bytes) -> bytes:
     try:
         text = source.decode("utf-8")
     except UnicodeDecodeError:
-        logger.warning("HtmlMathColorPreProcess: input is not valid UTF-8; passing through unchanged")
+        logger.warning("html_math_color_pre_process: input is not valid UTF-8; passing through unchanged")
         return source
 
     # Cheap guard: nothing to do unless a color command appears somewhere. ("\\color"
@@ -200,7 +200,7 @@ def _rewrite_color_command(latex: str, name: str, name_end: int) -> tuple[str, i
         # Color we cannot resolve: keep the content (uncolored) rather than leave the
         # command in place, so \textcolor does not leak. Warn so the dropped color is
         # traceable when debugging a formula.
-        logger.warning("HtmlMathColorPreProcess: unresolvable color %r in \\%s - content kept, color dropped", raw_color, name)
+        logger.warning("html_math_color_pre_process: unresolvable color %r in \\%s - content kept, color dropped", raw_color, name)
         return inner, end
     return "\\text{" + MARKER_PREFIX + hex_color + MARKER_SUFFIX + "}" + inner + "\\text{" + MARKER_END + "}", end
 
@@ -299,7 +299,7 @@ def _resolve_color(model: str | None, value: str) -> str | None:
 
 def _resolve_hex(value: str) -> str | None:
     """Normalize ``#RRGGBB``, ``#RGB``, ``RRGGBB`` or ``RGB`` to uppercase ``RRGGBB``."""
-    candidate = value[1:] if value.startswith("#") else value
+    candidate = value.removeprefix("#")
     if _HEX6_RE.match(candidate):
         return candidate.upper()
     if _HEX3_RE.match(candidate):

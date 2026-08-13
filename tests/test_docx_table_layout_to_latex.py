@@ -21,7 +21,7 @@ from docx import Document
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
-from app import DocxLatexPreProcess
+from app import docx_latex_pre_process
 
 _PANDOC = shutil.which("pandoc")
 pytestmark = pytest.mark.skipif(_PANDOC is None, reason="pandoc binary not available")
@@ -37,7 +37,7 @@ def _docx_with_table(width_pct: int, jc: str, cols: int = 3) -> bytes:
         cell.text = f"c{i}"
     tblpr = table._tbl.tblPr
     # python-docx already emits a <w:tblW>; replace it (and any jc) so the table
-    # has exactly one of each — mirroring app/DocxPostProcess.py's output.
+    # has exactly one of each — mirroring app/docx_post_process.py's output.
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     for tag in ("w:tblW", "w:jc"):
         for existing in tblpr.findall(tag, ns):
@@ -50,8 +50,8 @@ def _docx_with_table(width_pct: int, jc: str, cols: int = 3) -> bytes:
 
 
 def _to_latex(docx_bytes: bytes) -> str:
-    pre = DocxLatexPreProcess.preprocess(docx_bytes)
-    completed = subprocess.run(  # noqa: S603
+    pre = docx_latex_pre_process.preprocess(docx_bytes)
+    completed = subprocess.run(
         [_PANDOC, "-f", "docx+styles", "-t", "latex", "--lua-filter", _FILTER, "-o", "-"],
         input=pre,
         capture_output=True,

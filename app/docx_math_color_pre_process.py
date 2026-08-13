@@ -5,11 +5,11 @@ Pandoc reads Office math (``<m:oMath>``) through the ``texmath`` library
 color constructor and its OMML reader ignores ``<w:color>`` on math runs
 entirely, so a colored equation reaches the LaTeX/PDF writer black — even though
 the color is right there in the DOCX (``<m:r><w:rPr><w:color w:val="RRGGBB"/>``,
-which is exactly what ``app/DocxMathColorPostProcess.py`` writes on the
+which is exactly what ``app/docx_math_color_post_process.py`` writes on the
 HTML -> DOCX path, and what Word renders).
 
 This preprocessor is the *encode* half of a shim that is the mirror image of the
-HTML -> DOCX one (:mod:`app.HtmlMathColorPreProcess` + :mod:`app.DocxMathColorPostProcess`).
+HTML -> DOCX one (:mod:`app.html_math_color_pre_process` + :mod:`app.docx_math_color_post_process`).
 For every math run carrying a direct ``<w:color>`` it wraps the run's ``<m:t>``
 text in plain-text markers::
 
@@ -33,7 +33,7 @@ Scope / limitations
 * Background shading (``<w:shd>``) and highlight (``<w:highlight>``) inside math
   are not handled — math runs carry only ``<w:color>`` in our pipeline.
 * Only meaningful for the DOCX -> LaTeX/PDF targets; wire it in there
-  (see :mod:`app.DocxLatexPreProcess`), never for DOCX -> DOCX/HTML/etc.
+  (see :mod:`app.docx_latex_pre_process`), never for DOCX -> DOCX/HTML/etc.
 """
 
 from __future__ import annotations
@@ -79,19 +79,19 @@ def preprocess(docx_bytes: bytes) -> bytes:
 
     changed = False
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_changed = _rewrite_part(entries[part])
+        rewritten, part_changed = rewrite_part(entries[part])
         if part_changed:
             entries[part] = rewritten
             changed = True
 
-    # Fast path: no colored math anywhere -> return the original bytes so the
-    # zip layout is preserved and no needless re-zip happens.
+            # Fast path: no colored math anywhere -> return the original bytes so the
+            # zip layout is preserved and no needless re-zip happens.
     if not changed:
         return docx_bytes
     return repack(entries)
 
 
-def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Wrap colored math runs in one body part. Returns (new_bytes, changed)."""
     tree = parse_xml(xml_bytes)
     if tree is None:
@@ -101,7 +101,7 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     changed = False
     # iter() reaches every <m:r> regardless of nesting (fractions, scripts,
     # matrices, ...); a math run is <m:r>, distinct from a text run <w:r>, so
-    # this never touches the runs DocxColorPreProcess handles.
+    # this never touches the runs docx_color_pre_process handles.
     for run in tree.iter(_M_R):
         w_rpr = run.find(_W_RPR)
         if w_rpr is None:
@@ -133,8 +133,7 @@ def _normalize_hex(value: str | None) -> str | None:
     if not value:
         return None
     stripped = value.strip()
-    if stripped.startswith("#"):
-        stripped = stripped[1:]
+    stripped = stripped.removeprefix("#")
     if len(stripped) == HEX_COLOR_LENGTH and all(c in _HEX_DIGITS for c in stripped):
         return stripped.upper()
     return None

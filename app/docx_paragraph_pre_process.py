@@ -16,7 +16,7 @@ carrying ``custom-style="PandocPara__..."``, which
 ``\\leftskip`` and the matching alignment primitive (``\\centering`` /
 ``\\raggedleft`` / ``\\raggedright``).
 
-This is the paragraph-level companion to :mod:`app.DocxColorPreProcess` (which
+This is the paragraph-level companion to :mod:`app.docx_color_pre_process` (which
 does the same trick for run-level colour via character styles); the two run
 independently on the same docx→latex path and compose — a coloured run inside
 an aligned paragraph yields ``Div[PandocPara] -> Para -> Span[PandocColor]``.
@@ -86,12 +86,12 @@ def preprocess(docx_bytes: bytes) -> bytes:
         logger.debug("DOCX has no %s; skipping paragraph preprocess", STYLES_PART)
         return docx_bytes
 
-    # Deduplicated by style_id across all body parts so styles.xml gets one
-    # <w:style> per unique align/indent combo even if many paragraphs use it.
+        # Deduplicated by style_id across all body parts so styles.xml gets one
+        # <w:style> per unique align/indent combo even if many paragraphs use it.
     needed_styles: dict[str, _StyleSpec] = {}
 
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_styles = _rewrite_part(entries[part])
+        rewritten, part_styles = rewrite_part(entries[part])
         if part_styles:
             entries[part] = rewritten
             needed_styles.update(part_styles)
@@ -99,7 +99,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
     if not needed_styles:
         return docx_bytes
 
-    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, _build_style_element)
+    entries[STYLES_PART] = augment_styles(entries[STYLES_PART], needed_styles, build_style_element)
     return repack(entries)
 
 
@@ -169,7 +169,7 @@ def _replace_para_props(ppr: ET.Element, style_id: str) -> None:
     ppr.insert(0, ET.Element(_PSTYLE_TAG, {_VAL_ATTR: style_id}))
 
 
-def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
+def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used)."""
     tree = parse_xml(xml_bytes)
     if tree is None:
@@ -204,7 +204,7 @@ def _rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     return serialize_tree(tree), styles_used
 
 
-def _build_style_element(spec: _StyleSpec) -> ET.Element:
+def build_style_element(spec: _StyleSpec) -> ET.Element:
     # w:type="paragraph" — a paragraph style (referenced by <w:pStyle>).
     # Pandoc keys its custom-style attribute off <w:name w:val=...>, so name
     # and styleId both carry the encoded segments. The <w:pPr> below keeps the

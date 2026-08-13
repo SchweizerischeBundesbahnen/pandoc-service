@@ -1,5 +1,7 @@
 ---
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
 repos:
   - repo: local
     hooks:
@@ -8,30 +10,39 @@ repos:
         name: ruff formatter
         entry: uv run ruff format
         language: system
-        types: [python]
+        types:
+          - python
       # Run the linter (inherits config from pyproject.toml)
+      # The tests are linted through per-file-ignores, not excluded — see the
+      # "tests/**" table in pyproject.toml. An exclude here would put them back
+      # out of scope at commit time and make that table dead config locally.
       - id: ruff-check
         name: ruff linter
         entry: uv run ruff check
         language: system
-        types: [python]
-        args: [--fix]
-        exclude: ^tests/
+        types:
+          - python
+        args:
+          - --fix
   - repo: https://github.com/lyz-code/yamlfix
     rev: 1.19.1
     hooks:
       - id: yamlfix
-        args: [-c, .yamlfix.toml]
+        args:
+          - -c
+          - .yamlfix.toml
         exclude: (docker-compose\.ya?ml)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
-        args: [--maxkb=5120]
+        args:
+          - --maxkb=5120
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: trailing-whitespace
-        exclude_types: [markdown]  # Avoid conflicts with markdown formatting
+        exclude_types:  # Avoid conflicts with markdown formatting
+          - markdown
       - id: check-xml
       - id: check-json
       - id: check-toml
@@ -45,26 +56,32 @@ repos:
         name: Sensitive data leak - URLs
         entry: (?<!polarion-opensource@)(?<!www\.)sbb\.ch
         language: pygrep
-        types: [text]
+        types:
+          - text
       - id: sensitive-data-leak-ue-numbers
         name: Sensitive data leak - UE numbers
         entry: \b([uUeE]{1,2})\d{5,6}\b
         language: pygrep
-        types: [text]
+        types:
+          - text
       - id: sensitive-data-leak-dev-ticket-numbers
         name: Sensitive data leak - DEV ticket numbers
         entry: \bDEV-\d{1,6}\b
         language: pygrep
-        types: [text]
+        types:
+          - text
   - repo: local
     hooks:
       - id: mypy
         name: mypy
         entry: uv run mypy
         language: system
-        types: [python]
+        types:
+          - python
         exclude: (^tests/)
-        args: [--config-file, pyproject.toml]
+        args:
+          - --config-file
+          - pyproject.toml
         require_serial: true  # Serial processing is required for mypy (better performance and error reporting)
   - repo: local
     hooks:
@@ -82,7 +99,9 @@ repos:
     rev: v0.9.3
     hooks:
       - id: check-git-config-user-email
-        args: [--templates, ^\S+\.\S+@sbb\.ch$]
+        args:
+          - --templates
+          - ^\S+\.\S+@sbb\.ch$
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.17.0
     hooks:

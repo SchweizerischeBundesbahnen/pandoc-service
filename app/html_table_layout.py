@@ -3,7 +3,7 @@
 Pandoc's HTML reader keeps the ``<table style="...">`` declaration in the
 Table node's ``Attr`` key-value list, but the DOCX writer discards it: every
 table comes out with ``<w:tblW w:type="auto"/>`` and no alignment. On top of
-that, :mod:`app.DocxPostProcess` used to force every table to
+that, :mod:`app.docx_post_process` used to force every table to
 ``<w:tblW w:w="5000" w:type="pct"/>`` (100 %) with autofit layout, so a table
 authored at ``width: 40%`` or ``margin-left: auto`` still rendered full-width
 and left-aligned in Word.
@@ -12,7 +12,7 @@ This module recovers the layout intent *before* pandoc runs by parsing the
 same HTML pandoc will convert. It returns one :class:`TableLayout` per
 ``<table>`` **in document order (depth-first, nested tables included)** — the
 same order in which pandoc emits ``<w:tbl>`` elements and in which
-:func:`app.DocxPostProcess._replace_table_properties` walks them, so the two
+:func:`app.docx_post_process._replace_table_properties` walks them, so the two
 lists line up index-for-index. The DOCX post-processor consumes the list and
 writes real ``<w:tblW>``/``<w:jc>``/``<w:tblInd>`` properties.
 
@@ -28,7 +28,7 @@ Only the properties that survive meaningfully into Word are extracted:
   ``auto``/``auto`` → center, ``auto``/``0`` → right.
 * **indent** — a positive ``margin-left`` length on an otherwise left-aligned
   table becomes a left table indent (twips), mirroring the paragraph-indent
-  handling in :mod:`app.HtmlParagraphPreProcess`.
+  handling in :mod:`app.html_paragraph_pre_process`.
 
 Everything is best-effort: any parse failure returns an empty list so the
 caller falls back to the previous behaviour rather than breaking a conversion.
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 MAX_PCT = 5000
 
 # CSS unit -> twips conversion factor. 1 twip = 1/1440 inch; CSS reference DPI
-# is 96, so 1 px = 15 twips. Mirrors app/HtmlParagraphPreProcess.py so table
+# is 96, so 1 px = 15 twips. Mirrors app/html_paragraph_pre_process.py so table
 # and paragraph indents use one consistent conversion.
 _UNIT_TO_TWIPS: dict[str, float] = {
     "px": 1440 / 96,
@@ -64,12 +64,12 @@ _UNIT_TO_TWIPS: dict[str, float] = {
 # A numeric value followed by an optional unit (letters or %). Keyword values
 # such as "auto" have no leading digit and simply fail to match. The pattern is
 # free of variable-width whitespace quantifiers to avoid SonarCloud's S5852
-# "regex could backtrack" warning (see app/HtmlParagraphPreProcess.py).
+# "regex could backtrack" warning (see app/html_paragraph_pre_process.py).
 _VALUE_RE = re.compile(r"^([+-]?\d+(?:\.\d+)?)([a-z%]*)$", re.IGNORECASE)
 
 # Exceptions that mean "input isn't parseable HTML, give up quietly". Bound to
 # a name rather than an inline tuple for the same reason as
-# app/HtmlParagraphPreProcess.py (ruff/PEP 758 except-tuple rewrite).
+# app/html_paragraph_pre_process.py (ruff/PEP 758 except-tuple rewrite).
 _PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
 
 
@@ -98,18 +98,18 @@ def extract(source: bytes | str) -> list[TableLayout]:
     """Return one :class:`TableLayout` per ``<table>`` in document order.
 
     Depth-first, so a nested table appears immediately after its parent — the
-    order pandoc's DOCX writer and :mod:`app.DocxPostProcess` both use. Returns
+    order pandoc's DOCX writer and :mod:`app.docx_post_process` both use. Returns
     an empty list when the input has no tables or cannot be parsed.
     """
     # Feed lxml bytes, never a decoded str: lxml rejects a Unicode string that
     # carries an XML/HTML encoding declaration ("<?xml ... encoding=...?>"),
     # which is exactly what the exporter emits. Encoding a str back to bytes
-    # sidesteps that (same approach as app/HtmlParagraphPreProcess.py).
+    # sidesteps that (same approach as app/html_paragraph_pre_process.py).
     data = source if isinstance(source, bytes) else source.encode("utf-8")
     try:
         doc = html.document_fromstring(data)
     except _PARSE_FAILURES:
-        logger.warning("HtmlTableLayout: HTML parse failed; no table layouts extracted")
+        logger.warning("html_table_layout: HTML parse failed; no table layouts extracted")
         return []
 
     # iter("table") yields elements in document order (depth-first), matching
@@ -166,7 +166,7 @@ def _parse_width(value: str | None) -> tuple[str | None, int | None]:
         return ("pct", pct) if pct > 0 else (None, None)
 
     # A bare number is an invalid CSS width; treat missing-unit as px to match
-    # emitters that drop the unit (same convention as HtmlParagraphPreProcess).
+    # emitters that drop the unit (same convention as html_paragraph_pre_process).
     factor = _UNIT_TO_TWIPS.get(unit or "px")
     if factor is None:
         return None, None

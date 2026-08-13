@@ -23,7 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.schema import VersionSchema
 
-from . import DocxLatexPreProcess, DocxPostProcess, HtmlImagePreProcess, HtmlListsPreProcess, HtmlMathColorPreProcess, HtmlParagraphPreProcess, HtmlTableLayout, PptxPostProcess
+from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
 from .constants import API_VERSION
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
@@ -166,7 +166,7 @@ async def _start_chromium() -> None:
     try:
         await chromium_manager.start()
         logger.info("Chromium started for SVG conversion (version: %s)", chromium_manager.get_version())
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("Failed to start Chromium for SVG conversion; SVG rasterization disabled: %s", e)
 
 
@@ -178,7 +178,7 @@ async def _stop_chromium() -> None:
     if chromium_manager.is_running():
         try:
             await chromium_manager.stop()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.exception("Error stopping Chromium: %s", e)
 
 
@@ -283,13 +283,12 @@ async def check_request_size(request: Request, call_next: Callable[[Request], Aw
             413,
         )
 
-    response = await call_next(request)
-    return response
+    return await call_next(request)
 
 
 # Replace standard request validation error handler to adhere to the PlainText format
 @app.exception_handler(RequestValidationError)
-async def handle_validation_error(request: Request, exc: RequestValidationError) -> PlainTextResponse:
+async def handle_validation_error(request: Request, exc: RequestValidationError) -> PlainTextResponse:  # noqa: ARG001
     return process_error(
         exc,
         "Validation Error",
@@ -310,7 +309,7 @@ def get_pandoc_version() -> str | None:
         # Extract version from the first line of output
         version_line = result.stdout.splitlines()[0]
         return version_line.split()[-1]  # Last word on the first line is the version
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a missing pandoc version must not fail the request
         logger.error(f"Error getting pandoc version: {e}")
         return None
 
@@ -322,13 +321,14 @@ def get_tectonic_availability() -> str:
             capture_output=True,
             check=True,
         )
-        return "available"
     except (FileNotFoundError, subprocess.CalledProcessError) as e:
         logger.warning(f"Tectonic check failed: {e}")
         return "unavailable"
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Tectonic check error: {e}")
         return "unknown"
+    else:
+        return "available"
 
 
 def get_temp_directory_writability() -> str:
@@ -398,6 +398,8 @@ def health() -> JSONResponse:
 
 @app.get(
     "/docx-template",
+    # The endpoint streams a file or returns plain text, so there is no response model.
+    response_model=None,
     summary="Download DOCX template",
     description="Get the default DOCX template for document conversion",
     responses={
@@ -409,7 +411,7 @@ def health() -> JSONResponse:
         500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def get_docx_template():  # type: ignore
+async def get_docx_template() -> StreamingResponse | PlainTextResponse:
     path = Path(CUSTOM_REFERENCE_DOCX)
     try:
         # ruff: noqa: S603
@@ -429,12 +431,11 @@ async def get_docx_template():  # type: ignore
         async with await anyio.open_file(path, "rb") as f:
             doc_content = await f.read()
 
-        response = StreamingResponse(
+        return StreamingResponse(
             io.BytesIO(doc_content),
             headers={"Content-Disposition": "attachment; filename=reference.docx"},
             media_type=MIME_TYPES["docx"],
         )
-        return response
     finally:
         if Path.exists(path):
             Path.unlink(path)
@@ -442,6 +443,8 @@ async def get_docx_template():  # type: ignore
 
 @app.get(
     "/pptx-template",
+    # The endpoint streams a file or returns plain text, so there is no response model.
+    response_model=None,
     summary="Download PPTX template",
     description="Get the default PPTX template for presentation conversion",
     responses={
@@ -453,7 +456,7 @@ async def get_docx_template():  # type: ignore
         500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def get_pptx_template():  # type: ignore
+async def get_pptx_template() -> StreamingResponse | PlainTextResponse:
     path = Path(CUSTOM_REFERENCE_PPTX)
     try:
         # ruff: noqa: S603
@@ -473,12 +476,11 @@ async def get_pptx_template():  # type: ignore
         async with await anyio.open_file(path, "rb") as f:
             pptx_content = await f.read()
 
-        response = StreamingResponse(
+        return StreamingResponse(
             io.BytesIO(pptx_content),
             headers={"Content-Disposition": "attachment; filename=reference.pptx"},
             media_type=MIME_TYPES["pptx"],
         )
-        return response
     finally:
         if Path.exists(path):
             Path.unlink(path)
@@ -518,7 +520,7 @@ def _validate_pandoc_options(options: list[str]) -> list[str]:
     return validated_options
 
 
-def _build_pandoc_command(  # noqa: PLR0913
+def _build_pandoc_command(
     *,
     source_format: str,
     target_format: str,
@@ -544,14 +546,14 @@ def _build_pandoc_command(  # noqa: PLR0913
     # on both source and target.
     if source_format == "html" and target_format == "docx":
         cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
-        # Pairs with the HtmlListsPreProcess pass on the source bytes: the
+        # Pairs with the html_lists_pre_process pass on the source bytes: the
         # preprocessor wraps orphan <ol>/<ul> with a sentinel <li>, and this
         # filter strips the marker paragraph that pandoc would otherwise emit
         # for those synthetic list items.
         cmd.append(f"--lua-filter={FILTERS['html_lists']}")
         # Mark genuine Polarion captions (paragraphs carrying the
         # <span data-sequence=...> counter) with the "Caption" style so
-        # DocxReferencesPostProcess recognises them structurally instead of by
+        # docx_references_post_process recognises them structurally instead of by
         # a leaky "text starts with Table/Figure" check. See
         # filters/html_captions.lua.
         cmd.append(f"--lua-filter={FILTERS['html_captions']}")
@@ -564,7 +566,7 @@ def _build_pandoc_command(  # noqa: PLR0913
     # <table style> that pandoc's HTML reader keeps in the Table Attr but the
     # LaTeX writer ignores (every table would otherwise render content-width and
     # centered). This is the LaTeX counterpart to the DOCX post-processing in
-    # DocxPostProcess/HtmlTableLayout. The filter emits raw LaTeX (longtable
+    # docx_post_process/html_table_layout. The filter emits raw LaTeX (longtable
     # glue), so it is gated on the latex-producing targets.
     if source_format == "html" and target_format in _LATEX_TARGET_FORMATS:
         cmd.append(f"--lua-filter={FILTERS['html_tables_to_latex']}")
@@ -643,7 +645,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
         processed = await processor.process_svg(soup)
         result = str(processed)
         return result.encode("utf-8") if is_bytes else result
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("SVG preprocessing failed; passing HTML through unchanged: %s", e)
         return source
 
@@ -680,7 +682,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
 
     # Normalize source_data to bytes once, so the rest of the function
     # works with a single type. The temp file below is opened in "wb"
-    # mode and DocxColorPreProcess.preprocess expects bytes anyway.
+    # mode and docx_color_pre_process.preprocess expects bytes anyway.
     if isinstance(source_data, str):
         source_data = source_data.encode("utf-8")
 
@@ -691,31 +693,31 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # latex) we rewrite the source so those properties survive (synthetic
     # character/paragraph styles surfaced via docx+styles, plus <w:ilvl>
     # sentinels), and the docx_*_to_latex Lua filters re-emit them. All three
-    # rewrites run in a single unzip/re-zip pass (DocxLatexPreProcess) so an
+    # rewrites run in a single unzip/re-zip pass (docx_latex_pre_process) so an
     # image-heavy document's media is recompressed once, not three times.
     apply_docx_latex_filters = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     if apply_docx_latex_filters:
-        source_data = DocxLatexPreProcess.preprocess(source_data)
+        source_data = docx_latex_pre_process.preprocess(source_data)
 
     # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another
     # list so pandoc's HTML reader doesn't synthesize an implicit list item
     # that the DOCX writer would render as a stray marker (e.g. "a.") above
-    # the deeper item. See app/HtmlListsPreProcess.py and
+    # the deeper item. See app/html_lists_pre_process.py and
     # filters/html_lists.lua for the full pipeline.
     # Also wrap each <p style="margin-left: ...; text-align: ..."> in a marker
     # <div> so the paragraph indent and/or alignment survive pandoc's HTML
     # reader (which drops <p>'s style attribute outright). See
-    # app/HtmlParagraphPreProcess.py and the Div handler in
+    # app/html_paragraph_pre_process.py and the Div handler in
     # filters/inline_styles.lua for the full pipeline.
     # Also give un-sized <img> an explicit px width/height read from the inlined
     # image so pandoc renders it at the 96 dpi CSS reference (not its 72 dpi
     # no-density fallback), honouring any CSS max-width. See
-    # app/HtmlImagePreProcess.py.
+    # app/html_image_pre_process.py.
     if source_format == "html" and target_format == "docx":
-        source_data = HtmlListsPreProcess.preprocess(source_data)
-        source_data = HtmlParagraphPreProcess.preprocess(source_data)
-        source_data = HtmlMathColorPreProcess.preprocess(source_data)
-        source_data = HtmlImagePreProcess.preprocess(source_data)
+        source_data = html_lists_pre_process.preprocess(source_data)
+        source_data = html_paragraph_pre_process.preprocess(source_data)
+        source_data = html_math_color_pre_process.preprocess(source_data)
+        source_data = html_image_pre_process.preprocess(source_data)
 
     with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
         try:
@@ -764,7 +766,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def convert_docx_with_ref(  # noqa: PLR0913, C901
+async def convert_docx_with_ref(
     request: Request,
     source_format: str,
     encoding: str | None = None,
@@ -825,7 +827,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
         # it, so the DOCX post-processor can restore it (pandoc keeps only an
         # auto width and no alignment). Read from the original source: SVG
         # rasterization below never touches tables.
-        table_layouts = HtmlTableLayout.extract(source) if source_format == "html" else None
+        table_layouts = html_table_layout.extract(source) if source_format == "html" else None
 
         # Rasterize any embedded SVGs to PNG so Word gets a usable image
         # instead of the draw.io "Text is not SVG - cannot display" fallback.
@@ -844,15 +846,15 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
         if has_template:
             increment_template_conversion("docx")
 
-        return response
-
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the HTTP boundary must answer, not leak
         pandoc_metrics.record_conversion_failure()
         increment_conversion_failure(source_format, "docx")
         return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
+    else:
+        return response
     finally:
-        if temp_template_filename is not None and Path(temp_template_filename).exists():
-            Path(temp_template_filename).unlink()
+        if temp_template_filename is not None and Path(temp_template_filename).exists():  # noqa: ASYNC240 - a local stat costs less than a thread hop
+            Path(temp_template_filename).unlink()  # noqa: ASYNC240 - same, for the unlink
 
 
 @app.post(
@@ -869,7 +871,7 @@ async def convert_docx_with_ref(  # noqa: PLR0913, C901
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def convert_pptx_with_ref(  # noqa: PLR0913
+async def convert_pptx_with_ref(
     request: Request,
     source_format: str,
     encoding: str | None = None,
@@ -935,15 +937,15 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
         if has_template:
             increment_template_conversion("pptx")
 
-        return response
-
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - same, for the second conversion endpoint
         pandoc_metrics.record_conversion_failure()
         increment_conversion_failure(source_format, "pptx")
         return process_error(e, "Bad request", 400)
+    else:
+        return response
     finally:
-        if temp_template_filename is not None and Path(temp_template_filename).exists():
-            Path(temp_template_filename).unlink()
+        if temp_template_filename is not None and Path(temp_template_filename).exists():  # noqa: ASYNC240 - a local stat costs less than a thread hop
+            Path(temp_template_filename).unlink()  # noqa: ASYNC240 - same, for the unlink
 
 
 @app.post(
@@ -960,7 +962,7 @@ async def convert_pptx_with_ref(  # noqa: PLR0913
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
 )
-async def convert(  # noqa: PLR0913
+async def convert(
     request: Request,
     source_format: str,
     target_format: str,
@@ -976,7 +978,7 @@ async def convert(  # noqa: PLR0913
     pandoc_metrics.record_conversion_start()
 
     try:
-        file_name = file_name if file_name else "converted-document." + FILE_EXTENSIONS.get(target_format, "docx")
+        file_name = file_name or "converted-document." + FILE_EXTENSIONS.get(target_format, "docx")
         if source_format in {"txt", "markdown", "html"}:
             data = await request.body()
             source = data if not encoding else data.decode(encoding)
@@ -985,7 +987,7 @@ async def convert(  # noqa: PLR0913
             uploaded_file = form.get("source")
 
             try:
-                source = await uploaded_file.read()  # type: ignore
+                source = await uploaded_file.read()  # type: ignore[union-attr]
             except AttributeError:
                 pandoc_metrics.record_conversion_failure()
                 increment_conversion_failure(source_format, target_format)
@@ -1004,7 +1006,7 @@ async def convert(  # noqa: PLR0913
         # it (only relevant when producing DOCX; other writers handle table
         # width natively). Read from the original source: SVG rasterization
         # below never touches tables.
-        table_layouts = HtmlTableLayout.extract(source) if source_format == "html" and target_format == "docx" else None
+        table_layouts = html_table_layout.extract(source) if source_format == "html" and target_format == "docx" else None
 
         # Rasterize any embedded SVGs to PNG so renderers without full SVG
         # support (e.g. Word) get a usable image instead of a fallback warning.
@@ -1021,12 +1023,12 @@ async def convert(  # noqa: PLR0913
         pandoc_metrics.record_conversion_success(duration_seconds * 1000)
         increment_conversion_success(source_format, target_format, duration_seconds)
 
-        return response
-
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - same, for the third conversion endpoint
         pandoc_metrics.record_conversion_failure()
         increment_conversion_failure(source_format, target_format)
         return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
+    else:
+        return response
 
 
 async def get_docx_source_data(source_content: starlette.datastructures.UploadFile | str | None, encoding: str | None) -> bytes | str | None:
@@ -1038,15 +1040,15 @@ async def get_docx_source_data(source_content: starlette.datastructures.UploadFi
     return source_content
 
 
-def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[HtmlTableLayout.TableLayout] | None = None) -> Response:  # noqa: PLR0913
+def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[html_table_layout.TableLayout] | None = None) -> Response:
     if target_format == "docx":
         post_process_start = time.time()
-        output = DocxPostProcess.process(output, paper_size, orientation, table_layouts)
+        output = docx_post_process.process(output, paper_size, orientation, table_layouts)
         observe_post_processing_duration("docx", time.time() - post_process_start)
     elif target_format == "pptx":
         # For PPTX, paper_size parameter is repurposed as slide_size
         post_process_start = time.time()
-        output = PptxPostProcess.process(output, paper_size)
+        output = pptx_post_process.process(output, paper_size)
         observe_post_processing_duration("pptx", time.time() - post_process_start)
 
     # Record final response size after post-processing
@@ -1063,7 +1065,7 @@ def postprocess_and_build_response(output: bytes, target_format: str, file_name:
 
 def process_error(e: Exception, err_msg: str, status: int) -> PlainTextResponse:
     sanitized_err_msg = err_msg.replace("\r\n", "").replace("\n", "")
-    logger.exception(msg=sanitized_err_msg + ": " + str(e))
+    logger.error("%s: %s", sanitized_err_msg, e, exc_info=e)
     return PlainTextResponse(
         content=err_msg + ": " + getattr(e, "message", repr(e)),
         status_code=status,
