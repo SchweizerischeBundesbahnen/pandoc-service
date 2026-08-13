@@ -22,7 +22,9 @@ import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup, Tag
-from defusedxml import ElementTree as det  # noqa: N813 - defusedxml exposes ElementTree as a module
+
+# Defusedxml exposes ElementTree as a module.
+from defusedxml import ElementTree as det  # noqa: N813
 
 if TYPE_CHECKING:  # used only for type hints
     from xml.etree.ElementTree import Element
@@ -357,7 +359,8 @@ class SvgProcessor:
     def convert_to_px(self, value: str | None, unit: str | None) -> int | None:
         try:
             if value is None:
-                raise ValueError  # noqa: TRY301 - the try converts, this guard rejects a missing value
+                # The try converts, this guard rejects a missing value.
+                raise ValueError  # noqa: TRY301
             value_f64 = float(value)
 
             if unit in self.SPECIAL_UNITS:

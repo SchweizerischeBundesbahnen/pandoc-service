@@ -149,7 +149,8 @@ def _verify_containers(client: docker.DockerClient) -> None:
             for container in remaining_test:
                 logger.warning(f"Remaining container: {container.name} ({container.id})")
                 _stop_and_remove_container(container)
-    except Exception as e:  # noqa: BLE001 - verification reports rather than raises
+    # Verification reports rather than raises.
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error in container verification: {e}")
 
 
@@ -164,7 +165,8 @@ def _verify_images(client: docker.DockerClient) -> None:
             for image in remaining_test_images:
                 logger.warning(f"Remaining image: {image.id} (tags: {image.tags})")
                 _remove_image(image)
-    except Exception as e:  # noqa: BLE001 - same, for the image check
+    # Same, for the image check.
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error in image verification: {e}")
 
 
