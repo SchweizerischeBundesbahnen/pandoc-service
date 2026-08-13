@@ -309,7 +309,8 @@ def get_pandoc_version() -> str | None:
         # Extract version from the first line of output
         version_line = result.stdout.splitlines()[0]
         return version_line.split()[-1]  # Last word on the first line is the version
-    except Exception as e:  # noqa: BLE001 - a missing pandoc version must not fail the request
+    # A missing pandoc version must not fail the request.
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting pandoc version: {e}")
         return None
 
@@ -846,15 +847,18 @@ async def convert_docx_with_ref(
         if has_template:
             increment_template_conversion("docx")
 
-    except Exception as e:  # noqa: BLE001 - the HTTP boundary must answer, not leak
+    # The HTTP boundary must answer, not leak.
+    except Exception as e:  # noqa: BLE001
         pandoc_metrics.record_conversion_failure()
         increment_conversion_failure(source_format, "docx")
         return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
     else:
         return response
     finally:
-        if temp_template_filename is not None and Path(temp_template_filename).exists():  # noqa: ASYNC240 - a local stat costs less than a thread hop
-            Path(temp_template_filename).unlink()  # noqa: ASYNC240 - same, for the unlink
+        # A local stat costs less than a thread hop.
+        if temp_template_filename is not None and Path(temp_template_filename).exists():  # noqa: ASYNC240
+            # Same, for the unlink.
+            Path(temp_template_filename).unlink()  # noqa: ASYNC240
 
 
 @app.post(
@@ -937,15 +941,18 @@ async def convert_pptx_with_ref(
         if has_template:
             increment_template_conversion("pptx")
 
-    except Exception as e:  # noqa: BLE001 - same, for the second conversion endpoint
+    # Same, for the second conversion endpoint.
+    except Exception as e:  # noqa: BLE001
         pandoc_metrics.record_conversion_failure()
         increment_conversion_failure(source_format, "pptx")
         return process_error(e, "Bad request", 400)
     else:
         return response
     finally:
-        if temp_template_filename is not None and Path(temp_template_filename).exists():  # noqa: ASYNC240 - a local stat costs less than a thread hop
-            Path(temp_template_filename).unlink()  # noqa: ASYNC240 - same, for the unlink
+        # A local stat costs less than a thread hop.
+        if temp_template_filename is not None and Path(temp_template_filename).exists():  # noqa: ASYNC240
+            # Same, for the unlink.
+            Path(temp_template_filename).unlink()  # noqa: ASYNC240
 
 
 @app.post(
@@ -1023,7 +1030,8 @@ async def convert(
         pandoc_metrics.record_conversion_success(duration_seconds * 1000)
         increment_conversion_success(source_format, target_format, duration_seconds)
 
-    except Exception as e:  # noqa: BLE001 - same, for the third conversion endpoint
+    # Same, for the third conversion endpoint.
+    except Exception as e:  # noqa: BLE001
         pandoc_metrics.record_conversion_failure()
         increment_conversion_failure(source_format, target_format)
         return process_error(e, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
