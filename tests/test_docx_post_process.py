@@ -137,7 +137,7 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
 
         # Set up mock cell XML with image if needed
     if has_image:
-        mock_cell._tc.xml = f'''
+        mock_cell._tc.xml = f"""
         <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
               xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
               xmlns:a="{DRAWING_ML_MAIN_SCHEMA}"
@@ -168,9 +168,9 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
                 </w:r>
             </w:p>
         </w:tc>
-        '''
+        """
     else:
-        mock_cell._tc.xml = f'''
+        mock_cell._tc.xml = f"""
         <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}">
             <w:tcPr/>
             <w:p>
@@ -179,7 +179,7 @@ def create_mock_document_with_table(has_nested_table=False, has_image=True):
                 </w:r>
             </w:p>
         </w:tc>
-        '''
+        """
 
         # Connect the mocks together
     mock_row.cells = [mock_cell]
@@ -233,7 +233,7 @@ def test_resize_images_in_cell_no_resizing_needed():
     # Create mock XML content with a small image (smaller than max width)
     small_image_width = 100000  # Small value in EMU, less than max_width
     small_image_height = 100000
-    small_image_xml = f'''
+    small_image_xml = f"""
     <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
           xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
           xmlns:a="{DRAWING_ML_MAIN_SCHEMA}">
@@ -248,7 +248,7 @@ def test_resize_images_in_cell_no_resizing_needed():
             </w:r>
         </w:p>
     </w:tc>
-    '''
+    """
 
     # Set up the mock cell
     mock_tc = MagicMock()
@@ -273,7 +273,7 @@ def test_resize_images_in_cell_resizing_needed():
     # Create mock XML content with a large image (larger than max_width)
     large_image_width = 1000000  # Large value in EMU, greater than max_width
     large_image_height = 750000  # 3:4 aspect ratio
-    large_image_xml = f'''
+    large_image_xml = f"""
     <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
           xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
           xmlns:a="{DRAWING_ML_MAIN_SCHEMA}">
@@ -288,7 +288,7 @@ def test_resize_images_in_cell_resizing_needed():
             </w:r>
         </w:p>
     </w:tc>
-    '''
+    """
 
     # Set up the mock for lxml etree parsing - create elements that mimic the real ones
 
@@ -1014,7 +1014,7 @@ def test_resize_images_in_cell_handles_large_xml():
     # Using ~11MB of base64-like data to trigger the buffer limit
     large_base64_data = "A" * (11 * 1024 * 1024)  # 11MB of data
 
-    large_cell_xml = f'''
+    large_cell_xml = f"""
     <w:tc xmlns:w="{WORD_PROCESSING_ML_MAIN_SCHEMA}"
           xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
           xmlns:a="{DRAWING_ML_MAIN_SCHEMA}"
@@ -1051,7 +1051,7 @@ def test_resize_images_in_cell_handles_large_xml():
             </w:r>
         </w:p>
     </w:tc>
-    '''
+    """
 
     # Set up the mock cell
     mock_tc = MagicMock()

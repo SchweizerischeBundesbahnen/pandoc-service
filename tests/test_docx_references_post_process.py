@@ -84,12 +84,12 @@ def test_after_table_is_not_adjacent():
 
 
 def test_adjacent_to_table_skips_bookmarks():
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:r><w:t>c</w:t></w:r></w:p>
         <w:bookmarkStart w:id="1" w:name="x"/>
         {_MINIMAL_TBL}
         <w:bookmarkEnd w:id="1"/>
-    </w:body>''')
+    </w:body>""")
     assert _is_adjacent_to_table(body.find("w:p", namespaces={"w": SCHEMA})) is True
 
 
@@ -128,11 +128,11 @@ def test_ensure_seq_field_replaces_plain_number():
 
 
 def test_ensure_seq_field_skips_existing():
-    para = parse_xml(f'''<w:p xmlns:w="{SCHEMA}">
+    para = parse_xml(f"""<w:p xmlns:w="{SCHEMA}">
         <w:r><w:fldChar w:fldCharType="begin"/></w:r>
         <w:r><w:instrText> SEQ Table \\* ARABIC </w:instrText></w:r>
         <w:r><w:fldChar w:fldCharType="end"/></w:r>
-    </w:p>''')
+    </w:p>""")
     xml_before = etree.tostring(para, encoding="unicode")
     _ensure_seq_field(para, "Table")
     assert etree.tostring(para, encoding="unicode") == xml_before
@@ -198,11 +198,11 @@ def test_tof_with_entries():
 
 
 def test_find_placeholders_all_three():
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:r><w:t>TOC_PLACEHOLDER</w:t></w:r></w:p>
         <w:p><w:r><w:t>TOF_PLACEHOLDER</w:t></w:r></w:p>
         <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
-    </w:body>''')
+    </w:body>""")
     result = []
     _find_placeholder_paragraphs(body, result)
     assert len(result) == 3
@@ -266,10 +266,10 @@ def test_non_caption_paragraphs_ignored(caplog):
 
 def test_captions_get_unique_bookmarks():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}
         <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 2</w:t></w:r></w:p>{_MINIMAL_TBL}
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
@@ -280,10 +280,10 @@ def test_captions_get_unique_bookmarks():
 
 def test_tot_placeholder_full_workflow():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}
         <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
@@ -296,7 +296,7 @@ def test_tot_placeholder_full_workflow():
 def test_localized_caption_classified_by_table_adjacency():
     """Polish 'Tabela 1' next to a table should be classified as table caption."""
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>
             <w:r><w:t xml:space="preserve">Tabela </w:t></w:r>
             <w:r><w:fldChar w:fldCharType="begin"/></w:r>
@@ -305,7 +305,7 @@ def test_localized_caption_classified_by_table_adjacency():
             <w:r><w:t>1</w:t></w:r>
             <w:r><w:fldChar w:fldCharType="end"/></w:r>
         </w:p>{_MINIMAL_TBL}
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
@@ -341,18 +341,18 @@ def test_parse_placeholder_variants():
 
 
 def test_get_max_bookmark_id_skips_non_integer_ids():
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:bookmarkStart w:id="5" w:name="a"/><w:bookmarkEnd w:id="5"/></w:p>
         <w:p><w:bookmarkStart w:id="abc" w:name="b"/><w:bookmarkEnd w:id="abc"/></w:p>
-    </w:body>''')
+    </w:body>""")
     assert _get_max_bookmark_id(body) == 5
 
 
 def test_image_caption_style_is_classified_as_figure():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr><w:r><w:t>Abbildung 1 Bild</w:t></w:r></w:p>
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
@@ -360,9 +360,9 @@ def test_image_caption_style_is_classified_as_figure():
 
 
 def test_get_seq_name_reads_identifier():
-    para = parse_xml(f'''<w:p xmlns:w="{SCHEMA}">
+    para = parse_xml(f"""<w:p xmlns:w="{SCHEMA}">
         <w:r><w:instrText xml:space="preserve"> SEQ Tabelle \\* ARABIC </w:instrText></w:r>
-    </w:p>''')
+    </w:p>""")
     assert _get_seq_name(para) == "Tabelle"
 
 
@@ -374,20 +374,20 @@ def test_get_seq_name_without_seq_field():
 def test_get_seq_name_with_malformed_instruction():
     # First instruction mentions SEQ without an identifier, second is valid:
     # the scan must skip the malformed one and keep looking
-    para = parse_xml(f'''<w:p xmlns:w="{SCHEMA}">
+    para = parse_xml(f"""<w:p xmlns:w="{SCHEMA}">
         <w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>
         <w:r><w:instrText xml:space="preserve">SEQ</w:instrText></w:r>
         <w:r><w:instrText xml:space="preserve"> SEQ Tabelle \\* ARABIC </w:instrText></w:r>
-    </w:p>''')
+    </w:p>""")
     assert _get_seq_name(para) == "Tabelle"
 
 
 def test_ensure_seq_field_skips_runs_without_text_or_number():
-    para = parse_xml(f'''<w:p xmlns:w="{SCHEMA}">
+    para = parse_xml(f"""<w:p xmlns:w="{SCHEMA}">
         <w:r></w:r>
         <w:r><w:t>no number here</w:t></w:r>
         <w:r><w:t>Table 7 caption</w:t></w:r>
-    </w:p>''')
+    </w:p>""")
     _ensure_seq_field(para, "Table")
     xml = etree.tostring(para, encoding="unicode")
     assert "SEQ Table" in xml
@@ -405,9 +405,9 @@ def test_ensure_seq_field_number_at_run_start():
 
 
 def test_ensure_seq_field_preserves_run_formatting():
-    para = parse_xml(f'''<w:p xmlns:w="{SCHEMA}">
+    para = parse_xml(f"""<w:p xmlns:w="{SCHEMA}">
         <w:r><w:rPr><w:b/></w:rPr><w:t>Table 3 bold caption</w:t></w:r>
-    </w:p>''')
+    </w:p>""")
     _ensure_seq_field(para, "Table")
     # The cloned before/after runs keep the original bold rPr
     runs_with_bold = [r for r in para.findall("w:r", namespaces={"w": SCHEMA}) if r.find("w:rPr/w:b", namespaces={"w": SCHEMA}) is not None]
@@ -422,10 +422,10 @@ def test_set_paragraph_style_inserts_into_existing_ppr():
 
 
 def test_find_placeholders_skips_non_paragraph_elements():
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         {_MINIMAL_TBL}
         <w:p><w:r><w:t>TOC_PLACEHOLDER</w:t></w:r></w:p>
-    </w:body>''')
+    </w:body>""")
     result = []
     _find_placeholder_paragraphs(body, result)
     assert len(result) == 1
@@ -434,12 +434,12 @@ def test_find_placeholders_skips_non_paragraph_elements():
 
 def test_full_flow_prefills_tof_and_tot_with_entries():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:r><w:t>TOF_PLACEHOLDER</w:t></w:r></w:p>
         <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
         <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Figure 1 A picture</w:t></w:r></w:p>
         <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 A table</w:t></w:r></w:p>{_MINIMAL_TBL}
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
@@ -453,9 +453,9 @@ def test_full_flow_prefills_tof_and_tot_with_entries():
 
 def test_placeholder_without_matching_captions_removed_without_field():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:r><w:t>TOF_PLACEHOLDER</w:t></w:r></w:p>
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
@@ -483,10 +483,10 @@ def test_get_paragraph_style_ppr_without_pstyle():
 
 def test_full_flow_inserts_toc_field():
     mock_doc = MagicMock(spec=DocumentObject)
-    body = parse_xml(f'''<w:body xmlns:w="{SCHEMA}">
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
         <w:p><w:r><w:t>TOC_PLACEHOLDER</w:t></w:r></w:p>
         <w:p><w:r><w:t>Ordinary body paragraph</w:t></w:r></w:p>
-    </w:body>''')
+    </w:body>""")
     mock_doc.element.body = body
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")

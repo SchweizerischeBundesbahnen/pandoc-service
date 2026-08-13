@@ -399,14 +399,14 @@ def _insert_paragraphs(body: Any, idx: int, paragraphs: list[Any]) -> None:
 
 def _create_field(field_code: str) -> list[Any]:
     """Create a Word field with specified field code (no cached entries)."""
-    field_para = parse_xml(f'''
+    field_para = parse_xml(f"""
     <w:p xmlns:w="{SCHEMA}">
         <w:r><w:fldChar w:fldCharType="begin"/></w:r>
         <w:r><w:instrText xml:space="preserve"> {field_code} </w:instrText></w:r>
         <w:r><w:fldChar w:fldCharType="separate"/></w:r>
         <w:r><w:fldChar w:fldCharType="end"/></w:r>
     </w:p>
-    ''')
+    """)
     empty_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
     return [field_para, empty_para]
 
