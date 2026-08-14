@@ -78,6 +78,14 @@ RUN case "${ARCH}" in \
     tar -xzf /tmp/tectonic.tar.gz -C /usr/bin tectonic && \
     rm -f /tmp/tectonic.tar.gz
 
+# Warm the tectonic bundle into the image. Tectonic fetches the TeX support files it needs on its first
+# run and caches them under $HOME/.cache/Tectonic, some 45 MB. Without this step that fetch happens on
+# the first pdf conversion of a fresh container, which makes that conversion depend on the network and
+# fail intermittently. Compiling through pandoc pulls exactly what its default latex template asks for.
+RUN printf 'warm up the pdf engine\n' > /tmp/warmup.md && \
+    pandoc /tmp/warmup.md -o /tmp/warmup.pdf --pdf-engine=tectonic && \
+    rm -f /tmp/warmup.md /tmp/warmup.pdf
+
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
 
