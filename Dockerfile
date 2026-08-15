@@ -11,7 +11,7 @@ LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 COPY --from=uv-source /uv /usr/local/bin/uv
 
 ARG APP_IMAGE_VERSION=0.0.0
-ARG PANDOC_VERSION=3.10.1
+ARG PANDOC_VERSION=3.10.2
 ARG TECTONIC_VERSION=0.16.9
 ARG TARGETARCH
 ENV ARCH=${TARGETARCH:-amd64}
