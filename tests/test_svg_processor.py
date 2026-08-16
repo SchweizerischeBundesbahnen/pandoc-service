@@ -12,7 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from bs4 import BeautifulSoup
-from defusedxml import ElementTree as det  # noqa: N813 - defusedxml exposes ElementTree as a module
+
+# Defusedxml exposes ElementTree as a module.
+from defusedxml import ElementTree as det  # noqa: N813
 
 from app import pandoc_controller
 from app.chromium_manager import ChromiumManager

@@ -38,7 +38,8 @@ def cleanup_session():
     """Session-level fixture to ensure cleanup happens before and after all tests."""
     try:
         cleanup_docker_resources()
-    except Exception as e:  # noqa: BLE001 - pre-test cleanup is best effort
+    # Pre-test cleanup is best effort.
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error in pre-test cleanup: {e}")
 
     yield
@@ -89,7 +90,8 @@ def pandoc_container():
 
             cleanup_docker_resources()
 
-        except Exception as e:  # noqa: BLE001 - container cleanup is best effort
+        # Container cleanup is best effort.
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error in container cleanup: {e}")
 
 

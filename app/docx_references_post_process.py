@@ -101,7 +101,8 @@ def enable_auto_update_fields(doc: DocumentObject) -> None:
         else:
             update_fields.set(f"{{{SCHEMA}}}val", "true")
             logger.info("Updated existing auto-update fields setting")
-    except Exception as e:  # noqa: BLE001 - auto-update fields is a nice-to-have, not a requirement
+    # Auto-update fields is a nice-to-have, not a requirement.
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not enable auto-update fields: {e}")
 
 
