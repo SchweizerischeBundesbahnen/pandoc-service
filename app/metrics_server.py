@@ -20,7 +20,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.chromium_manager import get_chromium_manager
 from app.pandoc_metrics import get_pandoc_metrics
 from app.prometheus_metrics import update_gauges_from_chromium_manager, update_gauges_from_pandoc_metrics
-from app.tls import METRICS_TLS_PREFIX, get_scheme, get_tls_options
+from app.tls import METRICS_TLS_PREFIX, get_scheme, load_tls_options
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ class MetricsServer:
             logger.warning("Metrics server already started")
             return
 
-        tls_options = get_tls_options(METRICS_TLS_PREFIX)
+        tls_options = load_tls_options(METRICS_TLS_PREFIX)
         config = uvicorn.Config(
             app=metrics_app,
             host="0.0.0.0",  # noqa: S104

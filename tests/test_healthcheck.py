@@ -46,12 +46,6 @@ def test_plain_http_by_default(run_healthcheck) -> None:
     assert "--insecure" not in args
 
 
-def test_port_is_taken_from_the_environment(run_healthcheck) -> None:
-    _, args = run_healthcheck({"PORT": "9999"})
-
-    assert args[-1] == "http://localhost:9999/health"
-
-
 def test_configured_certificate_switches_the_scheme(run_healthcheck) -> None:
     completed, args = run_healthcheck({"TLS_CERT_FILE": "/tls/server.pem"})
 

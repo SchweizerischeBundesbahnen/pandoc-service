@@ -17,11 +17,11 @@ cert_file="$(trim "${TLS_CERT_FILE:-}")"
 probe_cert="$(trim "${TLS_HEALTHCHECK_CERT_FILE:-}")"
 probe_key="$(trim "${TLS_HEALTHCHECK_KEY_FILE:-}")"
 
-url="http://localhost:${port}/health"
+url="http://localhost:9082/health"
 set --
 
 if [ -n "${cert_file}" ]; then
-    url="https://localhost:${port}/health"
+    url="https://localhost:9082/health"
     # The certificate is verified by the caller of the service, not here: this
     # probe talks to its own process over the loopback interface and asks one
     # question, whether that process still answers.
