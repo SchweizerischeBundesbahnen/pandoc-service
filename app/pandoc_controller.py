@@ -23,7 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.auth import ApiKeyError, get_api_keys, require_api_key
 from app.schema import VersionSchema
-from app.tls import API_TLS_PREFIX, get_scheme, get_tls_options
+from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
@@ -223,6 +223,10 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
     metrics_server: MetricsServer | None = None
     if is_metrics_server_enabled():
         metrics_port = get_metrics_port()
+        # A broken TLS configuration is not an operational hiccup. It is read
+        # here, outside the tolerant start below, so it stops the service
+        # instead of leaving the metrics port silently absent.
+        get_tls_options(METRICS_TLS_PREFIX)
         metrics_server = MetricsServer(port=metrics_port)
         try:
             await metrics_server.start()

@@ -5,6 +5,7 @@ import ssl
 from pathlib import Path
 
 import pytest
+from starlette.testclient import TestClient
 
 from app import metrics_server, pandoc_controller
 from app.tls import (
@@ -166,6 +167,16 @@ def test_client_rules_without_a_certificate_are_rejected(monkeypatch: pytest.Mon
 
     with pytest.raises(TlsConfigurationError, match="without TLS_CERT_FILE"):
         get_tls_options()
+
+
+def test_broken_metrics_configuration_stops_the_start(monkeypatch: pytest.MonkeyPatch, pem_files: tuple[str, str, str]) -> None:
+    """The lifespan tolerates a metrics server which fails to bind, not one configured wrongly."""
+    cert, _, _ = pem_files
+    monkeypatch.setenv("METRICS_SERVER_ENABLED", "true")
+    monkeypatch.setenv("METRICS_TLS_CERT_FILE", cert)
+
+    with pytest.raises(TlsConfigurationError, match="METRICS_TLS_KEY_FILE is missing"), TestClient(pandoc_controller.app):
+        pass  # pragma: no cover - the context manager raises on entry
 
 
 def test_api_server_is_started_with_the_configured_options(monkeypatch: pytest.MonkeyPatch, pem_files: tuple[str, str, str]) -> None:
