@@ -78,6 +78,32 @@ RUN case "${ARCH}" in \
     tar -xzf /tmp/tectonic.tar.gz -C /usr/bin tectonic && \
     rm -f /tmp/tectonic.tar.gz
 
+# Warm the tectonic bundle into the image. Tectonic fetches the TeX support files it needs on its first
+# run and caches them, some 45 MB. Without this step that fetch happens on the first pdf conversion of a
+# fresh container, which makes that conversion depend on the network and fail intermittently.
+#
+# TECTONIC_CACHE_DIR pins the cache to a fixed path. The default is under $HOME, so a container started
+# with --user would look elsewhere and download the bundle again.
+ENV TECTONIC_CACHE_DIR=/opt/tectonic-cache
+
+# The warm-up document carries one instance of every construct the service converts, because tectonic
+# fetches files on demand: pandoc's latex template requests graphicx, longtable, booktabs, array, ulem,
+# fancyvrb and the math fonts only for the matching content, the docx filters add colortbl and soul
+# through header-includes, and each heading size and each highlighting style needs its own font file.
+#
+# Each file is a separate request, and the bundle host answers 429 to a build machine that asks too
+# fast. Tectonic gives up after three retries roughly half a second apart, which such a limit outlives,
+# so the compile is repeated with a growing pause. Every attempt keeps what it already cached, which
+# walks the cache to completion. A build that never gets there fails on the missing pdf, on purpose.
+COPY warmup/ /tmp/warmup/
+RUN for delay in 0 20 40 60 90 120; do \
+        [ "${delay}" -eq 0 ] || { echo "warm-up failed, retrying in ${delay}s"; sleep "${delay}"; }; \
+        pandoc /tmp/warmup/warmup.md -o /tmp/warmup.pdf --pdf-engine=tectonic --resource-path=/tmp/warmup && break; \
+    done; \
+    test -f /tmp/warmup.pdf && \
+    chmod -R a+rX "${TECTONIC_CACHE_DIR}" && \
+    rm -rf /tmp/warmup /tmp/warmup.pdf
+
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
 

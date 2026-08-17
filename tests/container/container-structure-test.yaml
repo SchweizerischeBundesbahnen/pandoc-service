@@ -33,6 +33,15 @@ commandTests:
       - --version
     expectedOutput:
       - Tectonic 0.*
+  # The bundle is warmed at build time so that no pdf conversion downloads it at run time.
+  # These files are the ones a plain warm-up document does not pull in.
+  - name: Tectonic bundle is pre-baked into the image
+    command: bash
+    args:
+      - -c
+      - test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name lmmonolt10-bold.otf \)
+        | wc -l)" -eq 6
+    exitCode: 0
   - name: Playwright Chromium is installed for SVG rasterization
     command: bash
     args:
@@ -83,5 +92,12 @@ fileExistenceTests:
     path: /opt/pandoc/logs
     shouldExist: true
     permissions: drwxrwxrwx
+    uid: 0
+    gid: 0
+  # World-readable, so a container started with --user still finds the pre-baked bundle
+  - name: Tectonic cache directory
+    path: /opt/tectonic-cache
+    shouldExist: true
+    permissions: drwxr-xr-x
     uid: 0
     gid: 0
