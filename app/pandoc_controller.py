@@ -16,11 +16,12 @@ import anyio
 import starlette.datastructures
 import uvicorn
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.auth import ApiKeyError, get_api_keys, require_api_key
 from app.schema import VersionSchema
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
@@ -199,6 +200,12 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
     pandoc_metrics.set_pandoc_version(pandoc_version)
     logger.info("Pandoc version: %s", pandoc_version)
 
+    api_keys = get_api_keys()
+    if api_keys:
+        logger.info("API key authentication enabled for conversion and template endpoints (%d key(s) configured)", len(api_keys))
+    else:
+        logger.info("API key authentication disabled")
+
     # Initialize Prometheus info metric once at startup
     # Guard against repeated lifespan execution (e.g., uvicorn --reload, TestClient)
     service_version = os.environ.get("PANDOC_SERVICE_VERSION", "unknown")
@@ -294,6 +301,12 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
         "Validation Error",
         422,
     )
+
+
+# Answer a rejected API key in plain text, like every other error of this service
+@app.exception_handler(ApiKeyError)
+async def handle_api_key_error(request: Request, exc: ApiKeyError) -> PlainTextResponse:  # noqa: ARG001
+    return PlainTextResponse(content=exc.detail, status_code=exc.status_code, headers=exc.headers)
 
 
 def get_pandoc_version() -> str | None:
@@ -408,9 +421,11 @@ def health() -> JSONResponse:
             "description": "Success",
             "content": {MIME_TYPES["docx"]: {}},
         },
+        401: {"description": "Missing or invalid API key (only when API_KEY is configured).", "content": {MIME_TYPES["txt"]: {}}},
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
         500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
     },
+    dependencies=[Depends(require_api_key)],
 )
 async def get_docx_template() -> StreamingResponse | PlainTextResponse:
     path = Path(CUSTOM_REFERENCE_DOCX)
@@ -453,9 +468,11 @@ async def get_docx_template() -> StreamingResponse | PlainTextResponse:
             "description": "Success",
             "content": {MIME_TYPES["pptx"]: {}},
         },
+        401: {"description": "Missing or invalid API key (only when API_KEY is configured).", "content": {MIME_TYPES["txt"]: {}}},
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
         500: {"description": "Internal server error while generating the template.", "content": {MIME_TYPES["txt"]: {}}},
     },
+    dependencies=[Depends(require_api_key)],
 )
 async def get_pptx_template() -> StreamingResponse | PlainTextResponse:
     path = Path(CUSTOM_REFERENCE_PPTX)
@@ -763,9 +780,11 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             "content": {MIME_TYPES["docx"]: {}},
         },
         400: {"description": "Bad request.", "content": {MIME_TYPES["txt"]: {}}},
+        401: {"description": "Missing or invalid API key (only when API_KEY is configured).", "content": {MIME_TYPES["txt"]: {}}},
         413: {"description": "Request body too large.", "content": {MIME_TYPES["txt"]: {}}},
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
+    dependencies=[Depends(require_api_key)],
 )
 async def convert_docx_with_ref(
     request: Request,
@@ -871,9 +890,11 @@ async def convert_docx_with_ref(
             "content": {MIME_TYPES["pptx"]: {}},
         },
         400: {"description": "Bad request.", "content": {MIME_TYPES["txt"]: {}}},
+        401: {"description": "Missing or invalid API key (only when API_KEY is configured).", "content": {MIME_TYPES["txt"]: {}}},
         413: {"description": "Request body too large.", "content": {MIME_TYPES["txt"]: {}}},
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
+    dependencies=[Depends(require_api_key)],
 )
 async def convert_pptx_with_ref(
     request: Request,
@@ -965,9 +986,11 @@ async def convert_pptx_with_ref(
             "content": {DEFAULT_MIME_TYPE: {}},
         },
         400: {"description": "Bad request.", "content": {MIME_TYPES["txt"]: {}}},
+        401: {"description": "Missing or invalid API key (only when API_KEY is configured).", "content": {MIME_TYPES["txt"]: {}}},
         413: {"description": "Request body too large.", "content": {MIME_TYPES["txt"]: {}}},
         422: {"description": "Validation error.", "content": {MIME_TYPES["txt"]: {}}},
     },
+    dependencies=[Depends(require_api_key)],
 )
 async def convert(
     request: Request,
