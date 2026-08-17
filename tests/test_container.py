@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import docker
+import pytest
 import requests
 from docker.models.containers import Container
 from docx import Document
@@ -649,3 +650,39 @@ def test_an_image_carried_by_the_document_reaches_the_pdf(test_parameters: TestP
     _, images = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_AN_EMBEDDED_IMAGE)
 
     assert images == 1
+
+
+SOURCE_MARKDOWN_WITH_A_SPELLED_BACKSLASH = """Hello
+
+$^^5cinput{/etc/hostname}$
+"""
+
+SOURCE_MARKDOWN_WITH_A_WIDELY_SPELLED_BACKSLASH = """Hello
+
+$^^^^005cinput{/etc/hostname}$
+"""
+
+SOURCE_MARKDOWN_WITH_ORDINARY_MATH = """Hello
+
+$E = mc^2$
+"""
+
+
+@pytest.mark.parametrize(
+    "markdown",
+    [SOURCE_MARKDOWN_WITH_A_SPELLED_BACKSLASH, SOURCE_MARKDOWN_WITH_A_WIDELY_SPELLED_BACKSLASH],
+)
+def test_math_cannot_spell_a_primitive_with_carets(test_parameters: TestParameters, markdown: str) -> None:
+    """TeX reads `^^5c` as a backslash, so a formula may name a primitive without writing one."""
+    spelled, _ = _pdf_text_and_images(test_parameters, markdown)
+    plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
+
+    assert spelled == plain
+
+
+def test_ordinary_math_still_reaches_the_pdf(test_parameters: TestParameters) -> None:
+    """The positive side of the rule: a formula which names nothing renders as before."""
+    rendered, _ = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_ORDINARY_MATH)
+    plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
+
+    assert rendered != plain

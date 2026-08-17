@@ -114,13 +114,14 @@ templates, the tectonic PDF engine, and images carried inside the document as `d
 how `docx-exporter` sends them.
 
 A PDF is produced by handing the generated LaTeX to tectonic, which runs outside that sandbox and
-resolves what the TeX names. Three routes reach it, and all three are closed on the `pdf` and `latex`
-targets:
+resolves what the TeX names. These routes reach it, and every one of them is closed on the `pdf` and
+`latex` targets:
 
 | Route | What is done |
 |---|---|
 | raw TeX, `\input{/etc/passwd}` as a raw block or inline | dropped before the LaTeX writer |
 | the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | that formula is dropped, every other one renders as before |
+| a primitive spelled with carets inside math, `$^^5cinput{...}$`, which TeX reads as a backslash | that formula is dropped: `^^` is a spelling of a character, not a superscript |
 | an image the document points at by address, which becomes `\includegraphics{...}` | dropped, whatever the source format |
 
 What the DOCX filters of this service emit afterwards is untouched, so the colors, lists and tables of

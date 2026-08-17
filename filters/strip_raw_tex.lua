@@ -8,7 +8,8 @@ it, all verified against this image:
 
   * raw TeX,          `\input{/etc/passwd}` written as a raw block or inline,
   * math,             the same primitive inside `$...$`, which the writer emits
-                      verbatim,
+                      verbatim, whether it is spelled with a backslash or with
+                      the `^^` notation TeX reads as one,
   * an image path,    which becomes `\includegraphics{...}` and puts the file
                       into the PDF.
 
@@ -47,6 +48,16 @@ local function names_a_primitive(text)
   return false
 end
 
+-- TeX reads `^^` as the spelling of a character rather than as a superscript:
+-- `^^5c` is a backslash, and the wider forms of the engine tectonic builds on
+-- spell the same character as `^^^^005c`. A formula written that way names a
+-- primitive while carrying none of its letters, so the notation itself is what
+-- a formula may not use. A superscript of a superscript is an error in TeX, so
+-- no formula which renders today is lost. Verified against this image.
+local function spells_a_character(text)
+  return text:find("^^", 1, true) ~= nil
+end
+
 function RawBlock(element)
   if is_tex(element.format) then
     return {}
@@ -60,7 +71,7 @@ function RawInline(element)
 end
 
 function Math(element)
-  if names_a_primitive(element.text) then
+  if names_a_primitive(element.text) or spells_a_character(element.text) then
     return {}
   end
 end
