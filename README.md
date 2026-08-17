@@ -101,6 +101,52 @@ The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
 is informational and does not by itself mark the service unhealthy. The Chromium
 version is reported by the `/version` endpoint.
 
+### API key authentication
+
+The conversion and template endpoints can be protected with an API key. The feature is optional and disabled by default.
+
+**Configuration:**
+- `API_KEY`: One or more API keys. Authentication is disabled when the variable is unset or empty.
+- Several keys are configured as a comma-separated list, for example `API_KEY=key-a,key-b`. This allows key rotation without downtime.
+
+**Protected endpoints:**
+
+| Method | Path |
+|---|---|
+| `POST` | `/convert/{source_format}/to/{target_format}` |
+| `POST` | `/convert/{source_format}/to/docx-with-template` |
+| `POST` | `/convert/{source_format}/to/pptx-with-template` |
+| `GET` | `/docx-template` |
+| `GET` | `/pptx-template` |
+
+Each of them spawns a pandoc process. `/health`, `/version`, `/static` and `/api/docs` stay open, so the Docker healthcheck and the published schema keep working. The Prometheus endpoint on port 9182 is not affected; isolate it at the network level.
+
+**Start the service with authentication:**
+```bash
+docker run --init --detach \
+  --publish 9082:9082 \
+  --publish 9182:9182 \
+  --name pandoc-service \
+  --env API_KEY=your-secret-key \
+  ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+```
+
+**Send the key in the `X-API-Key` header:**
+```bash
+export API_KEY=your-secret-key
+
+curl -X POST -H "X-API-Key: ${API_KEY}" -H "Content-Type: application/html" \
+  --data @input_html http://localhost:9082/convert/html/to/docx --output output.docx
+```
+
+**Or as a bearer token:**
+```bash
+curl -X POST -H "Authorization: Bearer ${API_KEY}" -H "Content-Type: application/html" \
+  --data @input_html http://localhost:9082/convert/html/to/docx --output output.docx
+```
+
+A missing or invalid key answers `401 Unauthorized` in plain text, with the header `WWW-Authenticate: Bearer`. The key value is never written to the log.
+
 ### Using as a Base Image
 
 To extend or customize the service, use it as a base image in the Dockerfile:

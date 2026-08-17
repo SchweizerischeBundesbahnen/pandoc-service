@@ -77,6 +77,7 @@ bash tests/shell/test_pandoc_service.sh
 - Direct subprocess calls to pandoc binary (no shell=True)
 - Input validation with 200MB request size limit
 - Format validation for source/target combinations
+- Optional API key on the conversion and template endpoints (`app/auth.py`): set `API_KEY` (comma-separated list allowed) and clients send `X-API-Key` or `Authorization: Bearer`. Unset means disabled, which is the default. `/health`, `/version`, `/static` and `/api/docs` stay open so the healthcheck keeps working.
 
 ### Conversion Pipeline
 1. Request validation (format, size, encoding)
@@ -112,6 +113,8 @@ bash tests/shell/test_pandoc_service.sh
 - `POST /convert/{source_format}/to/{target_format}` - General conversion (HTML sources accept a `scale_factor` query param)
 - `POST /convert/{source_format}/to/docx-with-template` - DOCX with custom template (accepts `scale_factor`)
 - `POST /convert/{source_format}/to/pptx-with-template` - PPTX with custom template (accepts `scale_factor`)
+
+The template and conversion endpoints require an API key when `API_KEY` is configured (see Security Model).
 
 Service runs on port 9082 with health checks and comprehensive logging.
 

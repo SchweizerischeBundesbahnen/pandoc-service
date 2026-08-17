@@ -156,6 +156,6 @@ COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lu
 COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/docx_caption_labels_to_latex.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -fsS http://localhost:9082/health || exit 1
+  CMD ["curl", "-fsS", "http://localhost:9082/health"]
 
 ENTRYPOINT ["./entrypoint.sh"]
