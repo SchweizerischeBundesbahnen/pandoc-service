@@ -27,7 +27,7 @@ from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_opti
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
-from .constants import API_VERSION, get_bool_env
+from .constants import API_VERSION
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -66,6 +66,7 @@ FILTERS = {
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
+    "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
 }
 
 # List of allowed pandoc options for security
@@ -95,6 +96,10 @@ ALLOWED_PANDOC_OPTIONS = [
 # helps for these targets — for DOCX -> DOCX/HTML/etc. we leave the input
 # alone.
 _LATEX_TARGET_FORMATS = frozenset({"pdf", "latex"})
+
+# Only these turn the sandbox off, everything else keeps it on.
+_SANDBOX_OFF_VALUES = frozenset({"false", "0", "no", "off"})
+_SANDBOX_ON_VALUES = frozenset({"true", "1", "yes", "on"})
 
 # Add other allowed formats as needed
 ALLOWED_SOURCE_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile"]
@@ -571,6 +576,12 @@ def _build_pandoc_command(
     # images carried as data: URIs all keep working inside it.
     if is_sandbox_enabled():
         cmd.append("--sandbox")
+        # A PDF is produced by handing the generated LaTeX to tectonic, which
+        # runs outside the sandbox and reads what the TeX names. The raw TeX of
+        # the document is dropped before it can get there. This filter runs
+        # first, so the raw LaTeX the docx filters emit later survives.
+        if target_format in _LATEX_TARGET_FORMATS:
+            cmd.append(f"--lua-filter={FILTERS['strip_raw_tex']}")
 
     # Convert inline CSS on HTML <span style="..."> into raw OOXML runs for
     # the DOCX writer. The filter emits RawInline("openxml", ...) nodes which
@@ -635,8 +646,19 @@ def is_sandbox_enabled() -> bool:
     Sandboxed, pandoc reads no address and no path the document names. Turning
     it off restores the behavior of a service which loads whatever a document
     asks for, including a file of this container and a host of its network.
+
+    Only an understood value turns it off. A typo keeps the sandbox and says so,
+    because the other way round a misspelled variable would open the service
+    without anyone noticing.
     """
-    return get_bool_env("PANDOC_SANDBOX", default=True)
+    configured = os.environ.get("PANDOC_SANDBOX", "").strip().lower()
+    if not configured:
+        return True
+    if configured in _SANDBOX_OFF_VALUES:
+        return False
+    if configured not in _SANDBOX_ON_VALUES:
+        logger.warning("PANDOC_SANDBOX is '%s', which is not understood. Keeping pandoc sandboxed.", configured)
+    return True
 
 
 def is_svg_conversion_enabled() -> bool:

@@ -113,6 +113,13 @@ everything the conversion itself needs, verified against this image: the lua fil
 templates, the tectonic PDF engine, and images carried inside the document as `data:` URIs, which is
 how `docx-exporter` sends them.
 
+A PDF is produced by handing the generated LaTeX to tectonic, which runs outside that sandbox and
+resolves what the TeX names: `\input{/etc/passwd}` written in a markdown or latex source would reach
+the engine. The raw TeX a document carries is therefore dropped before the LaTeX writer, on the `pdf`
+and `latex` targets. What the DOCX filters of this service emit afterwards is untouched, so the
+colors, lists and tables of a DOCX export are unaffected. A document which needs its own TeX macros
+loses them in the PDF.
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `PANDOC_SANDBOX` | `true` | Run pandoc with `--sandbox`. Set it to `false` to let a document load its own resources again. |

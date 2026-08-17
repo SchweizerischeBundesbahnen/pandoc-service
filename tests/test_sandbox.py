@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.pandoc_controller import _build_pandoc_command, is_sandbox_enabled
+from app.pandoc_controller import FILTERS, _build_pandoc_command, is_sandbox_enabled
 
 
 def build(**overrides: object) -> list[str]:
@@ -60,3 +60,37 @@ def test_sandbox_leaves_the_other_arguments_alone(monkeypatch: pytest.MonkeyPatc
     with_sandbox = build(validated_options=["--toc"])
 
     assert [argument for argument in with_sandbox if argument != "--sandbox"] == without
+
+
+@pytest.mark.parametrize("value", ["enabled", " on ", "of", "", "  ", "yes please"])
+def test_a_value_which_is_not_understood_keeps_the_sandbox(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """A typo must not open the service, which is what a plain truthy check would do."""
+    monkeypatch.setenv("PANDOC_SANDBOX", value)
+
+    assert is_sandbox_enabled() is True
+    assert "--sandbox" in build()
+
+
+@pytest.mark.parametrize("target_format", ["pdf", "latex"])
+def test_raw_tex_of_the_document_is_dropped_on_the_tex_paths(monkeypatch: pytest.MonkeyPatch, target_format: str) -> None:
+    """tectonic runs outside the sandbox and reads what the TeX names, so the TeX goes first."""
+    monkeypatch.delenv("PANDOC_SANDBOX", raising=False)
+    command = build(target_format=target_format)
+    strip = f"--lua-filter={FILTERS['strip_raw_tex']}"
+
+    assert strip in command
+    other_filters = [index for index, argument in enumerate(command) if argument.startswith("--lua-filter=") and argument != strip]
+    assert all(command.index(strip) < index for index in other_filters), "the raw TeX of the document is dropped before the filters which emit their own"
+
+
+@pytest.mark.parametrize("target_format", ["docx", "html", "pptx", "odt"])
+def test_the_other_targets_keep_their_raw_blocks(monkeypatch: pytest.MonkeyPatch, target_format: str) -> None:
+    monkeypatch.delenv("PANDOC_SANDBOX", raising=False)
+
+    assert f"--lua-filter={FILTERS['strip_raw_tex']}" not in build(target_format=target_format)
+
+
+def test_the_filter_is_not_added_without_the_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PANDOC_SANDBOX", "false")
+
+    assert f"--lua-filter={FILTERS['strip_raw_tex']}" not in build(target_format="pdf")

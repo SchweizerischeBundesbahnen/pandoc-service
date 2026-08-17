@@ -10,6 +10,7 @@ import requests
 from docker.models.containers import Container
 from docx import Document
 from docx.shared import RGBColor
+from pypdf import PdfReader
 
 from tests.test_pptx_post_process import find_presentation_information
 
@@ -538,3 +539,36 @@ def test_a_document_cannot_read_files_of_the_container(test_parameters: TestPara
         document_xml = docx.read("word/document.xml").decode("utf-8")
 
     assert "root:x:0:0" not in document_xml
+
+
+SOURCE_MARKDOWN_WITH_RAW_TEX = """Hello
+
+\\input{/etc/hostname}
+"""
+
+
+def test_a_document_cannot_reach_the_pdf_engine_with_raw_tex(test_parameters: TestParameters) -> None:
+    """The PDF is produced by tectonic, which runs outside the pandoc sandbox.
+
+    Raw TeX of the document is therefore dropped before it gets there, or
+    ``\\input{/etc/hostname}`` would put a file of the container into the PDF.
+    The document with the raw TeX has to render exactly like the one without it.
+    """
+
+    def text_of(markdown: str) -> str:
+        response = __send_request(
+            base_url=test_parameters.base_url,
+            request_session=test_parameters.request_session,
+            source_format="markdown",
+            target_format="pdf",
+            data=markdown,
+        )
+        assert response.status_code == 200
+        reader = PdfReader(io.BytesIO(response.content))
+        return "".join(page.extract_text() for page in reader.pages)
+
+    with_raw_tex = text_of(SOURCE_MARKDOWN_WITH_RAW_TEX)
+    without_raw_tex = text_of("Hello\n")
+
+    assert "Hello" in without_raw_tex
+    assert with_raw_tex == without_raw_tex
