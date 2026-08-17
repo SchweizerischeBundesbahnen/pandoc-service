@@ -1,6 +1,7 @@
 import io
 import logging
 import time
+import zipfile
 from pathlib import Path
 from typing import NamedTuple
 
@@ -9,6 +10,7 @@ import requests
 from docker.models.containers import Container
 from docx import Document
 from docx.shared import RGBColor
+from pypdf import PdfReader
 
 from tests.test_pptx_post_process import find_presentation_information
 
@@ -502,3 +504,148 @@ def test_convert_invalid_target_format(test_parameters: TestParameters) -> None:
         data="test content",
     )
     assert response.status_code == 400
+
+
+SOURCE_HTML_WITH_LOCAL_FILE_REFERENCES = """
+            <html>
+                <body>
+                    <p>A document naming resources of the container it is converted in.</p>
+                    <img src="/etc/hostname"/>
+                    <img src="file:///etc/hostname"/>
+                    <img src="/etc/passwd"/>
+                </body>
+            </html>
+            """
+
+
+def test_a_document_cannot_read_files_of_the_container(test_parameters: TestParameters) -> None:
+    """The sandbox keeps a document from naming a path of this container.
+
+    Without it, pandoc reads the file and embeds it in the result: an exfiltration
+    channel out of every deployment reachable by a caller.
+    """
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="html",
+        target_format="docx",
+        data=SOURCE_HTML_WITH_LOCAL_FILE_REFERENCES,
+    )
+    assert response.status_code == 200
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as docx:
+        embedded = [name for name in docx.namelist() if name.startswith("word/media/")]
+        assert embedded == [], f"the document pulled files of the container into the result: {embedded}"
+        document_xml = docx.read("word/document.xml").decode("utf-8")
+
+    assert "root:x:0:0" not in document_xml
+
+
+SOURCE_MARKDOWN_WITH_RAW_TEX = """Hello
+
+\\input{/etc/hostname}
+"""
+
+
+def test_a_document_cannot_reach_the_pdf_engine_with_raw_tex(test_parameters: TestParameters) -> None:
+    """The PDF is produced by tectonic, which runs outside the pandoc sandbox.
+
+    Raw TeX of the document is therefore dropped before it gets there, or
+    ``\\input{/etc/hostname}`` would put a file of the container into the PDF.
+    The document with the raw TeX has to render exactly like the one without it.
+    """
+
+    def text_of(markdown: str) -> str:
+        response = __send_request(
+            base_url=test_parameters.base_url,
+            request_session=test_parameters.request_session,
+            source_format="markdown",
+            target_format="pdf",
+            data=markdown,
+        )
+        assert response.status_code == 200
+        reader = PdfReader(io.BytesIO(response.content))
+        return "".join(page.extract_text() for page in reader.pages)
+
+    with_raw_tex = text_of(SOURCE_MARKDOWN_WITH_RAW_TEX)
+    without_raw_tex = text_of("Hello\n")
+
+    assert "Hello" in without_raw_tex
+    assert with_raw_tex == without_raw_tex
+
+
+SOURCE_MARKDOWN_WITH_TEX_IN_MATH = """Hello
+
+$\\input{/etc/hostname}$
+"""
+
+SOURCE_MARKDOWN_WITH_A_LOCAL_IMAGE = """Hello
+
+![](/opt/pandoc/.build_timestamp)
+"""
+
+
+def _pdf_text_and_images(test_parameters: TestParameters, markdown: str) -> tuple[str, int]:
+    """Convert a markdown source to PDF and report what the result carries."""
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="markdown",
+        target_format="pdf",
+        data=markdown,
+    )
+    assert response.status_code == 200
+    reader = PdfReader(io.BytesIO(response.content))
+    text = "".join(page.extract_text() for page in reader.pages)
+    return text, sum(_image_count(page) for page in reader.pages)
+
+
+def _image_count(page: object) -> int:
+    """Count the images of a page by its resources, which needs no image library."""
+    resources = page.get("/Resources")  # type: ignore[attr-defined]
+    if resources is None:
+        return 0
+    xobjects = resources.get_object().get("/XObject")
+    if xobjects is None:
+        return 0
+    return sum(1 for entry in xobjects.get_object().values() if entry.get_object().get("/Subtype") == "/Image")
+
+
+def test_math_cannot_carry_tex_to_the_pdf_engine(test_parameters: TestParameters) -> None:
+    """The writer emits math verbatim, so the same primitive inside $...$ takes the same route."""
+    with_tex, _ = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_TEX_IN_MATH)
+    plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
+
+    assert with_tex == plain
+
+
+def test_a_document_cannot_put_a_file_of_the_container_into_a_pdf_as_an_image(test_parameters: TestParameters) -> None:
+    """An image path becomes \\includegraphics, which the engine outside the sandbox resolves."""
+    _, images = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_A_LOCAL_IMAGE)
+
+    assert images == 0
+
+
+SOURCE_MARKDOWN_WITH_MIXED_CASE_RAW_TEX = """Hello
+
+```{=LaTeX}
+\\input{/etc/hostname}
+```
+"""
+
+SOURCE_MARKDOWN_WITH_AN_EMBEDDED_IMAGE = "Hello\n\n![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=)\n"
+
+
+def test_the_raw_tex_check_is_case_insensitive(test_parameters: TestParameters) -> None:
+    """Pandoc folds the case of a raw format, so `{=LaTeX}` takes the same route as `{=latex}`."""
+    with_raw_tex, _ = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_MIXED_CASE_RAW_TEX)
+    plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
+
+    assert with_raw_tex == plain
+
+
+def test_an_image_carried_by_the_document_reaches_the_pdf(test_parameters: TestParameters) -> None:
+    """The positive side of the rule: what travels inside the document is kept."""
+    _, images = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_AN_EMBEDDED_IMAGE)
+
+    assert images == 1

@@ -101,6 +101,41 @@ The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
 is informational and does not by itself mark the service unhealthy. The Chromium
 version is reported by the `/version` endpoint.
 
+### External resources of a document
+
+A document names its own resources: an image, a stylesheet, a font. The writers which embed media
+fetch what it names, so a document reaching this service can ask it to read an address on the network
+or a path inside its container, and the answer lands in the converted result.
+
+The service therefore runs pandoc sandboxed, and does so by default. Sandboxed, pandoc reads nothing
+a document names: no host of the network it sits in, no file of the container. What still works is
+everything the conversion itself needs, verified against this image: the lua filters, `--reference-doc`
+templates, the tectonic PDF engine, and images carried inside the document as `data:` URIs, which is
+how `docx-exporter` sends them.
+
+A PDF is produced by handing the generated LaTeX to tectonic, which runs outside that sandbox and
+resolves what the TeX names. Three routes reach it, and all three are closed on the `pdf` and `latex`
+targets:
+
+| Route | What is done |
+|---|---|
+| raw TeX, `\input{/etc/passwd}` as a raw block or inline | dropped before the LaTeX writer |
+| the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | that formula is dropped, every other one renders as before |
+| an image the document points at by address, which becomes `\includegraphics{...}` | dropped, whatever the source format |
+
+What the DOCX filters of this service emit afterwards is untouched, so the colors, lists and tables of
+a DOCX export are unaffected. An image is kept when it travels inside the document: a `data:` URI, or
+media pandoc extracted itself, which is what it asks its media bag rather than the source format, so
+an EPUB naming an address of its own is covered like a markdown source is. A document which needs its
+own TeX macros, or which points at an image by address, loses them in the PDF.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PANDOC_SANDBOX` | `true` | Run pandoc with `--sandbox`. Set it to `false` to let a document load its own resources again. |
+
+Turning it off restores the reach of a document into the network and the file system of the container,
+so it belongs to a deployment where every caller is trusted and remote images are needed.
+
 ### HTTPS
 
 Both servers speak plain HTTP by default, which is what a deployment behind a reverse proxy or an ingress expects: TLS terminates there and nothing has to be configured here. That remains the recommended setup where such a component is already in place.
