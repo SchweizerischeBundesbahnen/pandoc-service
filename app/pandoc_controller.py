@@ -27,7 +27,7 @@ from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_opti
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
-from .constants import API_VERSION
+from .constants import API_VERSION, get_bool_env
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -565,6 +565,13 @@ def _build_pandoc_command(
     pandoc_source_format = f"{source_format}+styles" if apply_docx_latex_filters else source_format
     cmd = [PANDOC_PATH, "-f", pandoc_source_format, "-t", target_format, "-o", output_path, source_path]
 
+    # A document names its own resources, and the writers embedding media fetch
+    # them: an address on the network, or a path in this container. The sandbox
+    # closes both. Lua filters, --reference-doc, the tectonic PDF engine and
+    # images carried as data: URIs all keep working inside it.
+    if is_sandbox_enabled():
+        cmd.append("--sandbox")
+
     # Convert inline CSS on HTML <span style="..."> into raw OOXML runs for
     # the DOCX writer. The filter emits RawInline("openxml", ...) nodes which
     # only render when the target writer is docx; for any other target
@@ -619,6 +626,17 @@ def _build_pandoc_command(
     if validated_options:
         cmd.extend(validated_options)
     return cmd
+
+
+def is_sandbox_enabled() -> bool:
+    """
+    Whether pandoc runs sandboxed, which is the default.
+
+    Sandboxed, pandoc reads no address and no path the document names. Turning
+    it off restores the behavior of a service which loads whatever a document
+    asks for, including a file of this container and a host of its network.
+    """
+    return get_bool_env("PANDOC_SANDBOX", default=True)
 
 
 def is_svg_conversion_enabled() -> bool:

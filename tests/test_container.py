@@ -1,6 +1,7 @@
 import io
 import logging
 import time
+import zipfile
 from pathlib import Path
 from typing import NamedTuple
 
@@ -502,3 +503,38 @@ def test_convert_invalid_target_format(test_parameters: TestParameters) -> None:
         data="test content",
     )
     assert response.status_code == 400
+
+
+SOURCE_HTML_WITH_LOCAL_FILE_REFERENCES = """
+            <html>
+                <body>
+                    <p>A document naming resources of the container it is converted in.</p>
+                    <img src="/etc/hostname"/>
+                    <img src="file:///etc/hostname"/>
+                    <img src="/etc/passwd"/>
+                </body>
+            </html>
+            """
+
+
+def test_a_document_cannot_read_files_of_the_container(test_parameters: TestParameters) -> None:
+    """The sandbox keeps a document from naming a path of this container.
+
+    Without it, pandoc reads the file and embeds it in the result: an exfiltration
+    channel out of every deployment reachable by a caller.
+    """
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="html",
+        target_format="docx",
+        data=SOURCE_HTML_WITH_LOCAL_FILE_REFERENCES,
+    )
+    assert response.status_code == 200
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as docx:
+        embedded = [name for name in docx.namelist() if name.startswith("word/media/")]
+        assert embedded == [], f"the document pulled files of the container into the result: {embedded}"
+        document_xml = docx.read("word/document.xml").decode("utf-8")
+
+    assert "root:x:0:0" not in document_xml

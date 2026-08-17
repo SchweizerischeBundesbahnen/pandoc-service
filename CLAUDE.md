@@ -73,6 +73,7 @@ bash tests/shell/test_pandoc_service.sh
 - **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG/Chromium metrics)
 
 ### Security Model
+- Pandoc runs with `--sandbox` by default (`PANDOC_SANDBOX`, see `is_sandbox_enabled`), so a document cannot make it read a network address or a container path. Lua filters, `--reference-doc`, tectonic and `data:` URI images are unaffected.
 - Uses allowlisted pandoc options to prevent command injection
 - Direct subprocess calls to pandoc binary (no shell=True)
 - Input validation with 200MB request size limit

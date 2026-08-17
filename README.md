@@ -101,6 +101,25 @@ The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
 is informational and does not by itself mark the service unhealthy. The Chromium
 version is reported by the `/version` endpoint.
 
+### External resources of a document
+
+A document names its own resources: an image, a stylesheet, a font. The writers which embed media
+fetch what it names, so a document reaching this service can ask it to read an address on the network
+or a path inside its container, and the answer lands in the converted result.
+
+The service therefore runs pandoc sandboxed, and does so by default. Sandboxed, pandoc reads nothing
+a document names: no host of the network it sits in, no file of the container. What still works is
+everything the conversion itself needs, verified against this image: the lua filters, `--reference-doc`
+templates, the tectonic PDF engine, and images carried inside the document as `data:` URIs, which is
+how `docx-exporter` sends them.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PANDOC_SANDBOX` | `true` | Run pandoc with `--sandbox`. Set it to `false` to let a document load its own resources again. |
+
+Turning it off restores the reach of a document into the network and the file system of the container,
+so it belongs to a deployment where every caller is trusted and remote images are needed.
+
 ### HTTPS
 
 Both servers speak plain HTTP by default, which is what a deployment behind a reverse proxy or an ingress expects: TLS terminates there and nothing has to be configured here. That remains the recommended setup where such a component is already in place.
