@@ -120,13 +120,14 @@ targets:
 | Route | What is done |
 |---|---|
 | raw TeX, `\input{/etc/passwd}` as a raw block or inline | dropped before the LaTeX writer |
-| the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | removed from the formula, the rest of it still renders |
-| an image the document points at by path, which becomes `\includegraphics{...}` | dropped, for the sources where the document writes the address itself: html, json, latex, markdown, rtf and textile |
+| the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | that formula is dropped, every other one renders as before |
+| an image the document points at by address, which becomes `\includegraphics{...}` | dropped, whatever the source format |
 
 What the DOCX filters of this service emit afterwards is untouched, so the colors, lists and tables of
-a DOCX export are unaffected, and an image extracted by pandoc from a DOCX or an EPUB travels with its
-document as before. A document which needs its own TeX macros, or which points at an image by path,
-loses them in the PDF.
+a DOCX export are unaffected. An image is kept when it travels inside the document: a `data:` URI, or
+media pandoc extracted itself, which is what it asks its media bag rather than the source format, so
+an EPUB naming an address of its own is covered like a markdown source is. A document which needs its
+own TeX macros, or which points at an image by address, loses them in the PDF.
 
 | Variable | Default | Purpose |
 |---|---|---|

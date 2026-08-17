@@ -597,8 +597,18 @@ def _pdf_text_and_images(test_parameters: TestParameters, markdown: str) -> tupl
     assert response.status_code == 200
     reader = PdfReader(io.BytesIO(response.content))
     text = "".join(page.extract_text() for page in reader.pages)
-    images = sum(len(list(page.images)) for page in reader.pages)
-    return text, images
+    return text, sum(_image_count(page) for page in reader.pages)
+
+
+def _image_count(page: object) -> int:
+    """Count the images of a page by its resources, which needs no image library."""
+    resources = page.get("/Resources")  # type: ignore[attr-defined]
+    if resources is None:
+        return 0
+    xobjects = resources.get_object().get("/XObject")
+    if xobjects is None:
+        return 0
+    return sum(1 for entry in xobjects.get_object().values() if entry.get_object().get("/Subtype") == "/Image")
 
 
 def test_math_cannot_carry_tex_to_the_pdf_engine(test_parameters: TestParameters) -> None:
@@ -614,3 +624,28 @@ def test_a_document_cannot_put_a_file_of_the_container_into_a_pdf_as_an_image(te
     _, images = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_A_LOCAL_IMAGE)
 
     assert images == 0
+
+
+SOURCE_MARKDOWN_WITH_MIXED_CASE_RAW_TEX = """Hello
+
+```{=LaTeX}
+\\input{/etc/hostname}
+```
+"""
+
+SOURCE_MARKDOWN_WITH_AN_EMBEDDED_IMAGE = "Hello\n\n![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=)\n"
+
+
+def test_the_raw_tex_check_is_case_insensitive(test_parameters: TestParameters) -> None:
+    """Pandoc folds the case of a raw format, so `{=LaTeX}` takes the same route as `{=latex}`."""
+    with_raw_tex, _ = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_MIXED_CASE_RAW_TEX)
+    plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
+
+    assert with_raw_tex == plain
+
+
+def test_an_image_carried_by_the_document_reaches_the_pdf(test_parameters: TestParameters) -> None:
+    """The positive side of the rule: what travels inside the document is kept."""
+    _, images = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_AN_EMBEDDED_IMAGE)
+
+    assert images == 1

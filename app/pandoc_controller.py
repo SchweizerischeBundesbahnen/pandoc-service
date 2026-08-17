@@ -98,11 +98,6 @@ ALLOWED_PANDOC_OPTIONS = [
 # alone.
 _LATEX_TARGET_FORMATS = frozenset({"pdf", "latex"})
 
-# Sources where the document itself writes the address of an image. Where it
-# does not, a DOCX among them, the address comes from pandoc extracting the
-# media of the document, and the image travels with it.
-_SOURCES_NAMING_THEIR_IMAGES = frozenset({"html", "json", "latex", "markdown", "rtf", "textile"})
-
 # Only these turn the sandbox off, everything else keeps it on.
 _SANDBOX_OFF_VALUES = frozenset({"false", "0", "no", "off"})
 _SANDBOX_ON_VALUES = frozenset({"true", "1", "yes", "on"})
@@ -589,9 +584,9 @@ def _build_pandoc_command(
         if target_format in _LATEX_TARGET_FORMATS:
             cmd.append(f"--lua-filter={FILTERS['strip_raw_tex']}")
             # An image becomes \includegraphics, which the engine resolves, so a
-            # document may not point at a path of its own on these paths.
-            if source_format in _SOURCES_NAMING_THEIR_IMAGES:
-                cmd.append(f"--lua-filter={FILTERS['strip_document_images']}")
+            # document may not point at an address of its own. What it carries
+            # inside itself is kept, whatever the source format.
+            cmd.append(f"--lua-filter={FILTERS['strip_document_images']}")
 
     # Convert inline CSS on HTML <span style="..."> into raw OOXML runs for
     # the DOCX writer. The filter emits RawInline("openxml", ...) nodes which
