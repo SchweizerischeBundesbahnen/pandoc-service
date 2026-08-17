@@ -139,7 +139,8 @@ RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
 COPY ./app/*.py "${WORKING_DIR}/app/"
 
 COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
-RUN chmod +x "${WORKING_DIR}/entrypoint.sh"
+COPY healthcheck.sh "${WORKING_DIR}/healthcheck.sh"
+RUN chmod +x "${WORKING_DIR}/entrypoint.sh" "${WORKING_DIR}/healthcheck.sh"
 
 COPY filters/page_orientation.lua "/usr/local/share/pandoc/filters/page_orientation.lua"
 COPY filters/heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.lua"
@@ -156,6 +157,6 @@ COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lu
 COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/docx_caption_labels_to_latex.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["curl", "-fsS", "http://localhost:9082/health"]
+  CMD ["/bin/sh", "-c", "./healthcheck.sh"]
 
 ENTRYPOINT ["./entrypoint.sh"]

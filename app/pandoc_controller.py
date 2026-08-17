@@ -23,6 +23,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.auth import ApiKeyError, get_api_keys, require_api_key
 from app.schema import VersionSchema
+from app.tls import API_TLS_PREFIX, get_scheme, get_tls_options
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
@@ -205,6 +206,10 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
         logger.info("API key authentication enabled for conversion and template endpoints (%d key(s) configured)", len(api_keys))
     else:
         logger.info("API key authentication disabled")
+
+    # Read the TLS configuration at startup, so a broken one is reported here
+    # instead of deep inside uvicorn.
+    logger.info("Pandoc service scheme: %s", get_scheme(get_tls_options(API_TLS_PREFIX)))
 
     # Initialize Prometheus info metric once at startup
     # Guard against repeated lifespan execution (e.g., uvicorn --reload, TestClient)
@@ -1109,4 +1114,4 @@ def start_server(port: int) -> None:
     Args:
         port: The port number to listen on
     """
-    uvicorn.run(app=app, host="", port=port)
+    uvicorn.run(app=app, host="", port=port, **get_tls_options())
