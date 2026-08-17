@@ -20,6 +20,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.chromium_manager import get_chromium_manager
 from app.pandoc_metrics import get_pandoc_metrics
 from app.prometheus_metrics import update_gauges_from_chromium_manager, update_gauges_from_pandoc_metrics
+from app.tls import METRICS_TLS_PREFIX, get_scheme, load_tls_options
 
 logger = logging.getLogger(__name__)
 
@@ -118,11 +119,13 @@ class MetricsServer:
             logger.warning("Metrics server already started")
             return
 
+        tls_options = load_tls_options(METRICS_TLS_PREFIX)
         config = uvicorn.Config(
             app=metrics_app,
             host="0.0.0.0",  # noqa: S104
             port=self.port,
             log_level="warning",
+            **tls_options,
         )
         self._server = uvicorn.Server(config)
         self._task = asyncio.create_task(self._server.serve())
@@ -142,6 +145,7 @@ class MetricsServer:
 
         self._started = True
         logger.info("Metrics server started on port %d", self.port)
+        logger.info("Metrics server scheme: %s", get_scheme(tls_options))
 
     async def stop(self) -> None:
         """Stop the metrics server."""

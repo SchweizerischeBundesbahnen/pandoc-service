@@ -77,6 +77,7 @@ bash tests/shell/test_pandoc_service.sh
 - Direct subprocess calls to pandoc binary (no shell=True)
 - Input validation with 200MB request size limit
 - Format validation for source/target combinations
+- Optional TLS on both servers (`app/tls.py`): `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_KEY_PASSWORD`, `TLS_CLIENT_CA_FILE`, `TLS_CLIENT_AUTH` (none/optional/required) for the API, the same five with a `METRICS_TLS_` prefix for the metrics server, configured independently. Unset means plain HTTP (default); an incomplete configuration fails at startup rather than falling back, and the material is loaded before either server listens (`load_tls_options`), so a mismatched key or a wrong password also stops the start. The container healthcheck (`healthcheck.sh`) follows the configured scheme.
 - Optional API key on the conversion and template endpoints (`app/auth.py`): set `API_KEY` (comma-separated list allowed) and clients send `X-API-Key` or `Authorization: Bearer`. Unset means disabled, which is the default. `/health`, `/version`, `/static` and `/api/docs` stay open so the healthcheck keeps working.
 
 ### Conversion Pipeline
