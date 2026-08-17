@@ -73,7 +73,7 @@ bash tests/shell/test_pandoc_service.sh
 - **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG/Chromium metrics)
 
 ### Security Model
-- Pandoc runs with `--sandbox` by default (`PANDOC_SANDBOX`, see `is_sandbox_enabled`), so a document cannot make it read a network address or a container path. Lua filters, `--reference-doc`, tectonic and `data:` URI images are unaffected. tectonic runs outside that sandbox and reads what the TeX names, so `filters/strip_raw_tex.lua` drops the raw TeX of the document first on the pdf and latex targets, before the docx filters emit their own raw LaTeX.
+- Pandoc runs with `--sandbox` by default (`PANDOC_SANDBOX`, see `is_sandbox_enabled`), so a document cannot make it read a network address or a container path. Lua filters, `--reference-doc`, tectonic and `data:` URI images are unaffected. tectonic runs outside that sandbox and reads what the TeX names, so on the pdf and latex targets `filters/strip_raw_tex.lua` drops the raw TeX of the document and the file-reading primitives inside math, and `filters/strip_document_images.lua` drops images named by path where the source format lets the document write the address (html, json, latex, markdown, rtf, textile). Both run before the docx filters emit their own raw LaTeX.
 - Uses allowlisted pandoc options to prevent command injection
 - Direct subprocess calls to pandoc binary (no shell=True)
 - Input validation with 200MB request size limit

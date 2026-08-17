@@ -114,10 +114,18 @@ templates, the tectonic PDF engine, and images carried inside the document as `d
 how `docx-exporter` sends them.
 
 A PDF is produced by handing the generated LaTeX to tectonic, which runs outside that sandbox and
-resolves what the TeX names: `\input{/etc/passwd}` written in a markdown or latex source would reach
-the engine. The raw TeX a document carries is therefore dropped before the LaTeX writer, on the `pdf`
-and `latex` targets. What the DOCX filters of this service emit afterwards is untouched, so the
-colors, lists and tables of a DOCX export are unaffected. A document which needs its own TeX macros
+resolves what the TeX names. Three routes reach it, and all three are closed on the `pdf` and `latex`
+targets:
+
+| Route | What is done |
+|---|---|
+| raw TeX, `\input{/etc/passwd}` as a raw block or inline | dropped before the LaTeX writer |
+| the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | removed from the formula, the rest of it still renders |
+| an image the document points at by path, which becomes `\includegraphics{...}` | dropped, for the sources where the document writes the address itself: html, json, latex, markdown, rtf and textile |
+
+What the DOCX filters of this service emit afterwards is untouched, so the colors, lists and tables of
+a DOCX export are unaffected, and an image extracted by pandoc from a DOCX or an EPUB travels with its
+document as before. A document which needs its own TeX macros, or which points at an image by path,
 loses them in the PDF.
 
 | Variable | Default | Purpose |

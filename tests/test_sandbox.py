@@ -94,3 +94,25 @@ def test_the_filter_is_not_added_without_the_sandbox(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("PANDOC_SANDBOX", "false")
 
     assert f"--lua-filter={FILTERS['strip_raw_tex']}" not in build(target_format="pdf")
+
+
+@pytest.mark.parametrize("source_format", ["markdown", "html", "latex", "textile", "rtf", "json"])
+def test_images_named_by_the_document_are_dropped_on_the_tex_paths(monkeypatch: pytest.MonkeyPatch, source_format: str) -> None:
+    """An image becomes \\includegraphics, and the engine resolving it reads a file of the container."""
+    monkeypatch.delenv("PANDOC_SANDBOX", raising=False)
+
+    assert f"--lua-filter={FILTERS['strip_document_images']}" in build(source_format=source_format, target_format="pdf")
+
+
+@pytest.mark.parametrize("source_format", ["docx", "epub", "fb2"])
+def test_images_extracted_from_the_source_are_kept(monkeypatch: pytest.MonkeyPatch, source_format: str) -> None:
+    """There the address comes from pandoc extracting the media, and the image travels with the document."""
+    monkeypatch.delenv("PANDOC_SANDBOX", raising=False)
+
+    assert f"--lua-filter={FILTERS['strip_document_images']}" not in build(source_format=source_format, target_format="pdf")
+
+
+def test_images_are_kept_on_the_other_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PANDOC_SANDBOX", raising=False)
+
+    assert f"--lua-filter={FILTERS['strip_document_images']}" not in build(source_format="markdown", target_format="docx")

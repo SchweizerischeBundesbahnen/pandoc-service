@@ -572,3 +572,45 @@ def test_a_document_cannot_reach_the_pdf_engine_with_raw_tex(test_parameters: Te
 
     assert "Hello" in without_raw_tex
     assert with_raw_tex == without_raw_tex
+
+
+SOURCE_MARKDOWN_WITH_TEX_IN_MATH = """Hello
+
+$\\input{/etc/hostname}$
+"""
+
+SOURCE_MARKDOWN_WITH_A_LOCAL_IMAGE = """Hello
+
+![](/opt/pandoc/.build_timestamp)
+"""
+
+
+def _pdf_text_and_images(test_parameters: TestParameters, markdown: str) -> tuple[str, int]:
+    """Convert a markdown source to PDF and report what the result carries."""
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="markdown",
+        target_format="pdf",
+        data=markdown,
+    )
+    assert response.status_code == 200
+    reader = PdfReader(io.BytesIO(response.content))
+    text = "".join(page.extract_text() for page in reader.pages)
+    images = sum(len(list(page.images)) for page in reader.pages)
+    return text, images
+
+
+def test_math_cannot_carry_tex_to_the_pdf_engine(test_parameters: TestParameters) -> None:
+    """The writer emits math verbatim, so the same primitive inside $...$ takes the same route."""
+    with_tex, _ = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_TEX_IN_MATH)
+    plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
+
+    assert with_tex == plain
+
+
+def test_a_document_cannot_put_a_file_of_the_container_into_a_pdf_as_an_image(test_parameters: TestParameters) -> None:
+    """An image path becomes \\includegraphics, which the engine outside the sandbox resolves."""
+    _, images = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_A_LOCAL_IMAGE)
+
+    assert images == 0
