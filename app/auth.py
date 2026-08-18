@@ -9,6 +9,11 @@ Clients send the key in one of two headers:
 
 - ``X-API-Key: <key>``
 - ``Authorization: Bearer <key>``
+
+The key is checked twice. ``is_request_authorized`` serves the middleware,
+which rejects a request before its body is buffered. ``require_api_key`` is the
+route dependency, which documents both schemes in the OpenAPI schema and covers
+a route the middleware misses.
 """
 
 from __future__ import annotations
@@ -16,17 +21,27 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
 API_KEY_ENV_VAR = "API_KEY"
 API_KEY_HEADER_NAME = "X-API-Key"
+AUTHORIZATION_HEADER_NAME = "Authorization"
+BEARER_SCHEME = "bearer"
 
 UNAUTHORIZED_MESSAGE = "Invalid or missing API key"
+
+# The paths the key protects. The middleware and the route dependency read this
+# one definition, so the two cannot drift apart.
+PROTECTED_PATHS = frozenset({"/docx-template", "/pptx-template"})
+PROTECTED_PATH_PREFIXES = ("/convert/",)
 
 # auto_error=False keeps both schemes optional, so a missing header reaches
 # require_api_key instead of failing inside the security dependency.
@@ -98,6 +113,90 @@ def _matches_any(candidate: str, api_keys: tuple[str, ...]) -> bool:
     return matched
 
 
+def is_protected_path(path: str) -> bool:
+    """
+    Check whether a request path needs an API key.
+
+    A trailing slash is ignored, so the redirect variant of a path is treated
+    like the path itself.
+
+    Args:
+        path: Path of the incoming request.
+
+    Returns:
+        True if the path belongs to a protected endpoint.
+    """
+    return path.rstrip("/") in PROTECTED_PATHS or path.startswith(PROTECTED_PATH_PREFIXES)
+
+
+def _extract_credentials(headers: Mapping[str, str]) -> list[str]:
+    """
+    Collect the API keys a request presents.
+
+    The headers are read directly, which is what the middleware needs: it runs
+    before routing, so the security dependencies are not available there.
+
+    Args:
+        headers: Headers of the incoming request.
+
+    Returns:
+        Non-empty candidate keys, from the X-API-Key header and from a bearer
+        token in the Authorization header.
+    """
+    candidates = [headers.get(API_KEY_HEADER_NAME)]
+    authorization = headers.get(AUTHORIZATION_HEADER_NAME)
+    if authorization:
+        scheme, _, credentials = authorization.partition(" ")
+        if scheme.lower() == BEARER_SCHEME:
+            candidates.append(credentials.strip())
+    return [candidate for candidate in candidates if candidate]
+
+
+def _is_authorized(presented: list[str], api_keys: tuple[str, ...], path: str) -> bool:
+    """
+    Match the presented keys against the configured ones and log a rejection.
+
+    Both schemes are advertised as alternatives, so either credential admits
+    the request. A stale header next to a valid bearer token must not reject.
+
+    Args:
+        presented: Candidate keys the request carries.
+        api_keys: Configured keys.
+        path: Path of the request, logged on a rejection.
+
+    Returns:
+        True if one of the candidates matches a configured key.
+    """
+    matched = False
+    for candidate in presented:
+        if _matches_any(candidate, api_keys):
+            matched = True
+    if not matched:
+        # Never log the presented value, only the reason and the target path.
+        logger.warning("Rejected unauthenticated request to %s: %s", path, "invalid API key" if presented else "missing API key")
+    return matched
+
+
+def is_request_authorized(request: Request) -> bool:
+    """
+    Check a request before its body is read.
+
+    The middleware calls this ahead of the size check, so an unauthenticated
+    request costs no memory.
+
+    Args:
+        request: Incoming request.
+
+    Returns:
+        True if authentication is disabled, the path is open, or the request
+        carries a valid key.
+    """
+    api_keys = get_api_keys()
+    if not api_keys or not is_protected_path(request.url.path):
+        return True
+    return _is_authorized(_extract_credentials(request.headers), api_keys, request.url.path)
+
+
 def require_api_key(
     request: Request,
     header_key: Annotated[str | None, Depends(_api_key_header)] = None,
@@ -121,16 +220,6 @@ def require_api_key(
     if not api_keys:
         return
 
-    # Both schemes are advertised as alternatives, so either credential admits
-    # the request. A stale header next to a valid bearer token must not reject.
     presented = [candidate for candidate in (header_key, bearer.credentials if bearer else None) if candidate]
-    matched = False
-    for candidate in presented:
-        if _matches_any(candidate, api_keys):
-            matched = True
-    if matched:
-        return
-
-    # Never log the presented value, only the reason and the target path.
-    logger.warning("Rejected unauthenticated request to %s: %s", request.url.path, "invalid API key" if presented else "missing API key")
-    raise ApiKeyError
+    if not _is_authorized(presented, api_keys, request.url.path):
+        raise ApiKeyError

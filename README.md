@@ -247,6 +247,8 @@ curl -X POST -H "Authorization: Bearer ${API_KEY}" -H "Content-Type: application
 
 A missing or invalid key answers `401 Unauthorized` in plain text, with the header `WWW-Authenticate: Bearer`. The key value is never written to the log.
 
+The check runs in a middleware, ahead of the request size check. An unauthenticated upload is therefore rejected before its body is buffered, so it costs no memory.
+
 ### Using as a Base Image
 
 To extend or customize the service, use it as a base image in the Dockerfile:

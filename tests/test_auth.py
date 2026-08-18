@@ -7,13 +7,15 @@ from fastapi import Depends, FastAPI
 from starlette.responses import Response
 from starlette.testclient import TestClient
 
-from app.auth import API_KEY_ENV_VAR, get_api_keys, is_auth_enabled, require_api_key
+from app import pandoc_controller
+from app.auth import API_KEY_ENV_VAR, get_api_keys, is_auth_enabled, is_protected_path, require_api_key
 from app.pandoc_controller import app
 
 SIMPLE_HTML = "<html><body><h1>Hello</h1></body></html>"
+CONVERT_HTML_TO_DOCX = "/convert/html/to/docx"
 
 PROTECTED_ENDPOINTS = [
-    ("post", "/convert/html/to/docx"),
+    ("post", CONVERT_HTML_TO_DOCX),
     ("post", "/convert/html/to/docx-with-template"),
     ("post", "/convert/html/to/pptx-with-template"),
     ("get", "/docx-template"),
@@ -168,8 +170,8 @@ def test_conversion_accepts_valid_key(monkeypatch: pytest.MonkeyPatch) -> None:
         patch("app.pandoc_controller.postprocess_and_build_response", return_value=Response(b"DOCX content")),
         TestClient(app) as test_client,
     ):
-        assert test_client.post("/convert/html/to/docx", content=SIMPLE_HTML, headers={"X-API-Key": "secret"}).status_code == 200
-        assert test_client.post("/convert/html/to/docx", content=SIMPLE_HTML, headers={"Authorization": "Bearer secret"}).status_code == 200
+        assert test_client.post(CONVERT_HTML_TO_DOCX, content=SIMPLE_HTML, headers={"X-API-Key": "secret"}).status_code == 200
+        assert test_client.post(CONVERT_HTML_TO_DOCX, content=SIMPLE_HTML, headers={"Authorization": "Bearer secret"}).status_code == 200
 
 
 def test_conversion_open_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -179,4 +181,59 @@ def test_conversion_open_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
         patch("app.pandoc_controller.postprocess_and_build_response", return_value=Response(b"DOCX content")),
         TestClient(app) as test_client,
     ):
-        assert test_client.post("/convert/html/to/docx", content=SIMPLE_HTML).status_code == 200
+        assert test_client.post(CONVERT_HTML_TO_DOCX, content=SIMPLE_HTML).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/convert/html/to/docx", True),
+        ("/convert/html/to/docx-with-template", True),
+        ("/convert/html/to/pptx-with-template", True),
+        ("/convert/html/to/unknown", True),
+        ("/docx-template", True),
+        ("/pptx-template", True),
+        ("/docx-template/", True),
+        ("/health", False),
+        ("/version", False),
+        ("/static/openapi.json", False),
+        ("/api/docs", False),
+        ("/", False),
+        ("/converted", False),
+    ],
+)
+def test_is_protected_path(path: str, expected: bool) -> None:
+    assert is_protected_path(path) is expected
+
+
+def test_unauthenticated_oversized_body_is_rejected_before_the_size_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The key is vetted first, so an anonymous upload never reaches the body buffer."""
+    monkeypatch.setenv(API_KEY_ENV_VAR, "secret")
+    monkeypatch.setattr(pandoc_controller, "data_limit", 10)
+    with TestClient(app) as test_client:
+        response = test_client.post(CONVERT_HTML_TO_DOCX, content=b"x" * 100)
+        assert response.status_code == 401
+        assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_authenticated_oversized_body_still_hits_the_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(API_KEY_ENV_VAR, "secret")
+    monkeypatch.setattr(pandoc_controller, "data_limit", 10)
+    with TestClient(app) as test_client:
+        response = test_client.post(CONVERT_HTML_TO_DOCX, content=b"x" * 100, headers={"X-API-Key": "secret"})
+        assert response.status_code == 413
+
+
+def test_open_path_keeps_the_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An open endpoint is not touched by the key check, only by the size check."""
+    monkeypatch.setenv(API_KEY_ENV_VAR, "secret")
+    monkeypatch.setattr(pandoc_controller, "data_limit", 10)
+    with TestClient(app) as test_client:
+        assert test_client.post("/version", content=b"x" * 100).status_code == 413
+
+
+def test_unknown_protected_path_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The middleware answers before routing, so an unrouted convert path also needs the key."""
+    monkeypatch.setenv(API_KEY_ENV_VAR, "secret")
+    with TestClient(app) as test_client:
+        assert test_client.post("/convert/html/to/unknown", content=SIMPLE_HTML).status_code == 401

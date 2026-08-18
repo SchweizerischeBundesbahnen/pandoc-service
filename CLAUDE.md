@@ -79,7 +79,7 @@ bash tests/shell/test_pandoc_service.sh
 - Input validation with 200MB request size limit
 - Format validation for source/target combinations
 - Optional TLS on both servers (`app/tls.py`): `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_KEY_PASSWORD`, `TLS_CLIENT_CA_FILE`, `TLS_CLIENT_AUTH` (none/optional/required) for the API, the same five with a `METRICS_TLS_` prefix for the metrics server, configured independently. Unset means plain HTTP (default); an incomplete configuration fails at startup rather than falling back, and the material is loaded before either server listens (`load_tls_options`), so a mismatched key or a wrong password also stops the start. The container healthcheck (`healthcheck.sh`) follows the configured scheme.
-- Optional API key on the conversion and template endpoints (`app/auth.py`): set `API_KEY` (comma-separated list allowed) and clients send `X-API-Key` or `Authorization: Bearer`. Unset means disabled, which is the default. `/health`, `/version`, `/static` and `/api/docs` stay open so the healthcheck keeps working.
+- Optional API key on the conversion and template endpoints (`app/auth.py`): set `API_KEY` (comma-separated list allowed) and clients send `X-API-Key` or `Authorization: Bearer`. Unset means disabled, which is the default. `/health`, `/version`, `/static` and `/api/docs` stay open so the healthcheck keeps working. The key is checked twice: the `check_api_key` middleware rejects a protected path before `check_request_size` buffers the body, and the route dependency stays for the OpenAPI schema and for a route the middleware misses. `app/auth.py` holds the protected paths (`is_protected_path`), so the two cannot drift apart.
 
 ### Conversion Pipeline
 1. Request validation (format, size, encoding)
