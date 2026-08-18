@@ -66,6 +66,8 @@ FILTERS = {
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
+    "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
+    "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
 
 # List of allowed pandoc options for security
@@ -95,6 +97,10 @@ ALLOWED_PANDOC_OPTIONS = [
 # helps for these targets — for DOCX -> DOCX/HTML/etc. we leave the input
 # alone.
 _LATEX_TARGET_FORMATS = frozenset({"pdf", "latex"})
+
+# Only these turn the sandbox off, everything else keeps it on.
+_SANDBOX_OFF_VALUES = frozenset({"false", "0", "no", "off"})
+_SANDBOX_ON_VALUES = frozenset({"true", "1", "yes", "on"})
 
 # Add other allowed formats as needed
 ALLOWED_SOURCE_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile"]
@@ -565,6 +571,23 @@ def _build_pandoc_command(
     pandoc_source_format = f"{source_format}+styles" if apply_docx_latex_filters else source_format
     cmd = [PANDOC_PATH, "-f", pandoc_source_format, "-t", target_format, "-o", output_path, source_path]
 
+    # A document names its own resources, and the writers embedding media fetch
+    # them: an address on the network, or a path in this container. The sandbox
+    # closes both. Lua filters, --reference-doc, the tectonic PDF engine and
+    # images carried as data: URIs all keep working inside it.
+    if is_sandbox_enabled():
+        cmd.append("--sandbox")
+        # A PDF is produced by handing the generated LaTeX to tectonic, which
+        # runs outside the sandbox and reads what the TeX names. The raw TeX of
+        # the document is dropped before it can get there. This filter runs
+        # first, so the raw LaTeX the docx filters emit later survives.
+        if target_format in _LATEX_TARGET_FORMATS:
+            cmd.append(f"--lua-filter={FILTERS['strip_raw_tex']}")
+            # An image becomes \includegraphics, which the engine resolves, so a
+            # document may not point at an address of its own. What it carries
+            # inside itself is kept, whatever the source format.
+            cmd.append(f"--lua-filter={FILTERS['strip_document_images']}")
+
     # Convert inline CSS on HTML <span style="..."> into raw OOXML runs for
     # the DOCX writer. The filter emits RawInline("openxml", ...) nodes which
     # only render when the target writer is docx; for any other target
@@ -619,6 +642,28 @@ def _build_pandoc_command(
     if validated_options:
         cmd.extend(validated_options)
     return cmd
+
+
+def is_sandbox_enabled() -> bool:
+    """
+    Whether pandoc runs sandboxed, which is the default.
+
+    Sandboxed, pandoc reads no address and no path the document names. Turning
+    it off restores the behavior of a service which loads whatever a document
+    asks for, including a file of this container and a host of its network.
+
+    Only an understood value turns it off. A typo keeps the sandbox and says so,
+    because the other way round a misspelled variable would open the service
+    without anyone noticing.
+    """
+    configured = os.environ.get("PANDOC_SANDBOX", "").strip().lower()
+    if not configured:
+        return True
+    if configured in _SANDBOX_OFF_VALUES:
+        return False
+    if configured not in _SANDBOX_ON_VALUES:
+        logger.warning("PANDOC_SANDBOX is '%s', which is not understood. Keeping pandoc sandboxed.", configured)
+    return True
 
 
 def is_svg_conversion_enabled() -> bool:
