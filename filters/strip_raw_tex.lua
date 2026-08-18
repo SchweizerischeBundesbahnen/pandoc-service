@@ -8,8 +8,7 @@ it, all verified against this image:
 
   * raw TeX,          `\input{/etc/passwd}` written as a raw block or inline,
   * math,             the same primitive inside `$...$`, which the writer emits
-                      verbatim, whether it is spelled with a backslash or with
-                      the `^^` notation TeX reads as one,
+                      verbatim, however the formula spells it,
   * an image path,    which becomes `\includegraphics{...}` and puts the file
                       into the PDF.
 
@@ -17,9 +16,9 @@ This filter runs first, so it removes what the reader produced from the
 document. The raw LaTeX the docx filters emit afterwards is untouched, which is
 what keeps the colors, lists and tables of a DOCX export working.
 
-A formula which names such a primitive is dropped whole: editing TeX to keep the
-rest of it would be guesswork, and a formula is not where a document reads a
-file. Every other formula renders as before. Images are handled by
+A formula which reaches for such a primitive is dropped whole: editing TeX to
+keep the rest of it would be guesswork, and a formula is not where a document
+reads a file. Every other formula renders as before. Images are handled by
 strip_document_images.lua.
 ]]
 
@@ -31,31 +30,63 @@ local function is_tex(format)
   return TEX_FORMATS[format:lower()] == true
 end
 
--- Primitives which make TeX read, write or execute something outside itself.
-local FILE_PRIMITIVES = {
-  "input", "include", "includegraphics", "openin", "openout", "read", "readline",
-  "write", "immediate", "special", "usepackage", "RequirePackage", "lstinputlisting",
-  "verbatiminput", "catcode", "csname", "expandafter", "InputIfFileExists",
-  "IfFileExists", "subfile", "import", "endinput", "batchmode", "shellescape",
-}
+-- A formula is the one thing of a document which the LaTeX writer emits
+-- verbatim, so it is held to a closed rule rather than to a list of the names
+-- which have been thought of. Two of the three rules below remove the ways a
+-- formula can name something it does not spell out, which is what makes the
+-- third one, a list, complete: what is left is the primitives themselves, and
+-- a formula cannot make more of those.
 
-local function names_a_primitive(text)
-  for _, primitive in ipairs(FILE_PRIMITIVES) do
-    if text:find("\\" .. primitive, 1, true) then
+-- 1. Names which the engine resolves to a file, and the machinery which builds
+--    a name out of parts, aliases one, or reads a character as another. Losing
+--    the machinery is what closes the list: `\@@input` was reached through
+--    `\makeatletter`, and `\input` spelled `^^5cinput` through the notation.
+local DENIED = {}
+for _, name in ipairs({
+  -- the engine reads, writes or runs something
+  "input", "endinput", "include", "includegraphics", "openin", "closein",
+  "read", "readline", "openout", "closeout", "write", "immediate", "special",
+  "font", "XeTeXpdffile", "XeTeXpicfile", "shellescape", "batchmode",
+  "usepackage", "RequirePackage", "InputIfFileExists", "IfFileExists",
+  "subfile", "import", "lstinputlisting", "verbatiminput",
+  -- a name is built, aliased, or a character is read as another
+  "csname", "expandafter", "scantokens", "string", "detokenize", "noexpand",
+  "primitive", "meaning", "catcode", "endlinechar", "newread", "newwrite",
+  "def", "edef", "gdef", "xdef", "let", "futurelet", "newcommand",
+  "renewcommand", "providecommand", "DeclareRobustCommand", "makeatletter",
+  "uppercase", "lowercase",
+}) do
+  DENIED[name] = true
+end
+
+local function names_a_denied_primitive(text)
+  for name in text:gmatch("\\([A-Za-z]+)") do
+    if DENIED[name] then
       return true
     end
   end
   return false
 end
 
--- TeX reads `^^` as the spelling of a character rather than as a superscript:
--- `^^5c` is a backslash, and the wider forms of the engine tectonic builds on
--- spell the same character as `^^^^005c`. A formula written that way names a
--- primitive while carrying none of its letters, so the notation itself is what
--- a formula may not use. A superscript of a superscript is an error in TeX, so
--- no formula which renders today is lost. Verified against this image.
+-- 2. `@` is a letter only while `\makeatletter` is in force, and that is how the
+--    kernel keeps its own names, `\@@input` among them, out of a document. A
+--    formula which carries the character is asking for that half of the kernel,
+--    so it is dropped. The commutative diagrams of amsmath use `@` too and are
+--    lost with it, which is the one thing this rule costs.
+local function reaches_for_the_kernel(text)
+  return text:find("@", 1, true) ~= nil
+end
+
+-- 3. TeX reads `^^` as the spelling of a character rather than as a superscript:
+--    `^^5c` is a backslash, and the wider forms of the engine tectonic builds on
+--    spell the same character as `^^^^005c`. A superscript of a superscript is
+--    an error in TeX, so no formula which renders today is lost.
 local function spells_a_character(text)
   return text:find("^^", 1, true) ~= nil
+end
+
+local function is_safe_math(text)
+  return not (names_a_denied_primitive(text) or reaches_for_the_kernel(text) or spells_a_character(text))
 end
 
 function RawBlock(element)
@@ -71,7 +102,7 @@ function RawInline(element)
 end
 
 function Math(element)
-  if names_a_primitive(element.text) or spells_a_character(element.text) then
+  if not is_safe_math(element.text) then
     return {}
   end
 end

@@ -121,8 +121,21 @@ resolves what the TeX names. These routes reach it, and every one of them is clo
 |---|---|
 | raw TeX, `\input{/etc/passwd}` as a raw block or inline | dropped before the LaTeX writer |
 | the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | that formula is dropped, every other one renders as before |
-| a primitive spelled with carets inside math, `$^^5cinput{...}$`, which TeX reads as a backslash | that formula is dropped: `^^` is a spelling of a character, not a superscript |
 | an image the document points at by address, which becomes `\includegraphics{...}` | dropped, whatever the source format |
+
+Math is the one thing the writer emits verbatim, so it is held to a rule rather than to a list of the
+spellings which have been thought of. A formula is dropped when it does any of three things, and what
+is left cannot reach a file:
+
+| A formula may not | Why |
+|---|---|
+| name a primitive which reads, writes or runs something: `\input`, `\openin`, `\write`, `\font`, `\usepackage`, `\includegraphics` and the rest | these are what resolve a path |
+| build a name, alias one, or read a character as another: `\csname`, `\expandafter`, `\scantokens`, `\def`, `\let`, `\catcode`, and the `^^` notation TeX reads as a character | a formula which cannot make a name cannot reach a primitive the first rule does not list |
+| carry `@`, which is a letter only under `\makeatletter` | that is how the LaTeX kernel keeps its own names, `\@@input` among them, away from a document |
+
+The `@` rule costs the commutative diagrams of amsmath, which spell their arrows `@>>>`. Every other
+formula renders as before, verified against this image: fractions, greek letters, sums, integrals,
+matrices, `aligned`, and text inside math.
 
 What the DOCX filters of this service emit afterwards is untouched, so the colors, lists and tables of
 a DOCX export are unaffected. An image is kept when it travels inside the document: a `data:` URI, or

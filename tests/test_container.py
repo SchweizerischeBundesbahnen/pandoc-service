@@ -652,37 +652,41 @@ def test_an_image_carried_by_the_document_reaches_the_pdf(test_parameters: TestP
     assert images == 1
 
 
-SOURCE_MARKDOWN_WITH_A_SPELLED_BACKSLASH = """Hello
+MATH_WHICH_REACHES_FOR_A_FILE = {
+    "carets": "$^^5cinput{/etc/hostname}$",
+    "wide carets": "$^^^^005cinput{/etc/hostname}$",
+    "kernel name": "$\\makeatletter\\@@input{/etc/hostname}$",
+    "other kernel name": "$\\makeatletter\\@input{/etc/hostname}$",
+    "alias by def": "$\\def\\x{\\input}\\x{/etc/hostname}$",
+    "alias by let": "$\\let\\x\\input \\x{/etc/hostname}$",
+    "name built with csname": "$\\csname input\\endcsname{/etc/hostname}$",
+    "name built with scantokens": "$\\scantokens{\\string\\i nput{/etc/hostname}}$",
+    "a file read as a font": "$\\font\\x=/etc/hostname \\x$",
+    "a file embedded by the engine": '$\\XeTeXpdffile"/etc/hostname"$',
+}
 
-$^^5cinput{/etc/hostname}$
-"""
-
-SOURCE_MARKDOWN_WITH_A_WIDELY_SPELLED_BACKSLASH = """Hello
-
-$^^^^005cinput{/etc/hostname}$
-"""
-
-SOURCE_MARKDOWN_WITH_ORDINARY_MATH = """Hello
-
-$E = mc^2$
-"""
+ORDINARY_MATH = {
+    "a power": "$E = mc^2$",
+    "a fraction, a greek letter and a sum": "$\\frac{a}{b} + \\alpha \\sum_{i=1}^{n} x_i$",
+    "a root and an integral": "$\\sqrt{x} \\int_0^\\infty e^{-t}\\,dt$",
+    "a matrix": "$\\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix}$",
+    "text inside math": "$x \\text{ for all } x$",
+}
 
 
-@pytest.mark.parametrize(
-    "markdown",
-    [SOURCE_MARKDOWN_WITH_A_SPELLED_BACKSLASH, SOURCE_MARKDOWN_WITH_A_WIDELY_SPELLED_BACKSLASH],
-)
-def test_math_cannot_spell_a_primitive_with_carets(test_parameters: TestParameters, markdown: str) -> None:
-    """TeX reads `^^5c` as a backslash, so a formula may name a primitive without writing one."""
-    spelled, _ = _pdf_text_and_images(test_parameters, markdown)
+@pytest.mark.parametrize("math", MATH_WHICH_REACHES_FOR_A_FILE.values(), ids=MATH_WHICH_REACHES_FOR_A_FILE.keys())
+def test_math_cannot_reach_a_file_however_it_spells_it(test_parameters: TestParameters, math: str) -> None:
+    """A formula may not name a primitive, build a name, or carry the `@` of the kernel."""
+    reaching, _ = _pdf_text_and_images(test_parameters, f"Hello\n\n{math}\n")
     plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
 
-    assert spelled == plain
+    assert reaching == plain
 
 
-def test_ordinary_math_still_reaches_the_pdf(test_parameters: TestParameters) -> None:
-    """The positive side of the rule: a formula which names nothing renders as before."""
-    rendered, _ = _pdf_text_and_images(test_parameters, SOURCE_MARKDOWN_WITH_ORDINARY_MATH)
+@pytest.mark.parametrize("math", ORDINARY_MATH.values(), ids=ORDINARY_MATH.keys())
+def test_ordinary_math_still_reaches_the_pdf(test_parameters: TestParameters, math: str) -> None:
+    """The positive side of the rule: a formula which reaches for nothing renders as before."""
+    rendered, _ = _pdf_text_and_images(test_parameters, f"Hello\n\n{math}\n")
     plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
 
     assert rendered != plain
