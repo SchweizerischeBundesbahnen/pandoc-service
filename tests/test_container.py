@@ -1,7 +1,9 @@
+import base64
 import io
 import logging
 import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
@@ -10,6 +12,8 @@ import pytest
 import requests
 from docker.models.containers import Container
 from docx import Document
+from docx.document import Document as DocumentObject
+from docx.enum.style import WD_STYLE_TYPE
 from docx.shared import RGBColor
 from pypdf import PdfReader
 
@@ -663,6 +667,9 @@ MATH_WHICH_REACHES_FOR_A_FILE = {
     "name built with scantokens": "$\\scantokens{\\string\\i nput{/etc/hostname}}$",
     "a file read as a font": "$\\font\\x=/etc/hostname \\x$",
     "a file embedded by the engine": '$\\XeTeXpdffile"/etc/hostname"$',
+    # This engine answers "undefined control sequence" to the pdfTeX spellings,
+    # so the case holds that answer as much as it holds the rule.
+    "a pdftex file primitive": "$\\pdffiledump{0}{40}{/etc/hostname}$",
 }
 
 ORDINARY_MATH = {
@@ -690,3 +697,63 @@ def test_ordinary_math_still_reaches_the_pdf(test_parameters: TestParameters, ma
     plain, _ = _pdf_text_and_images(test_parameters, "Hello\n")
 
     assert rendered != plain
+
+
+A_PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=")
+
+STYLE_NAMES_WHICH_CARRY_TEX = {
+    "a foreground which is not a colour": "PandocColor__FG_AAAAAA}{\\input{/etc/hostname}",
+    "a background which is not a colour": "PandocColor__BG_AAAAAA}{\\input{/etc/hostname}",
+}
+
+
+def _docx(build: Callable[[DocumentObject], None]) -> bytes:
+    """Build a DOCX in memory, which is how a caller of this service sends one."""
+    document = Document()
+    build(document)
+    written = io.BytesIO()
+    document.save(written)
+    return written.getvalue()
+
+
+def _pdf_of_docx(test_parameters: TestParameters, blob: bytes) -> tuple[str, int]:
+    """Convert a DOCX to PDF and report what the result carries."""
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="docx",
+        target_format="pdf",
+        data=("source.docx", blob, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    )
+    assert response.status_code == 200
+    reader = PdfReader(io.BytesIO(response.content))
+    text = "".join(page.extract_text() for page in reader.pages)
+    return text, sum(_image_count(page) for page in reader.pages)
+
+
+@pytest.mark.parametrize("style_name", STYLE_NAMES_WHICH_CARRY_TEX.values(), ids=STYLE_NAMES_WHICH_CARRY_TEX.keys())
+def test_a_style_name_of_a_docx_cannot_carry_tex_to_the_pdf_engine(test_parameters: TestParameters, style_name: str) -> None:
+    """The colour filters emit raw LaTeX after the strip filter, so what they build has to be a colour."""
+
+    def with_the_style(document: DocumentObject) -> None:
+        style = document.styles.add_style(style_name, WD_STYLE_TYPE.CHARACTER)
+        run = document.add_paragraph().add_run("styled text")
+        run.style = style
+
+    text, _ = _pdf_of_docx(test_parameters, _docx(with_the_style))
+
+    assert "styled text" in text
+    assert test_parameters.container.id[:12] not in text, "the host name of the container reached the PDF"
+
+
+def test_an_image_of_a_docx_reaches_the_pdf(test_parameters: TestParameters) -> None:
+    """The positive side of the image rule: pandoc extracts it itself, so the media bag holds it."""
+
+    def with_an_image(document: DocumentObject) -> None:
+        document.add_paragraph("with an image")
+        document.add_picture(io.BytesIO(A_PIXEL))
+
+    text, images = _pdf_of_docx(test_parameters, _docx(with_an_image))
+
+    assert "with an image" in text
+    assert images == 1

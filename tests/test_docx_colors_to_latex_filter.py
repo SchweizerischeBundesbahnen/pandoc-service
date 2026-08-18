@@ -189,6 +189,24 @@ def test_non_matching_custom_style_is_left_alone(test_parameters: TestParameters
     assert "hello" in flat
 
 
+def test_a_style_name_which_is_not_a_colour_is_dropped(test_parameters: TestParameters):
+    """A DOCX may carry a style of this namespace with TeX in its name, and the
+    value reaches raw LaTeX which this filter emits after the strip filter has
+    run. Only six hex digits are written out.
+    """
+    flat = _md_to_latex(test_parameters.container, '[hello]{custom-style="PandocColor__FG_AAAAAA}{\\input{/etc/hostname}"}\n')
+    assert "\\input" not in flat
+    assert "\\textcolor" not in flat
+    assert "hello" in flat
+
+
+def test_a_background_which_is_not_a_colour_is_dropped(test_parameters: TestParameters):
+    flat = _md_to_latex(test_parameters.container, '[hello]{custom-style="PandocColor__BG_AAAAAA}{\\input{/etc/hostname}"}\n')
+    assert "\\input" not in flat
+    assert "\\colorbox" not in flat
+    assert "hello" in flat
+
+
 # ---------------------------------------------------------------------------
 # Highlight on bold/italic/underlined text — all boxed, uniform band height
 # ---------------------------------------------------------------------------

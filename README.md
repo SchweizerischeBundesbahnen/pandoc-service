@@ -122,6 +122,7 @@ resolves what the TeX names. These routes reach it, and every one of them is clo
 | raw TeX, `\input{/etc/passwd}` as a raw block or inline | dropped before the LaTeX writer |
 | the same primitive inside math, `$\input{...}$`, which the writer emits verbatim | that formula is dropped, every other one renders as before |
 | an image the document points at by address, which becomes `\includegraphics{...}` | dropped, whatever the source format |
+| TeX in the name of a DOCX character style, which the colour filters build raw LaTeX from | only six hex digits are written out, the rest of the name is dropped |
 
 Math is the one thing the writer emits verbatim, so it is held to a rule rather than to a list of the
 spellings which have been thought of. A formula is dropped when it does any of three things, and what

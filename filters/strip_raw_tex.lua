@@ -47,6 +47,12 @@ for _, name in ipairs({
   "input", "endinput", "include", "includegraphics", "openin", "closein",
   "read", "readline", "openout", "closeout", "write", "immediate", "special",
   "font", "XeTeXpdffile", "XeTeXpicfile", "shellescape", "batchmode",
+  -- A name matches as a whole run of letters, so the pdfTeX spellings are
+  -- listed rather than reached by their stem. This engine answers "undefined
+  -- control sequence" to all of them today, which is checked in the tests, so
+  -- the list is what keeps that from being a matter of which engine builds it.
+  "pdffiledump", "pdffilesize", "pdffilemoddate", "pdfmdfivesum",
+  "pdfshellescape", "pdfximage", "pdfrefximage", "pdfprimitive",
   "usepackage", "RequirePackage", "InputIfFileExists", "IfFileExists",
   "subfile", "import", "lstinputlisting", "verbatiminput",
   -- a name is built, aliased, or a character is read as another
