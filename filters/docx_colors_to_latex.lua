@@ -129,15 +129,26 @@ end
 -- Each segment is "<KEY>_<value>" with KEY in {FG, BG, HL, SZ} and value with
 -- no internal underscore (6-char hex, a Word highlight identifier, or — for
 -- SZ — the font size in half-points).
+-- Valid 6-char hex colour, the same guard docx_tables_to_latex.lua puts in
+-- front of \cellcolor. A style name is document controlled: the preprocessor
+-- writes these names, but a DOCX may carry a character style of its own called
+-- "PandocColor__FG_AAAAAA}{\input{/etc/passwd}", and the value reaches a raw
+-- LaTeX node which this filter emits after the strip filter has run. Anything
+-- which is not a colour is dropped rather than written out. Verified against
+-- this image.
+local function valid_hex(s)
+  return s and #s == 6 and s:match("^%x%x%x%x%x%x$") ~= nil
+end
+
 local function parse_style(name)
   if name:sub(1, #STYLE_PREFIX) ~= STYLE_PREFIX then
     return nil
   end
   local props = {}
   for key, value in name:gmatch("__(%a+)_([^_]+)") do
-    if key == "FG" then
+    if key == "FG" and valid_hex(value) then
       props.fg = value
-    elseif key == "BG" then
+    elseif key == "BG" and valid_hex(value) then
       props.bg = value
     elseif key == "HL" then
       props.hl = value

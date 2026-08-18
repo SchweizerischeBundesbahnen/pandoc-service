@@ -144,6 +144,8 @@ RUN chmod +x "${WORKING_DIR}/entrypoint.sh" "${WORKING_DIR}/healthcheck.sh"
 
 COPY filters/page_orientation.lua "/usr/local/share/pandoc/filters/page_orientation.lua"
 COPY filters/heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.lua"
+COPY filters/strip_raw_tex.lua "/usr/local/share/pandoc/filters/strip_raw_tex.lua"
+COPY filters/strip_document_images.lua "/usr/local/share/pandoc/filters/strip_document_images.lua"
 COPY filters/inline_styles.lua "/usr/local/share/pandoc/filters/inline_styles.lua"
 COPY filters/docx_text_decorations.lua "/usr/local/share/pandoc/filters/docx_text_decorations.lua"
 COPY filters/docx_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
