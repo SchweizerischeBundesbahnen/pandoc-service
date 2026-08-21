@@ -21,7 +21,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.auth import ApiKeyError, get_api_keys, require_api_key
+from app.auth import ApiKeyError, get_api_keys, is_request_authorized, require_api_key
 from app.schema import VersionSchema
 from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options, load_tls_options
 
@@ -308,6 +308,22 @@ async def check_request_size(request: Request, call_next: Callable[[Request], Aw
     return await call_next(request)
 
 
+def api_key_error_response(exc: ApiKeyError) -> PlainTextResponse:
+    """Answer a rejected API key in plain text, like every other error of this service."""
+    return PlainTextResponse(content=exc.detail, status_code=exc.status_code, headers=exc.headers)
+
+
+# Registered after the size check, so it wraps it and runs first: an
+# unauthenticated request is rejected before check_request_size buffers its
+# body, and therefore costs no memory.
+@app.middleware("http")
+async def check_api_key(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    if not is_request_authorized(request):
+        return api_key_error_response(ApiKeyError())
+
+    return await call_next(request)
+
+
 # Replace standard request validation error handler to adhere to the PlainText format
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError) -> PlainTextResponse:  # noqa: ARG001
@@ -318,10 +334,10 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
     )
 
 
-# Answer a rejected API key in plain text, like every other error of this service
+# The route dependency stays in place for a route the middleware does not cover
 @app.exception_handler(ApiKeyError)
 async def handle_api_key_error(request: Request, exc: ApiKeyError) -> PlainTextResponse:  # noqa: ARG001
-    return PlainTextResponse(content=exc.detail, status_code=exc.status_code, headers=exc.headers)
+    return api_key_error_response(exc)
 
 
 def get_pandoc_version() -> str | None:
