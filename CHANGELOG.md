@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.5.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.4.0...v2.5.0) (2026-08-22)
+
+
+### Features
+
+* reject an unauthenticated request before the body read ([#228](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/228)) ([3e49602](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3e496029daf940906747639a3b3b370c6d1203ef))
+* serve https as an option ([#222](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/222)) ([327b26c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/327b26cc4b6d2a5ca7c726f81ff52ea3a11bebb9))
+
+
+### Bug Fixes
+
+* **deps:** update dependency uvicorn to v0.52.4 ([aecdbc0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/aecdbc015ce3ac2c9d5d5f6c5498e4dcb045debd))
+* keep a document from reaching the resources of this container ([#227](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/227)) ([18e2ed4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/18e2ed4b665ef98726d03f3a2d96671bc9229f29))
+
 ## [2.4.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.3.4...v2.4.0) (2026-08-17)
 
 
