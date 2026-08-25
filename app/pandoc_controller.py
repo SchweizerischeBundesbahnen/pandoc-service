@@ -87,7 +87,6 @@ ALLOWED_PANDOC_OPTIONS = [
     f"--lua-filter={FILTERS['html_captions']}",
     f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
     "--track-changes=all",
-    "--reference-doc=",  # Prefix for reference-doc option
     "--pdf-engine=tectonic",
     "--toc",
 ]
@@ -548,25 +547,11 @@ def _validate_pandoc_options(options: list[str]) -> list[str]:
     Raises:
         ValueError: If any option is not in the whitelist
     """
-    validated_options = []
     for option in options:
-        is_valid = False
-        # Check exact match
-        if option in ALLOWED_PANDOC_OPTIONS:
-            is_valid = True
-        # Check prefix match (for options like --reference-doc=filename.docx)
-        else:
-            for allowed_prefix in ALLOWED_PANDOC_OPTIONS:
-                if allowed_prefix.endswith("=") and option.startswith(allowed_prefix):
-                    is_valid = True
-                    break
-
-        if not is_valid:
+        if option not in ALLOWED_PANDOC_OPTIONS:
             raise ValueError(f"Invalid pandoc option: {option}")
 
-        validated_options.append(option)
-
-    return validated_options
+    return list(options)
 
 
 def _build_pandoc_command(
@@ -578,6 +563,7 @@ def _build_pandoc_command(
     validated_options: list[str],
     apply_docx_latex_filters: bool,
     preserve_table_styles: bool = False,
+    reference_doc: str | None = None,
 ) -> list[str]:
     """Build the pandoc CLI invocation for run_pandoc_conversion."""
     # Source format gains the +styles extension on the docx->latex path so the
@@ -657,6 +643,13 @@ def _build_pandoc_command(
 
     if validated_options:
         cmd.extend(validated_options)
+
+    # The reference document is the template file this service wrote from the
+    # upload of the request. It is a parameter, not one of the options a client
+    # may send: pandoc resolves that path outside the sandbox, so no request
+    # gets to name it.
+    if reference_doc:
+        cmd.append(f"--reference-doc={reference_doc}")
     return cmd
 
 
@@ -738,7 +731,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
         return source
 
 
-def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None, preserve_table_styles: bool = False) -> bytes:
+def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None, preserve_table_styles: bool = False, reference_doc: str | None = None) -> bytes:
     """
     Run pandoc conversion using subprocess.
 
@@ -747,6 +740,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
         source_format: The source format
         target_format: The target format
         options: Additional pandoc options
+        reference_doc: Path of the template file to pass to --reference-doc
 
     Returns:
         Converted output as bytes
@@ -821,6 +815,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
                 validated_options=validated_options,
                 apply_docx_latex_filters=apply_docx_latex_filters,
                 preserve_table_styles=preserve_table_styles,
+                reference_doc=reference_doc,
             )
 
             # Run pandoc with validated parameters and measure duration
@@ -910,9 +905,6 @@ async def convert_docx_with_ref(
         if isinstance(extended_options, str):
             options.append(extended_options)
 
-        if temp_template_filename is not None:
-            options.append(f"--reference-doc={temp_template_filename}")
-
         # Recover per-table width/alignment from the HTML before pandoc drops
         # it, so the DOCX post-processor can restore it (pandoc keeps only an
         # auto width and no alignment). Read from the original source: SVG
@@ -925,7 +917,7 @@ async def convert_docx_with_ref(
             source = await preprocess_html_svgs(source, scale_factor)
 
         # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "docx", options, preserve_table_styles=preserve_table_styles)
+        output = run_pandoc_conversion(source, source_format, "docx", options, preserve_table_styles=preserve_table_styles, reference_doc=temp_template_filename)
 
         response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation, table_layouts)
 
@@ -1013,15 +1005,12 @@ async def convert_pptx_with_ref(
         if isinstance(extended_options, str):
             options.append(extended_options)
 
-        if temp_template_filename is not None:
-            options.append(f"--reference-doc={temp_template_filename}")
-
         # Rasterize any embedded SVGs to PNG so the slide renderer gets a usable image.
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
         # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "pptx", options)
+        output = run_pandoc_conversion(source, source_format, "pptx", options, reference_doc=temp_template_filename)
 
         response = postprocess_and_build_response(output, "pptx", file_name, slide_size, None)
 

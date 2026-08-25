@@ -113,6 +113,11 @@ everything the conversion itself needs, verified against this image: the lua fil
 templates, the tectonic PDF engine, and images carried inside the document as `data:` URIs, which is
 how `docx-exporter` sends them.
 
+Because `--reference-doc` reads its path outside that sandbox, no request gets to name that path. The
+service passes the template it wrote from the upload to pandoc as an argument of its own, and the
+`options` form field of the two `-with-template` endpoints accepts only literal entries of the pandoc
+option allowlist, so no accepted option carries a value a request chose.
+
 A PDF is produced by handing the generated LaTeX to tectonic, which runs outside that sandbox and
 resolves what the TeX names. These routes reach it, and every one of them is closed on the `pdf` and
 `latex` targets:
