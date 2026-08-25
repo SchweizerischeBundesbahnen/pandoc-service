@@ -17,6 +17,7 @@ from app.pandoc_controller import (
     ALLOWED_PANDOC_OPTIONS,
     DEFAULT_CONVERSION_OPTIONS,
     FILTERS,
+    _validate_pandoc_options,
     app,
     get_request_body_limit_mb,
     get_tectonic_availability,
@@ -718,9 +719,10 @@ def test_convert_docx_with_ref_no_template():
         assert call_args[1] == "markdown"  # Source format
         assert call_args[2] == "docx"  # Target format
 
-        # Check that the conversion options don't include a reference-doc
+        # Check that no reference document is handed to the conversion
         options = mock_convert.call_args[0][3]
         assert not any("--reference-doc" in option for option in options)
+        assert mock_convert.call_args.kwargs["reference_doc"] is None
 
         # Check that postprocess_and_build_response was called
         mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None, None)
@@ -881,8 +883,8 @@ def test_run_pandoc_conversion_with_command_injection_attempt():
         mock_subprocess.assert_not_called()
 
 
-def test_run_pandoc_conversion_with_valid_reference_doc():
-    """Test that run_pandoc_conversion accepts valid reference-doc options."""
+def test_run_pandoc_conversion_passes_reference_doc_to_pandoc():
+    """The reference document reaches the pandoc command as its own argument."""
     with (
         patch("subprocess.run") as mock_subprocess,
         patch("tempfile.NamedTemporaryFile") as mock_tempfile,
@@ -897,20 +899,79 @@ def test_run_pandoc_conversion_with_valid_reference_doc():
         mock_output_file.name = "output_file"
         mock_tempfile.side_effect = [mock_source_file, mock_output_file]
 
-        # Test with valid reference-doc option
-        source_data = "# Test Markdown"
-        source_format = "markdown"
-        target_format = "docx"
-        valid_option = "--reference-doc=ref_1234567890.docx"
-
-        # Should not raise any errors
-        run_pandoc_conversion(source_data, source_format, target_format, [valid_option])
+        run_pandoc_conversion("# Test Markdown", "markdown", "docx", [], reference_doc="ref_1234567890.docx")
 
         # Ensure subprocess.run was called with the correct arguments
         mock_subprocess.assert_called_once()
         args, _ = mock_subprocess.call_args
         cmd = args[0]
-        assert valid_option in cmd
+        assert "--reference-doc=ref_1234567890.docx" in cmd
+
+
+def test_run_pandoc_conversion_without_reference_doc_omits_the_option():
+    """No template, no --reference-doc argument."""
+    with (
+        patch("subprocess.run") as mock_subprocess,
+        patch("tempfile.NamedTemporaryFile") as mock_tempfile,
+        patch("pathlib.Path.open", mock_open(read_data=b"Test content")),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+    ):
+        mock_source_file = MagicMock()
+        mock_source_file.name = "source_file"
+        mock_output_file = MagicMock()
+        mock_output_file.name = "output_file"
+        mock_tempfile.side_effect = [mock_source_file, mock_output_file]
+
+        run_pandoc_conversion("# Test Markdown", "markdown", "docx", [])
+
+        args, _ = mock_subprocess.call_args
+        assert not [part for part in args[0] if isinstance(part, str) and part.startswith("--reference-doc")]
+
+
+def test_allowed_pandoc_options_hold_no_bare_prefix():
+    """No allowlist entry may end with '=': a bare prefix accepts every value a client appends to it."""
+    assert not [option for option in ALLOWED_PANDOC_OPTIONS if option.endswith("=")]
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        "--reference-doc=/etc/passwd",
+        "--reference-doc=../../etc/shadow",
+        "--reference-doc=ref_1234567890.docx",
+        "--reference-doc=",
+        "--lua-filter=/etc/passwd",
+        "--pdf-engine=xelatex",
+    ],
+)
+def test_validate_pandoc_options_rejects_any_option_carrying_a_value(option):
+    """An option is valid only as a literal of the allowlist, so no request can name a path."""
+    with pytest.raises(ValueError, match="Invalid pandoc option"):
+        _validate_pandoc_options([option])
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/convert/markdown/to/docx-with-template",
+        "/convert/markdown/to/pptx-with-template",
+    ],
+)
+def test_template_endpoint_rejects_client_reference_doc(endpoint):
+    """The 'options' form field must not smuggle a --reference-doc path into the pandoc command."""
+    with patch("subprocess.run") as mock_subprocess:
+        test_client = TestClient(app)
+        source_file = File(file=io.BytesIO(b"# Test Markdown content"), filename="test.md", content_type="text/markdown")
+
+        response = test_client.post(
+            endpoint,
+            data={"options": "--reference-doc=/etc/passwd"},
+            files={"source": source_file},
+        )
+
+        assert response.status_code == 400
+        mock_subprocess.assert_not_called()
 
 
 def test_convert_endpoint_invalid_format():
@@ -1099,9 +1160,10 @@ def test_docx_with_template_encoding():
         # Assertions
         assert response.status_code == 200
 
-        # Verify the reference doc option was passed
+        # Verify the template was passed as the reference document, not as an option
         run_options = mock_run_conversion.call_args[0][3]
-        assert any("--reference-doc=ref_1234567890.docx" in opt for opt in run_options)
+        assert not any("--reference-doc" in opt for opt in run_options)
+        assert mock_run_conversion.call_args.kwargs["reference_doc"] == "ref_1234567890.docx"
 
 
 def test_request_body_too_large():
@@ -1144,7 +1206,7 @@ def test_docx_with_extended_options():
             content_type="text/markdown",
         )
 
-        extended_options = "--pdf-engine=xelatex"
+        extended_options = "--toc"
 
         response = test_client.post(
             "/convert/markdown/to/docx-with-template?encoding=utf-8&file_name=custom_name.docx",
