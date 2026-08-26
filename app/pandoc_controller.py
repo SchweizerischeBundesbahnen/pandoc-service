@@ -70,26 +70,32 @@ FILTERS = {
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
 
-# List of allowed pandoc options for security
-ALLOWED_PANDOC_OPTIONS = [
-    f"--lua-filter={FILTERS['page_break']}",
-    f"--lua-filter={FILTERS['page_orientation']}",
-    f"--lua-filter={FILTERS['heading_levels']}",
-    f"--lua-filter={FILTERS['inline_styles']}",
-    f"--lua-filter={FILTERS['docx_text_decorations']}",
-    f"--lua-filter={FILTERS['docx_colors_to_latex']}",
-    f"--lua-filter={FILTERS['docx_math_colors_to_latex']}",
-    f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
-    f"--lua-filter={FILTERS['docx_lists_to_latex']}",
-    f"--lua-filter={FILTERS['docx_tables_to_latex']}",
-    f"--lua-filter={FILTERS['html_lists']}",
-    f"--lua-filter={FILTERS['html_tables_to_latex']}",
-    f"--lua-filter={FILTERS['html_captions']}",
-    f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
-    "--track-changes=all",
-    "--pdf-engine=tectonic",
-    "--toc",
-]
+# Allowed pandoc options, each mapped to itself. A request names an option and
+# the command line gets the constant this table holds, never the string the
+# request wrote — the argv of pandoc carries no request data at all. The same
+# shape serves the format allowlists below.
+ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
+    option: option
+    for option in (
+        f"--lua-filter={FILTERS['page_break']}",
+        f"--lua-filter={FILTERS['page_orientation']}",
+        f"--lua-filter={FILTERS['heading_levels']}",
+        f"--lua-filter={FILTERS['inline_styles']}",
+        f"--lua-filter={FILTERS['docx_text_decorations']}",
+        f"--lua-filter={FILTERS['docx_colors_to_latex']}",
+        f"--lua-filter={FILTERS['docx_math_colors_to_latex']}",
+        f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
+        f"--lua-filter={FILTERS['docx_lists_to_latex']}",
+        f"--lua-filter={FILTERS['docx_tables_to_latex']}",
+        f"--lua-filter={FILTERS['html_lists']}",
+        f"--lua-filter={FILTERS['html_tables_to_latex']}",
+        f"--lua-filter={FILTERS['html_captions']}",
+        f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
+        "--track-changes=all",
+        "--pdf-engine=tectonic",
+        "--toc",
+    )
+}
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
 # tectonic, latex is the raw .tex file). The DOCX color preprocessor only
@@ -102,8 +108,8 @@ _SANDBOX_OFF_VALUES = frozenset({"false", "0", "no", "off"})
 _SANDBOX_ON_VALUES = frozenset({"true", "1", "yes", "on"})
 
 # Add other allowed formats as needed
-ALLOWED_SOURCE_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile"]
-ALLOWED_TARGET_FORMATS = ["docx", "epub", "fb2", "html", "json", "latex", "markdown", "odt", "pdf", "plain", "pptx", "rtf", "textile"]
+ALLOWED_SOURCE_FORMATS: dict[str, str] = {name: name for name in ("docx", "epub", "fb2", "html", "json", "latex", "markdown", "rtf", "textile")}
+ALLOWED_TARGET_FORMATS: dict[str, str] = {name: name for name in ("docx", "epub", "fb2", "html", "json", "latex", "markdown", "odt", "pdf", "plain", "pptx", "rtf", "textile")}
 
 MIME_TYPES = {
     "html": "text/html",
@@ -538,20 +544,26 @@ def _validate_pandoc_options(options: list[str]) -> list[str]:
     """
     Validate pandoc options against the whitelist to prevent command injection.
 
+    An accepted option is returned as the constant the allowlist holds, not as
+    the string that was passed in, so the caller hands pandoc a fixed value.
+
     Args:
         options: List of pandoc options to validate
 
     Returns:
-        List of validated options
+        List of allowlisted option constants
 
     Raises:
         ValueError: If any option is not in the whitelist
     """
+    validated = []
     for option in options:
-        if option not in ALLOWED_PANDOC_OPTIONS:
+        allowed = ALLOWED_PANDOC_OPTIONS.get(option)
+        if allowed is None:
             raise ValueError(f"Invalid pandoc option: {option}")
+        validated.append(allowed)
 
-    return list(options)
+    return validated
 
 
 def _build_pandoc_command(
@@ -752,12 +764,17 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     if not source_format.isalnum() or not target_format.isalnum():
         raise ValueError("Format parameters must be alphanumeric")
 
-    # Strict equality check against allowlist
+    # Strict equality check against allowlist. Both names are then replaced by
+    # the constant the allowlist holds, so what reaches the command line is a
+    # value of this module and never the string the request sent.
     if source_format not in ALLOWED_SOURCE_FORMATS:
         raise ValueError(f"Invalid source format: {source_format}")
 
     if target_format not in ALLOWED_TARGET_FORMATS:
         raise ValueError(f"Invalid target format: {target_format}")
+
+    source_format = ALLOWED_SOURCE_FORMATS[source_format]
+    target_format = ALLOWED_TARGET_FORMATS[target_format]
 
     # Validate all options against whitelist to prevent command injection
     validated_options = _validate_pandoc_options(options)
