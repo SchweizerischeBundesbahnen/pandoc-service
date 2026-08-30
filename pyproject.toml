@@ -29,7 +29,7 @@ dev = [
     "mypy==2.3.1",
     "anyio==4.14.2",  # Explicit for mypy type checking (transitive from starlette)
     "types-defusedxml==0.7.0.20260504",
-    "types-psutil==7.2.2.20260518",
+    "types-psutil==7.2.2.20260827",
 ]
 test = [
     "tox==4.60.1",
