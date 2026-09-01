@@ -1,5 +1,6 @@
 """Small shared helpers for environment configuration."""
 
+import logging
 import os
 
 # API version for compatibility checking with docx-exporter.
@@ -9,7 +10,43 @@ API_VERSION = 1
 
 _TRUTHY_VALUES = ("true", "1", "yes", "on")
 
+# Graceful shutdown bounds, in seconds
+DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT = 30
+MIN_GRACEFUL_SHUTDOWN_TIMEOUT = 1
+MAX_GRACEFUL_SHUTDOWN_TIMEOUT = 300
+
+logger = logging.getLogger(__name__)
+
 
 def get_bool_env(name: str, default: bool = False) -> bool:
     """Read a boolean environment variable."""
     return os.environ.get(name, str(default).lower()).lower() in _TRUTHY_VALUES
+
+
+def get_graceful_shutdown_timeout() -> int:
+    """
+    Read the graceful shutdown timeout from the GRACEFUL_SHUTDOWN_TIMEOUT variable.
+
+    On SIGTERM uvicorn stops accepting requests and waits for the running ones to
+    finish. This timeout bounds that wait, so a stuck conversion cannot hold the
+    container open until Docker sends SIGKILL.
+
+    Returns:
+        Timeout in seconds (default: 30). An invalid or out of range value falls back to the default.
+    """
+    value = os.environ.get("GRACEFUL_SHUTDOWN_TIMEOUT", str(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT))
+    try:
+        timeout = int(value)
+        if not (MIN_GRACEFUL_SHUTDOWN_TIMEOUT <= timeout <= MAX_GRACEFUL_SHUTDOWN_TIMEOUT):
+            logger.warning(
+                "GRACEFUL_SHUTDOWN_TIMEOUT must be between %d and %d, using default: %d",
+                MIN_GRACEFUL_SHUTDOWN_TIMEOUT,
+                MAX_GRACEFUL_SHUTDOWN_TIMEOUT,
+                DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT,
+            )
+            return DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT
+    except ValueError:
+        logger.warning("Invalid GRACEFUL_SHUTDOWN_TIMEOUT value '%s', using default: %d", value, DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT)
+        return DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT
+    else:
+        return timeout

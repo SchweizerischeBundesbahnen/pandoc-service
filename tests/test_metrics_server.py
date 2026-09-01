@@ -1,6 +1,7 @@
 """Tests for metrics server module."""
 
 import asyncio
+import logging
 import os
 from unittest.mock import MagicMock, patch
 
@@ -136,6 +137,35 @@ class TestMetricsServer:
             assert server.is_running is False
 
         anyio.run(run_test)
+
+    def test_server_start_leaves_the_shared_uvicorn_loggers_alone(self):
+        """
+        The metrics server must not reconfigure the uvicorn loggers.
+
+        Both servers run in one process and share those loggers, so a level set here
+        used to silence the messages of the main server.
+        """
+        import anyio
+
+        uvicorn_logger = logging.getLogger("uvicorn.error")
+        original_level = uvicorn_logger.level
+        original_handlers = list(uvicorn_logger.handlers)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.setLevel(logging.INFO)
+
+        async def run_test():
+            server = MetricsServer(port=19184)
+            await server.start()
+            await server.stop()
+
+        try:
+            anyio.run(run_test)
+
+            assert uvicorn_logger.level == logging.INFO
+            assert uvicorn_logger.handlers == []
+        finally:
+            uvicorn_logger.setLevel(original_level)
+            uvicorn_logger.handlers = original_handlers
 
     def test_server_double_start(self):
         """Test that double start is handled gracefully."""

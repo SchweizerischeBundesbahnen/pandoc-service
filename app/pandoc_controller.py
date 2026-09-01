@@ -27,7 +27,7 @@ from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_opti
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
-from .constants import API_VERSION
+from .constants import API_VERSION, get_graceful_shutdown_timeout
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -258,6 +258,10 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
             await metrics_server.stop()
         except Exception as e:  # noqa: BLE001
             logger.error("Error stopping metrics server: %s", e)
+
+    # Last line of the shutdown. A SIGTERM which reaches the service produces it, so its
+    # absence in the container logs means the process was killed instead of stopped.
+    logger.info("Service shutdown complete")
 
 
 app = FastAPI(
@@ -1185,4 +1189,16 @@ def start_server(port: int) -> None:
     Args:
         port: The port number to listen on
     """
-    uvicorn.run(app=app, host="", port=port, **load_tls_options())
+    # uvicorn installs its own SIGTERM and SIGINT handlers. Both stop the server
+    # gracefully and run the lifespan shutdown, which closes the Chromium browser and
+    # the metrics server. log_config=None keeps uvicorn from applying its own logging
+    # configuration, which would take its messages out of the log file. See
+    # configure_uvicorn_logging.
+    uvicorn.run(
+        app=app,
+        host="",
+        port=port,
+        timeout_graceful_shutdown=get_graceful_shutdown_timeout(),
+        log_config=None,
+        **load_tls_options(),
+    )
