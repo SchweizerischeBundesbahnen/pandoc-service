@@ -25,14 +25,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit==4.6.2",
-    "ruff==0.16.4",
+    "ruff==0.16.5",
     "mypy==2.3.1",
     "anyio==4.14.2",  # Explicit for mypy type checking (transitive from starlette)
     "types-defusedxml==0.7.0.20260504",
-    "types-psutil==7.2.2.20260518",
+    "types-psutil==7.2.2.20260827",
 ]
 test = [
-    "tox==4.60.0",
+    "tox==4.60.1",
     "tox-uv==1.36.0",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.2.0",
@@ -42,7 +42,7 @@ test = [
     "pytest-cov==7.1.0",
     "pytest-timeout==2.4.0",
     "httpx==0.28.1",
-    "pypdf==6.16.1",  # reads the text of a produced PDF in the container tests
+    "pypdf==6.16.2",  # reads the text of a produced PDF in the container tests
     "coverage==7.15.4",
 ]
 
