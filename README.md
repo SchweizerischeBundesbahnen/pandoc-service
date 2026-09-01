@@ -445,6 +445,10 @@ docker run --init --detach \
 
 **Valid range:** 1 - 300 seconds (default: 30). Invalid values fall back to the default with a warning logged.
 
+The conversion runs in a worker thread, so SIGTERM is acted on the moment it arrives and the timeout starts counting at once, whatever a conversion is doing. When the timeout expires the request is dropped and the shutdown finishes, but the worker thread is not interrupted: the pandoc process runs to its end and the service leaves once it returns. Size the stop grace period for the longest document the service converts, not only for the timeout.
+
+`MAX_CONCURRENT_PANDOC_CONVERSIONS` bounds how many conversions run at the same time (1 - 100, default: 2). Each one holds a worker thread and a pandoc process, and a PDF target adds a tectonic run on top, so raise the limit together with the CPU and the memory of the container.
+
 Keep the stop grace period of the orchestrator above this value (`docker stop --time`, or `terminationGracePeriodSeconds` in Kubernetes). A shorter one ends in SIGKILL, which leaves the Chromium browser unclosed.
 
 The log line `Service shutdown complete` marks a shutdown which ran to the end.

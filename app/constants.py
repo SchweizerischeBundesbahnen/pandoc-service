@@ -10,6 +10,11 @@ API_VERSION = 1
 
 _TRUTHY_VALUES = ("true", "1", "yes", "on")
 
+# Bounds for the number of conversions which may run at the same time
+DEFAULT_MAX_CONCURRENT_PANDOC_CONVERSIONS = 2
+MIN_CONCURRENT_PANDOC_CONVERSIONS = 1
+MAX_CONCURRENT_PANDOC_CONVERSIONS = 100
+
 # Graceful shutdown bounds, in seconds
 DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT = 30
 MIN_GRACEFUL_SHUTDOWN_TIMEOUT = 1
@@ -21,6 +26,35 @@ logger = logging.getLogger(__name__)
 def get_bool_env(name: str, default: bool = False) -> bool:
     """Read a boolean environment variable."""
     return os.environ.get(name, str(default).lower()).lower() in _TRUTHY_VALUES
+
+
+def get_max_concurrent_pandoc_conversions() -> int:
+    """
+    Read the conversion limit from the MAX_CONCURRENT_PANDOC_CONVERSIONS variable.
+
+    Each conversion holds a worker thread and a pandoc process, and a PDF target adds a
+    tectonic run on top. The limit bounds how many of those the container carries at once.
+
+    Returns:
+        Number of conversions allowed at the same time (default: 2). An invalid or out of
+        range value falls back to the default.
+    """
+    value = os.environ.get("MAX_CONCURRENT_PANDOC_CONVERSIONS", str(DEFAULT_MAX_CONCURRENT_PANDOC_CONVERSIONS))
+    try:
+        limit = int(value)
+        if not (MIN_CONCURRENT_PANDOC_CONVERSIONS <= limit <= MAX_CONCURRENT_PANDOC_CONVERSIONS):
+            logger.warning(
+                "MAX_CONCURRENT_PANDOC_CONVERSIONS must be between %d and %d, using default: %d",
+                MIN_CONCURRENT_PANDOC_CONVERSIONS,
+                MAX_CONCURRENT_PANDOC_CONVERSIONS,
+                DEFAULT_MAX_CONCURRENT_PANDOC_CONVERSIONS,
+            )
+            return DEFAULT_MAX_CONCURRENT_PANDOC_CONVERSIONS
+    except ValueError:
+        logger.warning("Invalid MAX_CONCURRENT_PANDOC_CONVERSIONS value '%s', using default: %d", value, DEFAULT_MAX_CONCURRENT_PANDOC_CONVERSIONS)
+        return DEFAULT_MAX_CONCURRENT_PANDOC_CONVERSIONS
+    else:
+        return limit
 
 
 def get_graceful_shutdown_timeout() -> int:

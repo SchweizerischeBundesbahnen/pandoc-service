@@ -19,6 +19,7 @@ from app.pandoc_controller import (
     FILTERS,
     _validate_pandoc_options,
     app,
+    get_conversion_limiter,
     get_request_body_limit_mb,
     get_tectonic_availability,
     get_temp_directory_writability,
@@ -1605,3 +1606,17 @@ def test_conversion_runs_off_the_event_loop():
 
     assert response.status_code == 200
     assert ran_on_the_loop["value"] is False, "The conversion ran on the event loop thread"
+
+
+def test_conversion_limiter_follows_the_limit():
+    """The startup builds the limiter from the configured value, under its own loop."""
+    with patch.dict(os.environ, {"MAX_CONCURRENT_PANDOC_CONVERSIONS": "3"}), TestClient(app):
+        assert app.state.pandoc_limiter.total_tokens == 3
+
+
+def test_conversion_limiter_without_the_lifespan():
+    """An application started without its lifespan still bounds the conversions."""
+    app.state.pandoc_limiter = None
+
+    with patch.dict(os.environ, {"MAX_CONCURRENT_PANDOC_CONVERSIONS": "4"}):
+        assert get_conversion_limiter().total_tokens == 4
