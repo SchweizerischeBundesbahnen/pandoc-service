@@ -12,6 +12,7 @@ import time
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import anyio
 import starlette.datastructures
@@ -937,7 +938,7 @@ async def convert_docx_with_ref(
 
         has_template = bool(docx_template_file)
         if docx_template_file:
-            temp_template_filename = f"ref_{int(time.time())}.docx"
+            temp_template_filename = str(Path(tempfile.gettempdir()) / f"ref_{uuid4().hex}.docx")
             async with await anyio.open_file(temp_template_filename, "wb") as f:
                 await f.write(await docx_template_file.read())
 
@@ -1050,7 +1051,7 @@ async def convert_pptx_with_ref(
 
         has_template = bool(pptx_template_file)
         if pptx_template_file:
-            temp_template_filename = f"ref_{int(time.time())}.pptx"
+            temp_template_filename = str(Path(tempfile.gettempdir()) / f"ref_{uuid4().hex}.pptx")
             async with await anyio.open_file(temp_template_filename, "wb") as f:
                 await f.write(await pptx_template_file.read())
 

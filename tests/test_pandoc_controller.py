@@ -2,6 +2,7 @@ import io
 import os
 import platform
 import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import NamedTuple
@@ -1164,7 +1165,13 @@ def test_docx_with_template_encoding():
         # Verify the template was passed as the reference document, not as an option
         run_options = mock_run_conversion.call_args[0][3]
         assert not any("--reference-doc" in opt for opt in run_options)
-        assert mock_run_conversion.call_args.kwargs["reference_doc"] == "ref_1234567890.docx"
+        # The name carries a random part: two requests of the same second used to collide
+        # on it, and they can now run at the same time.
+        reference_doc = Path(mock_run_conversion.call_args.kwargs["reference_doc"])
+        assert reference_doc.parent == Path(tempfile.gettempdir())
+        assert reference_doc.name.startswith("ref_")
+        assert reference_doc.suffix == ".docx"
+        assert reference_doc.name != "ref_1234567890.docx"
 
 
 def test_request_body_too_large():
@@ -1620,3 +1627,31 @@ def test_conversion_limiter_without_the_lifespan():
 
     with patch.dict(os.environ, {"MAX_CONCURRENT_PANDOC_CONVERSIONS": "4"}):
         assert get_conversion_limiter().total_tokens == 4
+
+
+def test_template_files_of_two_requests_do_not_collide():
+    """
+    Two template requests must not write the same file.
+
+    The name used to carry the current second only, so two requests of the same second
+    wrote the same path. They can now run at the same time, which makes that a collision.
+    """
+    names = []
+
+    def record_reference_doc(*args, **kwargs):
+        names.append(kwargs["reference_doc"])
+        return b"DOCX content"
+
+    with (
+        patch("app.pandoc_controller.run_pandoc_conversion", side_effect=record_reference_doc),
+        patch("app.pandoc_controller.postprocess_and_build_response", return_value=Response(b"DOCX content", status_code=200)),
+        TestClient(app) as test_client,
+    ):
+        for _ in range(2):
+            source_file = File(file=io.BytesIO(b"# Test"), filename="test.md", content_type="text/markdown")
+            template_file = File(file=io.BytesIO(b"Template"), filename="template.docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            response = test_client.post("/convert/markdown/to/docx-with-template", files={"source": source_file, "template": template_file})
+            assert response.status_code == 200
+
+    assert len(names) == 2
+    assert names[0] != names[1]
