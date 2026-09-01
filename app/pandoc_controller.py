@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import logging
 import os
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING
 import anyio
 import starlette.datastructures
 import uvicorn
+from anyio import to_thread
 from bs4 import BeautifulSoup
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -937,8 +939,11 @@ async def convert_docx_with_ref(
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "docx", options, preserve_table_styles=preserve_table_styles, reference_doc=temp_template_filename)
+        # The pandoc subprocess runs in a worker thread. Called directly it would block
+        # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
+        # timeout would not start before the conversion ends, and no other request would
+        # be served meanwhile.
+        output = await to_thread.run_sync(functools.partial(run_pandoc_conversion, source, source_format, "docx", options, preserve_table_styles=preserve_table_styles, reference_doc=temp_template_filename))
 
         response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation, table_layouts)
 
@@ -1030,8 +1035,11 @@ async def convert_pptx_with_ref(
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "pptx", options, reference_doc=temp_template_filename)
+        # The pandoc subprocess runs in a worker thread. Called directly it would block
+        # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
+        # timeout would not start before the conversion ends, and no other request would
+        # be served meanwhile.
+        output = await to_thread.run_sync(functools.partial(run_pandoc_conversion, source, source_format, "pptx", options, reference_doc=temp_template_filename))
 
         response = postprocess_and_build_response(output, "pptx", file_name, slide_size, None)
 
@@ -1123,8 +1131,11 @@ async def convert(
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, target_format, options, preserve_table_styles=preserve_table_styles)
+        # The pandoc subprocess runs in a worker thread. Called directly it would block
+        # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
+        # timeout would not start before the conversion ends, and no other request would
+        # be served meanwhile.
+        output = await to_thread.run_sync(functools.partial(run_pandoc_conversion, source, source_format, target_format, options, preserve_table_styles=preserve_table_styles))
 
         response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation, table_layouts)
 

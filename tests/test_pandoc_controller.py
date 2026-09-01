@@ -1576,3 +1576,32 @@ def test_postprocess_and_build_response_pptx():
         assert response.status_code == 200
         assert response.media_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         assert "attachment; filename=test.pptx" in response.headers.get("content-disposition")
+
+
+def test_conversion_runs_off_the_event_loop():
+    """
+    The pandoc subprocess must not run on the event loop.
+
+    A blocked loop cannot act on SIGTERM, so the graceful shutdown timeout would only
+    start once the conversion ended, and no other request would be served meanwhile.
+    """
+    import asyncio
+
+    ran_on_the_loop = {}
+
+    def fake_conversion(*args, **kwargs):
+        # get_running_loop only succeeds on the thread the loop runs on.
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            ran_on_the_loop["value"] = False
+        else:
+            ran_on_the_loop["value"] = True
+        return b"converted"
+
+    with patch("app.pandoc_controller.run_pandoc_conversion", side_effect=fake_conversion):
+        test_client = TestClient(app)
+        response = test_client.post("/convert/html/to/markdown", content=b"<p>text</p>", headers={"Content-Type": "text/html"})
+
+    assert response.status_code == 200
+    assert ran_on_the_loop["value"] is False, "The conversion ran on the event loop thread"
