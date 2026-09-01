@@ -5,8 +5,37 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app import pandoc_controller
+from app.constants import get_graceful_shutdown_timeout
 
 logger = logging.getLogger(__name__)
+
+
+def configure_uvicorn_logging(level: int) -> None:
+    """
+    Route the messages uvicorn writes itself through the handlers of the root logger.
+
+    uvicorn ships a logging configuration which gives its loggers a handler of their
+    own and stops them from propagating. Two problems follow: the messages never reach
+    the log file, and the level is global, so the metrics server sets the level of the
+    main server as well. Both servers are started with ``log_config=None``, which leaves
+    the loggers to this function.
+
+    Access logging stays off below DEBUG. The Docker healthcheck calls /version every 30
+    seconds and Prometheus scrapes /metrics, so a line per request buries the rest.
+
+    Args:
+        level: The level configured through LOG_LEVEL.
+    """
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.asgi"):
+        uvicorn_logger = logging.getLogger(logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+        uvicorn_logger.setLevel(level)
+
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.handlers.clear()
+    access_logger.setLevel(level)
+    access_logger.propagate = level <= logging.DEBUG
 
 
 def setup_logging() -> Path:
@@ -55,9 +84,12 @@ def setup_logging() -> Path:
     console_handler.setFormatter(formatter)
 
     # Setup root logger
-    root_logger.setLevel(getattr(logging, log_level, logging.INFO))  # Default to INFO if invalid
+    configured_level = getattr(logging, log_level, logging.INFO)  # Default to INFO if invalid
+    root_logger.setLevel(configured_level)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
+
+    configure_uvicorn_logging(configured_level)
 
     # Force immediate file creation
     root_logger.info(f"Logging initialized with level: {log_level}")
@@ -86,6 +118,7 @@ def main() -> None:
 
     setup_logging()
     logger.info("Pandoc service listening port: %d", args.port)
+    logger.info("Graceful shutdown timeout: %d seconds", get_graceful_shutdown_timeout())
 
     # Start the server - metrics server lifecycle is managed by FastAPI lifespan
     pandoc_controller.start_server(args.port)

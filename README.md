@@ -422,6 +422,39 @@ To stop the running container, execute:
   docker container stop pandoc-service
 ```
 
+The command sends SIGTERM, which the service handles gracefully. See [Graceful Shutdown](#graceful-shutdown).
+
+### Graceful Shutdown
+
+The service shuts down on SIGTERM, the signal `docker stop` and Kubernetes send. The signal reaches the service process directly, which then:
+
+1. Stops accepting new requests.
+2. Waits for the running conversions to finish.
+3. Closes the Chromium browser and the metrics server.
+4. Exits with code 143 (128 + SIGTERM), the normal result of a stop by signal.
+
+The wait for running conversions is bounded by the `GRACEFUL_SHUTDOWN_TIMEOUT` environment variable:
+
+```bash
+docker run --init --detach \
+  --publish 9082:9082 \
+  --name pandoc-service \
+  --env GRACEFUL_SHUTDOWN_TIMEOUT=60 \
+  ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+```
+
+**Valid range:** 1 - 300 seconds (default: 30). Invalid values fall back to the default with a warning logged.
+
+The conversion runs in a worker thread, so SIGTERM is acted on the moment it arrives and the timeout starts counting at once, whatever a conversion is doing. When the timeout expires the request is dropped and the shutdown finishes, but the worker thread is not interrupted: the pandoc process runs to its end and the service leaves once it returns. Size the stop grace period for the longest document the service converts, not only for the timeout.
+
+`MAX_CONCURRENT_PANDOC_CONVERSIONS` bounds how many conversions run at the same time (1 - 100, default: 2). Each one holds a worker thread and a pandoc process, and a PDF target adds a tectonic run on top, so raise the limit together with the CPU and the memory of the container.
+
+Keep the stop grace period of the orchestrator above this value (`docker stop --time`, or `terminationGracePeriodSeconds` in Kubernetes). A shorter one ends in SIGKILL, which leaves the Chromium browser unclosed.
+
+The log line `Service shutdown complete` marks a shutdown which ran to the end.
+
+The messages uvicorn writes itself (startup, shutdown, errors) use the format of the service log and the same log file, under the `uvicorn.error` logger name. Per-request access lines are written at DEBUG level only: the Docker healthcheck and the Prometheus scrapes would bury everything else.
+
 ### Testing
 
 The project includes several test methods to ensure functionality.

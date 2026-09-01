@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import logging
 import os
@@ -11,10 +12,12 @@ import time
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import anyio
 import starlette.datastructures
 import uvicorn
+from anyio import to_thread
 from bs4 import BeautifulSoup
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -27,7 +30,7 @@ from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_opti
 
 from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
-from .constants import API_VERSION
+from .constants import API_VERSION, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -196,7 +199,7 @@ async def _stop_chromium() -> None:
 
 
 @contextlib.asynccontextmanager
-async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001
+async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:
     """
     Manage the lifecycle of the metrics server.
 
@@ -245,6 +248,12 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
             logger.error("Failed to start metrics server: %s", e)
             metrics_server = None
 
+    # The conversions run in worker threads, whose pool holds 40 of them by default. Each
+    # conversion also carries a pandoc process, and a tectonic run for a PDF target, so the
+    # limiter below bounds what the container runs at once.
+    app_instance.state.pandoc_limiter = anyio.CapacityLimiter(get_max_concurrent_pandoc_conversions())
+    logger.info("Conversions limited to %d at the same time", app_instance.state.pandoc_limiter.total_tokens)
+
     # Start the persistent Chromium browser used to rasterize embedded SVGs.
     await _start_chromium()
 
@@ -258,6 +267,29 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG0
             await metrics_server.stop()
         except Exception as e:  # noqa: BLE001
             logger.error("Error stopping metrics server: %s", e)
+
+    # Last line of the shutdown. A SIGTERM which reaches the service produces it, so its
+    # absence in the container logs means the process was killed instead of stopped.
+    logger.info("Service shutdown complete")
+
+
+def get_conversion_limiter() -> anyio.CapacityLimiter:
+    """
+    Return the limiter which bounds how many conversions run at the same time.
+
+    The lifespan builds it at startup and logs the limit. It is built here too, for an
+    application started without its lifespan, as several tests do, so that the bound holds
+    on every path. Unlike an asyncio primitive, the limiter of anyio is not bound to one
+    event loop.
+
+    Returns:
+        The shared limiter.
+    """
+    limiter = getattr(app.state, "pandoc_limiter", None)
+    if limiter is None:
+        limiter = anyio.CapacityLimiter(get_max_concurrent_pandoc_conversions())
+        app.state.pandoc_limiter = limiter
+    return limiter
 
 
 app = FastAPI(
@@ -906,7 +938,7 @@ async def convert_docx_with_ref(
 
         has_template = bool(docx_template_file)
         if docx_template_file:
-            temp_template_filename = f"ref_{int(time.time())}.docx"
+            temp_template_filename = str(Path(tempfile.gettempdir()) / f"ref_{uuid4().hex}.docx")
             async with await anyio.open_file(temp_template_filename, "wb") as f:
                 await f.write(await docx_template_file.read())
 
@@ -933,8 +965,16 @@ async def convert_docx_with_ref(
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "docx", options, preserve_table_styles=preserve_table_styles, reference_doc=temp_template_filename)
+        # The pandoc subprocess runs in a worker thread. Called directly it would block
+        # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
+        # timeout would not start before the conversion ends, and no other request would
+        # be served meanwhile. abandon_on_cancel lets the shutdown drop the request instead
+        # of waiting for the thread; the limiter bounds how many conversions run at once.
+        output = await to_thread.run_sync(
+            functools.partial(run_pandoc_conversion, source, source_format, "docx", options, preserve_table_styles=preserve_table_styles, reference_doc=temp_template_filename),
+            abandon_on_cancel=True,
+            limiter=get_conversion_limiter(),
+        )
 
         response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation, table_layouts)
 
@@ -1011,7 +1051,7 @@ async def convert_pptx_with_ref(
 
         has_template = bool(pptx_template_file)
         if pptx_template_file:
-            temp_template_filename = f"ref_{int(time.time())}.pptx"
+            temp_template_filename = str(Path(tempfile.gettempdir()) / f"ref_{uuid4().hex}.pptx")
             async with await anyio.open_file(temp_template_filename, "wb") as f:
                 await f.write(await pptx_template_file.read())
 
@@ -1026,8 +1066,16 @@ async def convert_pptx_with_ref(
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, "pptx", options, reference_doc=temp_template_filename)
+        # The pandoc subprocess runs in a worker thread. Called directly it would block
+        # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
+        # timeout would not start before the conversion ends, and no other request would
+        # be served meanwhile. abandon_on_cancel lets the shutdown drop the request instead
+        # of waiting for the thread; the limiter bounds how many conversions run at once.
+        output = await to_thread.run_sync(
+            functools.partial(run_pandoc_conversion, source, source_format, "pptx", options, reference_doc=temp_template_filename),
+            abandon_on_cancel=True,
+            limiter=get_conversion_limiter(),
+        )
 
         response = postprocess_and_build_response(output, "pptx", file_name, slide_size, None)
 
@@ -1119,8 +1167,16 @@ async def convert(
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
 
-        # Convert using subprocess instead of pandoc module
-        output = run_pandoc_conversion(source, source_format, target_format, options, preserve_table_styles=preserve_table_styles)
+        # The pandoc subprocess runs in a worker thread. Called directly it would block
+        # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
+        # timeout would not start before the conversion ends, and no other request would
+        # be served meanwhile. abandon_on_cancel lets the shutdown drop the request instead
+        # of waiting for the thread; the limiter bounds how many conversions run at once.
+        output = await to_thread.run_sync(
+            functools.partial(run_pandoc_conversion, source, source_format, target_format, options, preserve_table_styles=preserve_table_styles),
+            abandon_on_cancel=True,
+            limiter=get_conversion_limiter(),
+        )
 
         response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation, table_layouts)
 
@@ -1185,4 +1241,16 @@ def start_server(port: int) -> None:
     Args:
         port: The port number to listen on
     """
-    uvicorn.run(app=app, host="", port=port, **load_tls_options())
+    # uvicorn installs its own SIGTERM and SIGINT handlers. Both stop the server
+    # gracefully and run the lifespan shutdown, which closes the Chromium browser and
+    # the metrics server. log_config=None keeps uvicorn from applying its own logging
+    # configuration, which would take its messages out of the log file. See
+    # configure_uvicorn_logging.
+    uvicorn.run(
+        app=app,
+        host="",
+        port=port,
+        timeout_graceful_shutdown=get_graceful_shutdown_timeout(),
+        log_config=None,
+        **load_tls_options(),
+    )

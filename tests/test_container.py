@@ -409,6 +409,9 @@ def test_container_no_error_logs(test_parameters: TestParameters) -> None:
     # Check for expected startup message
     assert any("Pandoc service listening port: 9082" in line for line in log_lines), "Expected startup message not found in logs"
 
+    # uvicorn logs through the root logger, so its own messages show up as well
+    assert any("Application startup complete" in line for line in log_lines), "Expected uvicorn startup message not found in logs"
+
 
 def test_docx_template_endpoint(test_parameters: TestParameters) -> None:
     """Test that the /docx-template endpoint returns a valid DOCX file."""
