@@ -579,3 +579,34 @@ def test_indent_only_wrapper_has_no_align_attr():
 )
 def test_extract_text_align_direct(style: str, expected: str | None):
     assert html_paragraph_pre_process._extract_text_align(style) == expected
+
+
+def test_heading_div_is_not_marked():
+    """A heading-N div is left to filters/heading_levels.lua.
+
+    Marking it would cost it its heading-N class: the Div handler in
+    inline_styles.lua replaces a marked div with its blocks, and it runs before
+    heading_levels, so the heading would render as an ordinary paragraph.
+    """
+    src = b'<div class="heading-7" style="text-align: center">Big Heading</div>'
+    assert html_paragraph_pre_process.preprocess(src) == src
+
+
+def test_heading_div_with_indent_is_not_marked():
+    src = b'<div class="heading-7" style="margin-left: 40px">Big Heading</div>'
+    assert html_paragraph_pre_process.preprocess(src) == src
+
+
+def test_non_heading_class_div_is_still_marked():
+    """The skip keys on heading-N exactly, not on any class that mentions it."""
+    src = b'<div class="heading-like subheading-7" style="text-align: center">x</div>'
+    out = html_paragraph_pre_process.preprocess(src)
+    assert b"pandoc-para" in out
+
+
+def test_styled_p_inside_a_heading_div_is_still_wrapped():
+    """The skip covers the div only; a <p> inside it keeps its own wrapper."""
+    src = b'<div class="heading-7"><p style="margin-left: 40px">x</p></div>'
+    out = html_paragraph_pre_process.preprocess(src).decode()
+    assert "pandoc-para" in out
+    assert "heading-7" in out

@@ -696,3 +696,19 @@ def test_list_inside_styled_div_keeps_its_numbering(test_parameters: TestParamet
     for needle in ("one", "two"):
         para = _w_p_with_text(doc, needle)
         assert para.find(f".//{{{W_NS}}}numPr") is not None, f"list item {needle!r} lost its numbering"
+
+
+def test_styled_heading_div_keeps_its_heading_style(test_parameters: TestParameters):
+    """A heading-N div keeps its heading even when it carries paragraph CSS.
+
+    filters/heading_levels.lua turns <div class="heading-7"> into a Header, but
+    the Div handler here runs first and replaces a marked div with its blocks.
+    app/html_paragraph_pre_process.py therefore leaves heading divs unmarked,
+    trading their indent/alignment for the heading itself.
+    """
+    html = '<div class="heading-7" style="text-align: center;">Big Heading</div>'
+    doc = _document_xml(test_parameters, html)
+
+    para = _w_p_with_text(doc, "Big Heading")
+    style = para.find(f".//{{{W_NS}}}pStyle")
+    assert style is not None and style.get(f"{{{W_NS}}}val") == "Heading7", "the heading-7 div lost its heading style"

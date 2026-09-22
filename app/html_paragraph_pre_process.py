@@ -71,6 +71,17 @@ INDENT_ATTR = "data-indent-twips"
 # attribute lookups symmetric. See the module docstring.
 ALIGN_ATTR = "data-text-align"
 
+# Divs carrying one of these classes belong to filters/heading_levels.lua,
+# which turns them into a Header. They are left unmarked: the Div handler in
+# filters/inline_styles.lua replaces a marked div with its blocks and drops the
+# div itself, and it runs before heading_levels (it is added to the pandoc
+# command earlier than DEFAULT_CONVERSION_OPTIONS), so marking one would strip
+# the heading-N class before the heading filter ever saw it and the heading
+# would render as an ordinary paragraph. The indent/alignment of a heading is
+# given up to keep the heading itself, which is the same trade the filter makes
+# for a paragraph whose content it cannot reproduce.
+_HEADING_CLASS_RE = re.compile(r"^heading-\d+$")
+
 # CSS unit -> twips conversion factor. 1 twip = 1/1440 inch.
 _UNIT_TO_TWIPS: dict[str, float] = {
     "px": 1440 / 96,
@@ -157,6 +168,8 @@ def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
         if twips is None and align is None:
             continue
         if element.tag == "div":
+            if _is_heading_div(element):
+                continue
             _set_para_markers(element, twips, align)
         else:
             parent = element.getparent()
@@ -165,6 +178,11 @@ def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
             _wrap_paragraph(parent, element, twips, align)
         rewrote = True
     return rewrote
+
+
+def _is_heading_div(div: html.HtmlElement) -> bool:
+    """True when ``div`` is one filters/heading_levels.lua turns into a Header."""
+    return any(_HEADING_CLASS_RE.match(cls) for cls in div.get("class", "").split())
 
 
 def _set_para_markers(div: html.HtmlElement, twips: int | None, align: str | None) -> None:
