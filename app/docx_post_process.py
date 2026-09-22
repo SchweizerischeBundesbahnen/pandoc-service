@@ -84,6 +84,7 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     _replace_first_paragraph_styles(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     _replace_table_properties(doc, table_layouts)
+    _separate_adjacent_tables(doc)
     apply_math_colors(doc)
     _replace_image_placeholders(doc)
     _replace_link_placeholders(doc)
@@ -238,6 +239,54 @@ def _replace_first_paragraph_styles(doc: DocumentObject) -> None:
         p_style = p_pr.find(f"{{{SCHEMA}}}pStyle")
         if p_style is not None and p_style.get(f"{{{SCHEMA}}}val") == "FirstParagraph":
             p_style.set(f"{{{SCHEMA}}}val", "BodyText")
+
+
+# Elements Word skips over when it decides whether two tables touch. Anything
+# else between two tables keeps them apart, so the scan below stops at it.
+_TABLE_RANGE_MARKERS = frozenset(
+    {
+        "bookmarkStart",
+        "bookmarkEnd",
+        "commentRangeStart",
+        "commentRangeEnd",
+        "moveFromRangeStart",
+        "moveFromRangeEnd",
+        "moveToRangeStart",
+        "moveToRangeEnd",
+        "permStart",
+        "permEnd",
+        "proofErr",
+    }
+)
+
+
+def _is_table_range_marker(element: Any) -> bool:
+    """Return True if Word ignores this element when pairing up adjacent tables."""
+    if not isinstance(element.tag, str):
+        return True  # XML comment or processing instruction
+    prefix = f"{{{SCHEMA}}}"
+    return element.tag.startswith(prefix) and element.tag[len(prefix) :] in _TABLE_RANGE_MARKERS
+
+
+def _separate_adjacent_tables(doc: DocumentObject) -> None:
+    """Insert an empty paragraph between tables Word would otherwise merge.
+
+    Two ``w:tbl`` siblings with no ``w:p`` between them render as a single
+    table. Pandoc's DOCX writer inserts the separating paragraph itself, but
+    only for ``Table`` blocks that are immediate neighbours in one block list.
+    Tables that a wrapping ``<div>`` puts at different AST depths - Polarion
+    emits exactly that around work item fields - never look adjacent to it and
+    reach the output back to back, joined by nothing but bookmarks.
+    """
+    tbl_tag = f"{{{SCHEMA}}}tbl"
+    # findall collects the tables up front, which the insertion below needs:
+    # a lazy walk would run over a tree that grows under it.
+    for table_element in doc.element.body.findall(f".//{tbl_tag}"):
+        sibling = table_element.getnext()
+        while sibling is not None and _is_table_range_marker(sibling):
+            sibling = sibling.getnext()
+        if sibling is not None and sibling.tag == tbl_tag:
+            table_element.addnext(parse_xml(f"<w:p {nsdecls('w')}/>"))
 
 
 def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:

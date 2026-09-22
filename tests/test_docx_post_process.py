@@ -1629,3 +1629,102 @@ def test_apply_table_layout_clamps_lua_fixed_width():
 
     tbl_w = tbl_pr.find(f"{{{SCHEMA}}}tblW")
     assert int(tbl_w.get(f"{{{SCHEMA}}}w")) <= 9360
+
+
+# ---- Adjacent table separation ----
+
+
+def _document_with_body(body_xml: str):
+    """Build a Document whose body holds the given OOXML blocks."""
+    import io
+
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    body = doc.element.body
+    for child in list(body):
+        if not child.tag.endswith("sectPr"):
+            body.remove(child)
+    fragment = parse_xml(f"<w:root {nsdecls('w')}>{body_xml}</w:root>")
+    sect_pr = body.find(f"{{{SCHEMA}}}sectPr")
+    for block in list(fragment):
+        if sect_pr is not None:
+            sect_pr.addprevious(block)
+        else:
+            body.append(block)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return Document(io.BytesIO(buffer.getvalue()))
+
+
+_TBL_XML = '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>{0}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+
+def _body_children(doc):
+    return [etree.QName(child).localname for child in doc.element.body if isinstance(child.tag, str)]
+
+
+def test_separate_adjacent_tables_inserts_paragraph():
+    """Two back-to-back tables get an empty paragraph between them."""
+    from app.docx_post_process import _separate_adjacent_tables
+
+    doc = _document_with_body(_TBL_XML.format("first") + _TBL_XML.format("second"))
+    assert _body_children(doc)[:2] == ["tbl", "tbl"]
+
+    _separate_adjacent_tables(doc)
+
+    assert _body_children(doc)[:3] == ["tbl", "p", "tbl"]
+
+
+def test_separate_adjacent_tables_looks_through_bookmarks():
+    """Bookmarks between two tables do not keep them apart in Word."""
+    from app.docx_post_process import _separate_adjacent_tables
+
+    bookmarks = '<w:bookmarkEnd w:id="1"/><w:bookmarkStart w:id="2" w:name="fields_end"/>'
+    doc = _document_with_body(_TBL_XML.format("first") + bookmarks + _TBL_XML.format("second"))
+
+    _separate_adjacent_tables(doc)
+
+    assert _body_children(doc)[:5] == ["tbl", "p", "bookmarkEnd", "bookmarkStart", "tbl"]
+
+
+def test_separate_adjacent_tables_keeps_existing_paragraph():
+    """A paragraph already separates the tables, so nothing is added."""
+    from app.docx_post_process import _separate_adjacent_tables
+
+    doc = _document_with_body(_TBL_XML.format("first") + "<w:p/>" + _TBL_XML.format("second"))
+
+    _separate_adjacent_tables(doc)
+
+    assert _body_children(doc)[:3] == ["tbl", "p", "tbl"]
+
+
+def test_separate_adjacent_tables_handles_nested_tables():
+    """Adjacent tables inside a table cell are separated too."""
+    from app.docx_post_process import _separate_adjacent_tables
+
+    nested = _TBL_XML.format("inner one") + _TBL_XML.format("inner two")
+    outer = f"<w:tbl><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc>{nested}<w:p/></w:tc></w:tr></w:tbl>"
+    doc = _document_with_body(outer)
+
+    _separate_adjacent_tables(doc)
+
+    cell = doc.element.body.find(f"{{{SCHEMA}}}tbl/{{{SCHEMA}}}tr/{{{SCHEMA}}}tc")
+    assert [etree.QName(child).localname for child in cell] == ["tbl", "p", "tbl", "p"]
+
+
+def test_process_separates_adjacent_tables():
+    """The full post-processing pass separates tables Word would merge."""
+    import io
+
+    from docx import Document
+
+    doc = _document_with_body(_TBL_XML.format("first") + _TBL_XML.format("second"))
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    result = Document(io.BytesIO(docx_post_process.process(buffer.getvalue())))
+
+    assert _body_children(result)[:3] == ["tbl", "p", "tbl"]

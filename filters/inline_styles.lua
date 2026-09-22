@@ -1164,7 +1164,37 @@ function filter.Table(tbl)
   return pandoc.RawBlock("openxml", table.concat(xml))
 end
 
--- Return two passes: first reads metadata, second rewrites AST elements.
--- Pandoc executes them in order — the meta_pass sets module-level flags
--- that the main filter pass consults.
-return { meta_pass, filter }
+-- True for a block this filter has already turned into a raw <w:tbl>.
+local function is_raw_table(block)
+  return block.t == "RawBlock" and block.format == "openxml"
+    and block.text:sub(1, 7) == "<w:tbl>"
+end
+
+-- Two <w:tbl> siblings with no <w:p> between them are one table in Word.
+-- Pandoc's writer inserts that paragraph between adjacent Table blocks, but
+-- it runs after this filter and sees a RawBlock where filter.Table replaced
+-- one, so it no longer recognises the pair. This pass restores the guard for
+-- exactly those pairs: a separator goes in only when both neighbours are
+-- tables and at least one of them is raw. A table followed by ordinary
+-- content, or ending a block list, is left alone.
+local function separate_raw_tables(blocks)
+  local result = {}
+  for i, block in ipairs(blocks) do
+    result[#result + 1] = block
+    local next_block = blocks[i + 1]
+    if next_block then
+      local this_raw, next_raw = is_raw_table(block), is_raw_table(next_block)
+      local both_tables = (this_raw or block.t == "Table")
+        and (next_raw or next_block.t == "Table")
+      if both_tables and (this_raw or next_raw) then
+        result[#result + 1] = pandoc.RawBlock("openxml", "<w:p/>")
+      end
+    end
+  end
+  return result
+end
+
+-- Return three passes, executed in order: the meta_pass sets module-level
+-- flags the main pass consults, the main pass rewrites AST elements, and the
+-- last one separates the tables the main pass turned into raw OOXML.
+return { meta_pass, filter, { Blocks = separate_raw_tables } }

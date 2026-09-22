@@ -252,3 +252,64 @@ def test_full_test_html_file(test_parameters: TestParameters):
     # Check borders exist
     borders = _find_all(root, ".//w:tc/w:tcPr/w:tcBorders")
     assert len(borders) > 0, "expected borders in styled tables"
+
+
+# ---- Adjacent table separation ----
+
+# Word ignores these when it decides whether two tables touch; see
+# _TABLE_RANGE_MARKERS in app/docx_post_process.py.
+_RANGE_MARKERS = {"bookmarkStart", "bookmarkEnd", "commentRangeStart", "commentRangeEnd", "proofErr"}
+
+_STYLED_TABLE = '<table><tbody><tr><td style="background-color:#EEEEEE;">A</td><td>B</td></tr></tbody></table>'
+_PLAIN_TABLE = "<table><tbody><tr><td>X</td><td>Y</td></tr></tbody></table>"
+
+# Two tables at different AST depths: the first wrapped in a <div>, the second
+# its sibling. This is the shape Polarion emits around work item fields, and
+# pandoc's own table separation does not see the two as adjacent.
+_NESTED_DIV_TABLES_HTML = f"""<div id="workitem">
+  <div id="steps">{_STYLED_TABLE}</div>
+  <table><tbody><tr><td style="width:20%;">Severity</td><td style="width:80%;">Basic</td></tr></tbody></table>
+</div>"""
+
+
+def _body_blocks(root: ET.Element) -> list[str]:
+    """Local names of the body's block children, minus markers Word skips over."""
+    body = root.find(f"{{{W_NS}}}body")
+    names = [child.tag.split("}")[-1] for child in body]
+    return [name for name in names if name not in _RANGE_MARKERS and name != "sectPr"]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        _NESTED_DIV_TABLES_HTML,
+        _STYLED_TABLE + _STYLED_TABLE,
+        _STYLED_TABLE + _PLAIN_TABLE,
+        _PLAIN_TABLE + _STYLED_TABLE,
+    ],
+    ids=["nested-div", "styled-styled", "styled-plain", "plain-styled"],
+)
+@pytest.mark.parametrize("preserve_table_styles", [True, False], ids=["opt-in", "default"])
+def test_adjacent_tables_are_not_merged(test_parameters: TestParameters, html: str, preserve_table_styles: bool):
+    """Consecutive tables must stay separate tables, separated by one paragraph."""
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
+
+    assert _body_blocks(root) == ["tbl", "p", "tbl"]
+
+
+@pytest.mark.parametrize("preserve_table_styles", [True, False], ids=["opt-in", "default"])
+def test_lone_styled_table_gains_no_extra_paragraph(test_parameters: TestParameters, preserve_table_styles: bool):
+    """A table whose neighbour is ordinary content is left as it was."""
+    html = f"<p>before</p>{_STYLED_TABLE}<p>after</p>"
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
+
+    assert _body_blocks(root) == ["p", "tbl", "p"]
+
+
+@pytest.mark.parametrize("preserve_table_styles", [True, False], ids=["opt-in", "default"])
+def test_trailing_styled_table_gains_no_extra_paragraph(test_parameters: TestParameters, preserve_table_styles: bool):
+    """A table that ends the document is left as it was."""
+    html = f"<p>before</p>{_STYLED_TABLE}"
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
+
+    assert _body_blocks(root) == ["p", "tbl"]
