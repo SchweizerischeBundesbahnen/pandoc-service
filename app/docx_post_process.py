@@ -279,7 +279,9 @@ def _separate_adjacent_tables(doc: DocumentObject) -> None:
     reach the output back to back, joined by nothing but bookmarks.
     """
     tbl_tag = f"{{{SCHEMA}}}tbl"
-    for table_element in list(doc.element.body.iter(tbl_tag)):
+    # findall collects the tables up front, which the insertion below needs:
+    # a lazy walk would run over a tree that grows under it.
+    for table_element in doc.element.body.findall(f".//{tbl_tag}"):
         sibling = table_element.getnext()
         while sibling is not None and _is_table_range_marker(sibling):
             sibling = sibling.getnext()
