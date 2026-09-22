@@ -425,7 +425,7 @@ walk = function(inlines, props, vert_align)
         end
       end
       if is_caption_span then
-        -- Emit the SEQ field as raw OOXML so inlines_to_openxml succeeds
+        -- Emit the SEQ field as raw OOXML so inlines_to_runs succeeds
         -- and build_para_w_p can apply paragraph alignment. The Caption
         -- style is added by contains_caption_span() in build_para_w_p,
         -- and as a fallback by html_captions.lua for non-aligned captions.
@@ -592,24 +592,82 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- used by filter.Span, so nested <strong>/<em>/styled <span>s in the source
 -- still render correctly inside the formatted paragraph.
 --
--- Graceful degradation: if walk() returns anything that can't be embedded as
--- raw OOXML (a Link, Image, footnote, etc. — these need writer-level rels/
--- drawing handling that a raw <w:p> can't reproduce), we drop the paragraph
+-- Links and images can't be embedded in raw OOXML directly (both need
+-- writer-level relationship entries), so they go out as the {{HREF:}} and
+-- {{IMG:}} placeholders app/docx_post_process.py resolves, exactly as the
+-- table-cell path does. They keep their indent/alignment.
+--
+-- Graceful degradation: anything else with no OOXML form (a footnote, math, a
+-- citation) would survive only as its plain text, so we drop the paragraph
 -- formatting rather than corrupt its content. The Para passes through with its
 -- semantics intact, just without the indent/alignment applied.
 
--- Concatenate a list of inlines into a single OOXML string, or return nil
--- if any element can't be safely flattened (Link, Image, Note, ...).
-local function inlines_to_openxml(inlines)
+-- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
+-- a `lossy` flag, true when some inline had no OOXML form and survived only
+-- as its plain text (Note, Math, Cite, ...).
+--
+-- Images and links are NOT lossy: neither can be embedded in raw OOXML
+-- directly (both need writer-level relationship entries), so they go out as
+-- the same {{IMG:}} / {{HREF:}} placeholders the table-cell path uses, and
+-- app/docx_post_process.py resolves them into real relationships afterwards.
+--
+-- Callers decide what to do about `lossy`: a table cell keeps the plain text
+-- because it has no other way to render the cell, while a formatted paragraph
+-- gives up its indent/alignment instead (see build_para_w_p).
+local function inlines_to_runs(inlines)
   local runs = walk(inlines, {}, nil)
-  local parts = {}
+  local run_parts = {}
+  local lossy = false
   for _, r in ipairs(runs) do
-    if r.t ~= "RawInline" or r.format ~= "openxml" then
-      return nil
+    if r.t == "RawInline" and r.format == "openxml" then
+      run_parts[#run_parts + 1] = r.text
+    elseif r.t == "Image" and r.src and r.src ~= "" then
+      -- Images need writer-level relationship handling. Emit a
+      -- placeholder for the Python post-processor.
+      run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
+        .. "{{IMG:" .. escape_xml(r.src) .. "}}"
+        .. "</w:t></w:r>"
+    elseif r.t == "Link" then
+      -- Links need writer-level .rels entries for the hyperlink target.
+      -- Emit a <w:hyperlink> with a placeholder tooltip that encodes the
+      -- URL. The Python post-processor registers the real relationship.
+      -- Walk the link content, then replace rPr with just Hyperlink rStyle
+      -- so the link renders blue/underlined. Inline CSS colors would
+      -- override the Hyperlink style, so we strip them.
+      local link_inlines = walk(r.content, {}, nil)
+      local link_runs = {}
+      for _, lr in ipairs(link_inlines) do
+        if lr.t == "RawInline" and lr.format == "openxml" then
+          -- Replace existing <w:rPr> with Hyperlink rStyle, and add rPr
+          -- to bare <w:r> runs that don't have one (a single lr.text may
+          -- contain multiple <w:r> elements).
+          local text = lr.text
+          text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
+          text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
+          link_runs[#link_runs + 1] = text
+        elseif lr.t == "Image" and lr.src and lr.src ~= "" then
+          link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
+            .. "{{IMG:" .. escape_xml(lr.src) .. "}}"
+            .. "</w:t></w:r>"
+        else
+          lossy = true
+          link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
+            .. '<w:t xml:space="preserve">'
+            .. escape_xml(pandoc.utils.stringify(lr)) .. "</w:t></w:r>"
+        end
+      end
+      run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
+        .. escape_attr(r.target) .. '}}">'
+        .. table.concat(link_runs) .. "</w:hyperlink>"
+    else
+      -- Nested tables, lists, footnotes, math — fall back to plain text.
+      lossy = true
+      run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
+        .. escape_xml(pandoc.utils.stringify(r))
+        .. "</w:t></w:r>"
     end
-    parts[#parts + 1] = r.text
   end
-  return table.concat(parts)
+  return table.concat(run_parts), lossy
 end
 
 -- True when `inlines` contains (at any depth) Polarion's caption counter span
@@ -642,8 +700,12 @@ end
 -- set — an empty <w:pPr> would be pointless, so we return nil in that case and
 -- let the caller keep pandoc's native Para.
 local function build_para_w_p(inlines, twips, jc)
-  local body = inlines_to_openxml(inlines)
-  if not body then return nil end
+  local body, lossy = inlines_to_runs(inlines)
+  -- Something here has no OOXML form and would survive only as its plain text
+  -- (a footnote, math, a citation). Keeping the content intact matters more
+  -- than the indent, so hand the Para back to pandoc's writer unformatted.
+  -- Links and images are not lossy: they ride out as placeholders.
+  if lossy then return nil end
   -- <w:pPr> children must follow the CT_PPr schema sequence (ECMA-376 Part 1
   -- §17.3.1.26): <w:ind> precedes <w:jc>. Word/LibreOffice are version-
   -- dependent about out-of-order children (silent reorder, recovery warning,
@@ -903,56 +965,10 @@ local function block_to_ooxml(block, jc_val)
   end
 
   if block.t == "Para" or block.t == "Plain" then
-    local runs = walk(block.content, {}, nil)
-    local run_parts = {}
-    for _, r in ipairs(runs) do
-      if r.t == "RawInline" and r.format == "openxml" then
-        run_parts[#run_parts + 1] = r.text
-      elseif r.t == "Image" and r.src and r.src ~= "" then
-        -- Images need writer-level relationship handling. Emit a
-        -- placeholder for the Python post-processor.
-        run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
-          .. "{{IMG:" .. escape_xml(r.src) .. "}}"
-          .. "</w:t></w:r>"
-      elseif r.t == "Link" then
-        -- Links need writer-level .rels entries for the hyperlink target.
-        -- Emit a <w:hyperlink> with a placeholder tooltip that encodes the
-        -- URL. The Python post-processor registers the real relationship.
-        -- Walk the link content, then replace rPr with just Hyperlink rStyle
-        -- so the link renders blue/underlined. Inline CSS colors would
-        -- override the Hyperlink style, so we strip them.
-        local link_inlines = walk(r.content, {}, nil)
-        local link_runs = {}
-        for _, lr in ipairs(link_inlines) do
-          if lr.t == "RawInline" and lr.format == "openxml" then
-            -- Replace existing <w:rPr> with Hyperlink rStyle, and add rPr
-            -- to bare <w:r> runs that don't have one (a single lr.text may
-            -- contain multiple <w:r> elements).
-            local text = lr.text
-            text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
-            text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
-            link_runs[#link_runs + 1] = text
-          elseif lr.t == "Image" and lr.src and lr.src ~= "" then
-            link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
-              .. "{{IMG:" .. escape_xml(lr.src) .. "}}"
-              .. "</w:t></w:r>"
-          else
-            link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
-              .. '<w:t xml:space="preserve">'
-              .. escape_xml(pandoc.utils.stringify(lr)) .. "</w:t></w:r>"
-          end
-        end
-        run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
-          .. escape_attr(r.target) .. '}}">'
-          .. table.concat(link_runs) .. "</w:hyperlink>"
-      else
-        -- Nested tables, lists, etc. — fall back to plain text.
-        run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
-          .. escape_xml(pandoc.utils.stringify(r))
-          .. "</w:t></w:r>"
-      end
-    end
-    return "<w:p>" .. ppr .. table.concat(run_parts) .. "</w:p>"
+    -- A cell has no fallback to hand the content back to, so the `lossy`
+    -- flag is ignored here: plain text beats an empty cell.
+    local runs = inlines_to_runs(block.content)
+    return "<w:p>" .. ppr .. runs .. "</w:p>"
   end
 
   if block.t == "RawBlock" and block.format == "openxml" then
