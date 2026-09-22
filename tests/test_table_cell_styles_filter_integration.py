@@ -252,3 +252,51 @@ def test_full_test_html_file(test_parameters: TestParameters):
     # Check borders exist
     borders = _find_all(root, ".//w:tc/w:tcPr/w:tcBorders")
     assert len(borders) > 0, "expected borders in styled tables"
+
+
+# ---- Adjacent table separation ----
+
+# Word ignores these when it decides whether two tables touch; see
+# _TABLE_RANGE_MARKERS in app/docx_post_process.py.
+_RANGE_MARKERS = {"bookmarkStart", "bookmarkEnd", "commentRangeStart", "commentRangeEnd", "proofErr"}
+
+# Two tables at different AST depths: the first wrapped in a <div>, the second
+# its sibling. This is the shape Polarion emits around work item fields, and
+# pandoc's own table separation does not see the two as adjacent.
+_NESTED_DIV_TABLES_HTML = """<div id="workitem">
+  <div id="steps">
+    <table><thead><tr><th style="background-color:#F0F0F0;">Step</th><th>Result</th></tr></thead>
+      <tbody><tr><td style="border:1px solid #CCCCCC;">Step 1</td><td>Res 1</td></tr></tbody></table>
+  </div>
+  <table><tbody><tr><td style="width:20%;">Severity</td><td style="width:80%;">Basic</td></tr></tbody></table>
+</div>"""
+
+_FLAT_TABLES_HTML = """<table><tbody><tr><td style="background-color:#EEEEEE;">A</td><td>B</td></tr></tbody></table>
+<table><tbody><tr><td style="background-color:#EEEEEE;">X</td><td>Y</td></tr></tbody></table>"""
+
+
+def _merged_table_count(root: ET.Element) -> int:
+    """Count tables that Word would render as a continuation of the one before."""
+    body = root.find(f"{{{W_NS}}}body")
+    merged = 0
+    previous_was_table = False
+    for child in body:
+        local_name = child.tag.split("}")[-1]
+        if local_name in _RANGE_MARKERS:
+            continue
+        if local_name == "tbl":
+            merged += previous_was_table
+            previous_was_table = True
+        else:
+            previous_was_table = False
+    return merged
+
+
+@pytest.mark.parametrize("html", [_NESTED_DIV_TABLES_HTML, _FLAT_TABLES_HTML], ids=["nested-div", "flat"])
+@pytest.mark.parametrize("preserve_table_styles", [True, False], ids=["styled", "default"])
+def test_adjacent_tables_are_not_merged(test_parameters: TestParameters, html: str, preserve_table_styles: bool):
+    """Consecutive tables must stay separate tables in the DOCX."""
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
+
+    assert len(_find_all(root, ".//w:body/w:tbl")) == 2, "expected two top-level tables"
+    assert _merged_table_count(root) == 0, "tables are back to back, so Word renders them as one"

@@ -1161,6 +1161,12 @@ function filter.Table(tbl)
 
   xml[#xml + 1] = "</w:tbl>"
 
+  -- Two <w:tbl> siblings with no <w:p> between them are one table in Word.
+  -- Pandoc's writer guards against that for adjacent Table blocks, but it
+  -- runs after this filter and sees a RawBlock, not a Table, so the empty
+  -- paragraph has to be part of what we emit.
+  xml[#xml + 1] = "<w:p/>"
+
   return pandoc.RawBlock("openxml", table.concat(xml))
 end
 
