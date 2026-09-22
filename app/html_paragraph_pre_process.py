@@ -8,9 +8,22 @@ wraps the paragraph in a marker ``<div>``:
 
     <div class="pandoc-para" data-indent-twips="N" data-text-align="center"><p ...>...</p></div>
 
+A styled ``<div>`` carries the same formatting and gets the same treatment,
+except that the markers go **on the div itself** instead of on a wrapper:
+
+    <div class="pandoc-para" data-indent-twips="N" style="margin-left: 40px;">...</div>
+
+Polarion emits ``<p style="...">`` for text typed straight into a LiveDoc but
+``<div style="...">`` for the same text inside an inlined work item body, so
+both shapes have to be covered. A wrapper does not work for the div shape: the
+Lua filter applies the formatting to the ``Para``/``Plain`` children of the
+marked element, and a wrapped ``<div>`` arrives as a ``Div`` child, which the
+filter passes through untouched. Marking in place puts the styled element's own
+inline content directly under the marker, where the filter reaches it.
+
 Each ``data-*`` attribute is emitted only when the corresponding property is
 present, so an indent-only, align-only, or combined paragraph all share the
-same wrapper. Pandoc preserves both ``class`` and ``data-*`` attributes on
+same markers. Pandoc preserves both ``class`` and ``data-*`` attributes on
 ``<div>`` elements (they survive as the AST's ``Attr`` triple), so the values
 travel intact to the companion Lua filter (``filters/inline_styles.lua``),
 which emits a raw OOXML ``<w:p>`` carrying the matching paragraph properties
@@ -131,32 +144,50 @@ def preprocess(source: bytes) -> bytes:
 
 def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
     rewrote = False
-    # Materialize before mutating: parent.remove/insert invalidates the
-    # iterator if we walk lazily.
-    for p in root.iter("p"):
-        style = p.get("style")
+    # findall returns both lists up front, which the rewriting below needs:
+    # _wrap_paragraph removes and re-inserts elements, and a lazy walk would
+    # run over a tree that changes under it. Collecting the divs before any
+    # wrapping also keeps the wrappers this pass creates out of the div list.
+    for element in root.findall(".//p") + root.findall(".//div"):
+        style = element.get("style")
         if not style:
             continue
         twips = _extract_margin_left_twips(style)
         align = _extract_text_align(style)
         if twips is None and align is None:
             continue
-        parent = p.getparent()
-        if parent is None:
-            continue
-        _wrap_paragraph(parent, p, twips, align)
+        if element.tag == "div":
+            _set_para_markers(element, twips, align)
+        else:
+            parent = element.getparent()
+            if parent is None:
+                continue
+            _wrap_paragraph(parent, element, twips, align)
         rewrote = True
     return rewrote
+
+
+def _set_para_markers(div: html.HtmlElement, twips: int | None, align: str | None) -> None:
+    """Put the marker class and the data-* attributes on ``div``.
+
+    The class is appended rather than assigned: a styled ``<div>`` marked in
+    place is usually one of Polarion's own, and its existing classes have to
+    survive.
+    """
+    classes = div.get("class", "").split()
+    if PARA_CLASS not in classes:
+        classes.append(PARA_CLASS)
+    div.set("class", " ".join(classes))
+    if twips is not None:
+        div.set(INDENT_ATTR, str(twips))
+    if align is not None:
+        div.set(ALIGN_ATTR, align)
 
 
 def _wrap_paragraph(parent: html.HtmlElement, p: html.HtmlElement, twips: int | None, align: str | None) -> None:
     idx = parent.index(p)
     div = etree.Element("div")
-    div.set("class", PARA_CLASS)
-    if twips is not None:
-        div.set(INDENT_ATTR, str(twips))
-    if align is not None:
-        div.set(ALIGN_ATTR, align)
+    _set_para_markers(div, twips, align)
     parent.remove(p)
     div.append(p)
     parent.insert(idx, div)
