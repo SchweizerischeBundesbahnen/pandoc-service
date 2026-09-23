@@ -3,14 +3,17 @@
 These tests verify the Python side of the paragraph-formatting pipeline: that
 ``<p style="margin-left:...; text-align:...">`` is rewritten into a marker
 ``<div>`` carrying ``class="pandoc-para"`` plus ``data-indent-twips="N"``
-and/or ``data-text-align="..."``, that the unit conversion from CSS lengths to Word
-twips is correct, and that ``text-align`` keywords map to canonical tokens.
+and/or ``data-text-align="..."``, that a styled ``<div>`` gets those same markers
+set on itself, that the unit conversion from CSS lengths to Word twips is
+correct, and that ``text-align`` keywords map to canonical tokens.
 
 The companion Lua filter (filters/inline_styles.lua) is exercised separately
 in ``test_inline_styles_filter_integration.py``.
 """
 
 from __future__ import annotations
+
+import re
 
 import pytest
 
@@ -150,12 +153,68 @@ def test_empty_input_is_returned_unchanged():
     assert html_paragraph_pre_process.preprocess(b"") == b""
 
 
-def test_non_p_elements_are_ignored():
-    """Only <p> is targeted; <div style="margin-left:..."> is left alone for
-    now (would need separate handling — see the limitations note)."""
+def test_styled_div_is_marked_in_place():
+    """A styled <div> gets the markers on itself, not on a wrapper.
+
+    Polarion emits <div style="..."> for text inside an inlined work item body.
+    The Lua filter formats the Para/Plain children of the marked element, so a
+    wrapper would leave the styled div as a Div child and change nothing.
+    """
     src = b'<div style="margin-left: 40px">x</div>'
     out = html_paragraph_pre_process.preprocess(src)
-    assert b"pandoc-para" not in out
+    assert b'class="pandoc-para"' in out
+    assert b'data-indent-twips="600"' in out
+    assert out.count(b"<div") == 1, f"expected the div itself to be marked, got {out!r}"
+
+
+def test_styled_div_keeps_its_existing_classes():
+    """Marking a Polarion div in place must not drop the classes it came with."""
+    src = b'<div class="polarion-dle-workitem-basic-0" style="text-align: center">x</div>'
+    out = html_paragraph_pre_process.preprocess(src).decode()
+
+    classes = re.search(r'class="([^"]*)"', out).group(1).split()
+    assert "polarion-dle-workitem-basic-0" in classes
+    assert "pandoc-para" in classes
+
+
+def test_styled_div_carries_both_markers():
+    src = b'<div style="margin-left: 40px; text-align: right">x</div>'
+    out = html_paragraph_pre_process.preprocess(src)
+    assert b'data-indent-twips="600"' in out
+    assert b'data-text-align="right"' in out
+
+
+def test_div_without_supported_style_is_unchanged():
+    src = b'<div style="color: red">x</div>'
+    assert html_paragraph_pre_process.preprocess(src) == src
+
+
+def test_div_without_style_is_unchanged():
+    src = b"<div>x</div>"
+    assert html_paragraph_pre_process.preprocess(src) == src
+
+
+def test_styled_p_inside_styled_div_is_not_double_marked():
+    """The <p> keeps its own wrapper; the div is marked in place, and the two
+    do not compound - the Lua filter passes a Div child through untouched."""
+    src = b'<div style="margin-left: 40px"><p style="margin-left: 80px">x</p></div>'
+    out = html_paragraph_pre_process.preprocess(src).decode()
+
+    assert out.count("pandoc-para") == 2
+    assert 'data-indent-twips="600"' in out
+    assert 'data-indent-twips="1200"' in out
+
+
+def test_wrapper_div_is_not_marked_a_second_time():
+    """One run must produce one marker for one styled <p>.
+
+    The div pass and the <p> pass share a run, so the wrapper created for a
+    <p> must not be picked up again as a styled div. Collecting the divs
+    before any wrapping is what rules that out.
+    """
+    src = b'<p style="margin-left: 40px">x</p>'
+    out = html_paragraph_pre_process.preprocess(src)
+    assert out.count(b"pandoc-para") == 1, f"expected exactly one marker, got {out!r}"
 
 
 # --- structure / context --------------------------------------------------
@@ -520,3 +579,34 @@ def test_indent_only_wrapper_has_no_align_attr():
 )
 def test_extract_text_align_direct(style: str, expected: str | None):
     assert html_paragraph_pre_process._extract_text_align(style) == expected
+
+
+def test_heading_div_is_not_marked():
+    """A heading-N div is left to filters/heading_levels.lua.
+
+    Marking it would cost it its heading-N class: the Div handler in
+    inline_styles.lua replaces a marked div with its blocks, and it runs before
+    heading_levels, so the heading would render as an ordinary paragraph.
+    """
+    src = b'<div class="heading-7" style="text-align: center">Big Heading</div>'
+    assert html_paragraph_pre_process.preprocess(src) == src
+
+
+def test_heading_div_with_indent_is_not_marked():
+    src = b'<div class="heading-7" style="margin-left: 40px">Big Heading</div>'
+    assert html_paragraph_pre_process.preprocess(src) == src
+
+
+def test_non_heading_class_div_is_still_marked():
+    """The skip keys on heading-N exactly, not on any class that mentions it."""
+    src = b'<div class="heading-like subheading-7" style="text-align: center">x</div>'
+    out = html_paragraph_pre_process.preprocess(src)
+    assert b"pandoc-para" in out
+
+
+def test_styled_p_inside_a_heading_div_is_still_wrapped():
+    """The skip covers the div only; a <p> inside it keeps its own wrapper."""
+    src = b'<div class="heading-7"><p style="margin-left: 40px">x</p></div>'
+    out = html_paragraph_pre_process.preprocess(src).decode()
+    assert "pandoc-para" in out
+    assert "heading-7" in out

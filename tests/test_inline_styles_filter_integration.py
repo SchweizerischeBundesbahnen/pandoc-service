@@ -296,13 +296,12 @@ def test_indent_div_without_twips_attribute_is_passthrough(test_parameters: Test
     assert _ind_left(p) is None, "filter emitted an <w:ind> for a Div with no data-indent-twips"
 
 
-def test_indent_div_falls_back_when_para_contains_a_link(test_parameters: TestParameters):
-    """A <w:hyperlink> needs a relationship registered in
-    word/_rels/document.xml.rels — something the Div handler can't reproduce
-    when it emits a single raw <w:p>. The handler must detect a Link inside
-    the Para and fall back to leaving the Para alone (indent dropped, link
-    kept) rather than corrupting the document. See the build_para_w_p
-    "graceful degradation" comment in filters/inline_styles.lua.
+def test_indent_survives_a_link_in_the_paragraph(test_parameters: TestParameters):
+    """A <w:hyperlink> needs a relationship in word/_rels/document.xml.rels,
+    which a raw <w:p> can't register on its own. The filter emits the same
+    {{HREF:}} placeholder the table-cell path uses and app/docx_post_process.py
+    turns it into a real relationship, so the paragraph keeps both its indent
+    and its link.
     """
     html = '<div class="pandoc-para" data-indent-twips="600"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
     docx_bytes = _convert_html_to_docx(test_parameters, html)
@@ -311,11 +310,42 @@ def test_indent_div_falls_back_when_para_contains_a_link(test_parameters: TestPa
         rels_xml = zf.read("word/_rels/document.xml.rels")
 
     doc = ET.fromstring(doc_xml)
-    # The hyperlink must survive — losing it would silently corrupt the doc.
+    assert _ind_left(_w_p_with_text(doc, "this link")) == "600", "indent dropped on a paragraph containing a link"
     hyperlink = doc.find(f".//{{{W_NS}}}hyperlink")
-    assert hyperlink is not None, "Div handler dropped the <w:hyperlink> when falling back — graceful degradation didn't work"
-    # And the relationship must still be registered.
-    assert b"hyperlink" in rels_xml, "hyperlink relationship missing from document.xml.rels — graceful degradation dropped the rel side-effect"
+    assert hyperlink is not None, "the <w:hyperlink> was lost"
+    assert hyperlink.get(f"{{{R_NS}}}id"), "hyperlink has no r:id — the {{HREF:}} placeholder was not resolved"
+    assert b"hyperlink" in rels_xml, "hyperlink relationship missing from document.xml.rels"
+
+
+def test_indent_survives_an_image_in_the_paragraph(test_parameters: TestParameters):
+    """Images need writer-level relationship entries too, and ride out on the
+    same {{IMG:}} placeholder. The indent must survive alongside the drawing.
+    """
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p>pic <img src="{_png_data_uri(8, 8)}"/> here</p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    assert _ind_left(_w_p_with_text(doc, "pic")) == "600", "indent dropped on a paragraph containing an image"
+    assert doc.find(f".//{{{W_NS}}}drawing") is not None, "the image was lost, or left as an unresolved {{IMG:}} placeholder"
+    assert b"{{IMG:" not in doc_xml, "an {{IMG:}} placeholder survived into the output"
+
+
+def test_indent_falls_back_when_para_contains_math(test_parameters: TestParameters):
+    """Math has no raw-OOXML form, so it would survive only as its plain text.
+
+    Content wins over formatting: the filter hands the Para back to pandoc's
+    writer, which renders a real OMML equation, and the indent is dropped.
+    """
+    html = '<div class="pandoc-para" data-indent-twips="600"><p>val <math xmlns="http://www.w3.org/1998/Math/MathML"><mi>a</mi></math> end</p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    assert _ind_left(_w_p_with_text(doc, "val")) is None, "indent applied to a paragraph whose math can only be flattened"
+    assert b"oMath" in doc_xml, "the equation was flattened to text instead of staying a real OMML equation"
 
 
 def test_plain_div_is_left_alone(test_parameters: TestParameters):
@@ -405,10 +435,9 @@ def test_align_preserves_inline_formatting_via_walk(test_parameters: TestParamet
     assert bold_run is not None and bold_run.find(f".//{{{W_NS}}}b") is not None, "bold run lost <w:b/> after Div handler rewrote the aligned Para"
 
 
-def test_align_div_falls_back_when_para_contains_a_link(test_parameters: TestParameters):
-    """Same graceful-degradation contract as the indent path: a Link inside the
-    Para can't be reproduced in a raw <w:p>, so the handler keeps the original
-    Para (alignment dropped, link + relationship kept)."""
+def test_align_survives_a_link_in_the_paragraph(test_parameters: TestParameters):
+    """Same contract as the indent path: the link rides out on a placeholder,
+    so the paragraph keeps both its alignment and its link."""
     html = '<div class="pandoc-para" data-text-align="center"><p>see <a href="https://example.com/t">this link</a> please</p></div>'
     docx_bytes = _convert_html_to_docx(test_parameters, html)
     with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
@@ -416,8 +445,9 @@ def test_align_div_falls_back_when_para_contains_a_link(test_parameters: TestPar
         rels_xml = zf.read("word/_rels/document.xml.rels")
 
     doc = ET.fromstring(doc_xml)
-    assert doc.find(f".//{{{W_NS}}}hyperlink") is not None, "Div handler dropped the <w:hyperlink> when falling back on an aligned paragraph"
-    assert b"hyperlink" in rels_xml, "hyperlink relationship missing — graceful degradation dropped the rel side-effect"
+    assert _jc_val(_w_p_with_text(doc, "this link")) == "center", "alignment dropped on a paragraph containing a link"
+    assert doc.find(f".//{{{W_NS}}}hyperlink") is not None, "the <w:hyperlink> was lost"
+    assert b"hyperlink" in rels_xml, "hyperlink relationship missing from document.xml.rels"
 
 
 def test_unknown_align_value_is_rejected(test_parameters: TestParameters):
@@ -597,3 +627,197 @@ def test_unsized_image_wider_than_max_width_is_clamped(test_parameters: TestPara
     html = f'<p><img src="{_png_data_uri(400, 200)}" style="max-width:100px;"></p>'
     cx, cy = _drawing_extent(_convert_html_to_docx(test_parameters, html))
     assert (cx, cy) == (100 * EMU_PER_PX, 50 * EMU_PER_PX), f"got {(cx, cy)}"
+
+
+# ==== Styled <div> shape (Polarion work item bodies) ======================
+#
+# Polarion emits <p style="..."> for text typed straight into a LiveDoc but
+# <div style="..."> for the same text inside an inlined work item body.
+# app/html_paragraph_pre_process.py marks the div in place, so these tests
+# drive the whole pipeline from the raw Polarion shape rather than from the
+# already-marked HTML the tests above use.
+
+
+def _document_xml(test_parameters: TestParameters, html: str) -> ET.Element:
+    """Convert HTML and return the parsed word/document.xml root."""
+    with zipfile.ZipFile(BytesIO(_convert_html_to_docx(test_parameters, html))) as zf:
+        return ET.fromstring(zf.read("word/document.xml"))
+
+
+def test_styled_div_indent_reaches_the_document(test_parameters: TestParameters):
+    html = '<div style="margin-left: 40px;">Indentation</div><div style="margin-left: 80px;">2 levels</div>'
+    doc = _document_xml(test_parameters, html)
+
+    assert _ind_left(_w_p_with_text(doc, "Indentation")) == "600"
+    assert _ind_left(_w_p_with_text(doc, "2 levels")) == "1200"
+
+
+def test_styled_div_alignment_reaches_the_document(test_parameters: TestParameters):
+    html = '<div style="text-align: center;">Centered</div><div style="text-align: right;">Right aligned</div>'
+    doc = _document_xml(test_parameters, html)
+
+    assert _jc_val(_w_p_with_text(doc, "Centered")) == "center"
+    assert _jc_val(_w_p_with_text(doc, "Right aligned")) == "right"
+
+
+def test_styled_div_keeps_indent_around_a_link(test_parameters: TestParameters):
+    """The rich-text case: a work item description with a hyperlink in it."""
+    html = '<div style="margin-left: 40px;">see <a href="https://example.com/t">this link</a> please</div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+        rels_xml = zf.read("word/_rels/document.xml.rels")
+
+    doc = ET.fromstring(doc_xml)
+    assert _ind_left(_w_p_with_text(doc, "this link")) == "600"
+    assert doc.find(f".//{{{W_NS}}}hyperlink") is not None
+    assert b"hyperlink" in rels_xml
+
+
+def test_styled_div_keeps_alignment_around_an_image(test_parameters: TestParameters):
+    html = f'<div style="text-align: center;">pic <img src="{_png_data_uri(8, 8)}"/> here</div>'
+    doc = _document_xml(test_parameters, html)
+
+    assert _jc_val(_w_p_with_text(doc, "pic")) == "center"
+    assert doc.find(f".//{{{W_NS}}}drawing") is not None
+
+
+def test_list_inside_styled_div_keeps_its_numbering(test_parameters: TestParameters):
+    """A list inside an indented div keeps pandoc's list indentation.
+
+    <w:ind w:left> on a list paragraph is what positions the bullet against
+    its numbering definition, so the Div handler leaves non-paragraph blocks
+    to the writer instead of overwriting that. The items must still be a real
+    list, not flattened text.
+    """
+    html = '<div style="margin-left: 40px;"><ul><li>one</li><li>two</li></ul></div>'
+    doc = _document_xml(test_parameters, html)
+
+    for needle in ("one", "two"):
+        para = _w_p_with_text(doc, needle)
+        assert para.find(f".//{{{W_NS}}}numPr") is not None, f"list item {needle!r} lost its numbering"
+
+
+def test_styled_heading_div_keeps_its_heading_style(test_parameters: TestParameters):
+    """A heading-N div keeps its heading even when it carries paragraph CSS.
+
+    filters/heading_levels.lua turns <div class="heading-7"> into a Header, but
+    the Div handler here runs first and replaces a marked div with its blocks.
+    app/html_paragraph_pre_process.py therefore leaves heading divs unmarked,
+    trading their indent/alignment for the heading itself.
+    """
+    html = '<div class="heading-7" style="text-align: center;">Big Heading</div>'
+    doc = _document_xml(test_parameters, html)
+
+    para = _w_p_with_text(doc, "Big Heading")
+    style = para.find(f".//{{{W_NS}}}pStyle")
+    assert style is not None and style.get(f"{{{W_NS}}}val") == "Heading7", "the heading-7 div lost its heading style"
+
+
+# ---- Image size inside a formatted paragraph ---------------------------
+#
+# A formatted paragraph is rebuilt as raw OOXML, where an image can only be a
+# {{IMG:}} placeholder that app/docx_post_process.py resolves. The <wp:extent>
+# is written there, so the placeholder has to carry the dimensions: without
+# them an <img width="100"> of a 20px picture came out at 20px.
+
+
+def test_indented_paragraph_keeps_an_explicit_image_size(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="100" height="200"></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    assert _drawing_extent(docx_bytes) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    assert _ind_left(doc.find(f".//{{{W_NS}}}p")) == "600", "the indent was lost"
+
+
+def test_aligned_paragraph_keeps_a_css_image_size(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-text-align="center"><p><img src="{_png_data_uri(20, 40)}" style="width:150px;height:300px;"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (150 * EMU_PER_PX, 300 * EMU_PER_PX)
+
+
+def test_one_sided_image_size_keeps_the_aspect_ratio(test_parameters: TestParameters):
+    """Only a width given: the writer scales the height, and so must this."""
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="100"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)
+
+
+def test_unsized_image_in_a_formatted_paragraph_stays_native(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (20 * EMU_PER_PX, 40 * EMU_PER_PX)
+
+
+def test_percentage_sized_image_falls_back_to_the_writer(test_parameters: TestParameters):
+    """A percentage is a share of the text width, which only the writer knows.
+
+    A raw <wp:extent> is absolute, so such a paragraph gives up its indent and
+    is handed back to pandoc - the same trade the filter makes for math. The
+    extent must match what the unformatted paragraph produces.
+    """
+    image = f'<img src="{_png_data_uri(20, 40)}" style="width:50%;">'
+    plain = _drawing_extent(_convert_html_to_docx(test_parameters, f"<p>{image}</p>"))
+    formatted_bytes = _convert_html_to_docx(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>')
+
+    assert _drawing_extent(formatted_bytes) == plain, "the percentage size was not preserved"
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(formatted_bytes)).read("word/document.xml"))
+    assert doc.find(f".//{{{W_NS}}}ind") is None, "the indent should have been given up to keep the size"
+
+
+def test_no_image_placeholder_survives_into_the_output(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p>see <img src="{_png_data_uri(20, 40)}" width="100"></p></div>'
+
+    assert b"{{IMG:" not in _convert_html_to_docx(test_parameters, html)
+
+
+@pytest.mark.parametrize(
+    ("width", "expected_valid"),
+    [
+        ("A&amp;B", False),
+        ("&lt;/w:t&gt;&lt;/w:r&gt;&lt;w:r&gt;&lt;w:t&gt;x", False),
+        ("100&quot;", False),
+        ("auto", False),
+        ("10em", False),
+        ("-5", False),
+        ("100", True),
+        ("100px", True),
+    ],
+)
+def test_image_width_is_validated_before_it_reaches_raw_ooxml(test_parameters: TestParameters, width: str, expected_valid: bool):
+    """The <img width> of the source HTML lands inside a <w:t>.
+
+    apply_image_style_dimensions never overwrites an authored width, so the
+    value arrives exactly as written. An unvalidated "A&B" emits a bare & and
+    breaks word/document.xml; a crafted one can close the run and splice in
+    OOXML of its own. Anything image_dim() rejects must be dropped.
+    """
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="{width}"></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    # The document must parse at all - that is the whole point.
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    assert doc.find(f".//{{{W_NS}}}drawing") is not None, "the image was lost"
+    assert b"{{IMG:" not in docx_bytes, "an unresolved placeholder survived"
+
+    cx, _ = _drawing_extent(docx_bytes)
+    if expected_valid:
+        assert cx == 100 * EMU_PER_PX
+    else:
+        assert cx == 20 * EMU_PER_PX, "a rejected width must fall back to the image's own size"
+
+
+def test_image_height_is_validated_too(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" height="A&amp;B"></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    assert _drawing_extent(docx_bytes) == (20 * EMU_PER_PX, 40 * EMU_PER_PX)
+
+
+def test_a_rejected_width_still_honours_a_valid_height(test_parameters: TestParameters):
+    """Each dimension is validated on its own; one bad value is not fatal."""
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="A&amp;B" height="200"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)

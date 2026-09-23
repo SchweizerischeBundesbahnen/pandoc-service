@@ -425,7 +425,7 @@ walk = function(inlines, props, vert_align)
         end
       end
       if is_caption_span then
-        -- Emit the SEQ field as raw OOXML so inlines_to_openxml succeeds
+        -- Emit the SEQ field as raw OOXML so inlines_to_runs succeeds
         -- and build_para_w_p can apply paragraph alignment. The Caption
         -- style is added by contains_caption_span() in build_para_w_p,
         -- and as a fallback by html_captions.lua for non-aligned captions.
@@ -592,24 +592,128 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- used by filter.Span, so nested <strong>/<em>/styled <span>s in the source
 -- still render correctly inside the formatted paragraph.
 --
--- Graceful degradation: if walk() returns anything that can't be embedded as
--- raw OOXML (a Link, Image, footnote, etc. — these need writer-level rels/
--- drawing handling that a raw <w:p> can't reproduce), we drop the paragraph
+-- Links and images can't be embedded in raw OOXML directly (both need
+-- writer-level relationship entries), so they go out as the {{HREF:}} and
+-- {{IMG:}} placeholders app/docx_post_process.py resolves, exactly as the
+-- table-cell path does. They keep their indent/alignment.
+--
+-- Graceful degradation: anything else with no OOXML form (a footnote, math, a
+-- citation) would survive only as its plain text, so we drop the paragraph
 -- formatting rather than corrupt its content. The Para passes through with its
 -- semantics intact, just without the indent/alignment applied.
 
--- Concatenate a list of inlines into a single OOXML string, or return nil
--- if any element can't be safely flattened (Link, Image, Note, ...).
-local function inlines_to_openxml(inlines)
-  local runs = walk(inlines, {}, nil)
-  local parts = {}
+-- An Image's width and height, validated, as empty strings when it has none.
+--
+-- This is a trust boundary. apply_image_style_dimensions only ever writes a
+-- value image_dim() has passed, but it deliberately leaves an existing
+-- attribute alone, so an <img width="..."> from the source HTML arrives here
+-- exactly as authored. Those bytes end up inside a <w:t>, so an
+-- <img width="A&B"> would emit a bare & and break word/document.xml, and a
+-- crafted value could close the run and splice in OOXML of its own.
+--
+-- image_dim() returns only digits (optionally with a decimal point) plus a
+-- unit from a fixed allowlist, so whatever it passes is inert; anything it
+-- rejects is treated as "no dimension", which is what the node effectively
+-- had. This mirrors the parse_twips boundary used for data-indent-twips.
+local function image_dimensions(img)
+  local attrs = img.attributes or {}
+  return image_dim(attrs.width) or "", image_dim(attrs.height) or ""
+end
+
+-- Build the {{IMG:}} placeholder for an Image, carrying the dimensions the
+-- DOCX writer would otherwise have applied itself.
+--
+-- The writer sizes an image from the node's width/height attributes, but raw
+-- OOXML cannot embed an image at all, so the placeholder has to carry them:
+-- without them app/docx_post_process.py falls back to the file's own pixel
+-- size and an <img width="100"> of a 20px picture comes out at 20px.
+--
+-- "|" separates the fields because it cannot occur in a validated dimension
+-- (digits, a unit, or "%") and does not occur in a data: URI's base64 either.
+-- Both dimensions are always emitted, empty when the node carries none.
+local function image_placeholder(img)
+  local width, height = image_dimensions(img)
+  return "{{IMG:" .. width .. "|" .. height .. "|" .. escape_xml(img.src) .. "}}"
+end
+
+-- A percentage dimension is a share of the text width, which only the writer
+-- knows; a raw <wp:extent> is absolute. Treat such an image as lossy so a
+-- formatted paragraph hands itself back to the writer rather than render it
+-- at the wrong size. A table cell has no fallback and keeps the placeholder.
+local function has_relative_dimension(img)
+  local width, height = image_dimensions(img)
+  -- Plain find, so the needle is the literal "%", not a pattern escape.
+  return width:find("%", 1, true) ~= nil or height:find("%", 1, true) ~= nil
+end
+
+-- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
+-- a `lossy` flag, true when some inline had no OOXML form and survived only
+-- as its plain text (Note, Math, Cite, ...).
+--
+-- Images and links are NOT lossy: neither can be embedded in raw OOXML
+-- directly (both need writer-level relationship entries), so they go out as
+-- the same {{IMG:}} / {{HREF:}} placeholders the table-cell path uses, and
+-- app/docx_post_process.py resolves them into real relationships afterwards.
+--
+-- Callers decide what to do about `lossy`: a table cell keeps the plain text
+-- because it has no other way to render the cell, while a formatted paragraph
+-- gives up its indent/alignment instead (see build_para_w_p).
+local function inlines_to_runs(inlines, seed)
+  local runs = walk(inlines, seed or {}, nil)
+  local run_parts = {}
+  local lossy = false
   for _, r in ipairs(runs) do
-    if r.t ~= "RawInline" or r.format ~= "openxml" then
-      return nil
+    if r.t == "RawInline" and r.format == "openxml" then
+      run_parts[#run_parts + 1] = r.text
+    elseif r.t == "Image" and r.src and r.src ~= "" then
+      -- Images need writer-level relationship handling. Emit a
+      -- placeholder for the Python post-processor.
+      if has_relative_dimension(r) then lossy = true end
+      run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
+        .. image_placeholder(r)
+        .. "</w:t></w:r>"
+    elseif r.t == "Link" then
+      -- Links need writer-level .rels entries for the hyperlink target.
+      -- Emit a <w:hyperlink> with a placeholder tooltip that encodes the
+      -- URL. The Python post-processor registers the real relationship.
+      -- Walk the link content, then replace rPr with just Hyperlink rStyle
+      -- so the link renders blue/underlined. Inline CSS colors would
+      -- override the Hyperlink style, so we strip them.
+      local link_inlines = walk(r.content, {}, nil)
+      local link_runs = {}
+      for _, lr in ipairs(link_inlines) do
+        if lr.t == "RawInline" and lr.format == "openxml" then
+          -- Replace existing <w:rPr> with Hyperlink rStyle, and add rPr
+          -- to bare <w:r> runs that don't have one (a single lr.text may
+          -- contain multiple <w:r> elements).
+          local text = lr.text
+          text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
+          text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
+          link_runs[#link_runs + 1] = text
+        elseif lr.t == "Image" and lr.src and lr.src ~= "" then
+          if has_relative_dimension(lr) then lossy = true end
+          link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
+            .. image_placeholder(lr)
+            .. "</w:t></w:r>"
+        else
+          lossy = true
+          link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
+            .. '<w:t xml:space="preserve">'
+            .. escape_xml(pandoc.utils.stringify(lr)) .. "</w:t></w:r>"
+        end
+      end
+      run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
+        .. escape_attr(r.target) .. '}}">'
+        .. table.concat(link_runs) .. "</w:hyperlink>"
+    else
+      -- Nested tables, lists, footnotes, math — fall back to plain text.
+      lossy = true
+      run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
+        .. escape_xml(pandoc.utils.stringify(r))
+        .. "</w:t></w:r>"
     end
-    parts[#parts + 1] = r.text
   end
-  return table.concat(parts)
+  return table.concat(run_parts), lossy
 end
 
 -- True when `inlines` contains (at any depth) Polarion's caption counter span
@@ -642,8 +746,12 @@ end
 -- set — an empty <w:pPr> would be pointless, so we return nil in that case and
 -- let the caller keep pandoc's native Para.
 local function build_para_w_p(inlines, twips, jc)
-  local body = inlines_to_openxml(inlines)
-  if not body then return nil end
+  local body, lossy = inlines_to_runs(inlines)
+  -- Something here has no OOXML form and would survive only as its plain text
+  -- (a footnote, math, a citation). Keeping the content intact matters more
+  -- than the indent, so hand the Para back to pandoc's writer unformatted.
+  -- Links and images are not lossy: they ride out as placeholders.
+  if lossy then return nil end
   -- <w:pPr> children must follow the CT_PPr schema sequence (ECMA-376 Part 1
   -- §17.3.1.26): <w:ind> precedes <w:jc>. Word/LibreOffice are version-
   -- dependent about out-of-order children (silent reorder, recovery warning,
@@ -887,6 +995,79 @@ local function build_tc_pr_xml(css, col_span, row_span, vmerge_cont)
   return "<w:tcPr>" .. table.concat(parts) .. "</w:tcPr>"
 end
 
+-- CSS `border-collapse` draws one line between two cells, and the HTML only
+-- has to name it once: Polarion gives a cell `border-bottom` and leaves the
+-- cell below with no `border-top`. OOXML keeps a border on each cell, and the
+-- side nobody named falls back to the table-level <w:insideH>/<w:insideV> —
+-- solid black here, because unstyled tables still need gridlines. Word and
+-- LibreOffice then resolve that disagreement in favour of the table default,
+-- which is why a dashed green cell border came out solid black on every inner
+-- edge while the same border on an outer edge rendered correctly.
+--
+-- Copying a named border onto the neighbour's facing side makes both sides of
+-- the edge agree, so there is nothing left to resolve. A side both cells name
+-- is left alone: that is a genuine conflict CSS has to resolve too, and the
+-- renderer's own rule is as good as any we could pick.
+local BORDER_OPPOSITE = { top = "bottom", bottom = "top", left = "right", right = "left" }
+
+-- The CSS a cell applies to one side, whether named directly or via the
+-- `border` shorthand. Mirrors how build_tc_borders_xml resolves each side.
+local function effective_border_css(css, side)
+  if not css then return nil end
+  return css["border-" .. side] or css["border"]
+end
+
+-- Give `receiver` the border `giver` names on `side`, unless it names the
+-- facing side itself.
+local function share_border(giver, receiver, side)
+  local opposite = BORDER_OPPOSITE[side]
+  local from = effective_border_css(giver.css, side)
+  if not from then return end
+  if effective_border_css(receiver.css, opposite) then return end
+  -- Copy on write. A vMerge continuation shares its origin's css table, and
+  -- each row of the merge meets different neighbours, so writing in place
+  -- would give the origin a border that belongs to a continuation row.
+  local css = {}
+  if receiver.css then
+    for k, v in pairs(receiver.css) do css[k] = v end
+  end
+  css["border-" .. opposite] = from
+  receiver.css = css
+end
+
+local function propagate_cell_borders(grid, num_cols)
+  -- Index every grid position, spans included, so a wide or tall cell meets
+  -- each of its neighbours.
+  local at = {}
+  for ri, cells_info in ipairs(grid) do
+    at[ri] = {}
+    for _, info in ipairs(cells_info) do
+      for gc = info.grid_col, info.grid_col + info.col_span - 1 do
+        at[ri][gc] = info
+      end
+    end
+  end
+
+  for ri = 1, #grid do
+    for gc = 1, num_cols do
+      local cell = at[ri][gc]
+      if cell then
+        -- Same uid means one cell spanning the boundary, so there is no edge.
+        local right = at[ri][gc + 1]
+        if right and right.uid ~= cell.uid then
+          share_border(cell, right, "right")
+          share_border(right, cell, "left")
+        end
+        local below = at[ri + 1] and at[ri + 1][gc]
+        if below and below.uid ~= cell.uid then
+          share_border(cell, below, "bottom")
+          share_border(below, cell, "top")
+        end
+      end
+    end
+  end
+end
+
 -- Convert a Pandoc Alignment value to a w:jc val, or nil for default.
 local function alignment_to_jc(align)
   if align == pandoc.AlignLeft   then return "left"   end
@@ -895,64 +1076,52 @@ local function alignment_to_jc(align)
   return nil
 end
 
--- Convert a single Block to a <w:p> OOXML string.
-local function block_to_ooxml(block, jc_val)
-  local ppr = ""
+-- Build the <w:pPr> a cell paragraph needs, or "" when it needs none.
+-- Schema order (CT_PPr, §17.3.1.26): <w:ind> precedes <w:jc>. Both values
+-- are already validated by parse_twips/parse_align, so neither can carry
+-- attacker text into the attribute.
+local function cell_para_pr(jc_val, ind_twips)
+  local parts = {}
+  if ind_twips then
+    parts[#parts + 1] = '<w:ind w:left="' .. string.format("%d", ind_twips) .. '"/>'
+  end
   if jc_val then
-    ppr = '<w:pPr><w:jc w:val="' .. jc_val .. '"/></w:pPr>'
+    parts[#parts + 1] = '<w:jc w:val="' .. jc_val .. '"/>'
+  end
+  if #parts == 0 then return "" end
+  return "<w:pPr>" .. table.concat(parts) .. "</w:pPr>"
+end
+
+-- Convert a single Block to a <w:p> OOXML string. Forward-declared because
+-- the Div branch recurses through it.
+local block_to_ooxml
+
+block_to_ooxml = function(block, jc_val, ind_twips, props)
+  -- Polarion wraps a work item cell's content in <div style="text-align:...">,
+  -- so the block here is often a Div rather than a Para. filter.Table replaces
+  -- the Table before pandoc descends into its cells, which means filter.Div
+  -- never runs on it and this is the only place that can unwrap it. Without
+  -- this branch the Div fell through to the stringify fallback below and the
+  -- cell lost its alignment and every run property inside it.
+  if block.t == "Div" then
+    -- The div's own markers win over what the cell passed down; both come
+    -- from app/html_paragraph_pre_process.py and are re-validated here.
+    local jc = parse_align(block.attributes["text-align"]) or jc_val
+    local ind = parse_twips(block.attributes["indent-twips"]) or ind_twips
+    local parts = {}
+    for _, inner in ipairs(block.content) do
+      parts[#parts + 1] = block_to_ooxml(inner, jc, ind, props)
+    end
+    return table.concat(parts)
   end
 
+  local ppr = cell_para_pr(jc_val, ind_twips)
+
   if block.t == "Para" or block.t == "Plain" then
-    local runs = walk(block.content, {}, nil)
-    local run_parts = {}
-    for _, r in ipairs(runs) do
-      if r.t == "RawInline" and r.format == "openxml" then
-        run_parts[#run_parts + 1] = r.text
-      elseif r.t == "Image" and r.src and r.src ~= "" then
-        -- Images need writer-level relationship handling. Emit a
-        -- placeholder for the Python post-processor.
-        run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
-          .. "{{IMG:" .. escape_xml(r.src) .. "}}"
-          .. "</w:t></w:r>"
-      elseif r.t == "Link" then
-        -- Links need writer-level .rels entries for the hyperlink target.
-        -- Emit a <w:hyperlink> with a placeholder tooltip that encodes the
-        -- URL. The Python post-processor registers the real relationship.
-        -- Walk the link content, then replace rPr with just Hyperlink rStyle
-        -- so the link renders blue/underlined. Inline CSS colors would
-        -- override the Hyperlink style, so we strip them.
-        local link_inlines = walk(r.content, {}, nil)
-        local link_runs = {}
-        for _, lr in ipairs(link_inlines) do
-          if lr.t == "RawInline" and lr.format == "openxml" then
-            -- Replace existing <w:rPr> with Hyperlink rStyle, and add rPr
-            -- to bare <w:r> runs that don't have one (a single lr.text may
-            -- contain multiple <w:r> elements).
-            local text = lr.text
-            text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
-            text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
-            link_runs[#link_runs + 1] = text
-          elseif lr.t == "Image" and lr.src and lr.src ~= "" then
-            link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
-              .. "{{IMG:" .. escape_xml(lr.src) .. "}}"
-              .. "</w:t></w:r>"
-          else
-            link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
-              .. '<w:t xml:space="preserve">'
-              .. escape_xml(pandoc.utils.stringify(lr)) .. "</w:t></w:r>"
-          end
-        end
-        run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
-          .. escape_attr(r.target) .. '}}">'
-          .. table.concat(link_runs) .. "</w:hyperlink>"
-      else
-        -- Nested tables, lists, etc. — fall back to plain text.
-        run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
-          .. escape_xml(pandoc.utils.stringify(r))
-          .. "</w:t></w:r>"
-      end
-    end
-    return "<w:p>" .. ppr .. table.concat(run_parts) .. "</w:p>"
+    -- A cell has no fallback to hand the content back to, so the `lossy`
+    -- flag is ignored here: plain text beats an empty cell.
+    local runs = inlines_to_runs(block.content, props)
+    return "<w:p>" .. ppr .. runs .. "</w:p>"
   end
 
   if block.t == "RawBlock" and block.format == "openxml" then
@@ -964,14 +1133,33 @@ local function block_to_ooxml(block, jc_val)
     .. escape_xml(pandoc.utils.stringify(block)) .. "</w:t></w:r></w:p>"
 end
 
--- Convert all blocks in a cell to OOXML. Always returns at least "<w:p/>".
-local function cell_blocks_to_ooxml(blocks, jc_val)
+-- Convert all blocks in a cell to OOXML. Always returns at least "<w:p/>":
+-- a <w:tc> with no <w:p> is invalid, and an empty Div yields no paragraphs.
+-- The run properties a cell's own CSS puts on its text.
+--
+-- <th style="font-weight:bold"> styles the cell, not a span inside it, so
+-- nothing in the content carries the formatting and the text came out plain.
+-- Seeding the walk with it lets nested spans cascade over it the usual way.
+--
+-- background-color is dropped: that is the cell's fill, already emitted as
+-- <w:shd> in <w:tcPr>, and repeating it per run would paint it behind the
+-- text a second time.
+local function cell_run_props(css)
+  if not css then return nil end
+  local props = merge_css({}, css)
+  props.bg = nil
+  return props
+end
+
+local function cell_blocks_to_ooxml(blocks, jc_val, props)
   if #blocks == 0 then return "<w:p/>" end
   local paras = {}
   for _, block in ipairs(blocks) do
-    paras[#paras + 1] = block_to_ooxml(block, jc_val)
+    paras[#paras + 1] = block_to_ooxml(block, jc_val, nil, props)
   end
-  return table.concat(paras)
+  local out = table.concat(paras)
+  if out == "" then return "<w:p/>" end
+  return out
 end
 
 -- Check if any cell in a list of Rows carries a style attribute.
@@ -1026,6 +1214,10 @@ function filter.Table(tbl)
   -- coverage[row][col] = { col_span, css } for vMerge continuation cells.
   local coverage = {}
   local grid = {}
+  -- One id per logical cell, shared with its vMerge continuations, so
+  -- propagate_cell_borders can tell a real neighbour from the same cell
+  -- continued into the next row.
+  local next_cell_uid = 0
 
   for ri, row in ipairs(all_rows) do
     local cells_info = {}
@@ -1040,6 +1232,7 @@ function filter.Table(tbl)
           col_span        = cov.col_span,
           is_continuation = true,
           css             = cov.css,
+          uid             = cov.uid,
         }
         gc = gc + cov.col_span
       else
@@ -1049,11 +1242,13 @@ function filter.Table(tbl)
         local rs = cell.row_span or 1
         local style = cell.attributes and cell.attributes.style
         local css = style and parse_style(style) or nil
+        next_cell_uid = next_cell_uid + 1
+        local uid = next_cell_uid
 
         if rs > 1 then
           for r2 = ri + 1, ri + rs - 1 do
             if not coverage[r2] then coverage[r2] = {} end
-            coverage[r2][gc] = { col_span = cs, css = css }
+            coverage[r2][gc] = { col_span = cs, css = css, uid = uid }
           end
         end
 
@@ -1073,6 +1268,7 @@ function filter.Table(tbl)
           is_continuation = false,
           css             = css,
           jc              = jc,
+          uid             = uid,
         }
         gc = gc + cs
       end
@@ -1080,6 +1276,8 @@ function filter.Table(tbl)
 
     grid[ri] = cells_info
   end
+
+  propagate_cell_borders(grid, num_cols)
 
   -- ---- Phase 2: emit OOXML ----
   local xml = {}
@@ -1152,7 +1350,7 @@ function filter.Table(tbl)
         xml[#xml + 1] = "<w:p/>"
       else
         xml[#xml + 1] = build_tc_pr_xml(info.css, info.col_span, info.row_span, false)
-        xml[#xml + 1] = cell_blocks_to_ooxml(info.cell.contents, info.jc)
+        xml[#xml + 1] = cell_blocks_to_ooxml(info.cell.contents, info.jc, cell_run_props(info.css))
       end
       xml[#xml + 1] = "</w:tc>"
     end
