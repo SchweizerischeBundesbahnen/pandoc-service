@@ -313,3 +313,183 @@ def test_trailing_styled_table_gains_no_extra_paragraph(test_parameters: TestPar
     root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
 
     assert _body_blocks(root) == ["p", "tbl"]
+
+
+# ---- Cell content wrapped in a styled <div> ----------------------------
+#
+# Polarion wraps a work item cell's content in <div style="text-align:...">.
+# filter.Table replaces the Table before pandoc descends into its cells, so
+# filter.Div never runs on that div and block_to_ooxml has to unwrap it. It
+# used to fall through to the stringify fallback, which cost the cell its
+# alignment and every run property inside it.
+
+
+def _cell_with_text(root: ET.Element, needle: str) -> ET.Element:
+    for tc in root.iter(f"{{{W_NS}}}tc"):
+        text = "".join(t.text or "" for t in tc.iter(f"{{{W_NS}}}t"))
+        if needle in text:
+            return tc
+    raise AssertionError(f"no <w:tc> contained {needle!r}")
+
+
+def _cell_jc(tc: ET.Element) -> str | None:
+    jc = tc.find(f"{{{W_NS}}}p/{{{W_NS}}}pPr/{{{W_NS}}}jc")
+    return None if jc is None else jc.get(f"{{{W_NS}}}val")
+
+
+def _cell_border(tc: ET.Element, side: str) -> tuple[str | None, str | None] | None:
+    el = tc.find(f"{{{W_NS}}}tcPr/{{{W_NS}}}tcBorders/{{{W_NS}}}{side}")
+    if el is None:
+        return None
+    return el.get(f"{{{W_NS}}}val"), el.get(f"{{{W_NS}}}color")
+
+
+def _styled_cell(css: str, inner: str) -> str:
+    return f'<table><tbody><tr><td style="background-color:#D9EAD3;{css}"><div style="text-align: center;">{inner}</div></td></tr></tbody></table>'
+
+
+def test_div_wrapped_cell_keeps_its_alignment(test_parameters: TestParameters):
+    html = _styled_cell("", '<span style="font-weight: bold;">Group A</span>')
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    assert _cell_jc(_cell_with_text(root, "Group A")) == "center", "the div's text-align did not reach the cell paragraph"
+
+
+@pytest.mark.parametrize(
+    ("css", "tag"),
+    [
+        ("font-weight: bold;", "b"),
+        ("font-style: italic;", "i"),
+        ("text-decoration: underline;", "u"),
+    ],
+    ids=["bold", "italic", "underline"],
+)
+def test_div_wrapped_cell_keeps_run_formatting(test_parameters: TestParameters, css: str, tag: str):
+    html = _styled_cell("", f'<span style="{css}">Styled</span>')
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    rpr = _cell_with_text(root, "Styled").find(f".//{{{W_NS}}}rPr")
+    assert rpr is not None and rpr.find(f"{{{W_NS}}}{tag}") is not None, f"<w:{tag}> missing from a div-wrapped cell"
+
+
+def test_div_wrapped_cell_keeps_run_color(test_parameters: TestParameters):
+    html = _styled_cell("", '<span style="color: #274E13;">Green</span>')
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    color = _cell_with_text(root, "Green").find(f".//{{{W_NS}}}rPr/{{{W_NS}}}color")
+    assert color is not None and color.get(f"{{{W_NS}}}val") == "274E13"
+
+
+# ---- Border propagation across inner edges -----------------------------
+#
+# CSS border-collapse names the line between two cells once; OOXML wants it on
+# both cells, and the side nobody names falls back to the table-level
+# insideH/insideV (solid black). Renderers resolve that disagreement in favour
+# of the table default, so a dashed cell border came out solid black on every
+# inner edge while the same border on an outer edge rendered correctly.
+
+_DASHED = "1.5pt dashed #6AA84F"
+_BORDER_GRID_HTML = f"""<table><tbody>
+<tr><td style="border-bottom:{_DASHED};border-right:{_DASHED};">A</td><td>B</td></tr>
+<tr><td>C</td><td>D</td></tr>
+</tbody></table>"""
+
+
+def test_cell_border_reaches_the_neighbour_below(test_parameters: TestParameters):
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, _BORDER_GRID_HTML))
+
+    assert _cell_border(_cell_with_text(root, "A"), "bottom") == ("dashed", "6AA84F")
+    assert _cell_border(_cell_with_text(root, "C"), "top") == ("dashed", "6AA84F"), "the cell below did not receive the shared edge"
+
+
+def test_cell_border_reaches_the_neighbour_to_the_right(test_parameters: TestParameters):
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, _BORDER_GRID_HTML))
+
+    assert _cell_border(_cell_with_text(root, "A"), "right") == ("dashed", "6AA84F")
+    assert _cell_border(_cell_with_text(root, "B"), "left") == ("dashed", "6AA84F"), "the cell to the right did not receive the shared edge"
+
+
+def test_a_border_the_neighbour_names_itself_is_kept(test_parameters: TestParameters):
+    """Both cells naming the edge is a genuine CSS conflict; leave both alone."""
+    html = f"""<table><tbody>
+    <tr><td style="border-bottom:{_DASHED};">A</td></tr>
+    <tr><td style="border-top:1pt dotted #CC0000;">C</td></tr>
+    </tbody></table>"""
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    assert _cell_border(_cell_with_text(root, "A"), "bottom") == ("dashed", "6AA84F")
+    assert _cell_border(_cell_with_text(root, "C"), "top") == ("dotted", "CC0000")
+
+
+def test_rowspan_origin_does_not_take_a_continuation_border(test_parameters: TestParameters):
+    """A vMerge continuation shares its origin's css table.
+
+    Writing a propagated border into it in place would give the origin a
+    border belonging to a row it does not touch, so share_border copies first.
+    """
+    html = f"""<table><tbody>
+    <tr><td rowspan="2">Merged</td><td>X</td></tr>
+    <tr><td style="border-left:{_DASHED};">Y</td></tr>
+    </tbody></table>"""
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    merged = _cell_with_text(root, "Merged")
+    assert _cell_border(merged, "right") is None, "the origin row took a border that belongs to the continuation row"
+
+
+# ---- Formatting declared on the cell itself ----------------------------
+#
+# <th style="font-weight:bold"> styles the cell, not a span inside it, so
+# nothing in the cell content carries the formatting. Polarion emits its table
+# headers exactly that way and the text came out plain.
+
+
+@pytest.mark.parametrize(
+    ("css", "tag"),
+    [
+        ("font-weight: bold;", "b"),
+        ("font-style: italic;", "i"),
+        ("text-decoration: underline;", "u"),
+    ],
+    ids=["bold", "italic", "underline"],
+)
+def test_cell_level_formatting_reaches_the_runs(test_parameters: TestParameters, css: str, tag: str):
+    html = f'<table><tbody><tr><td style="background-color:#F2F2F2;{css}">Header</td></tr></tbody></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    rpr = _cell_with_text(root, "Header").find(f".//{{{W_NS}}}rPr")
+    assert rpr is not None and rpr.find(f"{{{W_NS}}}{tag}") is not None, f"<w:{tag}> from the cell's own CSS never reached the runs"
+
+
+def test_cell_level_formatting_reaches_a_div_wrapped_cell(test_parameters: TestParameters):
+    """The Polarion shape: bold on the <th>, content wrapped in a <div>."""
+    html = '<table><tbody><tr><th style="font-weight:bold;background-color:#F2F2F2;"><div style="text-align: center;">Nom</div></th></tr></tbody></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    cell = _cell_with_text(root, "Nom")
+    assert cell.find(f".//{{{W_NS}}}rPr/{{{W_NS}}}b") is not None, "the cell's bold was lost"
+    assert _cell_jc(cell) == "center", "the div's alignment was lost"
+
+
+def test_a_span_overrides_the_cell_formatting(test_parameters: TestParameters):
+    """Cell CSS seeds the walk; nested spans cascade over it as usual."""
+    html = '<table><tbody><tr><td style="font-weight:bold;color:#111111;"><span style="color:#CC0000;">Red</span></td></tr></tbody></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    rpr = _cell_with_text(root, "Red").find(f".//{{{W_NS}}}rPr")
+    assert rpr.find(f"{{{W_NS}}}b") is not None, "the cell's bold was dropped by the span"
+    assert rpr.find(f"{{{W_NS}}}color").get(f"{{{W_NS}}}val") == "CC0000", "the span's colour did not override the cell's"
+
+
+def test_cell_background_is_not_repeated_as_run_shading(test_parameters: TestParameters):
+    """background-color is the cell fill, already emitted as <w:shd> in <w:tcPr>.
+
+    Seeding it into the run properties too would paint it behind the text a
+    second time.
+    """
+    html = '<table><tbody><tr><td style="background-color:#F2F2F2;font-weight:bold;">Shaded</td></tr></tbody></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    cell = _cell_with_text(root, "Shaded")
+    assert cell.find(f"{{{W_NS}}}tcPr/{{{W_NS}}}shd") is not None, "the cell lost its fill"
+    assert cell.find(f".//{{{W_NS}}}rPr/{{{W_NS}}}shd") is None, "the cell fill was repeated as run shading"

@@ -614,8 +614,8 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- Callers decide what to do about `lossy`: a table cell keeps the plain text
 -- because it has no other way to render the cell, while a formatted paragraph
 -- gives up its indent/alignment instead (see build_para_w_p).
-local function inlines_to_runs(inlines)
-  local runs = walk(inlines, {}, nil)
+local function inlines_to_runs(inlines, seed)
+  local runs = walk(inlines, seed or {}, nil)
   local run_parts = {}
   local lossy = false
   for _, r in ipairs(runs) do
@@ -949,6 +949,79 @@ local function build_tc_pr_xml(css, col_span, row_span, vmerge_cont)
   return "<w:tcPr>" .. table.concat(parts) .. "</w:tcPr>"
 end
 
+-- CSS `border-collapse` draws one line between two cells, and the HTML only
+-- has to name it once: Polarion gives a cell `border-bottom` and leaves the
+-- cell below with no `border-top`. OOXML keeps a border on each cell, and the
+-- side nobody named falls back to the table-level <w:insideH>/<w:insideV> —
+-- solid black here, because unstyled tables still need gridlines. Word and
+-- LibreOffice then resolve that disagreement in favour of the table default,
+-- which is why a dashed green cell border came out solid black on every inner
+-- edge while the same border on an outer edge rendered correctly.
+--
+-- Copying a named border onto the neighbour's facing side makes both sides of
+-- the edge agree, so there is nothing left to resolve. A side both cells name
+-- is left alone: that is a genuine conflict CSS has to resolve too, and the
+-- renderer's own rule is as good as any we could pick.
+local BORDER_OPPOSITE = { top = "bottom", bottom = "top", left = "right", right = "left" }
+
+-- The CSS a cell applies to one side, whether named directly or via the
+-- `border` shorthand. Mirrors how build_tc_borders_xml resolves each side.
+local function effective_border_css(css, side)
+  if not css then return nil end
+  return css["border-" .. side] or css["border"]
+end
+
+-- Give `receiver` the border `giver` names on `side`, unless it names the
+-- facing side itself.
+local function share_border(giver, receiver, side)
+  local opposite = BORDER_OPPOSITE[side]
+  local from = effective_border_css(giver.css, side)
+  if not from then return end
+  if effective_border_css(receiver.css, opposite) then return end
+  -- Copy on write. A vMerge continuation shares its origin's css table, and
+  -- each row of the merge meets different neighbours, so writing in place
+  -- would give the origin a border that belongs to a continuation row.
+  local css = {}
+  if receiver.css then
+    for k, v in pairs(receiver.css) do css[k] = v end
+  end
+  css["border-" .. opposite] = from
+  receiver.css = css
+end
+
+local function propagate_cell_borders(grid, num_cols)
+  -- Index every grid position, spans included, so a wide or tall cell meets
+  -- each of its neighbours.
+  local at = {}
+  for ri, cells_info in ipairs(grid) do
+    at[ri] = {}
+    for _, info in ipairs(cells_info) do
+      for gc = info.grid_col, info.grid_col + info.col_span - 1 do
+        at[ri][gc] = info
+      end
+    end
+  end
+
+  for ri = 1, #grid do
+    for gc = 1, num_cols do
+      local cell = at[ri][gc]
+      if cell then
+        -- Same uid means one cell spanning the boundary, so there is no edge.
+        local right = at[ri][gc + 1]
+        if right and right.uid ~= cell.uid then
+          share_border(cell, right, "right")
+          share_border(right, cell, "left")
+        end
+        local below = at[ri + 1] and at[ri + 1][gc]
+        if below and below.uid ~= cell.uid then
+          share_border(cell, below, "bottom")
+          share_border(below, cell, "top")
+        end
+      end
+    end
+  end
+end
+
 -- Convert a Pandoc Alignment value to a w:jc val, or nil for default.
 local function alignment_to_jc(align)
   if align == pandoc.AlignLeft   then return "left"   end
@@ -957,17 +1030,51 @@ local function alignment_to_jc(align)
   return nil
 end
 
--- Convert a single Block to a <w:p> OOXML string.
-local function block_to_ooxml(block, jc_val)
-  local ppr = ""
-  if jc_val then
-    ppr = '<w:pPr><w:jc w:val="' .. jc_val .. '"/></w:pPr>'
+-- Build the <w:pPr> a cell paragraph needs, or "" when it needs none.
+-- Schema order (CT_PPr, §17.3.1.26): <w:ind> precedes <w:jc>. Both values
+-- are already validated by parse_twips/parse_align, so neither can carry
+-- attacker text into the attribute.
+local function cell_para_pr(jc_val, ind_twips)
+  local parts = {}
+  if ind_twips then
+    parts[#parts + 1] = '<w:ind w:left="' .. string.format("%d", ind_twips) .. '"/>'
   end
+  if jc_val then
+    parts[#parts + 1] = '<w:jc w:val="' .. jc_val .. '"/>'
+  end
+  if #parts == 0 then return "" end
+  return "<w:pPr>" .. table.concat(parts) .. "</w:pPr>"
+end
+
+-- Convert a single Block to a <w:p> OOXML string. Forward-declared because
+-- the Div branch recurses through it.
+local block_to_ooxml
+
+block_to_ooxml = function(block, jc_val, ind_twips, props)
+  -- Polarion wraps a work item cell's content in <div style="text-align:...">,
+  -- so the block here is often a Div rather than a Para. filter.Table replaces
+  -- the Table before pandoc descends into its cells, which means filter.Div
+  -- never runs on it and this is the only place that can unwrap it. Without
+  -- this branch the Div fell through to the stringify fallback below and the
+  -- cell lost its alignment and every run property inside it.
+  if block.t == "Div" then
+    -- The div's own markers win over what the cell passed down; both come
+    -- from app/html_paragraph_pre_process.py and are re-validated here.
+    local jc = parse_align(block.attributes["text-align"]) or jc_val
+    local ind = parse_twips(block.attributes["indent-twips"]) or ind_twips
+    local parts = {}
+    for _, inner in ipairs(block.content) do
+      parts[#parts + 1] = block_to_ooxml(inner, jc, ind, props)
+    end
+    return table.concat(parts)
+  end
+
+  local ppr = cell_para_pr(jc_val, ind_twips)
 
   if block.t == "Para" or block.t == "Plain" then
     -- A cell has no fallback to hand the content back to, so the `lossy`
     -- flag is ignored here: plain text beats an empty cell.
-    local runs = inlines_to_runs(block.content)
+    local runs = inlines_to_runs(block.content, props)
     return "<w:p>" .. ppr .. runs .. "</w:p>"
   end
 
@@ -980,14 +1087,33 @@ local function block_to_ooxml(block, jc_val)
     .. escape_xml(pandoc.utils.stringify(block)) .. "</w:t></w:r></w:p>"
 end
 
--- Convert all blocks in a cell to OOXML. Always returns at least "<w:p/>".
-local function cell_blocks_to_ooxml(blocks, jc_val)
+-- Convert all blocks in a cell to OOXML. Always returns at least "<w:p/>":
+-- a <w:tc> with no <w:p> is invalid, and an empty Div yields no paragraphs.
+-- The run properties a cell's own CSS puts on its text.
+--
+-- <th style="font-weight:bold"> styles the cell, not a span inside it, so
+-- nothing in the content carries the formatting and the text came out plain.
+-- Seeding the walk with it lets nested spans cascade over it the usual way.
+--
+-- background-color is dropped: that is the cell's fill, already emitted as
+-- <w:shd> in <w:tcPr>, and repeating it per run would paint it behind the
+-- text a second time.
+local function cell_run_props(css)
+  if not css then return nil end
+  local props = merge_css({}, css)
+  props.bg = nil
+  return props
+end
+
+local function cell_blocks_to_ooxml(blocks, jc_val, props)
   if #blocks == 0 then return "<w:p/>" end
   local paras = {}
   for _, block in ipairs(blocks) do
-    paras[#paras + 1] = block_to_ooxml(block, jc_val)
+    paras[#paras + 1] = block_to_ooxml(block, jc_val, nil, props)
   end
-  return table.concat(paras)
+  local out = table.concat(paras)
+  if out == "" then return "<w:p/>" end
+  return out
 end
 
 -- Check if any cell in a list of Rows carries a style attribute.
@@ -1042,6 +1168,10 @@ function filter.Table(tbl)
   -- coverage[row][col] = { col_span, css } for vMerge continuation cells.
   local coverage = {}
   local grid = {}
+  -- One id per logical cell, shared with its vMerge continuations, so
+  -- propagate_cell_borders can tell a real neighbour from the same cell
+  -- continued into the next row.
+  local next_cell_uid = 0
 
   for ri, row in ipairs(all_rows) do
     local cells_info = {}
@@ -1056,6 +1186,7 @@ function filter.Table(tbl)
           col_span        = cov.col_span,
           is_continuation = true,
           css             = cov.css,
+          uid             = cov.uid,
         }
         gc = gc + cov.col_span
       else
@@ -1065,11 +1196,13 @@ function filter.Table(tbl)
         local rs = cell.row_span or 1
         local style = cell.attributes and cell.attributes.style
         local css = style and parse_style(style) or nil
+        next_cell_uid = next_cell_uid + 1
+        local uid = next_cell_uid
 
         if rs > 1 then
           for r2 = ri + 1, ri + rs - 1 do
             if not coverage[r2] then coverage[r2] = {} end
-            coverage[r2][gc] = { col_span = cs, css = css }
+            coverage[r2][gc] = { col_span = cs, css = css, uid = uid }
           end
         end
 
@@ -1089,6 +1222,7 @@ function filter.Table(tbl)
           is_continuation = false,
           css             = css,
           jc              = jc,
+          uid             = uid,
         }
         gc = gc + cs
       end
@@ -1096,6 +1230,8 @@ function filter.Table(tbl)
 
     grid[ri] = cells_info
   end
+
+  propagate_cell_borders(grid, num_cols)
 
   -- ---- Phase 2: emit OOXML ----
   local xml = {}
@@ -1168,7 +1304,7 @@ function filter.Table(tbl)
         xml[#xml + 1] = "<w:p/>"
       else
         xml[#xml + 1] = build_tc_pr_xml(info.css, info.col_span, info.row_span, false)
-        xml[#xml + 1] = cell_blocks_to_ooxml(info.cell.contents, info.jc)
+        xml[#xml + 1] = cell_blocks_to_ooxml(info.cell.contents, info.jc, cell_run_props(info.css))
       end
       xml[#xml + 1] = "</w:tc>"
     end

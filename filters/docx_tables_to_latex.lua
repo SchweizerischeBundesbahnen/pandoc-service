@@ -63,6 +63,42 @@ local function parse_payload(payload)
   return props
 end
 
+-- Flatten the pure container blocks a cell's content may sit inside.
+--
+-- Pandoc's DOCX reader turns any indented paragraph into a BlockQuote, and
+-- Polarion pads its table cells with a small <w:ind w:left="142"/>. Inside a
+-- cell that reading is wrong twice over. LaTeX's quote environment adds about
+-- 2.5em of margin on each side of an already narrow column, so the text wraps
+-- and hyphenates where there was room for it; and the extra block makes the
+-- cell multi-block, which the LaTeX writer renders through a \minipage. The
+-- wrapper also buries the sentinel where consume_sentinel cannot see it, so
+-- such a cell lost its background colour too — in the tables this was found
+-- on, only the one empty (and therefore unindented) cell kept its shading.
+--
+-- A cell is not a quotation, so unwrapping loses nothing a table cell means.
+local function flatten_cell_blocks(blocks)
+  local out = {}
+  local function add(bs)
+    for _, b in ipairs(bs) do
+      if b.t == "BlockQuote" or b.t == "Div" then
+        add(b.content)
+      else
+        out[#out + 1] = b
+      end
+    end
+  end
+  add(blocks)
+  return out
+end
+
+-- True when `blocks` holds a container flatten_cell_blocks would remove.
+local function has_container_block(blocks)
+  for _, b in ipairs(blocks) do
+    if b.t == "BlockQuote" or b.t == "Div" then return true end
+  end
+  return false
+end
+
 -- Try to read and consume the sentinel from a cell's content blocks.
 -- Returns the parsed properties table (or nil) and mutates the blocks
 -- in-place to strip the sentinel text.
@@ -93,36 +129,95 @@ local function consume_sentinel(cell_blocks)
   return nil
 end
 
--- Inject \cellcolor at the very start of the cell's first block.
-local function inject_cellcolor(cell_blocks, hex)
+-- Inject a raw LaTeX command at the very start of the cell's first block.
+local function inject_raw_at_start(cell_blocks, latex)
   if #cell_blocks == 0 then
-    -- Empty cell: insert a Plain block with just the cellcolor command.
-    cell_blocks[1] = pandoc.Plain({ pandoc.RawInline("latex", "\\cellcolor[HTML]{" .. hex .. "}") })
+    -- Empty cell: insert a Plain block holding just the command.
+    cell_blocks[1] = pandoc.Plain({ pandoc.RawInline("latex", latex) })
     return
   end
 
   local first_block = cell_blocks[1]
   if first_block.t == "Para" or first_block.t == "Plain" then
-    table.insert(first_block.content, 1, pandoc.RawInline("latex", "\\cellcolor[HTML]{" .. hex .. "}"))
+    table.insert(first_block.content, 1, pandoc.RawInline("latex", latex))
   else
     -- Non-inline block (e.g. CodeBlock, Table): prepend a Plain with the
-    -- cellcolor followed by a newline so the colour applies to the whole cell.
-    table.insert(cell_blocks, 1, pandoc.Plain({ pandoc.RawInline("latex", "\\cellcolor[HTML]{" .. hex .. "}") }))
+    -- command so it applies to the whole cell.
+    table.insert(cell_blocks, 1, pandoc.Plain({ pandoc.RawInline("latex", latex) }))
   end
 end
 
+local function inject_cellcolor(cell_blocks, hex)
+  inject_raw_at_start(cell_blocks, "\\cellcolor[HTML]{" .. hex .. "}")
+end
+
+-- A cell's own horizontal alignment, as the declaration that realises it
+-- inside a p{} column.
+--
+-- Word keeps alignment per paragraph, so a Polarion table routinely centres
+-- one cell in an otherwise left-aligned column. Pandoc's LaTeX writer reads
+-- only the COLUMN's alignment for an ordinary cell: a Cell's own alignment
+-- reaches the output solely through \multicolumn, which pandoc emits for a
+-- colspan but not for a rowspan and not for a plain cell. Up to pandoc 3.6 the
+-- DOCX reader papered over this by folding the cells' alignment into the
+-- colspec; 3.11 no longer does, so a centred header row came out flush left.
+--
+-- The alignment does survive on the Cell, so emit it in the cell itself. That
+-- is also the only form that can reach a \multirow cell at all.
+-- LaTeX's own \centering / \raggedleft / \raggedright cannot be used here,
+-- because each of them also does \let\\\@centercr. What \\ has to mean
+-- depends on where the cell content lands, and the filter cannot tell which:
+--   * directly in a p{} cell, \\ ends the ROW, so \centering breaks the table
+--     with "Extra alignment tab has been changed to \cr" unless it is paired
+--     with \arraybackslash;
+--   * inside the \minipage pandoc wraps a multi-line cell in, \\ is an
+--     ordinary line break, and \arraybackslash turns it into \tabularnewline,
+--     which fails with "Extra }, or forgotten \endgroup".
+-- So neither \centering nor \centering\arraybackslash is right everywhere.
+-- These macros set exactly the glue \centering and friends set and leave \\
+-- alone, so it keeps whatever meaning its context gives it.
+--
+-- The trailing {} terminates the control word: the cell text follows
+-- immediately, and "\\pdcCellCenteringNom" would be an undefined control
+-- sequence.
+local ALIGN_LATEX = {
+  AlignCenter = "\\pdcCellCentering{}",
+  AlignRight = "\\pdcCellRaggedleft{}",
+  AlignLeft = "\\pdcCellRaggedright{}",
+}
+
+local has_cellcolor = false  -- set when at least one cell gets \cellcolor
+local has_align = false      -- set when at least one cell gets an alignment switch
+
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
--- Injects cell background colour and captures any table-level width/alignment
--- (carried on the first cell) into `layout`. Returns true when at least one
--- cell background was modified.
-local function process_rows(rows, layout)
+-- Injects cell background colour and per-cell alignment, and captures any
+-- table-level width/alignment (carried on the first cell) into `layout`.
+-- Records in `flags` which kinds of injection happened, so the preamble pass
+-- loads only what the document actually uses. Returns true when anything in
+-- the rows was rewritten.
+local function process_rows(rows, layout, flags)
   local modified = false
   for _, row in ipairs(rows) do
     for _, cell in ipairs(row.cells) do
+      -- Unwrap before reading the sentinel: it may be inside the wrapper.
+      if has_container_block(cell.contents) then
+        cell.contents = flatten_cell_blocks(cell.contents)
+        modified = true
+      end
       local props = consume_sentinel(cell.contents)
+      -- Alignment first, background second: both insert at the front, so the
+      -- \cellcolor ends up ahead of the declaration, which is where colortbl
+      -- wants it.
+      local align_latex = ALIGN_LATEX[cell.alignment]
+      if align_latex then
+        inject_raw_at_start(cell.contents, align_latex)
+        flags.align = true
+        modified = true
+      end
       if props then
         if props.bg then
           inject_cellcolor(cell.contents, props.bg)
+          flags.cellcolor = true
           modified = true
         end
         if props.tw then layout.tw = props.tw end
@@ -135,8 +230,6 @@ local function process_rows(rows, layout)
 end
 
 -- ---- Pass 1: Table processing ----
-
-local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 
 -- longtable positions itself via the \LTleft/\LTright glue read at \begin;
 -- both \fill is centered (pandoc's default). Pinning one side to 0pt flushes
@@ -155,15 +248,19 @@ function table_pass.Table(tbl)
 
   local modified = false
   local layout = {}
+  local flags = {}
 
-  if process_rows(tbl.head.rows, layout) then modified = true end
+  if process_rows(tbl.head.rows, layout, flags) then modified = true end
   for _, body in ipairs(tbl.bodies) do
-    if process_rows(body.body, layout) then modified = true end
-    if process_rows(body.head, layout) then modified = true end
+    if process_rows(body.body, layout, flags) then modified = true end
+    if process_rows(body.head, layout, flags) then modified = true end
   end
-  if process_rows(tbl.foot.rows, layout) then modified = true end
+  if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
-  if modified then has_cellcolor = true end
+  -- Only what was actually emitted: colortbl redefines internal table macros,
+  -- so it is not loaded for a document that has no \cellcolor in it.
+  if flags.cellcolor then has_cellcolor = true end
+  if flags.align then has_align = true end
 
   -- Table width: pandoc's DOCX reader normalises column widths to sum to 1.0
   -- (discarding the table's <w:tblW> share of the line) OR, when the DOCX
@@ -226,15 +323,29 @@ end
 -- pass 1.  colortbl redefines internal table macros and can interact with
 -- longtable or custom preambles, so we avoid loading it unnecessarily.
 
-local PREAMBLE = "\\usepackage{colortbl}"
+local COLORTBL_PREAMBLE = "\\usepackage{colortbl}"
+
+-- The \\ -preserving counterparts of \centering / \raggedleft / \raggedright,
+-- copied from the LaTeX kernel definitions minus their \let\\\@centercr.
+-- See ALIGN_LATEX above for why that one line has to go.
+local ALIGN_PREAMBLE = table.concat({
+  "\\makeatletter",
+  "\\providecommand{\\pdcCellCentering}{\\rightskip\\@flushglue \\leftskip\\@flushglue \\parindent\\z@ \\parfillskip\\z@skip}",
+  "\\providecommand{\\pdcCellRaggedleft}{\\rightskip\\z@skip \\leftskip\\@flushglue \\parindent\\z@ \\parfillskip\\z@skip}",
+  "\\providecommand{\\pdcCellRaggedright}{\\@rightskip\\@flushglue \\rightskip\\@rightskip \\leftskip\\z@skip \\parindent\\z@}",
+  "\\makeatother",
+}, "\n")
 
 local preamble_pass = {}
 
 function preamble_pass.Meta(meta)
   if not FORMAT:match("latex") then return nil end
-  if not has_cellcolor then return nil end
+  if not (has_cellcolor or has_align) then return nil end
 
-  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
+  local parts = {}
+  if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
+  if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
+  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ block })
