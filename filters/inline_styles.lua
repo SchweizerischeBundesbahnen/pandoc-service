@@ -602,6 +602,37 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- formatting rather than corrupt its content. The Para passes through with its
 -- semantics intact, just without the indent/alignment applied.
 
+-- Build the {{IMG:}} placeholder for an Image, carrying the dimensions the
+-- DOCX writer would otherwise have applied itself.
+--
+-- The writer sizes an image from the node's width/height attributes, but raw
+-- OOXML cannot embed an image at all, so the placeholder has to carry them:
+-- without them app/docx_post_process.py falls back to the file's own pixel
+-- size and an <img width="100"> of a 20px picture comes out at 20px.
+--
+-- "|" separates the fields because it cannot occur in a validated dimension
+-- (digits, a unit, or "%") and does not occur in a data: URI's base64 either.
+-- Both dimensions are always emitted, empty when the node carries none.
+local function image_placeholder(img)
+  local attrs = img.attributes or {}
+  return "{{IMG:" .. (attrs.width or "") .. "|" .. (attrs.height or "") .. "|"
+    .. escape_xml(img.src) .. "}}"
+end
+
+-- A percentage dimension is a share of the text width, which only the writer
+-- knows; a raw <wp:extent> is absolute. Treat such an image as lossy so a
+-- formatted paragraph hands itself back to the writer rather than render it
+-- at the wrong size. A table cell has no fallback and keeps the placeholder.
+local function has_relative_dimension(img)
+  local attrs = img.attributes or {}
+  for _, dim in ipairs({ "width", "height" }) do
+    local v = attrs[dim]
+    -- Plain find, so the needle is the literal "%", not a pattern escape.
+    if v and v:find("%", 1, true) then return true end
+  end
+  return false
+end
+
 -- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
 -- a `lossy` flag, true when some inline had no OOXML form and survived only
 -- as its plain text (Note, Math, Cite, ...).
@@ -624,8 +655,9 @@ local function inlines_to_runs(inlines, seed)
     elseif r.t == "Image" and r.src and r.src ~= "" then
       -- Images need writer-level relationship handling. Emit a
       -- placeholder for the Python post-processor.
+      if has_relative_dimension(r) then lossy = true end
       run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
-        .. "{{IMG:" .. escape_xml(r.src) .. "}}"
+        .. image_placeholder(r)
         .. "</w:t></w:r>"
     elseif r.t == "Link" then
       -- Links need writer-level .rels entries for the hyperlink target.
@@ -646,8 +678,9 @@ local function inlines_to_runs(inlines, seed)
           text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
           link_runs[#link_runs + 1] = text
         elseif lr.t == "Image" and lr.src and lr.src ~= "" then
+          if has_relative_dimension(lr) then lossy = true end
           link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
-            .. "{{IMG:" .. escape_xml(lr.src) .. "}}"
+            .. image_placeholder(lr)
             .. "</w:t></w:r>"
         else
           lossy = true

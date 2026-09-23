@@ -95,19 +95,81 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     return out.getvalue()
 
 
-_IMG_PLACEHOLDER_RE = re.compile(r"\{\{IMG:(.*?)\}\}")
+# {{IMG:<width>|<height>|<src>}} — see image_placeholder in
+# filters/inline_styles.lua. Both dimensions are always present and may be
+# empty; "|" cannot occur in a validated dimension or in a data: URI's base64,
+# and only the first two fields are delimited by it, so a src containing one is
+# still read whole.
+_IMG_PLACEHOLDER_RE = re.compile(r"\{\{IMG:([^|]*)\|([^|]*)\|(.*?)\}\}")
+
+# CSS length unit -> EMU. A bare number is px, which is what HTML means by it.
+_UNIT_TO_EMU: dict[str, float] = {
+    "": EMU_1_INCH / 96,
+    "px": EMU_1_INCH / 96,
+    "in": float(EMU_1_INCH),
+    "cm": EMU_1_INCH / 2.54,
+    "mm": EMU_1_INCH / 25.4,
+    "pt": EMU_1_INCH / 72,
+    "pc": EMU_1_INCH / 6,
+}
+_DIMENSION_RE = re.compile(r"^\s*(\d+\.?\d*)\s*([a-z]*)\s*$", re.IGNORECASE)
 _HREF_PLACEHOLDER_RE = re.compile(r"\{\{HREF:(.*?)\}\}")
 
 RELATIONSHIPS_SCHEMA = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"  # NOSONAR
+
+
+def _dimension_to_emu(value: str) -> int | None:
+    """Convert a CSS length from an image placeholder to EMU, or None.
+
+    None covers the empty field (the node carried no such dimension) and any
+    unit this cannot turn into an absolute length, notably a percentage — that
+    is a share of the text width, which only pandoc's writer knows.
+    """
+    match = _DIMENSION_RE.match(value)
+    if not match:
+        return None
+    factor = _UNIT_TO_EMU.get(match.group(2).lower())
+    if factor is None:
+        return None
+    return round(float(match.group(1)) * factor)
+
+
+def _resolve_image_extent(requested: tuple[str, str], px_width: int, px_height: int) -> tuple[int, int]:
+    """The <wp:extent> for an image, in EMU.
+
+    A dimension given on the node wins. When only one is given the other is
+    scaled to it, which is what the DOCX writer does, so the aspect ratio is
+    kept. With neither, the file's own pixel size at the 96 dpi CSS reference.
+    """
+    native_width = round(px_width * EMU_1_INCH / 96)
+    native_height = round(px_height * EMU_1_INCH / 96)
+    width = _dimension_to_emu(requested[0])
+    height = _dimension_to_emu(requested[1])
+
+    if width is not None and height is not None:
+        return width, height
+    # Only one side given: scale the other by the file's aspect ratio, guarding
+    # a degenerate image rather than dividing by zero.
+    if width is not None:
+        return width, round(width * native_height / native_width) if native_width else native_height
+    if height is not None:
+        return round(height * native_width / native_height) if native_height else native_width, height
+    return native_width, native_height
 
 
 def _replace_image_placeholders(doc: DocumentObject) -> None:
     """Replace ``{{IMG:<src>}}`` placeholders with real embedded images.
 
     The ``inline_styles.lua`` filter emits these markers when it rebuilds a
-    styled table as raw OOXML. Images can't be embedded in raw OOXML (they
-    need writer-level relationship entries), so the Lua filter writes a
-    text placeholder and this function resolves it using python-docx.
+    styled table, or a paragraph carrying an indent or alignment, as raw
+    OOXML. Images can't be embedded in raw OOXML (they need writer-level
+    relationship entries), so the Lua filter writes a text placeholder and
+    this function resolves it using python-docx.
+
+    The placeholder carries the width/height the DOCX writer would have
+    applied, because that is the only route by which they survive: a raw
+    ``<wp:extent>`` has to be written here, and without them an
+    ``<img width="100">`` of a 20px picture came out at 20px.
     """
     body = doc.element.body
     doc_pr_id = max((int(dp.get("id", "0")) for dp in body.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}docPr")), default=0)
@@ -118,7 +180,8 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
         if not match:
             continue
 
-        src = match.group(1)
+        requested = (match.group(1), match.group(2))
+        src = match.group(3)
         run_el = t_el.getparent()
         if run_el is None or not run_el.tag.endswith("}r"):
             continue
@@ -131,8 +194,7 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
 
         try:
             r_id, img = doc.part.get_or_add_image(io.BytesIO(image_bytes))
-            width = img.px_width * EMU_1_INCH // 96  # px to EMU at 96 dpi
-            height = img.px_height * EMU_1_INCH // 96
+            width, height = _resolve_image_extent(requested, img.px_width, img.px_height)
             doc_pr_id += 1
 
             # Build the drawing XML

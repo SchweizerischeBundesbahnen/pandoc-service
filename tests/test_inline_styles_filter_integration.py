@@ -712,3 +712,61 @@ def test_styled_heading_div_keeps_its_heading_style(test_parameters: TestParamet
     para = _w_p_with_text(doc, "Big Heading")
     style = para.find(f".//{{{W_NS}}}pStyle")
     assert style is not None and style.get(f"{{{W_NS}}}val") == "Heading7", "the heading-7 div lost its heading style"
+
+
+# ---- Image size inside a formatted paragraph ---------------------------
+#
+# A formatted paragraph is rebuilt as raw OOXML, where an image can only be a
+# {{IMG:}} placeholder that app/docx_post_process.py resolves. The <wp:extent>
+# is written there, so the placeholder has to carry the dimensions: without
+# them an <img width="100"> of a 20px picture came out at 20px.
+
+
+def test_indented_paragraph_keeps_an_explicit_image_size(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="100" height="200"></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    assert _drawing_extent(docx_bytes) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    assert _ind_left(doc.find(f".//{{{W_NS}}}p")) == "600", "the indent was lost"
+
+
+def test_aligned_paragraph_keeps_a_css_image_size(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-text-align="center"><p><img src="{_png_data_uri(20, 40)}" style="width:150px;height:300px;"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (150 * EMU_PER_PX, 300 * EMU_PER_PX)
+
+
+def test_one_sided_image_size_keeps_the_aspect_ratio(test_parameters: TestParameters):
+    """Only a width given: the writer scales the height, and so must this."""
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="100"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)
+
+
+def test_unsized_image_in_a_formatted_paragraph_stays_native(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (20 * EMU_PER_PX, 40 * EMU_PER_PX)
+
+
+def test_percentage_sized_image_falls_back_to_the_writer(test_parameters: TestParameters):
+    """A percentage is a share of the text width, which only the writer knows.
+
+    A raw <wp:extent> is absolute, so such a paragraph gives up its indent and
+    is handed back to pandoc - the same trade the filter makes for math. The
+    extent must match what the unformatted paragraph produces.
+    """
+    image = f'<img src="{_png_data_uri(20, 40)}" style="width:50%;">'
+    plain = _drawing_extent(_convert_html_to_docx(test_parameters, f"<p>{image}</p>"))
+    formatted_bytes = _convert_html_to_docx(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>')
+
+    assert _drawing_extent(formatted_bytes) == plain, "the percentage size was not preserved"
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(formatted_bytes)).read("word/document.xml"))
+    assert doc.find(f".//{{{W_NS}}}ind") is None, "the indent should have been given up to keep the size"
+
+
+def test_no_image_placeholder_survives_into_the_output(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p>see <img src="{_png_data_uri(20, 40)}" width="100"></p></div>'
+
+    assert b"{{IMG:" not in _convert_html_to_docx(test_parameters, html)

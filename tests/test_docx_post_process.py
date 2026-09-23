@@ -1451,7 +1451,7 @@ def test_replace_image_placeholder_with_data_uri():
 
     gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
     doc = Document()
-    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+    doc.add_paragraph(f"{{{{IMG:||data:image/gif;base64,{gif_b64}}}}}")
 
     _replace_image_placeholders(doc)
 
@@ -1465,7 +1465,7 @@ def test_replace_image_placeholder_unsupported_src():
     from docx import Document
 
     doc = Document()
-    doc.add_paragraph("{{IMG:http://example.com/img.png}}")
+    doc.add_paragraph("{{IMG:||http://example.com/img.png}}")
 
     _replace_image_placeholders(doc)
 
@@ -1480,8 +1480,8 @@ def test_replace_image_placeholder_unique_ids():
 
     gif_b64 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
     doc = Document()
-    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
-    doc.add_paragraph(f"{{{{IMG:data:image/gif;base64,{gif_b64}}}}}")
+    doc.add_paragraph(f"{{{{IMG:||data:image/gif;base64,{gif_b64}}}}}")
+    doc.add_paragraph(f"{{{{IMG:||data:image/gif;base64,{gif_b64}}}}}")
 
     _replace_image_placeholders(doc)
 
@@ -1728,3 +1728,55 @@ def test_process_separates_adjacent_tables():
     result = Document(io.BytesIO(docx_post_process.process(buffer.getvalue())))
 
     assert _body_children(result)[:3] == ["tbl", "p", "tbl"]
+
+
+# ---- Image placeholder dimensions ----
+
+
+def test_dimension_to_emu_units():
+    """Every absolute CSS unit the placeholder can carry converts to EMU."""
+    from app.docx_post_process import EMU_1_INCH, _dimension_to_emu
+
+    assert _dimension_to_emu("96px") == EMU_1_INCH
+    assert _dimension_to_emu("96") == EMU_1_INCH  # a bare number is px
+    assert _dimension_to_emu("1in") == EMU_1_INCH
+    assert _dimension_to_emu("72pt") == EMU_1_INCH
+    assert _dimension_to_emu("6pc") == EMU_1_INCH
+    assert _dimension_to_emu("2.54cm") == EMU_1_INCH
+    assert _dimension_to_emu("25.4mm") == EMU_1_INCH
+
+
+@pytest.mark.parametrize("value", ["", "50%", "auto", "abc", "10em", "-5px"])
+def test_dimension_to_emu_rejects_what_it_cannot_resolve(value):
+    """An empty field, a percentage or an unknown unit means "no dimension"."""
+    from app.docx_post_process import _dimension_to_emu
+
+    assert _dimension_to_emu(value) is None
+
+
+def test_resolve_image_extent_prefers_the_requested_size():
+    from app.docx_post_process import EMU_1_INCH, _resolve_image_extent
+
+    assert _resolve_image_extent(("96px", "192px"), 20, 40) == (EMU_1_INCH, 2 * EMU_1_INCH)
+
+
+def test_resolve_image_extent_scales_the_missing_side():
+    """Only one side given: keep the file's aspect ratio, as the writer does."""
+    from app.docx_post_process import EMU_1_INCH, _resolve_image_extent
+
+    assert _resolve_image_extent(("96px", ""), 20, 40) == (EMU_1_INCH, 2 * EMU_1_INCH)
+    assert _resolve_image_extent(("", "192px"), 20, 40) == (EMU_1_INCH, 2 * EMU_1_INCH)
+
+
+def test_resolve_image_extent_falls_back_to_native_size():
+    from app.docx_post_process import _resolve_image_extent
+
+    assert _resolve_image_extent(("", ""), 96, 48) == (docx_post_process.EMU_1_INCH, docx_post_process.EMU_1_INCH // 2)
+
+
+def test_resolve_image_extent_survives_a_degenerate_image():
+    """A zero-sized source must not divide by zero."""
+    from app.docx_post_process import EMU_1_INCH, _resolve_image_extent
+
+    assert _resolve_image_extent(("96px", ""), 0, 0) == (EMU_1_INCH, 0)
+    assert _resolve_image_extent(("", "96px"), 0, 0) == (0, EMU_1_INCH)
