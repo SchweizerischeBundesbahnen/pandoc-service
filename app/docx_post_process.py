@@ -112,7 +112,14 @@ _UNIT_TO_EMU: dict[str, float] = {
     "pt": EMU_1_INCH / 72,
     "pc": EMU_1_INCH / 6,
 }
-_DIMENSION_RE = re.compile(r"^\s*(\d+\.?\d*)\s*([a-z]*)\s*$", re.IGNORECASE)
+# A number followed by an optional unit. Written without whitespace
+# quantifiers, and with the fraction as one optional group rather than
+# `\d+\.?\d*`, so there is nothing for the engine to backtrack over — the
+# caller strips the value instead. This mirrors _VALUE_RE in
+# app/html_paragraph_pre_process.py, which carries the same note: the previous
+# `^\s*...\s*...\s*$` form was already linear-time but matched SonarCloud
+# S5852's "multiple \s* quantifiers" heuristic.
+_DIMENSION_RE = re.compile(r"^(\d+(?:\.\d+)?)([a-z]*)$", re.IGNORECASE)
 _HREF_PLACEHOLDER_RE = re.compile(r"\{\{HREF:(.*?)\}\}")
 
 RELATIONSHIPS_SCHEMA = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"  # NOSONAR
@@ -125,7 +132,7 @@ def _dimension_to_emu(value: str) -> int | None:
     unit this cannot turn into an absolute length, notably a percentage — that
     is a share of the text width, which only pandoc's writer knows.
     """
-    match = _DIMENSION_RE.match(value)
+    match = _DIMENSION_RE.match(value.strip())
     if not match:
         return None
     factor = _UNIT_TO_EMU.get(match.group(2).lower())

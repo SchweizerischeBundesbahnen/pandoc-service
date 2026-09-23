@@ -1746,12 +1746,32 @@ def test_dimension_to_emu_units():
     assert _dimension_to_emu("25.4mm") == EMU_1_INCH
 
 
-@pytest.mark.parametrize("value", ["", "50%", "auto", "abc", "10em", "-5px"])
+@pytest.mark.parametrize("value", ["", "50%", "auto", "abc", "10em", "-5px", "+5px", "1.2.3px", "1e3px", ".5in"])
 def test_dimension_to_emu_rejects_what_it_cannot_resolve(value):
     """An empty field, a percentage or an unknown unit means "no dimension"."""
     from app.docx_post_process import _dimension_to_emu
 
     assert _dimension_to_emu(value) is None
+
+
+def test_dimension_to_emu_whitespace_contract():
+    """Surrounding whitespace is stripped by the caller, not by the pattern.
+
+    The pattern carries no \\s* quantifiers (SonarCloud S5852), so whitespace
+    *between* the number and its unit no longer matches. filters/inline_styles.lua
+    builds these fields as `num .. unit`, so that form never reaches here.
+    """
+    from app.docx_post_process import EMU_1_INCH, _dimension_to_emu
+
+    assert _dimension_to_emu("  96px  ") == EMU_1_INCH
+    assert _dimension_to_emu("96 px") is None
+
+
+def test_dimension_to_emu_is_case_insensitive():
+    from app.docx_post_process import EMU_1_INCH, _dimension_to_emu
+
+    assert _dimension_to_emu("96PX") == EMU_1_INCH
+    assert _dimension_to_emu("1IN") == EMU_1_INCH
 
 
 def test_resolve_image_extent_prefers_the_requested_size():

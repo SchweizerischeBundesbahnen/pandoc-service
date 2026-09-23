@@ -770,3 +770,54 @@ def test_no_image_placeholder_survives_into_the_output(test_parameters: TestPara
     html = f'<div class="pandoc-para" data-indent-twips="600"><p>see <img src="{_png_data_uri(20, 40)}" width="100"></p></div>'
 
     assert b"{{IMG:" not in _convert_html_to_docx(test_parameters, html)
+
+
+@pytest.mark.parametrize(
+    ("width", "expected_valid"),
+    [
+        ("A&amp;B", False),
+        ("&lt;/w:t&gt;&lt;/w:r&gt;&lt;w:r&gt;&lt;w:t&gt;x", False),
+        ("100&quot;", False),
+        ("auto", False),
+        ("10em", False),
+        ("-5", False),
+        ("100", True),
+        ("100px", True),
+    ],
+)
+def test_image_width_is_validated_before_it_reaches_raw_ooxml(test_parameters: TestParameters, width: str, expected_valid: bool):
+    """The <img width> of the source HTML lands inside a <w:t>.
+
+    apply_image_style_dimensions never overwrites an authored width, so the
+    value arrives exactly as written. An unvalidated "A&B" emits a bare & and
+    breaks word/document.xml; a crafted one can close the run and splice in
+    OOXML of its own. Anything image_dim() rejects must be dropped.
+    """
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="{width}"></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    # The document must parse at all - that is the whole point.
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    assert doc.find(f".//{{{W_NS}}}drawing") is not None, "the image was lost"
+    assert b"{{IMG:" not in docx_bytes, "an unresolved placeholder survived"
+
+    cx, _ = _drawing_extent(docx_bytes)
+    if expected_valid:
+        assert cx == 100 * EMU_PER_PX
+    else:
+        assert cx == 20 * EMU_PER_PX, "a rejected width must fall back to the image's own size"
+
+
+def test_image_height_is_validated_too(test_parameters: TestParameters):
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" height="A&amp;B"></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    assert _drawing_extent(docx_bytes) == (20 * EMU_PER_PX, 40 * EMU_PER_PX)
+
+
+def test_a_rejected_width_still_honours_a_valid_height(test_parameters: TestParameters):
+    """Each dimension is validated on its own; one bad value is not fatal."""
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="A&amp;B" height="200"></p></div>'
+
+    assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)

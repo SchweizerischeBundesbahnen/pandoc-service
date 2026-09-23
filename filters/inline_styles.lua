@@ -602,6 +602,24 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- formatting rather than corrupt its content. The Para passes through with its
 -- semantics intact, just without the indent/alignment applied.
 
+-- An Image's width and height, validated, as empty strings when it has none.
+--
+-- This is a trust boundary. apply_image_style_dimensions only ever writes a
+-- value image_dim() has passed, but it deliberately leaves an existing
+-- attribute alone, so an <img width="..."> from the source HTML arrives here
+-- exactly as authored. Those bytes end up inside a <w:t>, so an
+-- <img width="A&B"> would emit a bare & and break word/document.xml, and a
+-- crafted value could close the run and splice in OOXML of its own.
+--
+-- image_dim() returns only digits (optionally with a decimal point) plus a
+-- unit from a fixed allowlist, so whatever it passes is inert; anything it
+-- rejects is treated as "no dimension", which is what the node effectively
+-- had. This mirrors the parse_twips boundary used for data-indent-twips.
+local function image_dimensions(img)
+  local attrs = img.attributes or {}
+  return image_dim(attrs.width) or "", image_dim(attrs.height) or ""
+end
+
 -- Build the {{IMG:}} placeholder for an Image, carrying the dimensions the
 -- DOCX writer would otherwise have applied itself.
 --
@@ -614,9 +632,8 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- (digits, a unit, or "%") and does not occur in a data: URI's base64 either.
 -- Both dimensions are always emitted, empty when the node carries none.
 local function image_placeholder(img)
-  local attrs = img.attributes or {}
-  return "{{IMG:" .. (attrs.width or "") .. "|" .. (attrs.height or "") .. "|"
-    .. escape_xml(img.src) .. "}}"
+  local width, height = image_dimensions(img)
+  return "{{IMG:" .. width .. "|" .. height .. "|" .. escape_xml(img.src) .. "}}"
 end
 
 -- A percentage dimension is a share of the text width, which only the writer
@@ -624,13 +641,9 @@ end
 -- formatted paragraph hands itself back to the writer rather than render it
 -- at the wrong size. A table cell has no fallback and keeps the placeholder.
 local function has_relative_dimension(img)
-  local attrs = img.attributes or {}
-  for _, dim in ipairs({ "width", "height" }) do
-    local v = attrs[dim]
-    -- Plain find, so the needle is the literal "%", not a pattern escape.
-    if v and v:find("%", 1, true) then return true end
-  end
-  return false
+  local width, height = image_dimensions(img)
+  -- Plain find, so the needle is the literal "%", not a pattern escape.
+  return width:find("%", 1, true) ~= nil or height:find("%", 1, true) ~= nil
 end
 
 -- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
