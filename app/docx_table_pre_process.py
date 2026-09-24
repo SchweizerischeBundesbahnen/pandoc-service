@@ -27,11 +27,17 @@ Pandoc's DOCX reader has three table-related problems this preprocessor fixes:
 
 Sentinel format (PUA delimiters U+E010 / U+E011), a ``;``-separated key map::
 
-    <U+E010>bg=RRGGBB;tw=0.4000;ta=left<U+E011>
+    <U+E010>bg=RRGGBB;ha=justify;tw=0.4000;ta=left<U+E011>
 
-``bg`` is per coloured cell; ``tw`` (0..1 line fraction) and ``ta``
+``bg`` and ``ha`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
 (left/center/right) are table-level and live on the first cell (merged into
-its sentinel if it also carries ``bg``).
+its sentinel if it also carries a per-cell key).
+
+``ha`` carries justification only. Pandoc's AST has no justified alignment —
+its ``Alignment`` is left/right/center/default — so a cell's ``w:jc="both"``
+reaches the reader as ``AlignLeft`` and ``distribute`` as ``AlignDefault``,
+and either way the text comes out flush left. The other three alignments
+survive on the ``Cell`` and need no sentinel.
 
 This is the table companion to :mod:`app.docx_color_pre_process` /
 :mod:`app.docx_paragraph_pre_process`; it runs on the same docx->latex path
@@ -272,20 +278,29 @@ def _fix_grid_col_widths(tbl: ET.Element) -> bool:
     return changed
 
 
-def _find_or_create_first_para(tc: ET.Element, tcpr: ET.Element | None) -> ET.Element:
-    """Return the first ``<w:p>`` before any nested ``<w:tbl>`` in *tc*.
+def _own_first_para(tc: ET.Element) -> ET.Element | None:
+    """Return the cell's own first ``<w:p>``, or None when it has none.
 
-    A cell containing a nested table has structure ``[tcPr, tbl, p]`` where the
-    trailing ``<w:p/>`` is the mandatory cell-mark paragraph.  Injecting the
-    sentinel there would place it after the ``Table`` AST node, so we look for
-    a ``<w:p>`` that *precedes* any ``<w:tbl>``.  If none exists, a new empty
-    paragraph is inserted right after ``<w:tcPr>``.
+    Direct children only, and stopping at a nested ``<w:tbl>``, for two
+    reasons. A recursive walk would reach into the inner table's cells, whose
+    paragraphs belong to those cells and not to this one. And a cell holding a
+    nested table has structure ``[tcPr, tbl, p]`` where the trailing ``<w:p/>``
+    is the mandatory cell-mark paragraph: the sentinel cannot go there, because
+    that puts it after the ``Table`` AST node.
     """
     for child in tc:
         if child.tag == _TBL_TAG:
-            break
+            return None
         if child.tag == _P_TAG:
             return child
+    return None
+
+
+def _find_or_create_first_para(tc: ET.Element, tcpr: ET.Element | None) -> ET.Element:
+    """Return the cell's own first ``<w:p>``, inserting an empty one if it has none."""
+    para = _own_first_para(tc)
+    if para is not None:
+        return para
     para = ET.Element(_P_TAG)
     insert_pos = 1 if next(iter(tc), None) is tcpr else 0
     tc.insert(insert_pos, para)
@@ -312,8 +327,67 @@ def _ensure_sentinel(para: ET.Element, kv: dict[str, str]) -> None:
     para.insert(insert_at, _make_sentinel_run(_build_sentinel_text(kv)))
 
 
-def _tag_cell_backgrounds(tbl: ET.Element) -> bool:
-    """Prepend sentinels encoding background colour to styled cells.
+# Word's justified alignments. "both" justifies every line but the last;
+# "distribute" stretches the last line too. LaTeX has no separate mode for the
+# latter, so both are carried as one value and render as ordinary justification.
+_JUSTIFIED_JC_VALUES = frozenset({"both", "distribute"})
+
+
+def _extract_cell_justification(tc: ET.Element) -> str | None:
+    """Return "justify" when the cell's own first paragraph is justified.
+
+    Reads only the cell's own paragraph: a cell that opens with a nested table
+    has none, and taking the inner table's first paragraph would attribute an
+    inner cell's alignment to the outer one - and then make the outer cell grow
+    a paragraph purely to hold the sentinel.
+    """
+    first_para = _own_first_para(tc)
+    if first_para is None:
+        return None
+    ppr = first_para.find(_PPR_TAG)
+    if ppr is None:
+        return None
+    jc = ppr.find(_JC_TAG)
+    if jc is None:
+        return None
+    return "justify" if jc.get(_VAL_ATTR) in _JUSTIFIED_JC_VALUES else None
+
+
+def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:
+    """The per-cell sentinel keys this cell needs, empty when it needs none.
+
+    Covers the background colour and justification; see the module docstring
+    for why justification needs carrying and the other alignments do not.
+    """
+    props: dict[str, str] = {}
+
+    if tcpr is not None:
+        bg = _extract_cell_bg(tcpr)
+        if bg:
+            props["bg"] = bg
+
+    justification = _extract_cell_justification(tc)
+    if justification:
+        props["ha"] = justification
+
+    return props
+
+
+def _already_tagged(para: ET.Element, props: dict[str, str]) -> bool:
+    """True when the paragraph's leading sentinel already carries *props*.
+
+    This is what keeps the pass idempotent: re-running it over its own output
+    must not rewrite a sentinel that already says the same thing.
+    """
+    text_el = _first_run_text_element(para)
+    if text_el is None or not text_el.text:
+        return False
+    existing, _ = _parse_sentinel_text(text_el.text)
+    return all(existing.get(key) == value for key, value in props.items())
+
+
+def _tag_cell_properties(tbl: ET.Element) -> bool:
+    """Prepend sentinels encoding the per-cell properties pandoc would drop.
 
     Returns True when any cell was modified.
     """
@@ -321,21 +395,15 @@ def _tag_cell_backgrounds(tbl: ET.Element) -> bool:
 
     for tc in tbl.iter(_TC_TAG):
         tcpr = tc.find(_TCPR_TAG)
-        if tcpr is None:
-            continue
-
-        bg = _extract_cell_bg(tcpr)
-        if not bg:
+        props = _cell_properties(tc, tcpr)
+        if not props:
             continue
 
         first_para = _find_or_create_first_para(tc, tcpr)
-        text_el = _first_run_text_element(first_para)
-        if text_el is not None and text_el.text:
-            existing, _ = _parse_sentinel_text(text_el.text)
-            if existing.get("bg") == bg:
-                continue  # already tagged with this background (idempotency)
+        if _already_tagged(first_para, props):
+            continue
 
-        _ensure_sentinel(first_para, {"bg": bg})
+        _ensure_sentinel(first_para, props)
         changed = True
 
     return changed
@@ -491,7 +559,7 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
             changed = True
         if _tag_table_layout(tbl):
             changed = True
-        if _tag_cell_backgrounds(tbl):
+        if _tag_cell_properties(tbl):
             changed = True
 
     if _neutralize_caption_paragraphs(tree):

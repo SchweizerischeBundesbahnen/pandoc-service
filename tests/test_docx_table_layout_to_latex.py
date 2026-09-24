@@ -221,11 +221,18 @@ def test_each_alignment_maps_to_its_latex_switch(jc: str, expected: str):
     assert f"{expected}{{}}top0" in latex
 
 
-def test_unaligned_cells_get_no_switch():
+def test_unaligned_cells_get_the_left_switch():
+    """A cell with no <w:jc> is left-aligned in Word, and says so explicitly.
+
+    It cannot stay silent: pandoc synthesises the column alignment from the
+    other cells, and silence would mean inheriting it. See
+    test_unaligned_cell_does_not_inherit_a_synthesised_column_alignment.
+    """
     latex = _to_latex(_docx_with_cell_alignments([None, None]))
 
-    for switch in ("\\centering\\arraybackslash{}", "\\raggedleft\\arraybackslash{}", "\\raggedright\\arraybackslash{}"):
-        assert switch not in latex, f"{switch} emitted for a table with no <w:jc>:\n{latex}"
+    assert "\\pdcCellRaggedright{}top0" in latex
+    assert "\\pdcCellCentering" not in latex
+    assert "\\pdcCellRaggedleft" not in latex
 
 
 def _docx_with_merged_body_cell() -> bytes:
@@ -311,3 +318,114 @@ def test_colortbl_is_not_loaded_for_a_table_with_no_cell_background():
     latex = _to_latex(_docx_with_cell_alignments(["center"]), standalone=True)
 
     assert "\\usepackage{colortbl}" not in latex, "colortbl loaded for a table that has no \\cellcolor"
+
+
+def test_unaligned_cell_does_not_inherit_a_synthesised_column_alignment():
+    """The heart of it: Word has no column alignment.
+
+    A DOCX carries <w:jc> per paragraph only, and a paragraph without one is
+    left-aligned. Pandoc's DOCX reader synthesises the COLUMN alignment from
+    the cells it saw, so one centred cell can leave a whole column centred -
+    and an unaligned cell in that column came out centred where Word shows it
+    flush left.
+    """
+    latex = _to_latex(_docx_with_cell_alignments(["center", None]))
+
+    assert "\\pdcCellCentering{}top0" in latex, "the centred cell lost its alignment"
+    assert "\\pdcCellRaggedright{}bottom0" in latex, "the unaligned cell inherited the column's alignment"
+    assert "\\pdcCellRaggedright{}top1" in latex
+
+
+def test_empty_cells_get_no_alignment_switch():
+    """Nothing to align, and injecting would give the cell a paragraph."""
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "filled"
+    table.rows[0].cells[0].paragraphs[0]._p.get_or_add_pPr().append(parse_xml(f'<w:jc {nsdecls("w")} w:val="center"/>'))
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    latex = _to_latex(buffer.getvalue())
+
+    assert latex.count("\\pdcCell") == 1, f"expected one switch, for the one non-empty cell:\n{latex}"
+
+
+def test_blank_shaded_cell_gets_no_alignment_switch():
+    """A cell that renders nothing is left alone, background and all.
+
+    consume_sentinel strips the sentinel text but keeps the paragraph that
+    held it, so a shaded spacer cell arrives as a single empty Plain. Counting
+    blocks would see content there and inject a switch into an empty cell.
+    """
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0]._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="F2F2F2"/>'))
+    table.rows[0].cells[1].text = "real"
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    latex = _to_latex(buffer.getvalue())
+
+    assert latex.count("\\pdcCell") == 1, f"the blank shaded cell was given a switch:\n{latex}"
+    assert "\\cellcolor[HTML]{F2F2F2}" in latex, "the blank cell lost its background"
+
+
+# ---- Justified cells ----------------------------------------------------
+
+
+def _docx_with_justified_cell(jc: str | None, shaded: bool = False) -> bytes:
+    """A two-row table whose body cell carries the given <w:jc>."""
+    doc = Document()
+    table = doc.add_table(rows=2, cols=2)
+    for r, row in enumerate(table.rows):
+        for c, cell in enumerate(row.cells):
+            cell.text = "Justified body text long enough to wrap" if (r, c) == (1, 0) else f"r{r}c{c}"
+    cell = table.rows[1].cells[0]
+    if jc is not None:
+        cell.paragraphs[0]._p.get_or_add_pPr().append(parse_xml(f'<w:jc {nsdecls("w")} w:val="{jc}"/>'))
+    if shaded:
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="F2F2F2"/>'))
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def _switch_on(latex: str, needle: str) -> str | None:
+    match = re.search(r"(\\pdcCell\w+)\{\}" + re.escape(needle), latex)
+    return match.group(1) if match else None
+
+
+@pytest.mark.parametrize("jc", ["both", "distribute"])
+def test_justified_cell_keeps_its_justification(jc):
+    r"""Pandoc's Alignment has no justified value.
+
+    <w:jc w:val="both"> reaches the reader as AlignLeft and "distribute" as
+    AlignDefault, so the Cell cannot carry it and every cell would be flushed
+    left. It rides in on the sentinel instead.
+    """
+    latex = _to_latex(_docx_with_justified_cell(jc))
+
+    assert _switch_on(latex, "Justified") == "\\pdcCellJustify"
+
+
+@pytest.mark.parametrize(
+    ("jc", "expected"),
+    [("left", "\\pdcCellRaggedright"), ("center", "\\pdcCellCentering"), ("right", "\\pdcCellRaggedleft"), (None, "\\pdcCellRaggedright")],
+)
+def test_non_justified_cells_are_unaffected(jc, expected):
+    latex = _to_latex(_docx_with_justified_cell(jc))
+
+    assert _switch_on(latex, "Justified") == expected
+
+
+def test_justified_cell_keeps_its_background_too():
+    latex = _to_latex(_docx_with_justified_cell("both", shaded=True))
+
+    assert _switch_on(latex, "Justified") == "\\pdcCellJustify"
+    assert "\\cellcolor[HTML]{F2F2F2}" in latex
+
+
+def test_justify_macro_is_defined_in_the_preamble():
+    latex = _to_latex(_docx_with_justified_cell("both"), standalone=True)
+
+    assert "\\providecommand{\\pdcCellJustify}" in latex

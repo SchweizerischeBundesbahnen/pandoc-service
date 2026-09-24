@@ -56,6 +56,8 @@ local function parse_payload(payload)
       end
     elseif key == "ta" and (value == "left" or value == "center" or value == "right") then
       props.ta = value
+    elseif key == "ha" and value == "justify" then
+      props.ha = value
     elseif key == "aw" and value == "1" then
       props.aw = true
     end
@@ -180,14 +182,44 @@ end
 -- The trailing {} terminates the control word: the cell text follows
 -- immediately, and "\\pdcCellCenteringNom" would be an undefined control
 -- sequence.
+--
+-- AlignDefault is mapped too, and that is the point rather than a detail.
+-- Word has no column alignment: a DOCX only ever carries <w:jc> per paragraph,
+-- and a paragraph without one is left-aligned (this pipeline reads documents
+-- as left-to-right, as the rest of the codebase does). Pandoc's DOCX reader
+-- synthesises the COLUMN alignment from the cells it saw, so a single centred
+-- cell can leave a whole column centred, and an unaligned cell in it would
+-- silently inherit that and come out centred where Word shows it flush left.
+-- Emitting each cell's own alignment makes the synthesised colspec irrelevant.
 local ALIGN_LATEX = {
   AlignCenter = "\\pdcCellCentering{}",
   AlignRight = "\\pdcCellRaggedleft{}",
   AlignLeft = "\\pdcCellRaggedright{}",
+  AlignDefault = "\\pdcCellRaggedright{}",
 }
+
+-- Justification cannot come from the Cell: pandoc's Alignment has no justified
+-- value, so <w:jc w:val="both"> arrives as AlignLeft and "distribute" as
+-- AlignDefault, and the mapping above would flush both left. It rides in on
+-- the sentinel instead (ha=justify, see app/docx_table_pre_process.py) and
+-- wins over the Cell's alignment, which for such a cell is pandoc's guess.
+local JUSTIFY_LATEX = "\\pdcCellJustify{}"
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
+
+-- True when a cell renders nothing, so there is nothing to align.
+--
+-- Counting blocks is not enough: consume_sentinel strips the sentinel text but
+-- keeps the paragraph that held it, so a shaded spacer cell reaches this point
+-- as a single empty Plain and would still be given an alignment switch.
+local function cell_is_blank(blocks)
+  for _, block in ipairs(blocks) do
+    if block.t ~= "Para" and block.t ~= "Plain" then return false end
+    if #block.content > 0 then return false end
+  end
+  return true
+end
 
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
 -- Injects cell background colour and per-cell alignment, and captures any
@@ -208,7 +240,12 @@ local function process_rows(rows, layout, flags)
       -- Alignment first, background second: both insert at the front, so the
       -- \cellcolor ends up ahead of the declaration, which is where colortbl
       -- wants it.
-      local align_latex = ALIGN_LATEX[cell.alignment]
+      -- A blank cell has nothing to align, and on a cell with no blocks at
+      -- all the injection would add a paragraph it did not have.
+      local align_latex = nil
+      if not cell_is_blank(cell.contents) then
+        align_latex = (props and props.ha == "justify") and JUSTIFY_LATEX or ALIGN_LATEX[cell.alignment]
+      end
       if align_latex then
         inject_raw_at_start(cell.contents, align_latex)
         flags.align = true
@@ -333,6 +370,9 @@ local ALIGN_PREAMBLE = table.concat({
   "\\providecommand{\\pdcCellCentering}{\\rightskip\\@flushglue \\leftskip\\@flushglue \\parindent\\z@ \\parfillskip\\z@skip}",
   "\\providecommand{\\pdcCellRaggedleft}{\\rightskip\\z@skip \\leftskip\\@flushglue \\parindent\\z@ \\parfillskip\\z@skip}",
   "\\providecommand{\\pdcCellRaggedright}{\\@rightskip\\@flushglue \\rightskip\\@rightskip \\leftskip\\z@skip \\parindent\\z@}",
+  -- LaTeX justifies by default, so this restores the kernel's own glue: it
+  -- exists to override a colspec that set one of the ragged modes.
+  "\\providecommand{\\pdcCellJustify}{\\rightskip\\z@skip \\leftskip\\z@skip \\parindent\\z@ \\parfillskip\\@flushglue}",
   "\\makeatother",
 }, "\n")
 
