@@ -580,3 +580,37 @@ def test_tagging_a_justified_cell_is_idempotent():
     once = docx_table_pre_process.preprocess(packed)
 
     assert _cell_sentinel_text(docx_table_pre_process.preprocess(once)) == _cell_sentinel_text(once)
+
+
+def test_nested_table_justification_does_not_leak_to_the_outer_cell():
+    """A cell that opens with a nested table has no paragraph of its own.
+
+    A recursive walk would take the inner cell's first paragraph, attribute its
+    alignment to the outer cell, and then make the outer cell grow a paragraph
+    purely to hold the sentinel.
+    """
+    inner = _table(_justified_cell("both", text="inner"))
+    outer = f"<w:tbl><w:tr><w:tc>{inner}<w:p/></w:tc></w:tr></w:tbl>"
+    source = _pack({"word/document.xml": _doc(outer)})
+
+    out = docx_table_pre_process.preprocess(source)
+
+    body = _body(out)
+    cells = list(body.iter(f"{{{W_NS}}}tc"))
+    outer_tc, inner_tc = cells[0], cells[1]
+
+    assert [c.tag.split("}")[-1] for c in outer_tc] == ["tbl", "p"], "the outer cell grew a paragraph"
+    assert SENTINEL_OPEN not in "".join(t.text or "" for p in outer_tc.findall(f"{{{W_NS}}}p") for t in p.iter(f"{{{W_NS}}}t")), "the outer cell was tagged from the inner cell's paragraph"
+    assert "ha=justify" in (_first_run_text(inner_tc.find(f"{{{W_NS}}}p")) or ""), "the inner cell lost its own tag"
+
+
+def test_cell_with_a_leading_paragraph_before_a_nested_table_is_read_from_it():
+    """The cell's own paragraph still counts when it precedes the nested table."""
+    inner = _table(_justified_cell(None, text="inner"))
+    outer = f'<w:tbl><w:tr><w:tc><w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>outer</w:t></w:r></w:p>{inner}<w:p/></w:tc></w:tr></w:tbl>'
+    source = _pack({"word/document.xml": _doc(outer)})
+
+    out = docx_table_pre_process.preprocess(source)
+
+    outer_tc = next(_body(out).iter(f"{{{W_NS}}}tc"))
+    assert "ha=justify" in (_first_run_text(outer_tc.find(f"{{{W_NS}}}p")) or "")

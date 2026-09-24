@@ -278,20 +278,29 @@ def _fix_grid_col_widths(tbl: ET.Element) -> bool:
     return changed
 
 
-def _find_or_create_first_para(tc: ET.Element, tcpr: ET.Element | None) -> ET.Element:
-    """Return the first ``<w:p>`` before any nested ``<w:tbl>`` in *tc*.
+def _own_first_para(tc: ET.Element) -> ET.Element | None:
+    """Return the cell's own first ``<w:p>``, or None when it has none.
 
-    A cell containing a nested table has structure ``[tcPr, tbl, p]`` where the
-    trailing ``<w:p/>`` is the mandatory cell-mark paragraph.  Injecting the
-    sentinel there would place it after the ``Table`` AST node, so we look for
-    a ``<w:p>`` that *precedes* any ``<w:tbl>``.  If none exists, a new empty
-    paragraph is inserted right after ``<w:tcPr>``.
+    Direct children only, and stopping at a nested ``<w:tbl>``, for two
+    reasons. A recursive walk would reach into the inner table's cells, whose
+    paragraphs belong to those cells and not to this one. And a cell holding a
+    nested table has structure ``[tcPr, tbl, p]`` where the trailing ``<w:p/>``
+    is the mandatory cell-mark paragraph: the sentinel cannot go there, because
+    that puts it after the ``Table`` AST node.
     """
     for child in tc:
         if child.tag == _TBL_TAG:
-            break
+            return None
         if child.tag == _P_TAG:
             return child
+    return None
+
+
+def _find_or_create_first_para(tc: ET.Element, tcpr: ET.Element | None) -> ET.Element:
+    """Return the cell's own first ``<w:p>``, inserting an empty one if it has none."""
+    para = _own_first_para(tc)
+    if para is not None:
+        return para
     para = ET.Element(_P_TAG)
     insert_pos = 1 if next(iter(tc), None) is tcpr else 0
     tc.insert(insert_pos, para)
@@ -325,8 +334,14 @@ _JUSTIFIED_JC_VALUES = frozenset({"both", "distribute"})
 
 
 def _extract_cell_justification(tc: ET.Element) -> str | None:
-    """Return "justify" when the cell's first paragraph is justified, else None."""
-    first_para = next(tc.iter(_P_TAG), None)
+    """Return "justify" when the cell's own first paragraph is justified.
+
+    Reads only the cell's own paragraph: a cell that opens with a nested table
+    has none, and taking the inner table's first paragraph would attribute an
+    inner cell's alignment to the outer one - and then make the outer cell grow
+    a paragraph purely to hold the sentinel.
+    """
+    first_para = _own_first_para(tc)
     if first_para is None:
         return None
     ppr = first_para.find(_PPR_TAG)
@@ -338,38 +353,55 @@ def _extract_cell_justification(tc: ET.Element) -> str | None:
     return "justify" if jc.get(_VAL_ATTR) in _JUSTIFIED_JC_VALUES else None
 
 
-def _tag_cell_properties(tbl: ET.Element) -> bool:
-    """Prepend sentinels encoding the per-cell properties pandoc would drop.
+def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:
+    """The per-cell sentinel keys this cell needs, empty when it needs none.
 
     Covers the background colour and justification; see the module docstring
     for why justification needs carrying and the other alignments do not.
+    """
+    props: dict[str, str] = {}
+
+    if tcpr is not None:
+        bg = _extract_cell_bg(tcpr)
+        if bg:
+            props["bg"] = bg
+
+    justification = _extract_cell_justification(tc)
+    if justification:
+        props["ha"] = justification
+
+    return props
+
+
+def _already_tagged(para: ET.Element, props: dict[str, str]) -> bool:
+    """True when the paragraph's leading sentinel already carries *props*.
+
+    This is what keeps the pass idempotent: re-running it over its own output
+    must not rewrite a sentinel that already says the same thing.
+    """
+    text_el = _first_run_text_element(para)
+    if text_el is None or not text_el.text:
+        return False
+    existing, _ = _parse_sentinel_text(text_el.text)
+    return all(existing.get(key) == value for key, value in props.items())
+
+
+def _tag_cell_properties(tbl: ET.Element) -> bool:
+    """Prepend sentinels encoding the per-cell properties pandoc would drop.
 
     Returns True when any cell was modified.
     """
     changed = False
 
     for tc in tbl.iter(_TC_TAG):
-        props: dict[str, str] = {}
-
         tcpr = tc.find(_TCPR_TAG)
-        if tcpr is not None:
-            bg = _extract_cell_bg(tcpr)
-            if bg:
-                props["bg"] = bg
-
-        justification = _extract_cell_justification(tc)
-        if justification:
-            props["ha"] = justification
-
+        props = _cell_properties(tc, tcpr)
         if not props:
             continue
 
         first_para = _find_or_create_first_para(tc, tcpr)
-        text_el = _first_run_text_element(first_para)
-        if text_el is not None and text_el.text:
-            existing, _ = _parse_sentinel_text(text_el.text)
-            if all(existing.get(key) == value for key, value in props.items()):
-                continue  # already tagged with these properties (idempotency)
+        if _already_tagged(first_para, props):
+            continue
 
         _ensure_sentinel(first_para, props)
         changed = True
