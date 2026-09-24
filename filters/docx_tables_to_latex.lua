@@ -180,10 +180,20 @@ end
 -- The trailing {} terminates the control word: the cell text follows
 -- immediately, and "\\pdcCellCenteringNom" would be an undefined control
 -- sequence.
+--
+-- AlignDefault is mapped too, and that is the point rather than a detail.
+-- Word has no column alignment: a DOCX only ever carries <w:jc> per paragraph,
+-- and a paragraph without one is left-aligned (this pipeline reads documents
+-- as left-to-right, as the rest of the codebase does). Pandoc's DOCX reader
+-- synthesises the COLUMN alignment from the cells it saw, so a single centred
+-- cell can leave a whole column centred, and an unaligned cell in it would
+-- silently inherit that and come out centred where Word shows it flush left.
+-- Emitting each cell's own alignment makes the synthesised colspec irrelevant.
 local ALIGN_LATEX = {
   AlignCenter = "\\pdcCellCentering{}",
   AlignRight = "\\pdcCellRaggedleft{}",
   AlignLeft = "\\pdcCellRaggedright{}",
+  AlignDefault = "\\pdcCellRaggedright{}",
 }
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
@@ -208,7 +218,9 @@ local function process_rows(rows, layout, flags)
       -- Alignment first, background second: both insert at the front, so the
       -- \cellcolor ends up ahead of the declaration, which is where colortbl
       -- wants it.
-      local align_latex = ALIGN_LATEX[cell.alignment]
+      -- An empty cell has nothing to align, and injecting would give it a
+      -- paragraph it did not have.
+      local align_latex = #cell.contents > 0 and ALIGN_LATEX[cell.alignment] or nil
       if align_latex then
         inject_raw_at_start(cell.contents, align_latex)
         flags.align = true

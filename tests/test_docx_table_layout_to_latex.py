@@ -311,3 +311,33 @@ def test_colortbl_is_not_loaded_for_a_table_with_no_cell_background():
     latex = _to_latex(_docx_with_cell_alignments(["center"]), standalone=True)
 
     assert "\\usepackage{colortbl}" not in latex, "colortbl loaded for a table that has no \\cellcolor"
+
+
+def test_unaligned_cell_does_not_inherit_a_synthesised_column_alignment():
+    """The heart of it: Word has no column alignment.
+
+    A DOCX carries <w:jc> per paragraph only, and a paragraph without one is
+    left-aligned. Pandoc's DOCX reader synthesises the COLUMN alignment from
+    the cells it saw, so one centred cell can leave a whole column centred -
+    and an unaligned cell in that column came out centred where Word shows it
+    flush left.
+    """
+    latex = _to_latex(_docx_with_cell_alignments(["center", None]))
+
+    assert "\\pdcCellCentering{}top0" in latex, "the centred cell lost its alignment"
+    assert "\\pdcCellRaggedright{}bottom0" in latex, "the unaligned cell inherited the column's alignment"
+    assert "\\pdcCellRaggedright{}top1" in latex
+
+
+def test_empty_cells_get_no_alignment_switch():
+    """Nothing to align, and injecting would give the cell a paragraph."""
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "filled"
+    table.rows[0].cells[0].paragraphs[0]._p.get_or_add_pPr().append(parse_xml(f'<w:jc {nsdecls("w")} w:val="center"/>'))
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    latex = _to_latex(buffer.getvalue())
+
+    assert latex.count("\\pdcCell") == 1, f"expected one switch, for the one non-empty cell:\n{latex}"
