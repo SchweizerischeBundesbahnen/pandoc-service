@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.0...v2.5.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* preserve text alignment styling in table cells ([#235](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/235)) ([d0c6ac8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d0c6ac867314ead85ca4a796de210a0d5c0a3789))
+
 ## [2.5.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.4.0...v2.5.0) (2026-09-23)
 
 
