@@ -519,3 +519,64 @@ def test_word_caption_with_seq_field_keeps_style():
     )
     root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(word)})))
     assert "Caption" in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
+
+
+# --- cell justification -----------------------------------------------------
+#
+# Pandoc's AST has no justified alignment, so a cell's <w:jc w:val="both">
+# reaches the reader as AlignLeft and "distribute" as AlignDefault. Either way
+# filters/docx_tables_to_latex.lua would flush the cell left, so the sentinel
+# carries it. The other three alignments survive on the Cell and are not tagged.
+
+
+def _justified_cell(jc: str | None, fill: str | None = None, text: str = "cell") -> str:
+    tcpr = f'<w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="{fill}"/></w:tcPr>' if fill else ""
+    ppr = f'<w:pPr><w:jc w:val="{jc}"/></w:pPr>' if jc else ""
+    return f"<w:tc>{tcpr}<w:p>{ppr}<w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"
+
+
+def _cell_sentinel_text(blob: bytes, index: int = 0) -> str:
+    cells = _body(blob).iter(f"{{{W_NS}}}tc")
+    para = next(iter(list(cells)[index].iter(f"{{{W_NS}}}p")))
+    return _first_run_text(para) or ""
+
+
+@pytest.mark.parametrize("jc", ["both", "distribute"])
+def test_justified_cell_is_tagged(jc):
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_justified_cell(jc)))}))
+
+    assert "ha=justify" in _cell_sentinel_text(out)
+
+
+@pytest.mark.parametrize("jc", ["left", "center", "right", None])
+def test_other_alignments_are_not_tagged(jc):
+    """They survive on the Cell, so tagging them would be dead weight."""
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_justified_cell(jc)))}))
+
+    assert "ha=" not in _cell_sentinel_text(out)
+
+
+def test_justified_cell_without_a_background_is_still_tagged():
+    """The sentinel used to be emitted only for a cell with a fill."""
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_justified_cell("both")))}))
+
+    text = _cell_sentinel_text(out)
+    assert text.startswith(SENTINEL_OPEN)
+    assert "ha=justify" in text
+    assert "bg=" not in text
+
+
+def test_justification_and_background_share_one_sentinel():
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_justified_cell("both", fill="F2F2F2")))}))
+
+    text = _cell_sentinel_text(out)
+    assert text.count(SENTINEL_OPEN) == 1
+    assert "ha=justify" in text
+    assert "bg=F2F2F2" in text
+
+
+def test_tagging_a_justified_cell_is_idempotent():
+    packed = _pack({"word/document.xml": _doc(_table(_justified_cell("both", fill="F2F2F2")))})
+    once = docx_table_pre_process.preprocess(packed)
+
+    assert _cell_sentinel_text(docx_table_pre_process.preprocess(once)) == _cell_sentinel_text(once)

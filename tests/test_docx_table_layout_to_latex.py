@@ -368,3 +368,64 @@ def test_blank_shaded_cell_gets_no_alignment_switch():
 
     assert latex.count("\\pdcCell") == 1, f"the blank shaded cell was given a switch:\n{latex}"
     assert "\\cellcolor[HTML]{F2F2F2}" in latex, "the blank cell lost its background"
+
+
+# ---- Justified cells ----------------------------------------------------
+
+
+def _docx_with_justified_cell(jc: str | None, shaded: bool = False) -> bytes:
+    """A two-row table whose body cell carries the given <w:jc>."""
+    doc = Document()
+    table = doc.add_table(rows=2, cols=2)
+    for r, row in enumerate(table.rows):
+        for c, cell in enumerate(row.cells):
+            cell.text = "Justified body text long enough to wrap" if (r, c) == (1, 0) else f"r{r}c{c}"
+    cell = table.rows[1].cells[0]
+    if jc is not None:
+        cell.paragraphs[0]._p.get_or_add_pPr().append(parse_xml(f'<w:jc {nsdecls("w")} w:val="{jc}"/>'))
+    if shaded:
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="F2F2F2"/>'))
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def _switch_on(latex: str, needle: str) -> str | None:
+    match = re.search(r"(\\pdcCell\w+)\{\}" + re.escape(needle), latex)
+    return match.group(1) if match else None
+
+
+@pytest.mark.parametrize("jc", ["both", "distribute"])
+def test_justified_cell_keeps_its_justification(jc):
+    r"""Pandoc's Alignment has no justified value.
+
+    <w:jc w:val="both"> reaches the reader as AlignLeft and "distribute" as
+    AlignDefault, so the Cell cannot carry it and every cell would be flushed
+    left. It rides in on the sentinel instead.
+    """
+    latex = _to_latex(_docx_with_justified_cell(jc))
+
+    assert _switch_on(latex, "Justified") == "\\pdcCellJustify"
+
+
+@pytest.mark.parametrize(
+    ("jc", "expected"),
+    [("left", "\\pdcCellRaggedright"), ("center", "\\pdcCellCentering"), ("right", "\\pdcCellRaggedleft"), (None, "\\pdcCellRaggedright")],
+)
+def test_non_justified_cells_are_unaffected(jc, expected):
+    latex = _to_latex(_docx_with_justified_cell(jc))
+
+    assert _switch_on(latex, "Justified") == expected
+
+
+def test_justified_cell_keeps_its_background_too():
+    latex = _to_latex(_docx_with_justified_cell("both", shaded=True))
+
+    assert _switch_on(latex, "Justified") == "\\pdcCellJustify"
+    assert "\\cellcolor[HTML]{F2F2F2}" in latex
+
+
+def test_justify_macro_is_defined_in_the_preamble():
+    latex = _to_latex(_docx_with_justified_cell("both"), standalone=True)
+
+    assert "\\providecommand{\\pdcCellJustify}" in latex

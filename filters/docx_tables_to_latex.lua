@@ -56,6 +56,8 @@ local function parse_payload(payload)
       end
     elseif key == "ta" and (value == "left" or value == "center" or value == "right") then
       props.ta = value
+    elseif key == "ha" and value == "justify" then
+      props.ha = value
     elseif key == "aw" and value == "1" then
       props.aw = true
     end
@@ -196,6 +198,13 @@ local ALIGN_LATEX = {
   AlignDefault = "\\pdcCellRaggedright{}",
 }
 
+-- Justification cannot come from the Cell: pandoc's Alignment has no justified
+-- value, so <w:jc w:val="both"> arrives as AlignLeft and "distribute" as
+-- AlignDefault, and the mapping above would flush both left. It rides in on
+-- the sentinel instead (ha=justify, see app/docx_table_pre_process.py) and
+-- wins over the Cell's alignment, which for such a cell is pandoc's guess.
+local JUSTIFY_LATEX = "\\pdcCellJustify{}"
+
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
 
@@ -233,7 +242,10 @@ local function process_rows(rows, layout, flags)
       -- wants it.
       -- A blank cell has nothing to align, and on a cell with no blocks at
       -- all the injection would add a paragraph it did not have.
-      local align_latex = not cell_is_blank(cell.contents) and ALIGN_LATEX[cell.alignment] or nil
+      local align_latex = nil
+      if not cell_is_blank(cell.contents) then
+        align_latex = (props and props.ha == "justify") and JUSTIFY_LATEX or ALIGN_LATEX[cell.alignment]
+      end
       if align_latex then
         inject_raw_at_start(cell.contents, align_latex)
         flags.align = true
@@ -358,6 +370,9 @@ local ALIGN_PREAMBLE = table.concat({
   "\\providecommand{\\pdcCellCentering}{\\rightskip\\@flushglue \\leftskip\\@flushglue \\parindent\\z@ \\parfillskip\\z@skip}",
   "\\providecommand{\\pdcCellRaggedleft}{\\rightskip\\z@skip \\leftskip\\@flushglue \\parindent\\z@ \\parfillskip\\z@skip}",
   "\\providecommand{\\pdcCellRaggedright}{\\@rightskip\\@flushglue \\rightskip\\@rightskip \\leftskip\\z@skip \\parindent\\z@}",
+  -- LaTeX justifies by default, so this restores the kernel's own glue: it
+  -- exists to override a colspec that set one of the ragged modes.
+  "\\providecommand{\\pdcCellJustify}{\\rightskip\\z@skip \\leftskip\\z@skip \\parindent\\z@ \\parfillskip\\@flushglue}",
   "\\makeatother",
 }, "\n")
 

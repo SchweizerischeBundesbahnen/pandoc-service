@@ -27,11 +27,17 @@ Pandoc's DOCX reader has three table-related problems this preprocessor fixes:
 
 Sentinel format (PUA delimiters U+E010 / U+E011), a ``;``-separated key map::
 
-    <U+E010>bg=RRGGBB;tw=0.4000;ta=left<U+E011>
+    <U+E010>bg=RRGGBB;ha=justify;tw=0.4000;ta=left<U+E011>
 
-``bg`` is per coloured cell; ``tw`` (0..1 line fraction) and ``ta``
+``bg`` and ``ha`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
 (left/center/right) are table-level and live on the first cell (merged into
-its sentinel if it also carries ``bg``).
+its sentinel if it also carries a per-cell key).
+
+``ha`` carries justification only. Pandoc's AST has no justified alignment —
+its ``Alignment`` is left/right/center/default — so a cell's ``w:jc="both"``
+reaches the reader as ``AlignLeft`` and ``distribute`` as ``AlignDefault``,
+and either way the text comes out flush left. The other three alignments
+survive on the ``Cell`` and need no sentinel.
 
 This is the table companion to :mod:`app.docx_color_pre_process` /
 :mod:`app.docx_paragraph_pre_process`; it runs on the same docx->latex path
@@ -312,30 +318,60 @@ def _ensure_sentinel(para: ET.Element, kv: dict[str, str]) -> None:
     para.insert(insert_at, _make_sentinel_run(_build_sentinel_text(kv)))
 
 
-def _tag_cell_backgrounds(tbl: ET.Element) -> bool:
-    """Prepend sentinels encoding background colour to styled cells.
+# Word's justified alignments. "both" justifies every line but the last;
+# "distribute" stretches the last line too. LaTeX has no separate mode for the
+# latter, so both are carried as one value and render as ordinary justification.
+_JUSTIFIED_JC_VALUES = frozenset({"both", "distribute"})
+
+
+def _extract_cell_justification(tc: ET.Element) -> str | None:
+    """Return "justify" when the cell's first paragraph is justified, else None."""
+    first_para = next(tc.iter(_P_TAG), None)
+    if first_para is None:
+        return None
+    ppr = first_para.find(_PPR_TAG)
+    if ppr is None:
+        return None
+    jc = ppr.find(_JC_TAG)
+    if jc is None:
+        return None
+    return "justify" if jc.get(_VAL_ATTR) in _JUSTIFIED_JC_VALUES else None
+
+
+def _tag_cell_properties(tbl: ET.Element) -> bool:
+    """Prepend sentinels encoding the per-cell properties pandoc would drop.
+
+    Covers the background colour and justification; see the module docstring
+    for why justification needs carrying and the other alignments do not.
 
     Returns True when any cell was modified.
     """
     changed = False
 
     for tc in tbl.iter(_TC_TAG):
-        tcpr = tc.find(_TCPR_TAG)
-        if tcpr is None:
-            continue
+        props: dict[str, str] = {}
 
-        bg = _extract_cell_bg(tcpr)
-        if not bg:
+        tcpr = tc.find(_TCPR_TAG)
+        if tcpr is not None:
+            bg = _extract_cell_bg(tcpr)
+            if bg:
+                props["bg"] = bg
+
+        justification = _extract_cell_justification(tc)
+        if justification:
+            props["ha"] = justification
+
+        if not props:
             continue
 
         first_para = _find_or_create_first_para(tc, tcpr)
         text_el = _first_run_text_element(first_para)
         if text_el is not None and text_el.text:
             existing, _ = _parse_sentinel_text(text_el.text)
-            if existing.get("bg") == bg:
-                continue  # already tagged with this background (idempotency)
+            if all(existing.get(key) == value for key, value in props.items()):
+                continue  # already tagged with these properties (idempotency)
 
-        _ensure_sentinel(first_para, {"bg": bg})
+        _ensure_sentinel(first_para, props)
         changed = True
 
     return changed
@@ -491,7 +527,7 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
             changed = True
         if _tag_table_layout(tbl):
             changed = True
-        if _tag_cell_backgrounds(tbl):
+        if _tag_cell_properties(tbl):
             changed = True
 
     if _neutralize_caption_paragraphs(tree):
