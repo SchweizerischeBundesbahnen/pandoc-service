@@ -221,11 +221,18 @@ def test_each_alignment_maps_to_its_latex_switch(jc: str, expected: str):
     assert f"{expected}{{}}top0" in latex
 
 
-def test_unaligned_cells_get_no_switch():
+def test_unaligned_cells_get_the_left_switch():
+    """A cell with no <w:jc> is left-aligned in Word, and says so explicitly.
+
+    It cannot stay silent: pandoc synthesises the column alignment from the
+    other cells, and silence would mean inheriting it. See
+    test_unaligned_cell_does_not_inherit_a_synthesised_column_alignment.
+    """
     latex = _to_latex(_docx_with_cell_alignments([None, None]))
 
-    for switch in ("\\centering\\arraybackslash{}", "\\raggedleft\\arraybackslash{}", "\\raggedright\\arraybackslash{}"):
-        assert switch not in latex, f"{switch} emitted for a table with no <w:jc>:\n{latex}"
+    assert "\\pdcCellRaggedright{}top0" in latex
+    assert "\\pdcCellCentering" not in latex
+    assert "\\pdcCellRaggedleft" not in latex
 
 
 def _docx_with_merged_body_cell() -> bytes:
@@ -341,3 +348,23 @@ def test_empty_cells_get_no_alignment_switch():
     latex = _to_latex(buffer.getvalue())
 
     assert latex.count("\\pdcCell") == 1, f"expected one switch, for the one non-empty cell:\n{latex}"
+
+
+def test_blank_shaded_cell_gets_no_alignment_switch():
+    """A cell that renders nothing is left alone, background and all.
+
+    consume_sentinel strips the sentinel text but keeps the paragraph that
+    held it, so a shaded spacer cell arrives as a single empty Plain. Counting
+    blocks would see content there and inject a switch into an empty cell.
+    """
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0]._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="F2F2F2"/>'))
+    table.rows[0].cells[1].text = "real"
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    latex = _to_latex(buffer.getvalue())
+
+    assert latex.count("\\pdcCell") == 1, f"the blank shaded cell was given a switch:\n{latex}"
+    assert "\\cellcolor[HTML]{F2F2F2}" in latex, "the blank cell lost its background"

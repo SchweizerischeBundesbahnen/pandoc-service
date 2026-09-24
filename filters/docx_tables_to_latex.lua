@@ -199,6 +199,19 @@ local ALIGN_LATEX = {
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
 
+-- True when a cell renders nothing, so there is nothing to align.
+--
+-- Counting blocks is not enough: consume_sentinel strips the sentinel text but
+-- keeps the paragraph that held it, so a shaded spacer cell reaches this point
+-- as a single empty Plain and would still be given an alignment switch.
+local function cell_is_blank(blocks)
+  for _, block in ipairs(blocks) do
+    if block.t ~= "Para" and block.t ~= "Plain" then return false end
+    if #block.content > 0 then return false end
+  end
+  return true
+end
+
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
 -- Injects cell background colour and per-cell alignment, and captures any
 -- table-level width/alignment (carried on the first cell) into `layout`.
@@ -218,9 +231,9 @@ local function process_rows(rows, layout, flags)
       -- Alignment first, background second: both insert at the front, so the
       -- \cellcolor ends up ahead of the declaration, which is where colortbl
       -- wants it.
-      -- An empty cell has nothing to align, and injecting would give it a
-      -- paragraph it did not have.
-      local align_latex = #cell.contents > 0 and ALIGN_LATEX[cell.alignment] or nil
+      -- A blank cell has nothing to align, and on a cell with no blocks at
+      -- all the injection would add a paragraph it did not have.
+      local align_latex = not cell_is_blank(cell.contents) and ALIGN_LATEX[cell.alignment] or nil
       if align_latex then
         inject_raw_at_start(cell.contents, align_latex)
         flags.align = true
