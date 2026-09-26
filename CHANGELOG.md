@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.1...v2.5.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.12.19 ([1f0c2e4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1f0c2e41334e9edf1660d71338db0ed7f0c95363))
+* **deps:** update prom/prometheus:latest docker digest to efd719c ([3b03fbd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3b03fbdf23b1715689039fb99dec7d2413d9ad3d))
+
 ## [2.5.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.0...v2.5.1) (2026-09-24)
 
 
