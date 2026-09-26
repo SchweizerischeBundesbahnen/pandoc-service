@@ -312,6 +312,54 @@ def test_localized_caption_classified_by_table_adjacency():
     assert "\\f T" in xml
 
 
+def _seq_caption_xml(label: str, seq_name: str, text: str) -> str:
+    return f"""<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>
+            <w:r><w:t xml:space="preserve">{label} </w:t></w:r>
+            <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+            <w:r><w:instrText xml:space="preserve"> SEQ {seq_name} \\* ARABIC </w:instrText></w:r>
+            <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+            <w:r><w:t>1</w:t></w:r>
+            <w:r><w:fldChar w:fldCharType="end"/></w:r>
+            <w:r><w:t xml:space="preserve"> {text}</w:t></w:r>
+        </w:p>"""
+
+
+def test_seq_figure_caption_followed_by_table_is_figure():
+    """A figure caption followed by a table (e.g. the attribute table of a Polarion work item) stays a figure."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:r><w:t>TOF_PLACEHOLDER</w:t></w:r></w:p>
+        <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
+        {_seq_caption_xml("Figure", "Figure", "Picture caption")}{_MINIMAL_TBL}
+    </w:body>""")
+    mock_doc.element.body = body
+    add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    assert '" \\f F \\l "1" ' in xml
+    assert '" \\f T \\l "1" ' not in xml
+    # Pre-filled ToF lists the caption; ToT has no entries, so it is removed
+    assert "TOC \\h \\z \\f F" in xml
+    assert "TOC \\h \\z \\f T" not in xml
+
+
+def test_seq_table_caption_without_adjacent_table_is_table():
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}">{_seq_caption_xml("Table", "Table", "Detached caption")}</w:body>')
+    mock_doc.element.body = body
+    add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    assert '" \\f T \\l "1" ' in xml
+
+
+def test_localized_seq_caption_without_adjacent_table_is_table():
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f'<w:body xmlns:w="{SCHEMA}">{_seq_caption_xml("Tabela", "Tabela", "Detached caption")}</w:body>')
+    mock_doc.element.body = body
+    add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    assert '" \\f T \\l "1" ' in xml
+
+
 def test_full_workflow_empty():
     from docx import Document
 
@@ -357,6 +405,17 @@ def test_image_caption_style_is_classified_as_figure():
     add_table_of_contents_entries(mock_doc)
     xml = etree.tostring(body, encoding="unicode")
     assert "SEQ Figure" in xml
+
+
+def test_table_caption_style_is_classified_as_table():
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:pPr><w:pStyle w:val="TableCaption"/></w:pPr><w:r><w:t>Tabelle 1 Daten</w:t></w:r></w:p>
+    </w:body>""")
+    mock_doc.element.body = body
+    add_table_of_contents_entries(mock_doc)
+    xml = etree.tostring(body, encoding="unicode")
+    assert "SEQ Table" in xml
 
 
 def test_get_seq_name_reads_identifier():
