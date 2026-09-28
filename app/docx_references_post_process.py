@@ -139,23 +139,7 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:  # NOSONAR
         if style not in CAPTION_STYLE_IDS:
             continue
 
-        # Classify Figure vs Table. Strategy (in priority order):
-        # 1. Pandoc's own styles are unambiguous (ImageCaption / TableCaption).
-        # 2. If a SEQ field already exists (from Lua filter), its identifier
-        #    comes from Polarion's data-sequence attribute. Table captions
-        #    always have a <w:tbl> nearby; if adjacency fails but a SEQ name
-        #    exists that is NOT "Figure", treat it as a table caption anyway
-        #    (Polarion would not set a table sequence on a figure).
-        # 3. Fall back to structural adjacency: if the next content element
-        #    is a <w:tbl>, it's a table caption; otherwise figure.
-        if style == IMAGE_CAPTION_STYLE:
-            is_figure = True
-        elif style == TABLE_CAPTION_STYLE or _is_adjacent_to_table(para):
-            is_figure = False
-        else:
-            # No table nearby — check if an existing SEQ name hints at table
-            existing_seq = _get_seq_name(para)
-            is_figure = existing_seq is None or existing_seq == FIGURE_SEQUENCE
+        is_figure = _is_figure_caption(para, style)
         seq_name = FIGURE_SEQUENCE if is_figure else TABLE_SEQUENCE
 
         # Ensure the caption number is a SEQ field (not plain text).
@@ -183,6 +167,32 @@ def _find_and_process_captions(body: Any) -> tuple[list, list]:  # NOSONAR
 
     logger.info(f"Found {len(figure_paragraphs)} figure captions and {len(table_paragraphs)} table captions")
     return figure_paragraphs, table_paragraphs
+
+
+def _is_figure_caption(para: Any, style: str | None) -> bool:
+    """Classify a caption paragraph as Figure (True) or Table (False).
+
+    Strategy (in priority order):
+    1. Pandoc's own styles are unambiguous (ImageCaption / TableCaption).
+    2. A SEQ identifier "Figure" or "Table" (from the Lua filter, i.e. from
+       Polarion's data-sequence attribute) is authoritative. It must win over
+       adjacency: a figure caption is often followed by a table, e.g. the
+       attribute table at the end of a Polarion work item.
+    3. Structural adjacency: a caption followed by a <w:tbl> is a table
+       caption. This covers localized SEQ identifiers ("Tabela").
+    4. Any other SEQ identifier means a table (Polarion would not set a table
+       sequence on a figure); no SEQ at all means a figure.
+    """
+    if style == IMAGE_CAPTION_STYLE:
+        return True
+    if style == TABLE_CAPTION_STYLE:
+        return False
+    existing_seq = _get_seq_name(para)
+    if existing_seq in (FIGURE_SEQUENCE, TABLE_SEQUENCE):
+        return existing_seq == FIGURE_SEQUENCE
+    if _is_adjacent_to_table(para):
+        return False
+    return existing_seq is None
 
 
 def _is_adjacent_to_table(para: Any) -> bool:

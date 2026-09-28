@@ -98,3 +98,24 @@ def test_localized_sequence_does_not_enable_text_heuristic(test_parameters: Test
     styles = [_style_of(p) for p in _paragraphs_with_text(doc, "false-positive scenario")]
     assert "Caption" not in styles, "body text starting with 'Table' was restyled as a caption"
     assert not any("false-positive" in t for t in _instr_texts(doc)), "body text leaked into TC entries"
+
+
+_FIGURE_BEFORE_TABLE_DOC = (
+    "<p>TOF_PLACEHOLDER</p>"
+    "<p>TOT_PLACEHOLDER</p>"
+    '<p class="polarion-rte-caption-paragraph">'
+    'Figure <span data-sequence="Figure" class="polarion-rte-caption">1</span> first picture</p>'
+    "<table><tr><td>Author</td><td>System Administrator</td></tr></table>"
+    '<p class="polarion-rte-caption-paragraph">'
+    'Table <span data-sequence="Table" class="polarion-rte-caption">1</span> first table</p>'
+    "<table><tr><td>A</td><td>B</td></tr></table>"
+)
+
+
+def test_figure_caption_followed_by_table_stays_in_table_of_figures(test_parameters: TestParameters):
+    """A figure caption followed by a table (the attribute table at the end of
+    a Polarion work item) is listed in the Table of Figures, not of Tables."""
+    doc = _document_xml(test_parameters, _FIGURE_BEFORE_TABLE_DOC)
+    tc_fields = [t for t in _instr_texts(doc) if "\\l" in t]
+
+    assert tc_fields == ['" \\f F \\l "1" ', '" \\f T \\l "1" '], f"unexpected TC flags: {tc_fields!r}"
