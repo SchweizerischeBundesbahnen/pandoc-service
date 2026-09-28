@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.1...v2.5.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* classify captions by SEQ before table adjacency ([#239](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/239)) ([10938e9](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/10938e95c52dd0e3a89254bf5eda41de4c2dc4c7))
+* **deps:** update dependency ruff to v0.16.9 ([91e934c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/91e934c1dd63815666198a42111c6411c289c66b))
+* **deps:** update dependency tox to v4.64.1 ([ee345b8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/ee345b80dd685e7325df1e018fcd89234ec22613))
+* **deps:** update dependency tox to v4.64.2 ([1061a47](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1061a4763595e986b17406d60e4a30815257a5e8))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.12.19 ([1f0c2e4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1f0c2e41334e9edf1660d71338db0ed7f0c95363))
+* **deps:** update prom/prometheus:latest docker digest to efd719c ([3b03fbd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3b03fbdf23b1715689039fb99dec7d2413d9ad3d))
+
 ## [2.5.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.0...v2.5.1) (2026-09-24)
 
 
