@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.5.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.2...v2.5.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency tox to v4.64.3 ([5a4fee1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5a4fee11c84215bc62cb0af031df511f93c5d219))
+* **deps:** update dependency uvicorn to v0.54.0 ([966bd12](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/966bd123bac84cb1be40a2351f4fc4266cc71105))
+* **docx:** leave no blank line behind a table ([#242](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/242)) ([c17b463](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c17b4636cffb1be82bba1d0102b6335fba8102ef)), closes [#241](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/241)
+
 ## [2.5.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.1...v2.5.2) (2026-09-28)
 
 
