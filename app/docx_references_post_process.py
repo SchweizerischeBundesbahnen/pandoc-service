@@ -418,8 +418,7 @@ def _create_field(field_code: str) -> list[Any]:
         <w:r><w:fldChar w:fldCharType="end"/></w:r>
     </w:p>
     """)
-    empty_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
-    return [field_para, empty_para]
+    return [field_para]
 
 
 def _create_field_with_entries(field_code: str, entries: list[tuple[str, str]]) -> list[Any]:
@@ -443,11 +442,9 @@ def _create_field_with_entries(field_code: str, entries: list[tuple[str, str]]) 
         para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>' + _hyperlink_xml(text, bm) + "</w:p>")
         paragraphs.append(para)
 
-    end_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>')
-    paragraphs.append(end_para)
-
-    empty_para = parse_xml(f'<w:p xmlns:w="{SCHEMA}"/>')
-    paragraphs.append(empty_para)
+    # The end of the field goes into the last entry: a paragraph of its own carries no text and prints as
+    # an empty line, which the document does not have.
+    paragraphs[-1].append(parse_xml(f'<w:r xmlns:w="{SCHEMA}"><w:fldChar w:fldCharType="end"/></w:r>'))
 
     return paragraphs
 
