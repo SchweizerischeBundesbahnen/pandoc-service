@@ -313,6 +313,29 @@ def test_tot_placeholder_full_workflow():
     assert "\\f T" in xml
 
 
+def test_the_table_of_a_full_run_is_followed_by_the_next_element():
+    """What the reader sees: nothing between the last entry of a table and what comes after it; #241."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}
+        <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>After the table</w:t></w:r></w:p>
+    </w:body>""")
+    mock_doc.element.body = body
+
+    add_table_of_contents_entries(mock_doc)
+
+    paragraphs = body.findall(f"{{{SCHEMA}}}p")
+    heading = next(p for p in paragraphs if "After the table" in etree.tostring(p, encoding="unicode"))
+    entry = paragraphs[paragraphs.index(heading) - 1]
+    entry_xml = etree.tostring(entry, encoding="unicode")
+    # The element before the heading is the last entry of the table, which carries the end of the field
+    assert "Table 1" in entry_xml
+    assert 'w:fldCharType="end"' in entry_xml
+    # And no paragraph of the body is empty
+    assert all(p.find(f".//{{{SCHEMA}}}t") is not None for p in paragraphs)
+
+
 def test_localized_caption_classified_by_table_adjacency():
     """Polish 'Tabela 1' next to a table should be classified as table caption."""
     mock_doc = MagicMock(spec=DocumentObject)
