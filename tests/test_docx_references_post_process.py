@@ -162,7 +162,7 @@ def test_add_tc_field_creates_field_with_bookmark():
 
 def test_create_toc_field():
     paras = _create_toc_field()
-    assert len(paras) == 2
+    assert len(paras) == 1  # the field alone: the spacing is the business of the styles
     instr = paras[0].find(".//w:instrText", namespaces={"w": SCHEMA})
     assert '\\o "1-9"' in instr.text
 
@@ -177,6 +177,26 @@ def test_create_tot_field():
     paras = _create_tot_field()
     instr = paras[0].find(".//w:instrText", namespaces={"w": SCHEMA})
     assert "\\f T" in instr.text
+
+
+def test_a_table_is_followed_by_no_blank_line():
+    """The editor shows no gap behind a table, so the document gets none; #241."""
+    entries = [("Table 1", "_Toc1"), ("Table 2", "_Toc2")]
+
+    paragraphs = _create_tot_field(entries)
+
+    # One paragraph per entry, and nothing behind them
+    assert len(paragraphs) == len(entries)
+    assert all(p.find(".//w:t", namespaces={"w": SCHEMA}) is not None for p in paragraphs)
+
+
+def test_the_field_ends_in_the_last_entry():
+    """A paragraph holding the end of the field alone carries no text and prints as an empty line."""
+    paragraphs = _create_tot_field([("Table 1", "_Toc1"), ("Table 2", "_Toc2")])
+
+    last = etree.tostring(paragraphs[-1], encoding="unicode")
+    assert 'w:fldCharType="end"' in last
+    assert "Table 2" in last
 
 
 def test_tot_with_entries_has_hyperlinks():
@@ -291,6 +311,29 @@ def test_tot_placeholder_full_workflow():
     assert "w:hyperlink" in xml
     assert "PAGEREF" in xml
     assert "\\f T" in xml
+
+
+def test_the_table_of_a_full_run_is_followed_by_the_next_element():
+    """What the reader sees: nothing between the last entry of a table and what comes after it; #241."""
+    mock_doc = MagicMock(spec=DocumentObject)
+    body = parse_xml(f"""<w:body xmlns:w="{SCHEMA}">
+        <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1</w:t></w:r></w:p>{_MINIMAL_TBL}
+        <w:p><w:r><w:t>TOT_PLACEHOLDER</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>After the table</w:t></w:r></w:p>
+    </w:body>""")
+    mock_doc.element.body = body
+
+    add_table_of_contents_entries(mock_doc)
+
+    paragraphs = body.findall(f"{{{SCHEMA}}}p")
+    heading = next(p for p in paragraphs if "After the table" in etree.tostring(p, encoding="unicode"))
+    entry = paragraphs[paragraphs.index(heading) - 1]
+    entry_xml = etree.tostring(entry, encoding="unicode")
+    # The element before the heading is the last entry of the table, which carries the end of the field
+    assert "Table 1" in entry_xml
+    assert 'w:fldCharType="end"' in entry_xml
+    # And no paragraph of the body is empty
+    assert all(p.find(f".//{{{SCHEMA}}}t") is not None for p in paragraphs)
 
 
 def test_localized_caption_classified_by_table_adjacency():
@@ -524,7 +567,7 @@ def test_placeholder_without_matching_captions_removed_without_field():
 
 def test_create_field_with_entries_empty_list_falls_back_to_plain_field():
     paragraphs = _create_field_with_entries(TOF_FIELD_CODE, [])
-    assert len(paragraphs) == 2  # plain field + spacing paragraph
+    assert len(paragraphs) == 1  # the plain field alone
     xml = etree.tostring(paragraphs[0], encoding="unicode")
     assert "\\f F" in xml
     assert "PAGEREF" not in xml
