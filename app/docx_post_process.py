@@ -564,11 +564,14 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
     column_widths = _column_widths_emu(tbl)
 
     # Process nested tables
+    styles = _table_styles(table)
     for row in table.rows:
         for cell in row.cells:
-            _resize_images_in_cell(cell, _cell_image_width(tbl, cell, column_widths, max_width / columns_count))
+            cell_width = _cell_image_width(tbl, cell, column_widths, max_width / columns_count, max_width, styles)
+            _resize_images_in_cell(cell, cell_width)
+            # A nested table sits inside this cell, so nothing in it may be wider than the cell is
             for sub_table in cell.tables:
-                _process_table(sub_table, columns_count, max_width, layout_iter)
+                _process_table(sub_table, columns_count, int(cell_width), layout_iter)
 
 
 # Word's "Normal Table" style: 0.075 inch left and right of a cell's content.
@@ -587,12 +590,46 @@ def _column_widths_emu(tbl: Any) -> list[int] | None:
     return [width * TWIPS_TO_EMU for width in widths]
 
 
-def _cell_side_margins_emu(tbl: Any, tc: Any) -> int:
-    """Left plus right margin of a cell: its own, else the table's, else Word's default."""
+def _table_styles(table: Table) -> Any:
+    """The styles of the document the table belongs to, or None where they cannot be read."""
+    try:
+        return table.part.document.styles.element  # type: ignore[attr-defined]
+    # A table built outside a document part has no styles to read, and the default stands.
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _style_cell_margins(styles: Any, tbl: Any) -> Any:
+    """The `tblCellMar` of the style the table names, following what that style is based on.
+
+    A template sets the margins of every table through its style rather than on each table, and a
+    cell laid out inside margins this did not read is a cell an image is measured too wide for.
+    """
+    if styles is None:
+        return None
+    reference = tbl.find("w:tblPr/w:tblStyle", namespaces={"w": SCHEMA})
+    name = reference.get(f"{{{SCHEMA}}}val") if reference is not None else None
+    seen: set[str] = set()
+    while name is not None and name not in seen:
+        seen.add(name)
+        style = next((element for element in styles.findall("w:style", namespaces={"w": SCHEMA}) if element.get(f"{{{SCHEMA}}}styleId") == name), None)
+        if style is None:
+            return None
+        margins = style.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA})
+        if margins is not None:
+            return margins
+        based_on = style.find("w:basedOn", namespaces={"w": SCHEMA})
+        name = based_on.get(f"{{{SCHEMA}}}val") if based_on is not None else None
+    return None
+
+
+def _cell_side_margins_emu(tbl: Any, tc: Any, styles: Any = None) -> int:
+    """Left plus right margin of a cell: its own, else the table's, else its style's, else Word's default."""
     total = 0
     for side, alternative in (("left", "start"), ("right", "end")):
         width = DEFAULT_CELL_SIDE_MARGIN_TWIPS
-        for scope in (tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA}), tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})):
+        # Last one wins, so they are read from the weakest scope to the strongest
+        for scope in (_style_cell_margins(styles, tbl), tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA}), tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})):
             if scope is None:
                 continue
             margin = scope.find(f"w:{side}", namespaces={"w": SCHEMA})
@@ -604,20 +641,22 @@ def _cell_side_margins_emu(tbl: Any, tc: Any) -> int:
     return total * TWIPS_TO_EMU
 
 
-def _cell_image_width(tbl: Any, cell: _Cell, column_widths: list[int] | None, fallback: float) -> float:
+def _cell_image_width(tbl: Any, cell: _Cell, column_widths: list[int] | None, fallback: float, limit: float, styles: Any = None) -> float:
     """The widest an image in the cell may be: its columns less the cell margins.
 
-    A cell spanning columns takes the sum of them. Without a usable grid the
-    even share of the page stays the limit.
+    A cell spanning columns takes the sum of them. Without a usable grid the even share of the page
+    stays the limit. `limit` is the space the table itself has, the page for a table of its own and
+    the cell for a nested one: a grid may state more than that, which `_apply_table_layout` leaves
+    as it is for a table laid out to its content, and an image is no wider than the space there is.
     """
     if column_widths is None:
-        return fallback
+        return min(fallback, limit)
     # Python-docx exposes no public API for this element.
     tc = cell._tc  # noqa: SLF001
     columns = column_widths[tc.grid_offset : tc.grid_offset + tc.grid_span]
     if not columns:
-        return fallback
-    return max(sum(columns) - _cell_side_margins_emu(tbl, tc), 1)
+        return min(fallback, limit)
+    return max(min(sum(columns) - _cell_side_margins_emu(tbl, tc, styles), limit), 1)
 
 
 def _clamp_twips(width_twips: int, max_width_emu: int) -> int:

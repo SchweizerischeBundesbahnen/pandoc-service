@@ -2086,4 +2086,63 @@ def test_a_cell_beyond_the_grid_falls_back_to_the_even_share():
     cell = MagicMock()
     cell._tc.grid_offset, cell._tc.grid_span = 3, 1
 
-    assert _cell_image_width(MagicMock(), cell, [5280 * 635, 5280 * 635], 1234.0) == 1234.0
+    assert _cell_image_width(MagicMock(), cell, [5280 * 635, 5280 * 635], 1234.0, 6 * 914400) == 1234.0
+
+
+def test_a_grid_wider_than_the_page_does_not_let_an_image_past_it():
+    """A table laid out to its content keeps a grid wider than the page; an image still fits; #246."""
+    # 2 x 5280 twips is 7.33 inch of grid on a text width of 6.5
+    doc, table = _table_with_image([5280, 5280], image_inches=7)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _first_image_width(doc) <= int(6.5 * 914400)
+
+
+def test_an_image_in_a_nested_table_stays_inside_the_cell_holding_it():
+    """A nested grid may state more than the cell it sits in, and the cell is what bounds it; #246."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _process_table
+
+    doc = Document()
+    outer = doc.add_table(rows=1, cols=2)
+    for col, width in zip(outer._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"), [2880, 2880], strict=True):
+        col.set(f"{{{SCHEMA}}}w", str(width))
+    # The nested grid claims 7 inch inside a cell of 2 inch
+    inner = outer.cell(0, 0).add_table(rows=1, cols=1)
+    inner._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "10080")
+    inner.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(7))
+
+    _process_table(outer, 0, max_width=int(6.5 * 914400))
+
+    # The outer cell is 2880 twips less its margins; the image is inside that, not inside 7 inch
+    assert _first_image_width(doc) <= 2880 * 635
+
+
+def test_cell_margins_of_the_table_style_are_taken_off():
+    """A template sets the margins of every table through its style; #246."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _process_table
+
+    doc = Document()
+    style = next(element for element in doc.styles.element.findall(f"{{{SCHEMA}}}style") if element.get(f"{{{SCHEMA}}}styleId") == "TableGrid")
+    # The style states its own margins already, and a second tblCellMar would never be read
+    style_margins = style.find(f"{{{SCHEMA}}}tblPr/{{{SCHEMA}}}tblCellMar")
+    for side in ("left", "right"):
+        style_margins.find(f"{{{SCHEMA}}}{side}").set(f"{{{SCHEMA}}}w", "720")
+    table = doc.add_table(rows=1, cols=1, style="Table Grid")
+    table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "5280")
+    table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(6))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    # 5280 twips less 720 a side, which the default of 108 would have left far too wide
+    assert _first_image_width(doc) == (5280 - 720 - 720) * 635
