@@ -681,7 +681,8 @@ local function inlines_to_runs(inlines, seed)
       -- URL. The Python post-processor registers the real relationship.
       -- Walk the link content, then replace rPr with just Hyperlink rStyle
       -- so the link renders blue/underlined. Inline CSS colors would
-      -- override the Hyperlink style, so we strip them.
+      -- override the Hyperlink style, so we strip them. Bold is kept: a
+      -- browser draws a link inside bold text bold too.
       local link_inlines = walk(r.content, {}, nil)
       local link_runs = {}
       for _, lr in ipairs(link_inlines) do
@@ -690,7 +691,10 @@ local function inlines_to_runs(inlines, seed)
           -- to bare <w:r> runs that don't have one (a single lr.text may
           -- contain multiple <w:r> elements).
           local text = lr.text
-          text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
+          text = text:gsub("<w:rPr>(.-)</w:rPr>", function(rpr)
+            local bold = rpr:find("<w:b/>", 1, true) and "<w:b/>" or ""
+            return '<w:rPr><w:rStyle w:val="Hyperlink"/>' .. bold .. "</w:rPr>"
+          end)
           text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
           link_runs[#link_runs + 1] = text
         elseif lr.t == "Image" and lr.src and lr.src ~= "" then
@@ -837,14 +841,20 @@ end
 -- the DOCX writer ignores it. A bold one gets its inlines wrapped in a native
 -- Strong, which the writer renders itself.
 
-local function declares_bold(el)
+local function declared_weight(el)
   local style = el.attributes.style
-  return style ~= nil and is_bold(parse_style(style)["font-weight"])
+  return style and parse_style(style)["font-weight"]
+end
+
+local function declares_bold(el)
+  return is_bold(declared_weight(el))
 end
 
 -- A Span with an identifier stays outside the Strong: it becomes a bookmark,
--- and walk() would flatten it when the Strong also holds a styled span.
-local function embolden(inlines)
+-- and walk() would flatten it when the Strong also holds a styled span. Its
+-- own text is emboldened inside it.
+local embolden
+embolden = function(inlines)
   local result = {}
   local group = {}
   local function flush()
@@ -856,6 +866,7 @@ local function embolden(inlines)
   for _, inline in ipairs(inlines) do
     if inline.t == "Span" and inline.identifier ~= "" then
       flush()
+      inline.content = embolden(inline.content)
       result[#result + 1] = inline
     else
       group[#group + 1] = inline
@@ -863,6 +874,30 @@ local function embolden(inlines)
   end
   flush()
   return result
+end
+
+local function embolden_leaf(block)
+  block.content = embolden(block.content)
+  return block, false
+end
+
+-- font-weight is inherited, so every paragraph below a bold div is bold: in a
+-- list, a table cell, a quote or a nested div. A nested block declaring a
+-- font-weight of its own is left to its own filter call.
+local function embolden_blocks(blocks)
+  return pandoc.Blocks(blocks):walk({
+    traverse = "topdown",
+    Div = function(div)
+      if declared_weight(div) then return div, false end
+      return nil
+    end,
+    Header = function(header)
+      if declared_weight(header) then return header, false end
+      return embolden_leaf(header)
+    end,
+    Para = embolden_leaf,
+    Plain = embolden_leaf,
+  })
 end
 
 function filter.Header(el)
@@ -874,14 +909,7 @@ end
 function filter.Div(el)
   -- Returning nil below would discard this wrapping, hence `bold and el`.
   local bold = declares_bold(el)
-  if bold then
-    for i, block in ipairs(el.content) do
-      if block.t == "Para" or block.t == "Plain" then
-        block.content = embolden(block.content)
-        el.content[i] = block
-      end
-    end
-  end
+  if bold then el.content = embolden_blocks(el.content) end
   if not has_class(el, "pandoc-para") then return bold and el or nil end
   local twips = parse_twips(el.attributes["indent-twips"])
   local jc = parse_align(el.attributes["text-align"])

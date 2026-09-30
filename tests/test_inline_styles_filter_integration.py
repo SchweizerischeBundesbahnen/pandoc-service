@@ -901,3 +901,40 @@ def test_bold_indented_div_keeps_its_indent(test_parameters: TestParameters):
     para = _w_p_with_text(doc, "Indented bold")
     assert _ind_left(para) == "600"
     _assert_all_bold(para)
+
+
+def test_bold_is_inherited_by_nested_blocks(test_parameters: TestParameters):
+    """font-weight is inherited, as a browser renders it: a list, a table cell, a quote and a nested div are bold too."""
+    html = '<div style="font-weight: bold;"><ul><li>list item</li></ul><table><tr><td>table cell</td></tr></table><blockquote>quoted</blockquote><div>nested div</div></div>'
+    doc = _document_xml(test_parameters, html)
+
+    for needle in ("list item", "table cell", "quoted", "nested div"):
+        _assert_all_bold(_w_p_with_text(doc, needle))
+    assert _w_p_with_text(doc, "list item").find(f".//{{{W_NS}}}numPr") is not None, "the list lost its numbering"
+
+
+def test_nested_normal_weight_overrides_an_inherited_bold(test_parameters: TestParameters):
+    html = '<div style="font-weight: bold;"><p>outer</p><div style="font-weight: normal;">inner</div></div>'
+    doc = _document_xml(test_parameters, html)
+
+    _assert_all_bold(_w_p_with_text(doc, "outer"))
+    assert not any(bold for _, bold in _text_runs(_w_p_with_text(doc, "inner")))
+
+
+def test_bold_indented_div_keeps_a_bold_link(test_parameters: TestParameters):
+    """The indent path rebuilds a link with the Hyperlink style, which must not drop the bold."""
+    doc = _document_xml(test_parameters, '<div style="font-weight: bold; margin-left: 40px;">see <a href="https://example.com/b">this link</a></div>')
+
+    para = _w_p_with_text(doc, "this link")
+    assert _ind_left(para) == "600"
+    assert para.find(f".//{{{W_NS}}}hyperlink") is not None
+    _assert_all_bold(para)
+
+
+def test_bold_heading_keeps_the_text_of_its_anchor_bold(test_parameters: TestParameters):
+    doc = _document_xml(test_parameters, '<h2 style="font-weight: bold;"><a id="anchor-2">Anchored</a> title</h2>')
+
+    para = _w_p_with_text(doc, "Anchored")
+    names = [b.get(f"{{{W_NS}}}name") for b in para.iter(f"{{{W_NS}}}bookmarkStart")]
+    assert "anchor-2" in names, f"bookmark lost, found {names!r}"
+    _assert_all_bold(para)
