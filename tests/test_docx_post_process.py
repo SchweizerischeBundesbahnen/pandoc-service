@@ -1800,3 +1800,125 @@ def test_resolve_image_extent_survives_a_degenerate_image():
 
     assert _resolve_image_extent(("96px", ""), 0, 0) == (EMU_1_INCH, 0)
     assert _resolve_image_extent(("", "96px"), 0, 0) == (0, EMU_1_INCH)
+
+
+# ---- _cap_image_heights (#245) ----
+
+
+def _png_bytes(width: int = 3, height: int = 30) -> bytes:
+    """A minimal RGB PNG of the given pixel size."""
+    import struct
+    import zlib
+
+    raw = b"".join(b"\x00" + b"\xff\xff\xff" * width for _ in range(height))
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", zlib.crc32(tag + payload))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+def _extents(doc) -> list[tuple[int, int]]:
+    from app.docx_post_process import WP_NS
+
+    return [(int(e.get("cx")), int(e.get("cy"))) for e in doc.element.body.iter(f"{{{WP_NS}}}extent")]
+
+
+def _frame_extents(doc) -> list[tuple[int, int]]:
+    return [(int(e.get("cx")), int(e.get("cy"))) for e in doc.element.body.iter(f"{{{DRAWING_ML_MAIN_SCHEMA}}}ext") if e.get("cx")]
+
+
+def test_cap_image_heights_brings_a_tall_image_back_to_the_page():
+    """Letter less 1 inch margins leaves 9 inch; a 3 x 30 inch picture becomes 0.9 x 9."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(3), height=Inches(30))
+
+    _cap_image_heights(doc)
+
+    assert _extents(doc) == [(Inches(0.9), Inches(9))]
+    assert _frame_extents(doc) == [(Inches(0.9), Inches(9))]
+
+
+def test_cap_image_heights_leaves_an_image_that_fits():
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(3), height=Inches(5))
+
+    _cap_image_heights(doc)
+
+    assert _extents(doc) == [(Inches(3), Inches(5))]
+
+
+def test_cap_image_heights_reaches_into_a_table_cell():
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    cell = doc.add_table(rows=1, cols=1).cell(0, 0)
+    cell.paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes()), width=Inches(1), height=Inches(18))
+
+    _cap_image_heights(doc)
+
+    assert _extents(doc) == [(Inches(0.5), Inches(9))]
+
+
+def test_cap_image_heights_uses_the_page_of_each_section():
+    """A landscape section is shorter, so its image is capped lower than the first one."""
+    import io
+
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(2), height=Inches(20))
+    landscape = doc.add_section()
+    landscape.orientation = WD_ORIENT.LANDSCAPE
+    landscape.page_width, landscape.page_height = Inches(11), Inches(8.5)
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(2), height=Inches(20))
+
+    _cap_image_heights(doc)
+
+    assert _extents(doc) == [(Inches(0.9), Inches(9)), (Inches(0.65), Inches(6.5))]
+
+
+def test_cap_image_heights_leaves_an_extension_list_entry_alone():
+    """An <a:ext uri=...> of an extension list has no size and must not get one."""
+    import io
+
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(3), height=Inches(30))
+    blip = next(doc.element.body.iter(f"{{{DRAWING_ML_MAIN_SCHEMA}}}blip"))
+    blip.append(parse_xml(f'<a:extLst xmlns:a="{DRAWING_ML_MAIN_SCHEMA}"><a:ext uri="{{28A0092B-C50C-407E-A947-70E740481C1C}}"/></a:extLst>'))
+
+    _cap_image_heights(doc)
+
+    ext_list_entry = next(e for e in doc.element.body.iter(f"{{{DRAWING_ML_MAIN_SCHEMA}}}ext") if e.get("uri"))
+    assert ext_list_entry.get("cx") is None
+    assert _frame_extents(doc) == [(Inches(0.9), Inches(9))]

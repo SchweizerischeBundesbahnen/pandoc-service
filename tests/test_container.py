@@ -4,6 +4,7 @@ import logging
 import struct
 import time
 import zipfile
+import zlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
@@ -16,7 +17,7 @@ from docker.models.containers import Container
 from docx import Document
 from docx.document import Document as DocumentObject
 from docx.enum.style import WD_STYLE_TYPE
-from docx.shared import RGBColor
+from docx.shared import Inches, RGBColor
 from pypdf import PdfReader
 
 from tests.test_pptx_post_process import find_presentation_information
@@ -377,6 +378,35 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     assert version_info["pandoc"], "Pandoc version should not be empty"
     assert version_info["pandocService"], "Pandoc service version should not be empty"
     assert version_info["chromium"], "Chromium version should not be empty"
+
+
+def __tall_png_data_uri(width: int, height: int) -> str:
+    """A white PNG of the given pixel size, as a data: URI."""
+    raw = b"".join(b"\x00" + b"\xff\xff\xff" * width for _ in range(height))
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", zlib.crc32(tag + payload))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+def test_convert_tall_image_is_brought_back_to_the_page(test_parameters: TestParameters) -> None:
+    """An image taller than the page is capped at the page less its margins, keeping its shape; #245."""
+    html = f'<html><body><p><img src="{__tall_png_data_uri(300, 3000)}"/></p></body></html>'
+    response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="docx", data=html)
+    assert response.status_code == 200
+
+    document = Document(io.BytesIO(response.content))
+    section = document.sections[-1]
+    # pandoc states no page geometry; the post-processing then takes Letter with 1 inch margins
+    page_height = section.page_height or Inches(11)
+    available_height = page_height - (section.top_margin or Inches(1)) - (section.bottom_margin or Inches(1))
+    image = document.inline_shapes[0]
+    assert image.height == available_height
+    # 300 x 3000 px: the width stays a tenth of the height
+    assert abs(image.width * 10 - image.height) <= 10
 
 
 def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data, parameters: str | None = None) -> requests.Response:
