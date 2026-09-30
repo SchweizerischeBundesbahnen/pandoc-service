@@ -221,25 +221,35 @@ class SvgProcessor:
             return self._whole_drawing_inside_the_caps(own_width, own_height, max_width, max_height)
 
         width, height = self._inside_its_own_cap(width, max_width), self._inside_its_own_cap(height, max_height)
-        ratio = self._ratio_of(svg, own_width, own_height)
+        shape = self._shape_of(svg, own_width, own_height)
 
-        # The side the document leaves out follows the one it states, where there is a ratio to follow
-        if ratio is not None and width is None and height is not None:
-            return self._both_sides_giving_way(max(1, math.ceil(height / ratio)), height, max_width)
-        if ratio is not None and height is None and width is not None:
-            height, width = self._both_sides_giving_way(max(1, math.ceil(width * ratio)), width, max_height)
+        # The side the document leaves out follows the one it states, where there is a shape to follow
+        if shape is not None and width is None and height is not None:
+            return self._both_sides_giving_way(self._along_the_shape(height, shape[0], shape[1]), height, max_width)
+        if shape is not None and height is None and width is not None:
+            height, width = self._both_sides_giving_way(self._along_the_shape(width, shape[1], shape[0]), width, max_height)
 
         return width, height
 
-    def _ratio_of(self, svg: Element, own_width: int | None, own_height: int | None) -> float | None:
-        """The height of the drawing over its width, or None where it has none to be scaled by.
+    def _shape_of(self, svg: Element, own_width: int | None, own_height: int | None) -> tuple[int, int] | None:
+        """The width and the height of the drawing, or None where it has no shape to be scaled by.
 
         The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
-        one there is no ratio to complete a single side with, and the raster carries it instead.
+        one there is no shape to complete a single side with, and the raster carries it instead.
         """
         if not own_width or not own_height or self.parse_viewbox(svg) == (None, None):
             return None
-        return own_height / own_width
+        return own_width, own_height
+
+    @staticmethod
+    def _along_the_shape(side: int, numerator: int, denominator: int) -> int:
+        """The other side of a drawing shaped `numerator` to `denominator`, rounded up.
+
+        Whole numbers throughout, because a shape taken as a fraction first loses the exact case: a
+        drawing 5 by 7 is 15 px wide at 21 px tall, where 21 over a rounded 1.4 reaches just past 15
+        and rounds up to 16.
+        """
+        return max(1, -(-side * numerator // denominator))
 
     @staticmethod
     def _inside_its_own_cap(side: int | None, cap: int | None) -> int | None:

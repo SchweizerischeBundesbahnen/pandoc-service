@@ -282,15 +282,33 @@ def test_an_svg_of_no_size_leaves_the_img_alone():
 
 
 @pytest.mark.parametrize(
+    "svg,style,expected",
+    [
+        # 21 px of a drawing 5 by 7 is 15 px exactly, which a shape taken as 1.4 first reaches past
+        ('<svg width="5" height="7" viewBox="0 0 5 7"></svg>', "height: 21px; max-width: 15px;", (15, 21)),
+        ('<svg width="7" height="5" viewBox="0 0 7 5"></svg>', "width: 21px; max-height: 15px;", (21, 15)),
+        # A side which does not divide evenly is rounded up, and the cap then holds the pair
+        ('<svg width="3" height="7" viewBox="0 0 3 7"></svg>', "height: 20px;", (9, 20)),
+    ],
+)
+def test_a_side_follows_the_shape_in_whole_numbers(svg, style, expected):
+    """A shape read as a fraction rounds a side which divides evenly up to the next px."""
+    processor = SvgProcessor()
+    node = BeautifulSoup(f'<img style="{style}">', "html.parser").find("img")
+
+    assert processor._drawn_size_px(node, det.fromstring(svg)) == expected
+
+
+@pytest.mark.parametrize(
     "svg",
     [
         # Without a viewBox the drawing does not scale into the size asked for
         '<svg width="200" height="100"></svg>',
-        # A size of its own is what the ratio is read from, and this one has none
+        # A size of its own is what the shape is read from, and this one has none
         '<svg width="0" height="0" viewBox="0 0 0 0"></svg>',
     ],
 )
-def test_a_single_side_is_left_alone_where_the_svg_has_no_ratio(svg):
+def test_a_single_side_is_left_alone_where_the_svg_has_no_shape(svg):
     """The raster carries the other side, which is the ratio the drawing keeps anyway."""
     processor = SvgProcessor()
     node = BeautifulSoup('<img style="width: 400px;">', "html.parser").find("img")
