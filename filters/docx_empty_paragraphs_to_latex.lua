@@ -41,34 +41,29 @@ local function prints_nothing(inlines)
   return true
 end
 
--- Count the manual line breaks and collect the spans (the bookmark
--- anchors) of inlines which print nothing.
-local function breaks_and_anchors(inlines, anchors)
-  local breaks = 0
+-- Append to `out` what the inlines of an empty paragraph print, in their
+-- order: a bookmark anchor where it stands, and for each manual line
+-- break the \strut of the line it ends plus the break itself.
+local function lines_of(inlines, out)
   for _, il in ipairs(inlines) do
     if il.t == "LineBreak" then
-      breaks = breaks + 1
+      out[#out + 1] = pandoc.RawInline("latex", "\\strut")
+      out[#out + 1] = pandoc.LineBreak()
     elseif il.t == "Span" then
       if il.identifier ~= "" then
-        anchors[#anchors + 1] = pandoc.Span({}, il.attr)
+        out[#out + 1] = pandoc.Span({}, il.attr)
       end
-      breaks = breaks + breaks_and_anchors(il.content, anchors)
+      lines_of(il.content, out)
     end
   end
-  return breaks
 end
 
--- The blank line an empty paragraph prints: its anchors, a \strut, and a
--- further \strut line for each manual line break.
+-- The blank lines an empty paragraph prints: one \strut line, plus one
+-- for each manual line break, with each bookmark on the line it marks.
 local function blank_line(inlines)
-  local anchors = {}
-  local breaks = breaks_and_anchors(inlines, anchors)
-  local result = anchors
+  local result = {}
+  lines_of(inlines, result)
   result[#result + 1] = pandoc.RawInline("latex", "\\strut")
-  for _ = 1, breaks do
-    result[#result + 1] = pandoc.LineBreak()
-    result[#result + 1] = pandoc.RawInline("latex", "\\strut")
-  end
   return pandoc.Para(result)
 end
 

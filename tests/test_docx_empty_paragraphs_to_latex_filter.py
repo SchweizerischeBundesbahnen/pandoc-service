@@ -45,6 +45,13 @@ def test_each_manual_line_break_adds_a_line(test_parameters: TestParameters):
     assert flat.count("\\strut") == 3, flat
 
 
+def test_bookmark_stays_on_the_line_it_marks(test_parameters: TestParameters):
+    """A bookmark after a manual break marks the second line, not the first."""
+    native = '[ Para [ LineBreak, Span ( "_Toc2" , [ "anchor" ] , [] ) [] ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.index("\\\\") < flat.index("\\label{_Toc2}"), flat
+
+
 def test_bookmark_of_an_empty_paragraph_is_kept(test_parameters: TestParameters):
     """A link to the bookmark still has its target."""
     flat = _native_to_latex(test_parameters.container, '[ Para [ Span ( "_Toc1" , [ "anchor" ] , [] ) [] ] ]')
