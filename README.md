@@ -71,6 +71,14 @@ device scale factor (1.0 = 96 dpi). It can be set per request with the
 falling back to the env var, then to `1.0`. The `docx-exporter` extension sends
 this as its "Image density" setting (96/192/300/600 dpi → 1.0/2.0/3.125/6.25).
 
+**The size the document gives.** An image is drawn at the size its `style` states
+(`width` and/or `height` in px), and the SVG is rasterized at that size times the
+scale factor, so the drawing stays sharp wherever it is enlarged. A size stated in
+a unit which has no meaning here, a percentage among others, is left to the target
+to resolve. Where the document states no size, the SVG's own size is the one drawn.
+A render beyond 10000 px a side or 50 megapixels, counted after the scale factor,
+falls back to the size of the SVG.
+
 **Configuration (environment variables):**
 
 | Variable | Default | Range | Purpose |

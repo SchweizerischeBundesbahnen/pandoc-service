@@ -181,17 +181,131 @@ def test_ensure_mandatory_attributes(svg_input):
     assert processor.svg_to_string(updated).count('xmlns="http://www.w3.org/2000/svg"') == 1
 
 
-def test_apply_img_dimensions_from_svg():
+SIZED_SVG = '<svg width="200" height="100" viewBox="0 0 200 100"></svg>'
+
+
+@pytest.mark.parametrize(
+    "style,expected_width,expected_height",
+    [
+        # Nothing sizes the image: the SVG says the size, as it always did
+        ("max-width: 650px;", "200px", None),
+        # The document sizes it: that size is the one written, whole
+        ("width: 100px; height: 50px;", "100px", "50px"),
+        ("width: 400px;", "400px", "200px"),
+        ("height: 300px;", "600px", "300px"),
+        # A later declaration wins, and `!important` wins over a later one
+        ("width: 100px; width: 400px;", "400px", "200px"),
+        ("width: 100px !important; width: 400px;", "100px", "50px"),
+    ],
+)
+def test_an_img_carries_the_size_it_is_drawn_at(style, expected_width, expected_height):
+    """The size an image is drawn at reaches the <img>, where every writer reads it; #244."""
     processor = SvgProcessor()
-    soup = BeautifulSoup('<img style="width: 500px; height: 300px; color: red;">', "html.parser")
-    node = soup.find("img")
-    svg = det.fromstring('<svg width="100" height="200"></svg>')
-    processor._apply_img_dimensions_from_svg(node, svg)
-    assert node.get("width") == "100px"
-    style = node.get("style")
-    assert "width: 100px" in style
-    assert "height:" not in style.lower()
-    assert "color: red" in style
+    node = BeautifulSoup(f'<img style="{style} color: red;">', "html.parser").find("img")
+    svg = det.fromstring(SIZED_SVG)
+
+    processor._apply_img_dimensions_from_svg(node, svg, processor._requested_size_px(node, svg))
+
+    assert node.get("width") == expected_width
+    assert node.get("height") == expected_height
+    assert f"width: {expected_width}" in node["style"]
+    assert "color: red" in node["style"]
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        # A percentage says nothing about how wide the image ends up
+        "width: 50%;",
+        # The other half of the pair would be a guess
+        "width: 50%; height: 100px;",
+        # Neither is a length this can read
+        "width: auto; height: auto;",
+    ],
+)
+def test_a_size_this_cannot_read_is_left_as_the_document_wrote_it(style):
+    """Where the document sizes an image in a way this cannot resolve, the size of the file is no answer."""
+    processor = SvgProcessor()
+    node = BeautifulSoup(f'<img style="{style}">', "html.parser").find("img")
+    svg = det.fromstring(SIZED_SVG)
+
+    processor._apply_img_dimensions_from_svg(node, svg, processor._requested_size_px(node, svg))
+
+    assert node.get("width") is None
+    assert node.get("height") is None
+    assert node["style"] == style
+
+
+def test_a_size_which_cannot_be_applied_leaves_the_img_as_it_was(mocker):
+    """Applying a size is best effort: the conversion is worth more than the size of its result."""
+    processor = SvgProcessor()
+    mocker.patch.object(processor, "extract_svg_dimensions_as_px", side_effect=RuntimeError("no dimensions"))
+    node = BeautifulSoup('<img style="color: red;">', "html.parser").find("img")
+
+    processor._apply_img_dimensions_from_svg(node, det.fromstring(SIZED_SVG), None)
+
+    assert node.get("width") is None
+    assert node["style"] == "color: red;"
+
+
+def test_an_svg_of_no_size_leaves_the_img_alone():
+    """Nothing to say about the size, so nothing is said."""
+    processor = SvgProcessor()
+    node = BeautifulSoup('<img style="color: red;">', "html.parser").find("img")
+
+    processor._apply_img_dimensions_from_svg(node, det.fromstring("<svg></svg>"), None)
+
+    assert node.get("width") is None
+    assert node["style"] == "color: red;"
+
+
+@pytest.mark.parametrize(
+    "svg",
+    [
+        # Without a viewBox the drawing does not scale into the size asked for
+        '<svg width="200" height="100"></svg>',
+        # A size of its own is what the ratio is read from, and this one has none
+        '<svg width="0" height="0" viewBox="0 0 0 0"></svg>',
+    ],
+)
+def test_no_size_is_asked_of_an_svg_which_cannot_be_scaled(svg):
+    processor = SvgProcessor()
+    node = BeautifulSoup('<img style="width: 400px;">', "html.parser").find("img")
+
+    assert processor._requested_size_px(node, det.fromstring(svg)) is None
+
+
+@pytest.mark.parametrize(
+    "style,scale",
+    [
+        ("width: 20000px;", 1.0),
+        ("width: 6000px;", 2.0),
+        ("width: 9000px; height: 9000px;", 1.0),
+    ],
+)
+def test_a_size_too_large_to_rasterize_falls_back_to_the_svg(style, scale):
+    """A screenshot beyond the limit would take the memory of a browser every conversion shares."""
+    processor = SvgProcessor(device_scale_factor=scale)
+    node = BeautifulSoup(f'<img style="{style}">', "html.parser").find("img")
+
+    assert processor._requested_size_px(node, det.fromstring(SIZED_SVG)) is None
+
+
+@pytest.mark.parametrize("value,expected", [("abcpx", None), ("10", None), (None, None), ("10px", 10), ("10.2px", 11), ("infpx", None)])
+def test_px_value(value, expected):
+    assert SvgProcessor._px_value(value) == expected
+
+
+@pytest.mark.asyncio
+async def test_an_svg_is_rasterized_at_the_size_it_is_drawn_at(mocker):
+    """The scale factor keeps the image sharp where it is drawn, not where its file happens to be; #244."""
+    manager = MagicMock()
+    manager.convert_svg_to_png = AsyncMock(return_value=b"png")
+    processor = SvgProcessor(chromium_manager=manager, device_scale_factor=2.0)
+
+    await processor.replace_svg_with_png(det.fromstring(SIZED_SVG), (400, 200))
+
+    assert manager.convert_svg_to_png.await_args.args[1:] == (400, 200, 2.0)
 
 
 def test_svg_from_string_invalid_returns_none():
