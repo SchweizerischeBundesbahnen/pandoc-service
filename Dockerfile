@@ -88,8 +88,8 @@ ENV TECTONIC_CACHE_DIR=/opt/tectonic-cache
 
 # The warm-up document carries one instance of every construct the service converts, because tectonic
 # fetches files on demand: pandoc's latex template requests graphicx, longtable, booktabs, array, ulem,
-# fancyvrb and the math fonts only for the matching content, the docx filters add colortbl and soul
-# through header-includes, and each heading size and each highlighting style needs its own font file.
+# fancyvrb, geometry and the math fonts only for the matching content, the docx filters add colortbl and
+# soul through header-includes, and each heading size and each highlighting style needs its own font file.
 #
 # Each file is a separate request, and the bundle host answers 429 to a build machine that asks too
 # fast. Tectonic gives up after three retries roughly half a second apart, which such a limit outlives,
