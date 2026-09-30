@@ -236,8 +236,17 @@ def test_run_pandoc_conversion_invokes_docx_color_preprocessor_for_docx_to_pdf()
     cmd, preprocess_calls = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "pdf")
 
     assert preprocess_calls == 1
-    assert "docx+styles" in cmd
+    assert "docx+styles+empty_paragraphs" in cmd
     assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" in cmd
+
+
+def test_run_pandoc_conversion_keeps_empty_paragraphs_for_docx_to_pdf():
+    """The reader keeps empty paragraphs, and their filter runs before the other docx filters."""
+    cmd, _ = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "pdf")
+
+    empty_paragraphs = cmd.index(f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}")
+    assert empty_paragraphs < cmd.index(f"--lua-filter={FILTERS['docx_colors_to_latex']}")
+    assert empty_paragraphs < cmd.index(f"--lua-filter={FILTERS['docx_tables_to_latex']}")
 
 
 def test_run_pandoc_conversion_invokes_docx_color_preprocessor_for_docx_to_latex():
@@ -246,7 +255,7 @@ def test_run_pandoc_conversion_invokes_docx_color_preprocessor_for_docx_to_latex
     cmd, preprocess_calls = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "latex")
 
     assert preprocess_calls == 1
-    assert "docx+styles" in cmd
+    assert "docx+styles+empty_paragraphs" in cmd
     assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" in cmd
 
 
@@ -259,6 +268,7 @@ def test_run_pandoc_conversion_skips_docx_color_preprocessor_for_docx_to_docx():
     assert preprocess_calls == 0
     assert "docx+styles" not in cmd
     assert f"--lua-filter={FILTERS['docx_colors_to_latex']}" not in cmd
+    assert f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}" not in cmd
 
 
 def test_run_pandoc_conversion_skips_docx_color_preprocessor_for_non_docx_source():
