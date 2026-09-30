@@ -221,16 +221,25 @@ class SvgProcessor:
             return self._whole_drawing_inside_the_caps(own_width, own_height, max_width, max_height)
 
         width, height = self._inside_its_own_cap(width, max_width), self._inside_its_own_cap(height, max_height)
+        ratio = self._ratio_of(svg, own_width, own_height)
 
-        # The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
-        # one there is no ratio to complete a single side with, and the raster carries it instead.
-        if self.parse_viewbox(svg) != (None, None) and own_width and own_height:
-            if width is None and height is not None:
-                return self._both_sides_giving_way(max(1, math.ceil(height * own_width / own_height)), height, max_width)
-            if height is None and width is not None:
-                height, width = self._both_sides_giving_way(max(1, math.ceil(width * own_height / own_width)), width, max_height)
+        # The side the document leaves out follows the one it states, where there is a ratio to follow
+        if ratio is not None and width is None and height is not None:
+            return self._both_sides_giving_way(max(1, math.ceil(height / ratio)), height, max_width)
+        if ratio is not None and height is None and width is not None:
+            height, width = self._both_sides_giving_way(max(1, math.ceil(width * ratio)), width, max_height)
 
         return width, height
+
+    def _ratio_of(self, svg: Element, own_width: int | None, own_height: int | None) -> float | None:
+        """The height of the drawing over its width, or None where it has none to be scaled by.
+
+        The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
+        one there is no ratio to complete a single side with, and the raster carries it instead.
+        """
+        if not own_width or not own_height or self.parse_viewbox(svg) == (None, None):
+            return None
+        return own_height / own_width
 
     @staticmethod
     def _inside_its_own_cap(side: int | None, cap: int | None) -> int | None:
