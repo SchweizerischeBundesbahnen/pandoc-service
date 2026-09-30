@@ -548,12 +548,64 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
 
     _apply_table_layout(tbl, table_properties, layout, max_width)
 
+    # Read after the layout, which may have rescaled the grid.
+    column_widths = _column_widths_emu(tbl)
+
     # Process nested tables
     for row in table.rows:
         for cell in row.cells:
-            _resize_images_in_cell(cell, max_width / columns_count)
+            _resize_images_in_cell(cell, _cell_image_width(tbl, cell, column_widths, max_width / columns_count))
             for sub_table in cell.tables:
                 _process_table(sub_table, columns_count, max_width, layout_iter)
+
+
+# Word's "Normal Table" style: 0.075 inch left and right of a cell's content.
+DEFAULT_CELL_SIDE_MARGIN_TWIPS = 108
+TWIPS_TO_EMU = 635
+
+
+def _column_widths_emu(tbl: Any) -> list[int] | None:
+    """The width of each grid column, in EMU; None when the grid states no usable width."""
+    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    if grid is None:
+        return None
+    widths = [int(col.get(f"{{{SCHEMA}}}w") or 0) for col in grid.findall("w:gridCol", namespaces={"w": SCHEMA})]
+    if not widths or min(widths) <= 0:
+        return None
+    return [width * TWIPS_TO_EMU for width in widths]
+
+
+def _cell_side_margins_emu(tbl: Any, tc: Any) -> int:
+    """Left plus right margin of a cell: its own, else the table's, else Word's default."""
+    total = 0
+    for side, alternative in (("left", "start"), ("right", "end")):
+        width = DEFAULT_CELL_SIDE_MARGIN_TWIPS
+        for scope in (tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA}), tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})):
+            if scope is None:
+                continue
+            margin = scope.find(f"w:{side}", namespaces={"w": SCHEMA})
+            if margin is None:
+                margin = scope.find(f"w:{alternative}", namespaces={"w": SCHEMA})
+            if margin is not None and margin.get(f"{{{SCHEMA}}}type", "dxa") == "dxa":
+                width = int(margin.get(f"{{{SCHEMA}}}w") or 0)
+        total += width
+    return total * TWIPS_TO_EMU
+
+
+def _cell_image_width(tbl: Any, cell: _Cell, column_widths: list[int] | None, fallback: float) -> float:
+    """The widest an image in the cell may be: its columns less the cell margins.
+
+    A cell spanning columns takes the sum of them. Without a usable grid the
+    even share of the page stays the limit.
+    """
+    if column_widths is None:
+        return fallback
+    # Python-docx exposes no public API for this element.
+    tc = cell._tc  # noqa: SLF001
+    columns = column_widths[tc.grid_offset : tc.grid_offset + tc.grid_span]
+    if not columns:
+        return fallback
+    return max(sum(columns) - _cell_side_margins_emu(tbl, tc), 1)
 
 
 def _clamp_twips(width_twips: int, max_width_emu: int) -> int:

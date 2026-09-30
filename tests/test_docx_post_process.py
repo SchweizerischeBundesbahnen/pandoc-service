@@ -390,7 +390,7 @@ def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout)
         _process_table(main_table, 0, max_width)
 
         # Verify find was called with correct parameters
-        main_table._element.find.assert_called_with(".//w:tblPr", namespaces={"w": SCHEMA})
+        main_table._element.find.assert_any_call(".//w:tblPr", namespaces={"w": SCHEMA})
 
         # Verify parse_xml was called (for creating table properties)
         mock_parse_xml.assert_called()
@@ -1800,3 +1800,109 @@ def test_resolve_image_extent_survives_a_degenerate_image():
 
     assert _resolve_image_extent(("96px", ""), 0, 0) == (EMU_1_INCH, 0)
     assert _resolve_image_extent(("", "96px"), 0, 0) == (0, EMU_1_INCH)
+
+
+# ---- image width per column (#246) ----
+
+
+def _png_bytes_246(width: int = 30, height: int = 10) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (40, 90, 170)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _table_with_image(grid_twips: list[int], image_inches: float, merge: bool = False, cell_margin_twips: int | None = None):
+    """A table whose grid states the given widths, an image in its first cell."""
+    import io
+
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    from docx.shared import Inches
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=len(grid_twips))
+    for col, width in zip(table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"), grid_twips, strict=True):
+        col.set(f"{{{SCHEMA}}}w", str(width))
+    if cell_margin_twips is not None:
+        table._tbl.tblPr.append(parse_xml(f'<w:tblCellMar {nsdecls("w")}><w:left w:w="{cell_margin_twips}" w:type="dxa"/><w:right w:w="{cell_margin_twips}" w:type="dxa"/></w:tblCellMar>'))
+    cell = table.cell(0, 0)
+    if merge:
+        cell = cell.merge(table.cell(0, 1))
+    cell.paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(image_inches))
+    return doc, table
+
+
+def _first_image_width(doc) -> int:
+    wp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    return int(next(doc.element.body.iter(f"{{{wp}}}extent")).get("cx"))
+
+
+def test_image_in_a_cell_is_brought_back_to_its_column():
+    """Two columns of 264 px: the image fits its own column less the default cell margins, not half the page."""
+    doc, table = _table_with_image([5280, 5280], image_inches=6)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _first_image_width(doc) == (5280 - 2 * 108) * 635
+
+
+def test_image_in_a_merged_cell_takes_the_sum_of_its_columns():
+    doc, table = _table_with_image([3000, 4000, 2000], image_inches=6, merge=True)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _first_image_width(doc) == (3000 + 4000 - 2 * 108) * 635
+
+
+def test_cell_margins_of_the_table_are_taken_off():
+    doc, table = _table_with_image([5280, 5280], image_inches=6, cell_margin_twips=300)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _first_image_width(doc) == (5280 - 2 * 300) * 635
+
+
+def test_image_which_fits_its_column_keeps_its_size():
+    doc, table = _table_with_image([5280, 5280], image_inches=1)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _first_image_width(doc) == 914400
+
+
+def test_without_a_usable_grid_the_even_share_stays_the_limit():
+    doc, table = _table_with_image([0, 5280], image_inches=6)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _first_image_width(doc) == int(6.5 * 914400 / 2)
+
+
+def test_cell_margins_of_the_cell_win_and_start_end_count():
+    """The cell's own margin wins over the table's; start/end name the sides too; a pct margin is ignored."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc, table = _table_with_image([5280, 5280], image_inches=6, cell_margin_twips=300)
+    tc_pr = table.cell(0, 0)._tc.get_or_add_tcPr()
+    tc_pr.append(parse_xml(f'<w:tcMar {nsdecls("w")}><w:start w:w="50" w:type="dxa"/><w:end w:w="10" w:type="pct"/></w:tcMar>'))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    # left: the cell's 50; right: the pct value is ignored, so the table's 300 stays
+    assert _first_image_width(doc) == (5280 - 50 - 300) * 635
+
+
+def test_a_cell_beyond_the_grid_falls_back_to_the_even_share():
+    """A cell placed past the last grid column has no width to read; the even share stays."""
+    from app.docx_post_process import _cell_image_width
+
+    cell = MagicMock()
+    cell._tc.grid_offset, cell._tc.grid_span = 3, 1
+
+    assert _cell_image_width(MagicMock(), cell, [5280 * 635, 5280 * 635], 1234.0) == 1234.0
