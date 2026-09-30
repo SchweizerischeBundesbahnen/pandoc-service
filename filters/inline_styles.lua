@@ -15,6 +15,9 @@
 --   font-size: <Nunit|keyword>             -> <w:sz w:val="..."/>  (units: pt, px, pc, in, cm, mm, em, rem, %; keywords: xx-small..xx-large, smaller, larger)
 --   font-family: <name>, ...               -> <w:rFonts w:ascii="name" w:hAnsi="name"/>
 --
+-- A bold font-weight on <h1>..<h6> or on a <div> is honored too, see
+-- filter.Header and filter.Div. Other CSS on those elements is not.
+--
 -- Traversal is top-down: the outermost styled span consumes its full subtree
 -- in a single pass and emits a flat list of <w:r> runs. CSS on a nested span
 -- overrides inherited properties only for the keys it sets.
@@ -366,6 +369,33 @@ local function append_all(target, items)
   for _, item in ipairs(items) do target[#target + 1] = item end
 end
 
+-- A Span's identifier is an HTML anchor, which pandoc's writer turns into a
+-- Word bookmark that internal links point at. walk() replaces a Span by its
+-- runs, so it writes that bookmark itself. The ids start far above the ones
+-- pandoc hands out; app/docx_references_post_process.py numbers its own
+-- bookmarks above the highest id it finds.
+local next_bookmark_id = 100000
+
+-- The name pandoc's writer gives the same identifier (toBookmarkName in
+-- Writers/Docx/OpenXML.hs), so that its links find the bookmark: Word takes a
+-- name of at most 40 characters starting with a letter, anything else becomes
+-- a hash of it.
+local function bookmark_name(identifier)
+  if identifier:match("^%a") and utf8.len(identifier) <= 40 then return identifier end
+  return "X" .. pandoc.utils.sha1(identifier):sub(2)
+end
+
+local function with_bookmark(span, runs)
+  if not span.identifier or span.identifier == "" then return runs end
+  next_bookmark_id = next_bookmark_id + 1
+  local id = tostring(next_bookmark_id)
+  local result = { pandoc.RawInline("openxml",
+    '<w:bookmarkStart w:id="' .. id .. '" w:name="' .. escape_attr(bookmark_name(span.identifier)) .. '"/>') }
+  append_all(result, runs)
+  result[#result + 1] = pandoc.RawInline("openxml", '<w:bookmarkEnd w:id="' .. id .. '"/>')
+  return result
+end
+
 -- Forward declaration: walk and walk_with_flag recurse into each other,
 -- and Lua resolves `local`s top-to-bottom, so we declare `walk` first
 -- and assign it later.
@@ -448,7 +478,7 @@ walk = function(inlines, props, vert_align)
         local style = inline.attributes and inline.attributes.style
         local p = props
         if style then p = merge_css(props, parse_style(style)) end
-        append_all(result, walk(inline.content, p, vert_align))
+        append_all(result, with_bookmark(inline, walk(inline.content, p, vert_align)))
       end
     elseif t == "RawInline" then
       -- Already-OOXML content (e.g. produced by another filter or a previous
@@ -529,7 +559,7 @@ filter.traverse = "topdown"
 function filter.Span(el)
   if not el.attributes.style then return nil end
   local props = merge_css({}, parse_style(el.attributes.style))
-  return walk(el.content, props, nil)
+  return with_bookmark(el, walk(el.content, props, nil))
 end
 
 -- Standalone images (the common case — an <img style="width:.."> not wrapped in
@@ -678,7 +708,8 @@ local function inlines_to_runs(inlines, seed)
       -- URL. The Python post-processor registers the real relationship.
       -- Walk the link content, then replace rPr with just Hyperlink rStyle
       -- so the link renders blue/underlined. Inline CSS colors would
-      -- override the Hyperlink style, so we strip them.
+      -- override the Hyperlink style, so we strip them. Bold is kept: a
+      -- browser draws a link inside bold text bold too.
       local link_inlines = walk(r.content, {}, nil)
       local link_runs = {}
       for _, lr in ipairs(link_inlines) do
@@ -687,7 +718,10 @@ local function inlines_to_runs(inlines, seed)
           -- to bare <w:r> runs that don't have one (a single lr.text may
           -- contain multiple <w:r> elements).
           local text = lr.text
-          text = text:gsub("<w:rPr>.-</w:rPr>", '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>')
+          text = text:gsub("<w:rPr>(.-)</w:rPr>", function(rpr)
+            local bold = rpr:find("<w:b/>", 1, true) and "<w:b/>" or ""
+            return '<w:rPr><w:rStyle w:val="Hyperlink"/>' .. bold .. "</w:rPr>"
+          end)
           text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
           link_runs[#link_runs + 1] = text
         elseif lr.t == "Image" and lr.src and lr.src ~= "" then
@@ -828,13 +862,66 @@ local function parse_align(raw)
   return ALIGN_TO_JC[raw]
 end
 
+-- ---- Block font-weight ----
+--
+-- Pandoc's HTML reader keeps the style attribute on a Header and a Div, but
+-- the DOCX writer ignores it. A bold one gets its inlines wrapped in a native
+-- Strong, which the writer renders itself.
+
+local function declared_weight(el)
+  local style = el.attributes.style
+  return style and parse_style(style)["font-weight"]
+end
+
+local function declares_bold(el)
+  return is_bold(declared_weight(el))
+end
+
+local function embolden(inlines)
+  if #inlines == 0 then return inlines end
+  return { pandoc.Strong(inlines) }
+end
+
+local function embolden_leaf(block)
+  block.content = embolden(block.content)
+  return block, false
+end
+
+-- font-weight is inherited, so every paragraph below a bold div is bold: in a
+-- list, a table cell, a quote or a nested div. A nested block declaring a
+-- font-weight of its own is left to its own filter call.
+local function embolden_blocks(blocks)
+  return pandoc.Blocks(blocks):walk({
+    traverse = "topdown",
+    Div = function(div)
+      if declared_weight(div) then return div, false end
+      return nil
+    end,
+    Header = function(header)
+      if declared_weight(header) then return header, false end
+      return embolden_leaf(header)
+    end,
+    Para = embolden_leaf,
+    Plain = embolden_leaf,
+  })
+end
+
+function filter.Header(el)
+  if not declares_bold(el) then return nil end
+  el.content = embolden(el.content)
+  return el
+end
+
 function filter.Div(el)
-  if not has_class(el, "pandoc-para") then return nil end
+  -- Returning nil below would discard this wrapping, hence `bold and el`.
+  local bold = declares_bold(el)
+  if bold then el.content = embolden_blocks(el.content) end
+  if not has_class(el, "pandoc-para") then return bold and el or nil end
   local twips = parse_twips(el.attributes["indent-twips"])
   local jc = parse_align(el.attributes["text-align"])
   -- Nothing valid to apply — leave the Div for pandoc's normal handling
   -- rather than emit an empty/ malformed <w:pPr>.
-  if not twips and not jc then return nil end
+  if not twips and not jc then return bold and el or nil end
 
   local result = {}
   for _, block in ipairs(el.content) do
