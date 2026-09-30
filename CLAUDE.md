@@ -91,6 +91,7 @@ bash tests/shell/test_pandoc_service.sh
 ### SVG to PNG conversion
 - Runs only for `source_format == "html"`, before pandoc.
 - Density is a device scale factor: per-request `scale_factor` query param (overrides `DEVICE_SCALE_FACTOR` env, default 1.0). docx-exporter sends its "Image density" setting via this param.
+- Size and density are separate. `SvgProcessor._drawn_size_px` reads the size the document states on the `<img>` style and brings it inside `max-width`/`max-height`; `_render_size_px` is that size for the rasterizer, capped; `_apply_img_dimensions` writes the drawn size back as a `width`/`height` **attribute**, which is what the writer of every target reads (`filters/inline_styles.lua` carries a style onto the attribute for docx alone, and `app/html_image_pre_process.py` skips an `<img>` that already carries one). Where the document states no size a length can be read from, the SVG's own size is the one drawn, as before; a percentage is left for the target to resolve.
 - The Chromium lifecycle is managed in the FastAPI `lifespan` (`_start_chromium`/`_stop_chromium`); a start failure is logged and swallowed.
 - Browser comes from Playwright's bundled Chromium (Debian base; `playwright install chromium`), not a system package. Tunable via `ENABLE_SVG_CONVERSION`, `MAX_CONCURRENT_CONVERSIONS`, `CHROMIUM_CONVERSION_TIMEOUT`, `CHROMIUM_MAX_CONVERSION_RETRIES`, `CHROMIUM_RESTART_AFTER_N_CONVERSIONS`, `CHROMIUM_HEALTH_CHECK_ENABLED`, `CHROMIUM_HEALTH_CHECK_INTERVAL` (see README).
 
