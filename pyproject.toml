@@ -44,6 +44,8 @@ test = [
     "httpx==0.28.1",
     "pypdf==6.19.0",  # reads the text of a produced PDF in the container tests
     "coverage==7.16.1",
+    "pypdfium2==5.13.0",  # renders the pages of a produced PDF for the visual tests
+    "pillow==12.3.0",  # reads and writes the page images of the visual tests
 ]
 
 [tool.uv]
