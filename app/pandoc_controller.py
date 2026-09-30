@@ -674,21 +674,25 @@ def _build_pandoc_command(
     # (paragraph) and Span (run color) scopes are independent, so order between
     # them does not matter.
     if apply_docx_latex_filters:
-        # First, so the filters below see an empty line as the raw block it
-        # becomes and not as a paragraph of their own.
-        cmd.append(f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}")
-        # Must precede docx_colors_to_latex: it rewrites underline/strikeout that
-        # carry other formatting into ulem and strips highlight from inside them,
-        # before the colour filter turns those spans into \textcolor/\hl.
-        cmd.append(f"--lua-filter={FILTERS['docx_text_decorations']}")
-        cmd.append(f"--lua-filter={FILTERS['docx_colors_to_latex']}")
-        cmd.append(f"--lua-filter={FILTERS['docx_math_colors_to_latex']}")
-        cmd.append(f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}")
-        cmd.append(f"--lua-filter={FILTERS['docx_lists_to_latex']}")
-        cmd.append(f"--lua-filter={FILTERS['docx_tables_to_latex']}")
-        # Strip "Table N" / "Figure N" prefix from Caption blocks so LaTeX's
-        # own \caption counter doesn't duplicate the numbering.
-        cmd.append(f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}")
+        cmd.extend(
+            [
+                # First, so the filters below see an empty line as the blank
+                # paragraph it becomes and not as an empty one.
+                f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}",
+                # Must precede docx_colors_to_latex: it rewrites underline/strikeout that
+                # carry other formatting into ulem and strips highlight from inside them,
+                # before the colour filter turns those spans into \textcolor/\hl.
+                f"--lua-filter={FILTERS['docx_text_decorations']}",
+                f"--lua-filter={FILTERS['docx_colors_to_latex']}",
+                f"--lua-filter={FILTERS['docx_math_colors_to_latex']}",
+                f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
+                f"--lua-filter={FILTERS['docx_lists_to_latex']}",
+                f"--lua-filter={FILTERS['docx_tables_to_latex']}",
+                # Strip "Table N" / "Figure N" prefix from Caption blocks so LaTeX's
+                # own \caption counter doesn't duplicate the numbering.
+                f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
+            ]
+        )
 
     if validated_options:
         cmd.extend(validated_options)
