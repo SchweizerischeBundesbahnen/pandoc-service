@@ -21,23 +21,43 @@ from PIL import Image, ImageChops
 EXPECTED_DIR = Path(__file__).parent / "data" / "expected"
 OUTPUT_DIR = Path(__file__).parent / "output"
 DPI = 50
-# A pixel differs when its grey value moves by more than this.
+# A pixel differs when any of its channels moves by more than this.
 PIXEL_TOLERANCE = 32
 # The share of differing pixels a page may have.
 MAX_DIFFERING_SHARE = 0.002
 
 
 def render_pages(pdf: bytes) -> list[Image.Image]:
-    """Render every page of a PDF as a greyscale image."""
+    """Render every page of a PDF as an image.
+
+    In colour, because this service spends a good deal of its code on colour - the text of a run, the
+    shading of a cell, the colour of a formula - and a page read in grey says nothing about any of it.
+    Two colours of the same brightness, a green and a dull red among them, are the same grey.
+    """
     document = pdfium.PdfDocument(pdf)
     try:
-        return [page.render(scale=DPI / 72).to_pil().convert("L") for page in document]
+        return [page.render(scale=DPI / 72).to_pil().convert("RGB") for page in document]
     finally:
         document.close()
 
 
+def _strongest_channel(image: Image.Image) -> Image.Image:
+    """The largest value any channel holds, pixel by pixel.
+
+    Not the luma of them: luma weighs blue at 11% and red at 30%, so a page whose blue alone moved
+    the whole way would read as a page which barely moved. The tolerance is a tolerance for a
+    channel, and the strongest channel is what it is measured against.
+    """
+    bands = image.split()
+    strongest = bands[0]
+    for band in bands[1:]:
+        strongest = ImageChops.lighter(strongest, band)
+    return strongest
+
+
 def _differing_share(actual: Image.Image, expected: Image.Image) -> tuple[float, Image.Image]:
-    diff = ImageChops.difference(actual, expected).point(lambda value: 255 if value > PIXEL_TOLERANCE else 0)
+    difference = _strongest_channel(ImageChops.difference(actual, expected))
+    diff = difference.point(lambda value: 255 if value > PIXEL_TOLERANCE else 0)
     differing = diff.histogram()[255]
     return differing / (actual.width * actual.height), diff
 
@@ -62,7 +82,7 @@ def assert_pages_match(name: str, pdf: bytes) -> None:
 
     failures = []
     for number, (page, reference) in enumerate(zip(pages, references, strict=True), start=1):
-        expected = Image.open(reference).convert("L")
+        expected = Image.open(reference).convert("RGB")
         if page.size != expected.size:
             failures.append(f"page {number}: size {page.size}, the reference is {expected.size}")
             continue
