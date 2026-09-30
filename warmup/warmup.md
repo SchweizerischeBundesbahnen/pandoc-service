@@ -12,6 +12,11 @@ tests/container/container-structure-test.yaml asserts the result.
 title: Tectonic bundle warm-up
 author: pandoc-service
 date: 2026-01-01
+# docx to pdf passes the page of the DOCX as geometry (app/docx_page_geometry.py)
+geometry:
+  - paperwidth=8.5in
+  - paperheight=11in
+  - margin=1in
 header-includes:
   - \usepackage{colortbl}
   - \usepackage{soul}
