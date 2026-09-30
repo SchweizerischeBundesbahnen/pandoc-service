@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.6.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.3...v2.6.0) (2026-09-30)
+
+
+### Features
+
+* **docx:** honor a bold font-weight on a heading or a div ([#249](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/249)) ([c418127](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c418127f013ca61d75346e478dfd15d18952d43f)), closes [#248](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/248)
+* keep empty paragraphs in docx to pdf ([#251](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/251)) ([1b8d93f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1b8d93fd370c2344e100bc1efec6ecaa7dd873e4)), closes [#250](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/250)
+* lay a PDF out on the page of its DOCX ([#253](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/253)) ([412a691](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/412a691431e7137239fecb7cab1de4f9ede4e7b1)), closes [#252](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/252)
+
+
+### Bug Fixes
+
+* bring an image in a cell back to its column ([#256](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/256)) ([eb56a91](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/eb56a91b8938663c85cb691b71208436231de218)), closes [#252](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/252)
+* bring an image taller than the page back to it ([#254](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/254)) ([ec2b584](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/ec2b58472f536c677a7a11e6ccc8ca0267d5cfe9)), closes [#252](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/252)
+* **deps:** update dependency coverage to v7.16.2 ([#255](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/255)) ([4930df0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4930df0960d173f1f73aa8ba213d7ecc90326b44))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.12.21 ([a5e902f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a5e902fed71d7f89798b7d729633d5bb85b656fc))
+* **deps:** update grafana/grafana:latest docker digest to b28bae1 ([a30f189](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a30f1893ab888cbe82ce044172f821677c7b68fa))
+* **svg:** keep the size the document gives an image ([#247](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/247)) ([50abd09](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/50abd09eeea27a114ada82ac04eb0a3b04a413e3))
+
 ## [2.5.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.2...v2.5.3) (2026-09-29)
 
 
