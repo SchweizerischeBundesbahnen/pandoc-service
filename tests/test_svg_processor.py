@@ -207,7 +207,9 @@ SIZED_SVG = '<svg width="200" height="100" viewBox="0 0 200 100"></svg>'
         ("width: 400;", "400px", "200px"),
         # A cap holds the side it is the cap of, and the side which follows that one
         ("width: 400px; max-width: 300px;", "300px", "150px"),
-        ("width: 400px; max-height: 50px;", "400px", "50px"),
+        # A cap catching the side which follows the drawing gives way on both, so the shape holds
+        ("width: 400px; max-height: 50px;", "100px", "50px"),
+        ("height: 300px; max-width: 200px;", "200px", "100px"),
         # A side the document states is held by its own cap and by no other
         ("width: 400px; height: 100px; max-width: 200px;", "200px", "100px"),
         # Both sides follow the drawing, so a cap shrinks the whole of it
@@ -334,6 +336,16 @@ def test_nothing_is_rasterized_at_a_size_with_a_side_the_raster_carries():
         ("10mm", 38),
         ("72pt", 96),
         ("1pc", 16),
+        # A number may open on its decimal point
+        (".5in", 48),
+        (".5px", 1),
+        # The space around a value is no part of it, and CSS puts none inside one
+        ("  10px  ", 10),
+        ("10 px", None),
+        # What is no number at all
+        ("10.", None),
+        (".", None),
+        (".px", None),
         # A unit which stands for something else on every element, and what is no length at all
         ("50%", None),
         ("10em", None),

@@ -80,11 +80,12 @@ Where it states no size a length can be read from, the SVG's own size is the one
 drawn. A percentage is the one thing left to the target: it is a share of a width only
 the target knows.
 
-`max-width` and `max-height` hold the size as a browser holds it. A side the document
-states is held by its own cap and by no other, so a capped width leaves a stated height
-where it was; a side which follows the drawing follows the capped one too. Where the
-document states no size at all, both sides follow the drawing, and a cap shrinks the
-whole of it.
+`max-width` and `max-height` hold the size. Where the document states both sides it has
+chosen the shape already, so each side is held by the cap on its own axis and by no
+other. Where it states one side and leaves the other to the drawing, a cap catching
+either makes both give way together, so the drawing keeps its shape instead of sitting
+in a box of empty space. Where it states no size at all, both sides follow the drawing
+and a cap shrinks the whole of it.
 
 The size is written onto the `<img>` as a `width`/`height` attribute, which is what
 the writer of every target reads. Rasterization alone is capped, at 10000 px a side

@@ -196,12 +196,14 @@ class SvgProcessor:
         which keeps the ratio of the image it is given.
 
         Where the document states a size this can read, that size is the one drawn, brought inside
-        `max-width` and `max-height` as a browser brings it: a side the document states is held by
-        its own cap and by no other, so a capped width leaves a stated height where it was. Where it
-        states one side, the other follows the ratio of the SVG, which a viewBox is what makes it
-        keep. Where it states nothing this can read, the width of the SVG is the size, as it always
-        was, and a cap there shrinks the whole of the drawing. Only a percentage is left alone: it is
-        a share of a width no one here knows.
+        `max-width` and `max-height`. A side the document states twice over - a width and a height
+        both - is held by the cap on its own axis and by no other: the document has chosen the shape
+        already, and a cap on one axis only trims that axis. A side the document leaves out follows
+        the ratio of the SVG, which a viewBox is what makes it keep, and where a cap catches that
+        side both sides give way together, so the drawing keeps its shape rather than sitting in a
+        box of empty space. Where the document states nothing this can read, the width of the SVG is
+        the size, as it always was, and a cap shrinks the whole of the drawing. Only a percentage is
+        left alone: it is a share of a width no one here knows.
         """
         style = self._style_declarations(node)
         stated_width, stated_height = style.get("width"), style.get("height")
@@ -223,10 +225,10 @@ class SvgProcessor:
         # The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
         # one there is no ratio to complete a single side with, and the raster carries it instead.
         if self.parse_viewbox(svg) != (None, None) and own_width and own_height:
-            if width is None:
-                width = self._inside_its_own_cap(max(1, math.ceil(height * own_width / own_height)), max_width)  # type: ignore[operator]
-            elif height is None:
-                height = self._inside_its_own_cap(max(1, math.ceil(width * own_height / own_width)), max_height)
+            if width is None and height is not None:
+                return self._both_sides_giving_way(max(1, math.ceil(height * own_width / own_height)), height, max_width)
+            if height is None and width is not None:
+                height, width = self._both_sides_giving_way(max(1, math.ceil(width * own_height / own_width)), width, max_height)
 
         return width, height
 
@@ -234,6 +236,18 @@ class SvgProcessor:
     def _inside_its_own_cap(side: int | None, cap: int | None) -> int | None:
         """A side held by the cap on that same axis, which is the only one to hold it."""
         return side if side is None or cap is None else min(side, cap)
+
+    @staticmethod
+    def _both_sides_giving_way(following: int, stated: int, cap: int | None) -> tuple[int, int]:
+        """The pair where a cap catches the side which follows the drawing, and the stated side with it.
+
+        The document states the one side and leaves the other to the drawing, so the shape is the
+        drawing's to keep. Holding the following side alone would leave the image in a box wider than
+        itself, with the drawing letterboxed inside it.
+        """
+        if cap is None or following <= cap:
+            return following, stated
+        return cap, max(1, round(stated * cap / following))
 
     @staticmethod
     def _whole_drawing_inside_the_caps(own_width: int, own_height: int | None, max_width: int | None, max_height: int | None) -> tuple[int, None]:
@@ -280,7 +294,12 @@ class SvgProcessor:
         """
         if value is None:
             return None
-        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*", value)
+        # The space around a value is stripped rather than matched: two `\s*` on either side of a unit
+        # which may be empty is a run of spaces this could divide in as many ways as it is long. CSS
+        # puts no space between a number and its unit, so none is read between them either.
+        # The two ways of writing a number start on different characters, so neither can be read as the
+        # other and nothing is left to backtrack over
+        match = re.fullmatch(r"(\d+(?:\.\d+)?|\.\d+)([a-z]*)", value.strip())
         if match is None:
             return None
         factor = cls.ABSOLUTE_UNITS_IN_PX.get(match.group(2) or "px")
