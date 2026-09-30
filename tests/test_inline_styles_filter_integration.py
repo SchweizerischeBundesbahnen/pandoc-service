@@ -938,3 +938,35 @@ def test_bold_heading_keeps_the_text_of_its_anchor_bold(test_parameters: TestPar
     names = [b.get(f"{{{W_NS}}}name") for b in para.iter(f"{{{W_NS}}}bookmarkStart")]
     assert "anchor-2" in names, f"bookmark lost, found {names!r}"
     _assert_all_bold(para)
+
+
+def _bookmark_names(doc: ET.Element) -> list[str | None]:
+    return [b.get(f"{{{W_NS}}}name") for b in doc.iter(f"{{{W_NS}}}bookmarkStart")]
+
+
+LONG_ID = "work-item-anchor-a-project-with-a-long-name/EL-264"
+
+
+@pytest.mark.parametrize(
+    ("html", "target"),
+    [
+        pytest.param('<div style="font-weight: bold;"><span><a id="target"></a>Target</span> <span style="color: #FF0000;">red</span></div>', "target", id="nested-in-a-bold-div"),
+        pytest.param('<p><strong><em><a id="target"></a>Target</em> <span style="color: #FF0000;">red</span></strong></p>', "target", id="nested-in-strong"),
+        pytest.param('<p><span id="target" style="color: #FF0000;">Target</span></p>', "target", id="on-a-styled-span"),
+        pytest.param(f'<p><span id="{LONG_ID}" style="color: #FF0000;">Target</span></p>', LONG_ID, id="longer-than-word-allows"),
+    ],
+)
+def test_an_anchor_rewritten_as_runs_stays_a_bookmark(test_parameters: TestParameters, html: str, target: str):
+    """walk() replaces a span by its runs; the span's id must survive as the bookmark a link points at.
+
+    Word takes a bookmark name of at most 40 characters, so pandoc names a longer one by a hash, the same for
+    the bookmark and for the link. The filter has to arrive at the same name.
+    """
+    doc = _document_xml(test_parameters, html + f'<p><a href="#{target}">jump</a></p>')
+
+    link = _w_p_with_text(doc, "jump").find(f".//{{{W_NS}}}hyperlink")
+    assert link is not None
+    anchor = link.get(f"{{{W_NS}}}anchor")
+    assert _bookmark_names(doc).count(anchor) == 1, f"link points at {anchor!r}, bookmarks found: {_bookmark_names(doc)!r}"
+    ids = [b.get(f"{{{W_NS}}}id") for b in doc.iter(f"{{{W_NS}}}bookmarkStart")]
+    assert len(ids) == len(set(ids)), f"bookmark ids collide: {ids!r}"

@@ -369,6 +369,33 @@ local function append_all(target, items)
   for _, item in ipairs(items) do target[#target + 1] = item end
 end
 
+-- A Span's identifier is an HTML anchor, which pandoc's writer turns into a
+-- Word bookmark that internal links point at. walk() replaces a Span by its
+-- runs, so it writes that bookmark itself. The ids start far above the ones
+-- pandoc hands out; app/docx_references_post_process.py numbers its own
+-- bookmarks above the highest id it finds.
+local next_bookmark_id = 100000
+
+-- The name pandoc's writer gives the same identifier (toBookmarkName in
+-- Writers/Docx/OpenXML.hs), so that its links find the bookmark: Word takes a
+-- name of at most 40 characters starting with a letter, anything else becomes
+-- a hash of it.
+local function bookmark_name(identifier)
+  if identifier:match("^%a") and utf8.len(identifier) <= 40 then return identifier end
+  return "X" .. pandoc.utils.sha1(identifier):sub(2)
+end
+
+local function with_bookmark(span, runs)
+  if not span.identifier or span.identifier == "" then return runs end
+  next_bookmark_id = next_bookmark_id + 1
+  local id = tostring(next_bookmark_id)
+  local result = { pandoc.RawInline("openxml",
+    '<w:bookmarkStart w:id="' .. id .. '" w:name="' .. escape_attr(bookmark_name(span.identifier)) .. '"/>') }
+  append_all(result, runs)
+  result[#result + 1] = pandoc.RawInline("openxml", '<w:bookmarkEnd w:id="' .. id .. '"/>')
+  return result
+end
+
 -- Forward declaration: walk and walk_with_flag recurse into each other,
 -- and Lua resolves `local`s top-to-bottom, so we declare `walk` first
 -- and assign it later.
@@ -451,7 +478,7 @@ walk = function(inlines, props, vert_align)
         local style = inline.attributes and inline.attributes.style
         local p = props
         if style then p = merge_css(props, parse_style(style)) end
-        append_all(result, walk(inline.content, p, vert_align))
+        append_all(result, with_bookmark(inline, walk(inline.content, p, vert_align)))
       end
     elseif t == "RawInline" then
       -- Already-OOXML content (e.g. produced by another filter or a previous
@@ -532,7 +559,7 @@ filter.traverse = "topdown"
 function filter.Span(el)
   if not el.attributes.style then return nil end
   local props = merge_css({}, parse_style(el.attributes.style))
-  return walk(el.content, props, nil)
+  return with_bookmark(el, walk(el.content, props, nil))
 end
 
 -- Standalone images (the common case — an <img style="width:.."> not wrapped in
@@ -850,30 +877,9 @@ local function declares_bold(el)
   return is_bold(declared_weight(el))
 end
 
--- A Span with an identifier stays outside the Strong: it becomes a bookmark,
--- and walk() would flatten it when the Strong also holds a styled span. Its
--- own text is emboldened inside it.
-local embolden
-embolden = function(inlines)
-  local result = {}
-  local group = {}
-  local function flush()
-    if #group > 0 then
-      result[#result + 1] = pandoc.Strong(group)
-      group = {}
-    end
-  end
-  for _, inline in ipairs(inlines) do
-    if inline.t == "Span" and inline.identifier ~= "" then
-      flush()
-      inline.content = embolden(inline.content)
-      result[#result + 1] = inline
-    else
-      group[#group + 1] = inline
-    end
-  end
-  flush()
-  return result
+local function embolden(inlines)
+  if #inlines == 0 then return inlines end
+  return { pandoc.Strong(inlines) }
 end
 
 local function embolden_leaf(block)
