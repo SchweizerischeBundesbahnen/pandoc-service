@@ -599,37 +599,43 @@ def _table_styles(table: Table) -> Any:
         return None
 
 
-def _style_cell_margins(styles: Any, tbl: Any) -> Any:
-    """The `tblCellMar` of the style the table names, following what that style is based on.
+def _style_cell_margins(styles: Any, tbl: Any) -> list[Any]:
+    """The `tblCellMar` of the style the table names and of every style it is based on, farthest first.
 
     A template sets the margins of every table through its style rather than on each table, and a
-    cell laid out inside margins this did not read is a cell an image is measured too wide for.
+    cell laid out inside margins this did not read is a cell an image is measured too wide for. A
+    style states the sides it changes and leaves the rest to the style it is based on, so the whole
+    chain is returned and each side is taken from the nearest style which states it.
     """
     if styles is None:
-        return None
+        return []
     reference = tbl.find("w:tblPr/w:tblStyle", namespaces={"w": SCHEMA})
     name = reference.get(f"{{{SCHEMA}}}val") if reference is not None else None
+    chain: list[Any] = []
     seen: set[str] = set()
     while name is not None and name not in seen:
         seen.add(name)
         style = next((element for element in styles.findall("w:style", namespaces={"w": SCHEMA}) if element.get(f"{{{SCHEMA}}}styleId") == name), None)
         if style is None:
-            return None
+            break
         margins = style.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA})
         if margins is not None:
-            return margins
+            chain.append(margins)
         based_on = style.find("w:basedOn", namespaces={"w": SCHEMA})
         name = based_on.get(f"{{{SCHEMA}}}val") if based_on is not None else None
-    return None
+    # Nearest last, so a style overrides the one it is based on under the "last one wins" reading
+    chain.reverse()
+    return chain
 
 
 def _cell_side_margins_emu(tbl: Any, tc: Any, styles: Any = None) -> int:
-    """Left plus right margin of a cell: its own, else the table's, else its style's, else Word's default."""
+    """Left plus right margin of a cell: its own, else the table's, else its styles', else Word's default."""
     total = 0
+    scopes = [*_style_cell_margins(styles, tbl), tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA}), tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})]
     for side, alternative in (("left", "start"), ("right", "end")):
         width = DEFAULT_CELL_SIDE_MARGIN_TWIPS
         # Last one wins, so they are read from the weakest scope to the strongest
-        for scope in (_style_cell_margins(styles, tbl), tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA}), tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})):
+        for scope in scopes:
             if scope is None:
                 continue
             margin = scope.find(f"w:{side}", namespaces={"w": SCHEMA})

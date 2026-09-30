@@ -2146,3 +2146,39 @@ def test_cell_margins_of_the_table_style_are_taken_off():
 
     # 5280 twips less 720 a side, which the default of 108 would have left far too wide
     assert _first_image_width(doc) == (5280 - 720 - 720) * 635
+
+
+def test_cell_margins_come_from_each_style_which_states_a_side():
+    """A style states the sides it changes and leaves the rest to the one it is based on; #246."""
+    import io
+
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    from docx.shared import Inches
+
+    from app.docx_post_process import _process_table
+
+    doc = Document()
+    styles = {element.get(f"{{{SCHEMA}}}styleId"): element for element in doc.styles.element.findall(f"{{{SCHEMA}}}style")}
+    # The parent states the left margin alone
+    parent_margins = styles["TableNormal"].find(f"{{{SCHEMA}}}tblPr/{{{SCHEMA}}}tblCellMar")
+    for side in ("right", "top", "bottom"):
+        element = parent_margins.find(f"{{{SCHEMA}}}{side}")
+        if element is not None:
+            parent_margins.remove(element)
+    parent_margins.find(f"{{{SCHEMA}}}left").set(f"{{{SCHEMA}}}w", "600")
+    # The style the table names states the right one, and is based on that parent
+    child = styles["TableGrid"]
+    child_margins = child.find(f"{{{SCHEMA}}}tblPr/{{{SCHEMA}}}tblCellMar")
+    child.find(f"{{{SCHEMA}}}tblPr").remove(child_margins)
+    child.find(f"{{{SCHEMA}}}tblPr").append(parse_xml(f'<w:tblCellMar {nsdecls("w")}><w:right w:w="400" w:type="dxa"/></w:tblCellMar>'))
+
+    table = doc.add_table(rows=1, cols=1, style="Table Grid")
+    table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "5280")
+    table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(6))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    # 600 from the parent style, 400 from the style the table names; neither side falls back to 108
+    assert _first_image_width(doc) == (5280 - 600 - 400) * 635
