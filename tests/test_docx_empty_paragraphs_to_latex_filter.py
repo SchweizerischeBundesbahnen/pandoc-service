@@ -34,9 +34,22 @@ def test_empty_paragraph_becomes_strut(test_parameters: TestParameters):
     assert flat == "before \\strut after", flat
 
 
-def test_whitespace_break_and_empty_anchor_count_as_empty(test_parameters: TestParameters):
-    native = '[ Para [ Space, LineBreak ], Para [ Span ( "_Toc1" , [ "anchor" ] , [] ) [] ] ]'
+def test_whitespace_and_empty_anchor_count_as_empty(test_parameters: TestParameters):
+    native = '[ Para [ Space ], Para [ Span ( "_Toc1" , [ "anchor" ] , [] ) [] ] ]'
     assert _native_to_latex(test_parameters.container, native).count("\\strut") == 2
+
+
+def test_each_manual_line_break_adds_a_line(test_parameters: TestParameters):
+    """Word prints a paragraph with two manual breaks as three lines."""
+    flat = _native_to_latex(test_parameters.container, "[ Para [ LineBreak, Space, LineBreak ] ]")
+    assert flat.count("\\strut") == 3, flat
+
+
+def test_bookmark_of_an_empty_paragraph_is_kept(test_parameters: TestParameters):
+    """A link to the bookmark still has its target."""
+    flat = _native_to_latex(test_parameters.container, '[ Para [ Span ( "_Toc1" , [ "anchor" ] , [] ) [] ] ]')
+    assert "\\label{_Toc1}" in flat, flat
+    assert "\\strut" in flat, flat
 
 
 def test_empty_paragraph_inside_div_becomes_strut(test_parameters: TestParameters):

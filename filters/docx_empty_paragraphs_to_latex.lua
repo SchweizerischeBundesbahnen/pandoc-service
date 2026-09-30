@@ -7,8 +7,10 @@
 -- and even then the LaTeX writer prints an empty Para as nothing. So a
 -- document with a blank line and one without rendered to the same PDF.
 --
--- This filter turns each empty paragraph into a paragraph holding only a
+-- This filter turns each empty paragraph into a paragraph holding a
 -- \strut: one line of the normal height, with the normal paragraph skip.
+-- A manual line break adds one more such line, as it does in Word. A
+-- bookmark in the paragraph is kept, so a link to it still resolves.
 --
 -- Only paragraphs in the document body are changed, also inside a Div
 -- (the reader wraps a styled paragraph in one). Table cells and list
@@ -39,11 +41,42 @@ local function prints_nothing(inlines)
   return true
 end
 
+-- Count the manual line breaks and collect the spans (the bookmark
+-- anchors) of inlines which print nothing.
+local function breaks_and_anchors(inlines, anchors)
+  local breaks = 0
+  for _, il in ipairs(inlines) do
+    if il.t == "LineBreak" then
+      breaks = breaks + 1
+    elseif il.t == "Span" then
+      if il.identifier ~= "" then
+        anchors[#anchors + 1] = pandoc.Span({}, il.attr)
+      end
+      breaks = breaks + breaks_and_anchors(il.content, anchors)
+    end
+  end
+  return breaks
+end
+
+-- The blank line an empty paragraph prints: its anchors, a \strut, and a
+-- further \strut line for each manual line break.
+local function blank_line(inlines)
+  local anchors = {}
+  local breaks = breaks_and_anchors(inlines, anchors)
+  local result = anchors
+  result[#result + 1] = pandoc.RawInline("latex", "\\strut")
+  for _ = 1, breaks do
+    result[#result + 1] = pandoc.LineBreak()
+    result[#result + 1] = pandoc.RawInline("latex", "\\strut")
+  end
+  return pandoc.Para(result)
+end
+
 local function keep_empty_lines(blocks)
   local result = {}
   for _, block in ipairs(blocks) do
     if (block.t == "Para" or block.t == "Plain") and prints_nothing(block.content) then
-      result[#result + 1] = pandoc.RawBlock("latex", "\\strut")
+      result[#result + 1] = blank_line(block.content)
     elseif block.t == "Div" then
       block.content = keep_empty_lines(block.content)
       result[#result + 1] = block
