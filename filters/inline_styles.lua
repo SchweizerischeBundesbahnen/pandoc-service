@@ -15,6 +15,9 @@
 --   font-size: <Nunit|keyword>             -> <w:sz w:val="..."/>  (units: pt, px, pc, in, cm, mm, em, rem, %; keywords: xx-small..xx-large, smaller, larger)
 --   font-family: <name>, ...               -> <w:rFonts w:ascii="name" w:hAnsi="name"/>
 --
+-- A bold font-weight on <h1>..<h6> or on a <div> is honored too, see
+-- filter.Header and filter.Div. Other CSS on those elements is not.
+--
 -- Traversal is top-down: the outermost styled span consumes its full subtree
 -- in a single pass and emits a flat list of <w:r> runs. CSS on a nested span
 -- overrides inherited properties only for the keys it sets.
@@ -828,13 +831,63 @@ local function parse_align(raw)
   return ALIGN_TO_JC[raw]
 end
 
+-- ---- Block font-weight ----
+--
+-- Pandoc's HTML reader keeps the style attribute on a Header and a Div, but
+-- the DOCX writer ignores it. A bold one gets its inlines wrapped in a native
+-- Strong, which the writer renders itself.
+
+local function declares_bold(el)
+  local style = el.attributes.style
+  return style ~= nil and is_bold(parse_style(style)["font-weight"])
+end
+
+-- A Span with an identifier stays outside the Strong: it becomes a bookmark,
+-- and walk() would flatten it when the Strong also holds a styled span.
+local function embolden(inlines)
+  local result = {}
+  local group = {}
+  local function flush()
+    if #group > 0 then
+      result[#result + 1] = pandoc.Strong(group)
+      group = {}
+    end
+  end
+  for _, inline in ipairs(inlines) do
+    if inline.t == "Span" and inline.identifier ~= "" then
+      flush()
+      result[#result + 1] = inline
+    else
+      group[#group + 1] = inline
+    end
+  end
+  flush()
+  return result
+end
+
+function filter.Header(el)
+  if not declares_bold(el) then return nil end
+  el.content = embolden(el.content)
+  return el
+end
+
 function filter.Div(el)
-  if not has_class(el, "pandoc-para") then return nil end
+  -- Returning nil below would discard this wrapping, hence `bold and el`.
+  local bold = declares_bold(el)
+  if bold then
+    for i, block in ipairs(el.content) do
+      if block.t == "Para" or block.t == "Plain" then
+        block.content = embolden(block.content)
+        el.content[i] = block
+      end
+    end
+  end
+  if not has_class(el, "pandoc-para") then return bold and el or nil end
   local twips = parse_twips(el.attributes["indent-twips"])
   local jc = parse_align(el.attributes["text-align"])
   -- Nothing valid to apply — leave the Div for pandoc's normal handling
   -- rather than emit an empty/ malformed <w:pPr>.
-  if not twips and not jc then return nil end
+  if not twips and not jc then return bold and el or nil end
 
   local result = {}
   for _, block in ipairs(el.content) do

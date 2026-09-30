@@ -821,3 +821,83 @@ def test_a_rejected_width_still_honours_a_valid_height(test_parameters: TestPara
     html = f'<div class="pandoc-para" data-indent-twips="600"><p><img src="{_png_data_uri(20, 40)}" width="A&amp;B" height="200"></p></div>'
 
     assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (100 * EMU_PER_PX, 200 * EMU_PER_PX)
+
+
+# ---- Block font-weight -------------------------------------------------
+
+
+def _run_is_bold(run: ET.Element) -> bool:
+    b = run.find(f"{{{W_NS}}}rPr/{{{W_NS}}}b")
+    return b is not None and b.get(f"{{{W_NS}}}val") not in ("0", "false")
+
+
+def _text_runs(p: ET.Element) -> list[tuple[str, bool]]:
+    """(text, bold) for every run of `p` that carries text."""
+    result = []
+    for run in p.iter(f"{{{W_NS}}}r"):
+        text = "".join(t.text or "" for t in run.iter(f"{{{W_NS}}}t"))
+        if text.strip():
+            result.append((text, _run_is_bold(run)))
+    return result
+
+
+def _assert_all_bold(p: ET.Element) -> None:
+    runs = _text_runs(p)
+    assert runs, "paragraph has no text runs"
+    assert all(bold for _, bold in runs), f"not every run is bold: {runs!r}"
+
+
+def test_bold_heading_is_bold(test_parameters: TestParameters):
+    doc = _document_xml(test_parameters, '<h2 style="font-weight: bold;">Chapter two</h2>')
+
+    _assert_all_bold(_w_p_with_text(doc, "Chapter two"))
+
+
+@pytest.mark.parametrize("weight", ["bold", "600"])
+def test_bold_div_is_bold(test_parameters: TestParameters, weight: str):
+    doc = _document_xml(test_parameters, f'<div style="font-weight: {weight};">Document title</div>')
+
+    _assert_all_bold(_w_p_with_text(doc, "Document title"))
+
+
+def test_normal_weight_div_is_not_bold(test_parameters: TestParameters):
+    doc = _document_xml(test_parameters, '<div style="font-weight: normal;">Plain text</div>')
+
+    assert not any(bold for _, bold in _text_runs(_w_p_with_text(doc, "Plain text")))
+
+
+def test_bold_heading_keeps_its_anchor(test_parameters: TestParameters):
+    """An <a id> in a bold heading stays a bookmark that links resolve to."""
+    html = '<h2 style="font-weight: bold;"><a id="anchor-1"></a><span style="color: #FF0000;">1.1</span> Title</h2><p>see <a href="#anchor-1">the heading</a></p>'
+    doc = _document_xml(test_parameters, html)
+
+    para = _w_p_with_text(doc, "Title")
+    names = [b.get(f"{{{W_NS}}}name") for b in para.iter(f"{{{W_NS}}}bookmarkStart")]
+    assert "anchor-1" in names, f"bookmark lost, found {names!r}"
+    _assert_all_bold(para)
+    link = _w_p_with_text(doc, "the heading").find(f".//{{{W_NS}}}hyperlink")
+    assert link is not None and link.get(f"{{{W_NS}}}anchor") == "anchor-1"
+
+
+def test_bold_div_keeps_a_link(test_parameters: TestParameters):
+    html = '<div style="font-weight: bold;">see <a href="https://example.com/b">this link</a></div>'
+    doc = _document_xml(test_parameters, html)
+
+    para = _w_p_with_text(doc, "this link")
+    assert para.find(f".//{{{W_NS}}}hyperlink") is not None
+    _assert_all_bold(para)
+
+
+def test_nested_span_can_unbold_part_of_a_bold_div(test_parameters: TestParameters):
+    html = '<div style="font-weight: bold;">bold <span style="font-weight: normal;">plain</span></div>'
+    doc = _document_xml(test_parameters, html)
+
+    assert dict(_text_runs(_w_p_with_text(doc, "plain"))) == {"bold": True, "plain": False}
+
+
+def test_bold_indented_div_keeps_its_indent(test_parameters: TestParameters):
+    doc = _document_xml(test_parameters, '<div style="font-weight: bold; margin-left: 40px;">Indented bold</div>')
+
+    para = _w_p_with_text(doc, "Indented bold")
+    assert _ind_left(para) == "600"
+    _assert_all_bold(para)
