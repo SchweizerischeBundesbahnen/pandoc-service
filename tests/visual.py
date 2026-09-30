@@ -31,7 +31,8 @@ def render_pages(pdf: bytes) -> list[Image.Image]:
     """Render every page of a PDF as a greyscale image."""
     document = pdfium.PdfDocument(pdf)
     try:
-        return [page.render(scale=DPI / 72).to_pil().convert("L") for page in document]
+        # TODO Avoid stacking all pages in memory. Rather, use a generator to yield pages one by one.
+        return [page.render(scale=DPI / 72, grayscale=True).to_pil() for page in document]
     finally:
         document.close()
 
