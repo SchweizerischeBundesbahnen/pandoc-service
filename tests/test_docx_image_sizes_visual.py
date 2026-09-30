@@ -12,7 +12,7 @@ import io
 from PIL import Image
 
 from tests.test_container import TestParameters
-from tests.visual import assert_pages_match
+from tests.visual import assert_pages_match, render_pages
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -37,11 +37,15 @@ def _html_to_pdf(test_parameters: TestParameters, html: str) -> bytes:
 
 
 def test_image_taller_than_the_page_fits_the_page(test_parameters: TestParameters):
-    """A 300 x 3000 px image fills the page from the top to the bottom margin and keeps its shape; #245.
+    """A 300 x 3000 px image stands on the page it is given, on one page and keeping its shape; #245.
 
-    Without the cap it runs far past the bottom of the page. With it the image is exactly as tall as
-    the text area. LaTeX needs the depth of a line on top of that, so the image opens the second page
-    and leaves the first one empty; Word puts it on the first. What the reference shows is the size.
+    Without the cap it runs far past the bottom of the page. With it the image is as tall as the text
+    area less the line it is set on, which is what leaves it on the page it was measured against
+    rather than opening the next one and leaving an empty page behind.
     """
     html = f'<html><body><p><img src="{_png_data_uri(300, 3000, (40, 90, 170))}"/></p></body></html>'
-    assert_pages_match("image_taller_than_the_page", _html_to_pdf(test_parameters, html))
+    pdf = _html_to_pdf(test_parameters, html)
+
+    # An empty page is what a cap without room for the line leaves behind, so the count is the test
+    assert len(render_pages(pdf)) == 1
+    assert_pages_match("image_taller_than_the_page", pdf)

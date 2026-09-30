@@ -20,6 +20,7 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.shared import Inches, RGBColor
 from pypdf import PdfReader
 
+from app.docx_post_process import LINE_ALLOWANCE_EMU
 from tests.test_pptx_post_process import find_presentation_information
 
 logger = logging.getLogger(__name__)
@@ -404,7 +405,8 @@ def test_convert_tall_image_is_brought_back_to_the_page(test_parameters: TestPar
     page_height = section.page_height or Inches(11)
     available_height = page_height - (section.top_margin or Inches(1)) - (section.bottom_margin or Inches(1))
     image = document.inline_shapes[0]
-    assert image.height == available_height
+    # Less the line the image is set on, without which it opens the next page and leaves this one empty
+    assert image.height == available_height - LINE_ALLOWANCE_EMU
     # 300 x 3000 px: the width stays a tenth of the height
     assert abs(image.width * 10 - image.height) <= 10
 

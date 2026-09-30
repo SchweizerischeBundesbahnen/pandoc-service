@@ -1819,6 +1819,23 @@ def _png_bytes(width: int = 3, height: int = 30) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
 
 
+def _page_limit(text_height_inches: float) -> int:
+    """The height the cap allows: the text area less the line the image is set on."""
+    from docx.shared import Inches
+
+    from app.docx_post_process import LINE_ALLOWANCE_EMU
+
+    return int(Inches(text_height_inches)) - LINE_ALLOWANCE_EMU
+
+
+def _capped(width_inches: float, height_inches: float, text_height_inches: float) -> tuple[int, int]:
+    """The size a picture of this shape is brought back to on a page of this text height."""
+    from docx.shared import Inches
+
+    limit = _page_limit(text_height_inches)
+    return int(int(Inches(width_inches)) * limit / int(Inches(height_inches))), limit
+
+
 def _extents(doc) -> list[tuple[int, int]]:
     from app.docx_post_process import WP_NS
 
@@ -1830,7 +1847,7 @@ def _frame_extents(doc) -> list[tuple[int, int]]:
 
 
 def test_cap_image_heights_brings_a_tall_image_back_to_the_page():
-    """Letter less 1 inch margins leaves 9 inch; a 3 x 30 inch picture becomes 0.9 x 9."""
+    """Letter less 1 inch margins leaves 9 inch, less the line the image sits on."""
     import io
 
     from docx import Document
@@ -1843,8 +1860,8 @@ def test_cap_image_heights_brings_a_tall_image_back_to_the_page():
 
     _cap_image_heights(doc)
 
-    assert _extents(doc) == [(Inches(0.9), Inches(9))]
-    assert _frame_extents(doc) == [(Inches(0.9), Inches(9))]
+    assert _extents(doc) == [_capped(3, 30, 9)]
+    assert _frame_extents(doc) == [_capped(3, 30, 9)]
 
 
 def test_cap_image_heights_leaves_an_image_that_fits():
@@ -1877,7 +1894,7 @@ def test_cap_image_heights_reaches_into_a_table_cell():
 
     _cap_image_heights(doc)
 
-    assert _extents(doc) == [(Inches(0.5), Inches(9))]
+    assert _extents(doc) == [_capped(1, 18, 9)]
 
 
 def test_cap_image_heights_uses_the_page_of_each_section():
@@ -1899,7 +1916,7 @@ def test_cap_image_heights_uses_the_page_of_each_section():
 
     _cap_image_heights(doc)
 
-    assert _extents(doc) == [(Inches(0.9), Inches(9)), (Inches(0.65), Inches(6.5))]
+    assert _extents(doc) == [_capped(2, 20, 9), _capped(2, 20, 6.5)]
 
 
 def test_cap_image_heights_leaves_an_extension_list_entry_alone():
@@ -1921,4 +1938,46 @@ def test_cap_image_heights_leaves_an_extension_list_entry_alone():
 
     ext_list_entry = next(e for e in doc.element.body.iter(f"{{{DRAWING_ML_MAIN_SCHEMA}}}ext") if e.get("uri"))
     assert ext_list_entry.get("cx") is None
-    assert _frame_extents(doc) == [(Inches(0.9), Inches(9))]
+    assert _frame_extents(doc) == [_capped(3, 30, 9)]
+
+
+def test_cap_image_heights_keeps_the_whole_of_a_page_without_margins():
+    """A margin of nothing is a margin the document states, not one it leaves out; #245."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    doc.sections[0].top_margin = doc.sections[0].bottom_margin = Inches(0)
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(3), height=Inches(30))
+
+    _cap_image_heights(doc)
+
+    # The page is 11 inch and keeps all of it, where a fallback of 1 inch a side would leave 9
+    assert _extents(doc) == [_capped(3, 30, 11)]
+
+
+def test_cap_image_heights_reads_a_negative_margin_by_its_size():
+    """A negative top margin fixes the header distance; its size is what the text sits inside.
+
+    `app/docx_page_geometry.py` lays the PDF out that way, so the cap has to agree with it or a
+    capped image still runs past the bottom of the page.
+    """
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _cap_image_heights
+
+    doc = Document()
+    doc.sections[0].top_margin = Inches(-1)
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(3), height=Inches(30))
+
+    _cap_image_heights(doc)
+
+    # 11 inch less a top margin of 1 and a bottom margin of 1, not 11 plus 1 less 1
+    assert _extents(doc) == [_capped(3, 30, 9)]
