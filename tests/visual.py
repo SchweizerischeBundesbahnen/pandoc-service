@@ -31,8 +31,9 @@ def render_pages(pdf: bytes) -> list[Image.Image]:
     """Render every page of a PDF as an image.
 
     In colour, because this service spends a good deal of its code on colour - the text of a run, the
-    shading of a cell, the colour of a formula - and a page read in grey says nothing about any of it.
-    Two colours of the same brightness, a green and a dull red among them, are the same grey.
+    shading of a cell, the colour of a formula - and a page read in grey keeps only the brightness of
+    it. Two colours far apart to the eye, a green and a dull red among them, can sit nearer to each
+    other in grey than the tolerance below calls a difference.
     """
     document = pdfium.PdfDocument(pdf)
     try:

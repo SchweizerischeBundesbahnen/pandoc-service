@@ -10,7 +10,7 @@ from PIL import Image
 
 from tests.visual import MAX_DIFFERING_SHARE, PIXEL_TOLERANCE, _differing_share
 
-# Two colours no reader would confuse, and the same brightness under the luma of `convert("L")`
+# Two colours no reader would confuse, whose greys are nearer to each other than the tolerance
 GREEN = (0, 128, 0)
 DULL_RED = (166, 74, 74)
 
@@ -20,7 +20,7 @@ def _page(color: tuple[int, int, int]) -> Image.Image:
 
 
 def test_a_page_which_changed_colour_alone_is_seen() -> None:
-    """A page read in grey says nothing about colour, and this service is full of it.
+    """A page read in grey says little about colour, and this service is full of it.
 
     `docx_color_pre_process`, `docx_math_color_post_process` and the colour filters all decide
     colours, so a comparison blind to them is blind to what half of that code is for.
@@ -31,12 +31,14 @@ def test_a_page_which_changed_colour_alone_is_seen() -> None:
     assert share > MAX_DIFFERING_SHARE
 
 
-def test_the_two_colours_of_that_page_are_the_same_grey() -> None:
-    """What the test above rests on: in grey the difference is not there to be seen."""
-    assert _page(GREEN).convert("L").getpixel((0, 0)) == 75
-    assert _page(DULL_RED).convert("L").getpixel((0, 0)) == 102
-    # Within the tolerance a page comparison allows, so a grey comparison passes them as equal
-    assert abs(75 - 102) < PIXEL_TOLERANCE
+def test_the_two_colours_are_nearer_in_grey_than_the_tolerance() -> None:
+    """What the test above rests on: in grey the difference is too small to be seen."""
+    green_grey = _page(GREEN).convert("L").getpixel((0, 0))
+    red_grey = _page(DULL_RED).convert("L").getpixel((0, 0))
+
+    assert (green_grey, red_grey) == (75, 102)
+    # Not the same grey, but nearer than a page comparison calls a difference, so grey passes them
+    assert abs(green_grey - red_grey) < PIXEL_TOLERANCE
 
 
 def test_a_page_which_did_not_change_differs_nowhere() -> None:
