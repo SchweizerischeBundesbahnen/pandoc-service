@@ -182,3 +182,6 @@ pyrightconfig.json
 /.vscode/
 junittest.xml
 /.history/
+
+# Page images and diffs of a failed visual test
+tests/output/

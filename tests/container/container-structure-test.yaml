@@ -39,8 +39,8 @@ commandTests:
     command: bash
     args:
       - -c
-      - test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name lmmonolt10-bold.otf \)
-        | wc -l)" -eq 6
+      - test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name geometry.sty -o -name
+        lmmonolt10-bold.otf \) | wc -l)" -eq 7
     exitCode: 0
   - name: Playwright Chromium is installed for SVG rasterization
     command: bash

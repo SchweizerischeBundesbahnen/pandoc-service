@@ -249,6 +249,21 @@ def test_run_pandoc_conversion_keeps_empty_paragraphs_for_docx_to_pdf():
     assert empty_paragraphs < cmd.index(f"--lua-filter={FILTERS['docx_tables_to_latex']}")
 
 
+def test_run_pandoc_conversion_passes_the_docx_page_geometry_for_docx_to_pdf():
+    """The PDF is laid out on the page of the DOCX; bytes without one get Letter."""
+    cmd, _ = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "pdf")
+
+    assert "geometry:paperwidth=8.5000in" in cmd
+    assert "geometry:bottom=1.0000in" in cmd
+    assert cmd[cmd.index("geometry:paperwidth=8.5000in") - 1] == "-V"
+
+
+def test_run_pandoc_conversion_passes_no_page_geometry_outside_docx_to_latex():
+    for source_format, target_format in (("docx", "docx"), ("html", "pdf"), ("markdown", "pdf")):
+        cmd, _ = _run_conversion_capturing_cmd(b"source", source_format, target_format)
+        assert not any(item.startswith("geometry:") for item in cmd), (source_format, target_format)
+
+
 def test_run_pandoc_conversion_invokes_docx_color_preprocessor_for_docx_to_latex():
     """Same wiring applies when target is raw LaTeX (the writer path is
     identical; the tectonic step is just skipped)."""
