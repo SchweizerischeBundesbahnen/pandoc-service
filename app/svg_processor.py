@@ -133,8 +133,8 @@ class SvgProcessor:
             if svg is None:
                 continue
 
-            requested_size = self._requested_size_px(node, svg)
-            image_type, image_content = await self.replace_svg_with_png(svg, requested_size)
+            drawn_size = self._drawn_size_px(node, svg)
+            image_type, image_content = await self.replace_svg_with_png(svg, self._render_size_px(drawn_size))
             replaced_content_base64 = self.to_base64(image_content)
 
             # Skip if nothing changed
@@ -142,7 +142,7 @@ class SvgProcessor:
                 continue
 
             # Preserve the rendered size by setting it explicitly on the <img>
-            self._apply_img_dimensions_from_svg(node, svg, requested_size)
+            self._apply_img_dimensions(node, drawn_size)
 
             node["src"] = f"data:{image_type};base64,{replaced_content_base64}"
             converted_count += 1
@@ -151,40 +151,28 @@ class SvgProcessor:
             self.log.info("Converted %d SVG data URLs to PNG", converted_count)
         return parsed_html
 
-    def _apply_img_dimensions_from_svg(self, node: Tag, svg: Element, requested_size: tuple[int, int] | None) -> None:
+    def _apply_img_dimensions(self, node: Tag, drawn_size: tuple[int | None, int | None] | None) -> None:
         """Best-effort: give the <img> the size it is drawn at, as an attribute the writers read.
 
         The PNG carries the pixels of the SVG times the scale factor, so an image left to size itself
-        would come out that many times too large. `requested_size` is the size the document asks for,
-        where it asks for one this can read; otherwise the size of the SVG says it, as it always did.
+        would come out that many times too large. `drawn_size` is what `_drawn_size_px` read; None
+        leaves the element as the document wrote it, the target being the one to resolve the size.
 
         The size is written as an attribute and not only as a style, because the writer of every target
         reads the attribute, while `filters/inline_styles.lua` carries a style onto it for docx alone.
         """
         try:
+            if drawn_size is None:
+                return
+            width, height = drawn_size
+
             style_val = self._get_attr_str(node, "style") or ""
             style_parts = [part.strip() for part in style_val.split(";") if part.strip()]
-
-            width: int
-            height: int | None
-            if requested_size is not None:
-                width, height = requested_size
-            else:
-                declarations = self._style_declarations(node)
-                if "width" in declarations or "height" in declarations:
-                    # The document sizes the image in a way this cannot read, a percentage among others.
-                    # It is left as the document wrote it: the size of the file would answer a question
-                    # nobody asked.
-                    return
-                own_width, _, _ = self.extract_svg_dimensions_as_px(svg)
-                if not isinstance(own_width, int):
-                    return
-                # The width alone, so the height follows the ratio of the SVG rather than a second reading of it
-                width, height = own_width, None
-
-            node["width"] = f"{width}px"
             style_parts = [part for part in style_parts if not part.lower().startswith(("width:", "height:"))]
-            style_parts.append(f"width: {width}px")
+
+            if width is not None:
+                node["width"] = f"{width}px"
+                style_parts.append(f"width: {width}px")
             if height is not None:
                 node["height"] = f"{height}px"
                 style_parts.append(f"height: {height}px")
@@ -196,37 +184,73 @@ class SvgProcessor:
             # Log at debug level to avoid noise but prevent silent pass
             logging.getLogger(__name__).debug("Failed to apply img dimensions from SVG: %s", e)
 
-    def _requested_size_px(self, node: Tag, svg: Element) -> tuple[int, int] | None:
-        """The size the document gives this image, in px, or None where it gives none this can read.
+    def _drawn_size_px(self, node: Tag, svg: Element) -> tuple[int | None, int | None] | None:
+        """The size this image is drawn at, in px, or None where only the target can resolve it.
 
-        The PNG is rasterized at this size times the scale factor, which is what keeps an image sharp in
-        print. Without it an image the document enlarges would be rasterized at the size of its SVG and
-        blown up from there.
+        Either side may be None, meaning the raster carries it: a single side is enough for a writer,
+        which keeps the ratio of the image it is given.
+
+        Where the document states a size this can read, that size is the one drawn, brought inside
+        `max-width` and `max-height` as a browser brings it. Where it states one side, the other
+        follows the ratio of the SVG, which a viewBox is what makes it keep. Where it states nothing
+        this can read, the width of the SVG is the size, as it always was. Only a percentage is left
+        alone: it is a share of a width no one here knows.
         """
         style = self._style_declarations(node)
-        width = self._px_value(style.get("width"))
-        height = self._px_value(style.get("height"))
-        if width is None and height is None:
-            return None
-        # A size this cannot read, a percentage among others, says nothing about how wide the image ends up,
-        # and the other half of a pair would be a guess. The SVG says the size then, as it always did.
-        if (width is None) != (style.get("width") is None) or (height is None) != (style.get("height") is None):
+        stated_width, stated_height = style.get("width"), style.get("height")
+        if (stated_width or "").endswith("%") or (stated_height or "").endswith("%"):
             return None
 
-        # The drawing is scaled into the size asked for, which a viewBox is what makes possible
-        if self.parse_viewbox(svg) == (None, None):
-            return None
-
+        width, height = self._px_value(stated_width), self._px_value(stated_height)
         own_width, own_height, _ = self.extract_svg_dimensions_as_px(svg)
-        if not own_width or not own_height:
+
+        if width is None and height is None:
+            if not isinstance(own_width, int):
+                return None
+            width = own_width
+        # The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
+        # one there is no ratio to complete a single side with, and the raster carries it instead.
+        elif self.parse_viewbox(svg) != (None, None) and own_width and own_height:
+            if width is None:
+                width = math.ceil(height * own_width / own_height)  # type: ignore[operator]
+            elif height is None:
+                height = math.ceil(width * own_height / own_width)
+
+        return self._inside_the_caps(style, width, height)
+
+    def _inside_the_caps(self, style: dict[str, str], width: int | None, height: int | None) -> tuple[int | None, int | None]:
+        """The size brought inside `max-width` and `max-height`, with the ratio it had.
+
+        A cap this cannot read as a length, a percentage among others, is left to the target.
+        """
+        factor = 1.0
+        for cap, side in (("max-width", width), ("max-height", height)):
+            limit = self._px_value(style.get(cap))
+            if limit is not None and side is not None and side > limit:
+                factor = min(factor, limit / side)
+        if math.isclose(factor, 1.0):
+            return width, height
+        return (
+            max(1, round(width * factor)) if width is not None else None,
+            max(1, round(height * factor)) if height is not None else None,
+        )
+
+    def _render_size_px(self, drawn_size: tuple[int | None, int | None] | None) -> tuple[int, int] | None:
+        """The size to rasterize at, or None to rasterize the SVG at its own size.
+
+        The PNG is made at the size the image is drawn at times the scale factor, which is what keeps
+        an image sharp in print. Without it an image the document enlarges would be rasterized at the
+        size of its SVG and blown up from there.
+        """
+        if drawn_size is None:
             return None
-        if width is None:
-            width = math.ceil(height * own_width / own_height)  # type: ignore[operator]
-        if height is None:
-            height = math.ceil(width * own_height / own_width)
+        width, height = drawn_size
+        if width is None or height is None:
+            return None
 
         # A document could otherwise size an image into a screenshot of any size, and the memory of the
-        # browser taking it is shared with every conversion running beside this one
+        # browser taking it is shared with every conversion running beside this one. The image is still
+        # drawn at the size the document gives; only its detail falls back to the size of the SVG.
         scale = self.device_scale_factor or 1.0
         if max(width, height) * scale > self.MAX_RENDER_SIDE or width * height * scale * scale > self.MAX_RENDER_PIXELS:
             self.log.warning("Rasterizing an SVG at its own size: %dx%d px at a scale of %.2f is too large", width, height, scale)

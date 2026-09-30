@@ -313,9 +313,9 @@ def test_convert_svg_keeps_the_size_the_document_gives(test_parameters: TestPara
     response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="docx", data=html)
     assert response.status_code == 200
 
-    # The SVG is 200x100: its own size where the document gives none, then half of it, twice it, and
-    # a width with a height.
-    assert [width for width, _ in __images_drawn(response.content)] == [200, 100, 400, 300]
+    # The SVG is 200x100: its own size where the document gives none, then half of it, twice it, a
+    # width with a height, its own size again where `auto` is no length, and a width its cap brings in.
+    assert [width for width, _ in __images_drawn(response.content)] == [200, 100, 400, 300, 200, 150]
 
 
 @pytest.mark.parametrize("scale", [1.0, 2.0])
@@ -335,7 +335,7 @@ def test_convert_svg_rasterizes_at_the_size_it_is_drawn(scale: float, test_param
     drawn = __images_drawn(response.content)
     # Every image carries as many pixels as the scale factor asks for at the size it is drawn
     assert drawn == [(width, round(width * scale)) for width, _ in drawn]
-    assert [width for width, _ in drawn] == [200, 100, 400, 300]
+    assert [width for width, _ in drawn] == [200, 100, 400, 300, 200, 150]
 
 
 def test_convert_with_docx_template(test_parameters: TestParameters) -> None:

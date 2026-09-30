@@ -72,12 +72,17 @@ falling back to the env var, then to `1.0`. The `docx-exporter` extension sends
 this as its "Image density" setting (96/192/300/600 dpi → 1.0/2.0/3.125/6.25).
 
 **The size the document gives.** An image is drawn at the size its `style` states
-(`width` and/or `height` in px), and the SVG is rasterized at that size times the
-scale factor, so the drawing stays sharp wherever it is enlarged. A size stated in
-a unit which has no meaning here, a percentage among others, is left to the target
-to resolve. Where the document states no size, the SVG's own size is the one drawn.
-A render beyond 10000 px a side or 50 megapixels, counted after the scale factor,
-falls back to the size of the SVG.
+(`width` and/or `height` in px), brought inside `max-width` and `max-height` as a
+browser brings it, and the SVG is rasterized at that size times the scale factor, so
+the drawing stays sharp wherever it is enlarged. Where the document states one side,
+the other follows the ratio of the SVG. Where it states no size a length can be read
+from, the SVG's own size is the one drawn. A percentage is the one thing left to the
+target: it is a share of a width only the target knows.
+
+The size is written onto the `<img>` as a `width`/`height` attribute, which is what
+the writer of every target reads. Rasterization alone is capped, at 10000 px a side
+and 50 megapixels counted after the scale factor: beyond that the PNG is made at the
+size of the SVG, and the image is still drawn at the size the document gives.
 
 **Configuration (environment variables):**
 
