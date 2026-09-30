@@ -71,6 +71,27 @@ device scale factor (1.0 = 96 dpi). It can be set per request with the
 falling back to the env var, then to `1.0`. The `docx-exporter` extension sends
 this as its "Image density" setting (96/192/300/600 dpi → 1.0/2.0/3.125/6.25).
 
+**The size the document gives.** An image is drawn at the size its `style` states
+(`width` and/or `height`, in any unit which says how long it is on its own: `px`,
+`in`, `cm`, `mm`, `pt`, `pc`, or a bare number read as px), and the SVG is rasterized
+at that size times the scale factor, so the drawing stays sharp wherever it is
+enlarged. Where the document states one side, the other follows the ratio of the SVG.
+Where it states no size a length can be read from, the SVG's own size is the one
+drawn. A percentage is the one thing left to the target: it is a share of a width only
+the target knows.
+
+`max-width` and `max-height` hold the size. Where the document states both sides it has
+chosen the shape already, so each side is held by the cap on its own axis and by no
+other. Where it states one side and leaves the other to the drawing, a cap catching
+either makes both give way together, so the drawing keeps its shape instead of sitting
+in a box of empty space. Where it states no size at all, both sides follow the drawing
+and a cap shrinks the whole of it.
+
+The size is written onto the `<img>` as a `width`/`height` attribute, which is what
+the writer of every target reads. Rasterization alone is capped, at 10000 px a side
+and 50 megapixels counted after the scale factor: beyond that the PNG is made at the
+size of the SVG, and the image is still drawn at the size the document gives.
+
 **Configuration (environment variables):**
 
 | Variable | Default | Range | Purpose |

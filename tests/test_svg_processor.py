@@ -181,17 +181,216 @@ def test_ensure_mandatory_attributes(svg_input):
     assert processor.svg_to_string(updated).count('xmlns="http://www.w3.org/2000/svg"') == 1
 
 
-def test_apply_img_dimensions_from_svg():
+SIZED_SVG = '<svg width="200" height="100" viewBox="0 0 200 100"></svg>'
+
+
+@pytest.mark.parametrize(
+    "style,expected_width,expected_height",
+    [
+        # Nothing sizes the image: the SVG says the size, as it always did
+        ("max-width: 650px;", "200px", None),
+        # A size this cannot read is no size at all, so the SVG says it again
+        ("width: auto;", "200px", None),
+        ("width: 10em;", "200px", None),
+        # The document sizes it: that size is the one written, whole
+        ("width: 100px; height: 50px;", "100px", "50px"),
+        ("width: 400px;", "400px", "200px"),
+        ("height: 300px;", "600px", "300px"),
+        # One side stated and the other `auto` still leaves a ratio to follow
+        ("width: 400px; height: auto;", "400px", "200px"),
+        # A later declaration wins, and `!important` wins over a later one
+        ("width: 100px; width: 400px;", "400px", "200px"),
+        ("width: 100px !important; width: 400px;", "100px", "50px"),
+        # A length is a length whatever unit it is stated in
+        ("width: 2in;", "192px", "96px"),
+        ("width: 150pt;", "200px", "100px"),
+        ("width: 400;", "400px", "200px"),
+        # A cap holds the side it is the cap of, and the side which follows that one
+        ("width: 400px; max-width: 300px;", "300px", "150px"),
+        # A cap catching the side which follows the drawing gives way on both, so the shape holds
+        ("width: 400px; max-height: 50px;", "100px", "50px"),
+        ("height: 300px; max-width: 200px;", "200px", "100px"),
+        # A side the document states is held by its own cap and by no other
+        ("width: 400px; height: 100px; max-width: 200px;", "200px", "100px"),
+        # Both sides follow the drawing, so a cap shrinks the whole of it
+        ("max-width: 100px;", "100px", None),
+        ("max-height: 25px;", "50px", None),
+        # A cap this cannot read leaves the size alone
+        ("width: 400px; max-width: 50%;", "400px", "200px"),
+        # A cap the image already fits changes nothing
+        ("width: 100px; max-width: 650px;", "100px", "50px"),
+    ],
+)
+def test_an_img_carries_the_size_it_is_drawn_at(style, expected_width, expected_height):
+    """The size an image is drawn at reaches the <img>, where every writer reads it; #244."""
     processor = SvgProcessor()
-    soup = BeautifulSoup('<img style="width: 500px; height: 300px; color: red;">', "html.parser")
-    node = soup.find("img")
-    svg = det.fromstring('<svg width="100" height="200"></svg>')
-    processor._apply_img_dimensions_from_svg(node, svg)
-    assert node.get("width") == "100px"
-    style = node.get("style")
-    assert "width: 100px" in style
-    assert "height:" not in style.lower()
-    assert "color: red" in style
+    node = BeautifulSoup(f'<img style="{style} color: red;">', "html.parser").find("img")
+    svg = det.fromstring(SIZED_SVG)
+
+    processor._apply_img_dimensions(node, processor._drawn_size_px(node, svg))
+
+    assert node.get("width") == expected_width
+    assert node.get("height") == expected_height
+    assert f"width: {expected_width}" in node["style"]
+    assert "color: red" in node["style"]
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        # A percentage is a share of a width no one here knows
+        "width: 50%;",
+        # The other half of the pair would be a guess
+        "width: 50%; height: 100px;",
+        "height: 50%;",
+    ],
+)
+def test_a_percentage_is_left_for_the_target_to_resolve(style):
+    """A share of a width only the target knows stays the document's own wording."""
+    processor = SvgProcessor()
+    node = BeautifulSoup(f'<img style="{style}">', "html.parser").find("img")
+    svg = det.fromstring(SIZED_SVG)
+
+    processor._apply_img_dimensions(node, processor._drawn_size_px(node, svg))
+
+    assert node.get("width") is None
+    assert node.get("height") is None
+    assert node["style"] == style
+
+
+def test_a_size_which_cannot_be_applied_leaves_the_img_as_it_was(mocker):
+    """Applying a size is best effort: the conversion is worth more than the size of its result."""
+    processor = SvgProcessor()
+    mocker.patch.object(processor, "extract_svg_dimensions_as_px", side_effect=RuntimeError("no dimensions"))
+    node = BeautifulSoup('<img style="color: red;">', "html.parser").find("img")
+
+    processor._apply_img_dimensions(node, None)
+
+    assert node.get("width") is None
+    assert node["style"] == "color: red;"
+
+
+def test_an_svg_of_no_size_leaves_the_img_alone():
+    """Nothing to say about the size, so nothing is said."""
+    processor = SvgProcessor()
+    node = BeautifulSoup('<img style="color: red;">', "html.parser").find("img")
+
+    processor._apply_img_dimensions(node, None)
+
+    assert node.get("width") is None
+    assert node["style"] == "color: red;"
+
+
+@pytest.mark.parametrize(
+    "svg,style,expected",
+    [
+        # 21 px of a drawing 5 by 7 is 15 px exactly, which a shape taken as 1.4 first reaches past
+        ('<svg width="5" height="7" viewBox="0 0 5 7"></svg>', "height: 21px; max-width: 15px;", (15, 21)),
+        ('<svg width="7" height="5" viewBox="0 0 7 5"></svg>', "width: 21px; max-height: 15px;", (21, 15)),
+        # A side which does not divide evenly is rounded up, and the cap then holds the pair
+        ('<svg width="3" height="7" viewBox="0 0 3 7"></svg>', "height: 20px;", (9, 20)),
+    ],
+)
+def test_a_side_follows_the_shape_in_whole_numbers(svg, style, expected):
+    """A shape read as a fraction rounds a side which divides evenly up to the next px."""
+    processor = SvgProcessor()
+    node = BeautifulSoup(f'<img style="{style}">', "html.parser").find("img")
+
+    assert processor._drawn_size_px(node, det.fromstring(svg)) == expected
+
+
+@pytest.mark.parametrize(
+    "svg",
+    [
+        # Without a viewBox the drawing does not scale into the size asked for
+        '<svg width="200" height="100"></svg>',
+        # A size of its own is what the shape is read from, and this one has none
+        '<svg width="0" height="0" viewBox="0 0 0 0"></svg>',
+    ],
+)
+def test_a_single_side_is_left_alone_where_the_svg_has_no_shape(svg):
+    """The raster carries the other side, which is the ratio the drawing keeps anyway."""
+    processor = SvgProcessor()
+    node = BeautifulSoup('<img style="width: 400px;">', "html.parser").find("img")
+
+    assert processor._drawn_size_px(node, det.fromstring(svg)) == (400, None)
+
+
+@pytest.mark.parametrize(
+    "style,scale",
+    [
+        ("width: 20000px;", 1.0),
+        ("width: 6000px;", 2.0),
+        ("width: 9000px; height: 9000px;", 1.0),
+    ],
+)
+def test_a_size_too_large_to_rasterize_falls_back_to_the_svg(style, scale):
+    """A screenshot beyond the limit would take the memory of a browser every conversion shares."""
+    processor = SvgProcessor(device_scale_factor=scale)
+    node = BeautifulSoup(f'<img style="{style}">', "html.parser").find("img")
+
+    drawn = processor._drawn_size_px(node, det.fromstring(SIZED_SVG))
+
+    # Only the detail falls back; the image is still drawn at the size the document gives
+    assert processor._render_size_px(drawn) is None
+    assert drawn[0] == processor._px_value(style.split(";")[0].split(":")[1].strip())
+
+
+def test_nothing_is_rasterized_at_a_size_with_a_side_the_raster_carries():
+    """A single side leaves the ratio to the raster, which is the SVG's own."""
+    assert SvgProcessor()._render_size_px((400, None)) is None
+    assert SvgProcessor()._render_size_px(None) is None
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        # A length, in each unit which says how long it is on its own
+        ("10px", 10),
+        ("10.2px", 11),
+        ("10", 10),
+        ("1in", 96),
+        ("1cm", 38),
+        ("10mm", 38),
+        ("72pt", 96),
+        ("1pc", 16),
+        # A number may open on its decimal point
+        (".5in", 48),
+        (".5px", 1),
+        # The space around a value is no part of it, and CSS puts none inside one
+        ("  10px  ", 10),
+        ("10 px", None),
+        # What is no number at all
+        ("10.", None),
+        (".", None),
+        (".px", None),
+        # A unit which stands for something else on every element, and what is no length at all
+        ("50%", None),
+        ("10em", None),
+        ("100vw", None),
+        ("auto", None),
+        ("abcpx", None),
+        ("-10px", None),
+        ("0px", None),
+        (None, None),
+        ("infpx", None),
+        ("9" * 400 + "px", None),
+    ],
+)
+def test_px_value(value, expected):
+    assert SvgProcessor._px_value(value) == expected
+
+
+@pytest.mark.asyncio
+async def test_an_svg_is_rasterized_at_the_size_it_is_drawn_at(mocker):
+    """The scale factor keeps the image sharp where it is drawn, not where its file happens to be; #244."""
+    manager = MagicMock()
+    manager.convert_svg_to_png = AsyncMock(return_value=b"png")
+    processor = SvgProcessor(chromium_manager=manager, device_scale_factor=2.0)
+
+    await processor.replace_svg_with_png(det.fromstring(SIZED_SVG), (400, 200))
+
+    assert manager.convert_svg_to_png.await_args.args[1:] == (400, 200, 2.0)
 
 
 def test_svg_from_string_invalid_returns_none():

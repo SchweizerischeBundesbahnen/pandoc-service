@@ -1,11 +1,13 @@
 import base64
 import io
 import logging
+import struct
 import time
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
+from xml.etree import ElementTree as ET
 
 import docker
 import pytest
@@ -26,6 +28,10 @@ TEST_IMAGE_NAME = "pandoc-service-test"
 TEST_IMAGE_TAG = "latest"
 TEST_CONTAINER_NAME = "pandoc-service-test-container"
 TEST_IMAGE_FULL = f"{TEST_IMAGE_NAME}:{TEST_IMAGE_TAG}"
+
+# An EMU is a 914400th of an inch, a CSS px a 96th
+EMU_PER_PX = 914400 / 96
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 SOURCE_HTML = """
             <html>
@@ -277,6 +283,61 @@ def test_convert_html_to_docx(test_parameters: TestParameters) -> None:
     assert expected_paragraphs == paragraphs
 
 
+def __images_drawn(docx_content: bytes) -> list[tuple[int, int]]:
+    """Every image of the document, in order: the width Word draws it at and the width it carries, in px.
+
+    An EMU is a 914400th of an inch and a CSS px a 96th, which is what turns the one into the other.
+    """
+    drawing_ns = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    main_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    relationship_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+    with zipfile.ZipFile(io.BytesIO(docx_content)) as package:
+        targets = {relationship.get("Id"): relationship.get("Target") for relationship in ET.fromstring(package.read("word/_rels/document.xml.rels")).findall(f"{{{package_ns}}}Relationship")}
+        drawn = []
+        for drawing in ET.fromstring(package.read("word/document.xml")).iter(f"{{{W_NS}}}drawing"):
+            extent = drawing.find(f".//{{{drawing_ns}}}extent")
+            blip = drawing.find(f".//{{{main_ns}}}blip")
+            if extent is None or blip is None:
+                continue
+            # A PNG carries its pixel width in the IHDR, a big-endian uint32 16 bytes in
+            media = package.read(f"word/{targets[blip.get(f'{{{relationship_ns}}}embed')]}")
+            drawn.append((round(int(extent.get("cx")) / EMU_PER_PX), struct.unpack(">I", media[16:20])[0]))
+    return drawn
+
+
+def test_convert_svg_keeps_the_size_the_document_gives(test_parameters: TestParameters) -> None:
+    """An SVG comes out at the size the document asks for, not at its own; #244."""
+    html = __load_test_file("tests/data/svg-image-sized-by-the-document.html")
+    response = __send_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, source_format="html", target_format="docx", data=html)
+    assert response.status_code == 200
+
+    # The SVG is 200x100: its own size where the document gives none, then half of it, twice it, a
+    # width with a height, its own size again where `auto` is no length, and a width its cap brings in.
+    assert [width for width, _ in __images_drawn(response.content)] == [200, 100, 400, 300, 200, 150]
+
+
+@pytest.mark.parametrize("scale", [1.0, 2.0])
+def test_convert_svg_rasterizes_at_the_size_it_is_drawn(scale: float, test_parameters: TestParameters) -> None:
+    """The PNG carries the scale factor over the size the document draws the image at; #244."""
+    html = __load_test_file("tests/data/svg-image-sized-by-the-document.html")
+    response = __send_request(
+        base_url=test_parameters.base_url,
+        request_session=test_parameters.request_session,
+        source_format="html",
+        target_format="docx",
+        data=html,
+        parameters=f"scale_factor={scale}",
+    )
+    assert response.status_code == 200
+
+    drawn = __images_drawn(response.content)
+    # Every image carries as many pixels as the scale factor asks for at the size it is drawn
+    assert drawn == [(width, round(width * scale)) for width, _ in drawn]
+    assert [width for width, _ in drawn] == [200, 100, 400, 300, 200, 150]
+
+
 def test_convert_with_docx_template(test_parameters: TestParameters) -> None:
     # First test without template - it has some default headings color
     response = __send_docx_with_template_request(base_url=test_parameters.base_url, request_session=test_parameters.request_session, data=SOURCE_HTML_WITH_HEADINGS, source_format="html")
@@ -318,8 +379,10 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     assert version_info["chromium"], "Chromium version should not be empty"
 
 
-def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data) -> requests.Response:
+def __send_request(base_url: str, request_session: requests.Session, source_format: str, target_format: str, data, parameters: str | None = None) -> requests.Response:
     url = f"{base_url}/convert/{source_format}/to/{target_format}"
+    if parameters:
+        url = f"{url}?{parameters}"
     files = None
     payload = None
 

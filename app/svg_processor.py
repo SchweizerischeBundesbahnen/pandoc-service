@@ -19,7 +19,7 @@ import math
 import os
 import re
 import xml.etree.ElementTree as ET
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from bs4 import BeautifulSoup, Tag
 
@@ -39,6 +39,15 @@ class SvgProcessor:
 
     # MIME/constants
     SPECIAL_UNITS = ("vw", "vh", "%")
+
+    # What a browser is asked to rasterize at most, after the scale factor: one side, and the pixels of it
+    MAX_RENDER_SIDE = 10_000
+    MAX_RENDER_PIXELS = 50_000_000
+
+    # What a CSS px is worth in the units a length can be stated in, the absolute ones alone. A unit
+    # which stands for something else on every element is not here: it cannot be read without that
+    # element. The same table as `app/html_image_pre_process.py`, which sizes a raster by it.
+    ABSOLUTE_UNITS_IN_PX: ClassVar[dict[str, float]] = {"px": 1.0, "in": 96.0, "cm": 96 / 2.54, "mm": 96 / 25.4, "pt": 96 / 72, "pc": 16.0}
     IMAGE_PNG = "image/png"
     IMAGE_SVG = "image/svg+xml"
     NON_SVG_CONTENT_TYPES = ("image/jpeg", "image/png", "image/gif")
@@ -129,15 +138,16 @@ class SvgProcessor:
             if svg is None:
                 continue
 
-            image_type, image_content = await self.replace_svg_with_png(svg)
+            drawn_size = self._drawn_size_px(node, svg)
+            image_type, image_content = await self.replace_svg_with_png(svg, self._render_size_px(drawn_size))
             replaced_content_base64 = self.to_base64(image_content)
 
             # Skip if nothing changed
             if replaced_content_base64 == content_base64:
                 continue
 
-            # Preserve original rendered size by setting explicit width on <img>
-            self._apply_img_dimensions_from_svg(node, svg)
+            # Preserve the rendered size by setting it explicitly on the <img>
+            self._apply_img_dimensions(node, drawn_size)
 
             node["src"] = f"data:{image_type};base64,{replaced_content_base64}"
             converted_count += 1
@@ -146,24 +156,201 @@ class SvgProcessor:
             self.log.info("Converted %d SVG data URLs to PNG", converted_count)
         return parsed_html
 
-    def _apply_img_dimensions_from_svg(self, node: Tag, svg: Element) -> None:
-        """Best-effort: set only width attribute and inline style from SVG px dims."""
+    def _apply_img_dimensions(self, node: Tag, drawn_size: tuple[int | None, int | None] | None) -> None:
+        """Best-effort: give the <img> the size it is drawn at, as an attribute the writers read.
+
+        The PNG carries the pixels of the SVG times the scale factor, so an image left to size itself
+        would come out that many times too large. `drawn_size` is what `_drawn_size_px` read; None
+        leaves the element as the document wrote it, the target being the one to resolve the size.
+
+        The size is written as an attribute and not only as a style, because the writer of every target
+        reads the attribute, while `filters/inline_styles.lua` carries a style onto it for docx alone.
+        """
         try:
-            w, _, _ = self.extract_svg_dimensions_as_px(svg)
+            if drawn_size is None:
+                return
+            width, height = drawn_size
+
             style_val = self._get_attr_str(node, "style") or ""
-            style_parts = [s.strip() for s in style_val.split(";") if s.strip()]
+            style_parts = [part.strip() for part in style_val.split(";") if part.strip()]
+            style_parts = [part for part in style_parts if not part.lower().startswith(("width:", "height:"))]
 
-            if isinstance(w, int):
-                node["width"] = f"{w}px"
-                style_parts = [p for p in style_parts if not p.lower().startswith(("width:", "height:"))]
-                style_parts.append(f"width: {w}px")
+            if width is not None:
+                node["width"] = f"{width}px"
+                style_parts.append(f"width: {width}px")
+            if height is not None:
+                node["height"] = f"{height}px"
+                style_parts.append(f"height: {height}px")
 
-            if style_parts:
-                node["style"] = "; ".join(style_parts)
+            node["style"] = "; ".join(style_parts)
 
+        # Applying dimensions is best effort.
         except Exception as e:  # noqa: BLE001
             # Log at debug level to avoid noise but prevent silent pass
             logging.getLogger(__name__).debug("Failed to apply img dimensions from SVG: %s", e)
+
+    def _drawn_size_px(self, node: Tag, svg: Element) -> tuple[int | None, int | None] | None:
+        """The size this image is drawn at, in px, or None where only the target can resolve it.
+
+        Either side may be None, meaning the raster carries it: a single side is enough for a writer,
+        which keeps the ratio of the image it is given.
+
+        Where the document states a size this can read, that size is the one drawn, brought inside
+        `max-width` and `max-height`. A side the document states twice over - a width and a height
+        both - is held by the cap on its own axis and by no other: the document has chosen the shape
+        already, and a cap on one axis only trims that axis. A side the document leaves out follows
+        the ratio of the SVG, which a viewBox is what makes it keep, and where a cap catches that
+        side both sides give way together, so the drawing keeps its shape rather than sitting in a
+        box of empty space. Where the document states nothing this can read, the width of the SVG is
+        the size, as it always was, and a cap shrinks the whole of the drawing. Only a percentage is
+        left alone: it is a share of a width no one here knows.
+        """
+        style = self._style_declarations(node)
+        stated_width, stated_height = style.get("width"), style.get("height")
+        if (stated_width or "").endswith("%") or (stated_height or "").endswith("%"):
+            return None
+
+        width, height = self._px_value(stated_width), self._px_value(stated_height)
+        max_width, max_height = self._px_value(style.get("max-width")), self._px_value(style.get("max-height"))
+        own_width, own_height, _ = self.extract_svg_dimensions_as_px(svg)
+
+        if width is None and height is None:
+            # Both sides follow the drawing, so a cap shrinks the whole of it, with the ratio it had
+            if not isinstance(own_width, int):
+                return None
+            return self._whole_drawing_inside_the_caps(own_width, own_height, max_width, max_height)
+
+        width, height = self._inside_its_own_cap(width, max_width), self._inside_its_own_cap(height, max_height)
+        shape = self._shape_of(svg, own_width, own_height)
+
+        # The side the document leaves out follows the one it states, where there is a shape to follow
+        if shape is not None and width is None and height is not None:
+            return self._both_sides_giving_way(self._along_the_shape(height, shape[0], shape[1]), height, max_width)
+        if shape is not None and height is None and width is not None:
+            height, width = self._both_sides_giving_way(self._along_the_shape(width, shape[1], shape[0]), width, max_height)
+
+        return width, height
+
+    def _shape_of(self, svg: Element, own_width: int | None, own_height: int | None) -> tuple[int, int] | None:
+        """The width and the height of the drawing, or None where it has no shape to be scaled by.
+
+        The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
+        one there is no shape to complete a single side with, and the raster carries it instead.
+        """
+        if not own_width or not own_height or self.parse_viewbox(svg) == (None, None):
+            return None
+        return own_width, own_height
+
+    @staticmethod
+    def _along_the_shape(side: int, numerator: int, denominator: int) -> int:
+        """The other side of a drawing shaped `numerator` to `denominator`, rounded up.
+
+        Whole numbers throughout, because a shape taken as a fraction first loses the exact case: a
+        drawing 5 by 7 is 15 px wide at 21 px tall, where 21 over a rounded 1.4 reaches just past 15
+        and rounds up to 16.
+        """
+        return max(1, -(-side * numerator // denominator))
+
+    @staticmethod
+    def _inside_its_own_cap(side: int | None, cap: int | None) -> int | None:
+        """A side held by the cap on that same axis, which is the only one to hold it."""
+        return side if side is None or cap is None else min(side, cap)
+
+    @staticmethod
+    def _both_sides_giving_way(following: int, stated: int, cap: int | None) -> tuple[int, int]:
+        """The pair where a cap catches the side which follows the drawing, and the stated side with it.
+
+        The document states the one side and leaves the other to the drawing, so the shape is the
+        drawing's to keep. Holding the following side alone would leave the image in a box wider than
+        itself, with the drawing letterboxed inside it.
+        """
+        if cap is None or following <= cap:
+            return following, stated
+        return cap, max(1, round(stated * cap / following))
+
+    @staticmethod
+    def _whole_drawing_inside_the_caps(own_width: int, own_height: int | None, max_width: int | None, max_height: int | None) -> tuple[int, None]:
+        """The width of a drawing both of whose sides follow it, brought inside the caps it is given.
+
+        The height is left to the raster, which carries the ratio of the SVG, so a cap on it is met by
+        shrinking the width in the same measure.
+        """
+        factor = 1.0
+        for cap, side in ((max_width, own_width), (max_height, own_height)):
+            if cap is not None and side is not None and side > cap:
+                factor = min(factor, cap / side)
+        return (own_width if math.isclose(factor, 1.0) else max(1, round(own_width * factor))), None
+
+    def _render_size_px(self, drawn_size: tuple[int | None, int | None] | None) -> tuple[int, int] | None:
+        """The size to rasterize at, or None to rasterize the SVG at its own size.
+
+        The PNG is made at the size the image is drawn at times the scale factor, which is what keeps
+        an image sharp in print. Without it an image the document enlarges would be rasterized at the
+        size of its SVG and blown up from there.
+        """
+        if drawn_size is None:
+            return None
+        width, height = drawn_size
+        if width is None or height is None:
+            return None
+
+        # A document could otherwise size an image into a screenshot of any size, and the memory of the
+        # browser taking it is shared with every conversion running beside this one. The image is still
+        # drawn at the size the document gives; only its detail falls back to the size of the SVG.
+        scale = self.device_scale_factor or 1.0
+        if max(width, height) * scale > self.MAX_RENDER_SIDE or width * height * scale * scale > self.MAX_RENDER_PIXELS:
+            self.log.warning("Rasterizing an SVG at its own size: %dx%d px at a scale of %.2f is too large", width, height, scale)
+            return None
+        return width, height
+
+    @classmethod
+    def _px_value(cls, value: str | None) -> int | None:
+        """A CSS length in px, where the unit it is stated in says how long it is on its own.
+
+        A unit which stands for something else on every element - a percentage, `em`, `vw` - reads as
+        none: it cannot be resolved without the layout the target has and this does not. A bare number
+        is px, which is how pandoc and `filters/inline_styles.lua` both read one.
+        """
+        if value is None:
+            return None
+        # The space around a value is stripped rather than matched: two `\s*` on either side of a unit
+        # which may be empty is a run of spaces this could divide in as many ways as it is long. CSS
+        # puts no space between a number and its unit, so none is read between them either.
+        # The two ways of writing a number start on different characters, so neither can be read as the
+        # other and nothing is left to backtrack over
+        match = re.fullmatch(r"(\d+(?:\.\d+)?|\.\d+)([a-z]*)", value.strip())
+        if match is None:
+            return None
+        factor = cls.ABSOLUTE_UNITS_IN_PX.get(match.group(2) or "px")
+        if factor is None:
+            return None
+        length = float(match.group(1)) * factor
+        # A number long enough to reach infinity would raise on the way to an int
+        return math.ceil(length) if math.isfinite(length) and length > 0 else None
+
+    def _style_declarations(self, node: Tag) -> dict[str, str]:
+        """The inline style of the element, as property to value, lowercased.
+
+        A later declaration wins, unless an earlier one is `!important` - the cascade of a style attribute.
+        """
+        style_val = (self._get_attr_str(node, "style") or "").lower()
+        declarations: dict[str, str] = {}
+        important: set[str] = set()
+        for part in style_val.split(";"):
+            name, separator, value = part.partition(":")
+            if not separator:
+                continue
+            name = name.strip()
+            value = value.strip()
+            marked = value.endswith("!important")
+            if marked:
+                value = value[: -len("!important")].strip()
+            if name in important and not marked:
+                continue
+            declarations[name] = value
+            if marked:
+                important.add(name)
+        return declarations
 
     # ---------------- Core helpers ----------------
 
@@ -200,10 +387,13 @@ class SvgProcessor:
             self.log.error("Failed to decode base64 content: %s", e)
             return None
 
-    async def replace_svg_with_png(self, svg: Element) -> tuple[str, str | bytes]:
+    async def replace_svg_with_png(self, svg: Element, render_size: tuple[int, int] | None = None) -> tuple[str, str | bytes]:
         """
         Convert SVG Element to PNG bytes using CDP.
         Returns tuple of (mime, content). If conversion fails, returns original SVG.
+
+        `render_size` is the size the document draws the image at, where it gives one: the PNG is rasterized
+        at that size times the scale factor, so it stays sharp wherever the image is enlarged.
         """
         updated_svg = self.ensure_mandatory_attributes(svg)
 
@@ -211,6 +401,10 @@ class SvgProcessor:
         if not width or not height:
             self.log.warning("Invalid or undefined dimensions for SVG (width: %s, height: %s)", width, height)
             return self.without_changes(svg)
+
+        if render_size is not None:
+            width, height = render_size
+            updated_svg = self.replace_svg_size_attributes(updated_svg, width, height)
         self.log.debug("Converting SVG (%dx%d px) to PNG with scale factor %.2f", width, height, self.device_scale_factor)
 
         svg_content = self.svg_to_string(updated_svg)
