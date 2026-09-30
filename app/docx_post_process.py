@@ -37,6 +37,17 @@ EMU_1_INCH = 914400  # 1 inch in docx in EMU (English Metric Units)
 TWIPS_1_INCH = 1440  # 1 inch in docx in Twips (Twentieth of a Point)
 DOCX_LETTER_WIDTH_EMU = 8.5 * EMU_1_INCH  # docx LETTER width = 8.5 inch
 DOCX_LETTER_SIDE_MARGIN = EMU_1_INCH  # docx left & right margins = 1 inch
+DOCX_LETTER_HEIGHT_EMU = 11 * EMU_1_INCH  # docx LETTER height = 11 inch
+DOCX_LETTER_TOP_BOTTOM_MARGIN = EMU_1_INCH  # docx top & bottom margins = 1 inch
+# An image sits on a line, and the line asks for a little more than the image: the leading above it
+# and the depth below. An image given the whole text height therefore does not fit the page it was
+# measured against, and the page it opens is the next one, leaving an empty page behind. A sixth of
+# an inch is 12 pt, a line of the body text of the documents this produces, and it is 1.5% of the
+# height of a page a reader would have to be told about to notice.
+LINE_ALLOWANCE_EMU = EMU_1_INCH // 6
+
+WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 
 # Paper sizes in TWIPS (portrait orientation: width x height)
 PAPER_SIZES = {
@@ -87,6 +98,7 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     _separate_adjacent_tables(doc)
     apply_math_colors(doc)
     _replace_image_placeholders(doc)
+    _cap_image_heights(doc)
     _replace_link_placeholders(doc)
     add_table_of_contents_entries(doc)
     enable_auto_update_fields(doc)
@@ -666,12 +678,69 @@ def _rescale_table_grid(tbl: Any, target_twips: int) -> None:
         col.set(width_attr, str(max(1, round(width * target_twips / total))))
 
 
+def _margin_size(stated: int | None, fallback: int) -> int:
+    """The size of a margin the document states, or the fallback where it states none.
+
+    A margin of nothing is one the document states, so it is not replaced: a page laid out edge to
+    edge keeps the whole of its width and height. A negative top or bottom margin fixes the distance
+    of the header, and its size is what the text is laid out inside, which is how
+    `app/docx_page_geometry.py` reads it for the PDF.
+    """
+    return fallback if stated is None else abs(int(stated))
+
+
 def _get_available_content_width_for_section(section: Section) -> int:
     # Provide alternative 'Letter' paper size params in case if they were not set explicitly in the document
     page_width = section.page_width or DOCX_LETTER_WIDTH_EMU
-    left_margin = section.left_margin or DOCX_LETTER_SIDE_MARGIN
-    right_margin = section.right_margin or DOCX_LETTER_SIDE_MARGIN
+    left_margin = _margin_size(section.left_margin, DOCX_LETTER_SIDE_MARGIN)
+    right_margin = _margin_size(section.right_margin, DOCX_LETTER_SIDE_MARGIN)
     return int(page_width - left_margin - right_margin)
+
+
+def _get_available_content_height_for_section(section: Section) -> int:
+    # Provide alternative 'Letter' paper size params in case if they were not set explicitly in the document
+    page_height = section.page_height or DOCX_LETTER_HEIGHT_EMU
+    top_margin = _margin_size(section.top_margin, DOCX_LETTER_TOP_BOTTOM_MARGIN)
+    bottom_margin = _margin_size(section.bottom_margin, DOCX_LETTER_TOP_BOTTOM_MARGIN)
+    return int(page_height - top_margin - bottom_margin)
+
+
+def _cap_image_heights(doc: DocumentObject) -> None:
+    """Bring an image taller than its page back to the page, keeping its shape.
+
+    pandoc brings a wide image back to the text width but leaves its height,
+    so a tall one runs over several pages. The limit is the page height of
+    the image's section less its top and bottom margins, and less the line
+    the image is set on: see LINE_ALLOWANCE_EMU.
+    """
+    # A document always has a section: the body's own sectPr, or python-docx's default.
+    max_heights = [_get_available_content_height_for_section(section) - LINE_ALLOWANCE_EMU for section in doc.sections]
+    section_index = 0
+    for element in doc.element.body:
+        max_height = max_heights[min(section_index, len(max_heights) - 1)]
+        for extent in element.iter(f"{{{WP_NS}}}extent"):
+            _cap_extent_height(extent, max_height)
+        # A paragraph holding a sectPr closes its section; the body's own sectPr is the last one.
+        if element.tag == f"{{{SCHEMA}}}p" and element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr") is not None:
+            section_index += 1
+
+
+def _cap_extent_height(extent: Any, max_height: int) -> None:
+    """Scale one drawing down to max_height, its width by the same factor."""
+    width = int(extent.get("cx", "0"))
+    height = int(extent.get("cy", "0"))
+    if max_height <= 0 or height <= max_height:
+        return
+    new_width = int(width * max_height / height)
+    extent.set("cx", str(new_width))
+    extent.set("cy", str(max_height))
+    # The picture's own frame states the size too; keep the two in step. An <a:ext> of an
+    # extension list carries a uri and no size, and is left alone.
+    for frame_ext in extent.getparent().iter(f"{{{DRAWING_NS}}}ext"):
+        if frame_ext.get("cx") is not None:
+            frame_ext.set("cx", str(new_width))
+            frame_ext.set("cy", str(max_height))
+    logger.debug(f"Capped image height: {width} x {height} -> {new_width} x {max_height}")
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
