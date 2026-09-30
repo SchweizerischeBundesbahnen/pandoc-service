@@ -69,6 +69,7 @@ FILTERS = {
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
+    "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
@@ -613,8 +614,9 @@ def _build_pandoc_command(
     # Source format gains the +styles extension on the docx->latex path so the
     # synthetic character/paragraph styles the preprocessors injected surface as
     # custom-style attributes the docx_colors_to_latex / docx_paragraphs_to_latex
-    # filters can pick up.
-    pandoc_source_format = f"{source_format}+styles" if apply_docx_latex_filters else source_format
+    # filters can pick up. +empty_paragraphs keeps the empty paragraphs Word
+    # prints as blank lines; docx_empty_paragraphs_to_latex renders them.
+    pandoc_source_format = f"{source_format}+styles+empty_paragraphs" if apply_docx_latex_filters else source_format
     cmd = [PANDOC_PATH, "-f", pandoc_source_format, "-t", target_format, "-o", output_path, source_path]
 
     # A document names its own resources, and the writers embedding media fetch
@@ -672,6 +674,9 @@ def _build_pandoc_command(
     # (paragraph) and Span (run color) scopes are independent, so order between
     # them does not matter.
     if apply_docx_latex_filters:
+        # First, so the filters below see an empty line as the raw block it
+        # becomes and not as a paragraph of their own.
+        cmd.append(f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}")
         # Must precede docx_colors_to_latex: it rewrites underline/strikeout that
         # carry other formatting into ulem and strips highlight from inside them,
         # before the colour filter turns those spans into \textcolor/\hl.
