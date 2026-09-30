@@ -46,6 +46,9 @@ def assert_pages_match(name: str, pdf: bytes) -> None:
     """Compare the pages of a PDF with the references named <name>_page_<n>.png."""
     pages = render_pages(pdf)
     if os.environ.get("UPDATE_VISUAL_REFERENCES") == "1":
+        # A refresh which rendered nothing would take the references away and put nothing in their
+        # place, and the next run would have no baseline left to fail against
+        assert pages, f"{name}: the PDF has no pages, so the references are kept as they are"
         EXPECTED_DIR.mkdir(parents=True, exist_ok=True)
         for stale in EXPECTED_DIR.glob(f"{name}_page_*.png"):
             stale.unlink()

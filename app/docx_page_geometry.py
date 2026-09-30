@@ -25,6 +25,11 @@ TWIPS_PER_INCH = 1440
 LETTER = {"w": 12240, "h": 15840}
 ONE_INCH_MARGINS = {"top": 1440, "right": 1440, "bottom": 1440, "left": 1440}
 
+# What a source this cannot read raises: not a zip, or a zip without a document in it.
+# See html_lists_pre_process for why this is a name rather than an inline except-tuple
+# (ruff-format / PEP 758 interaction on Python 3.14).
+_UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
+
 
 def _first_section(document: Element) -> Element | None:
     """The sectPr of the first section: the first one a paragraph holds, else the body's own."""
@@ -55,7 +60,7 @@ def geometry_variables(docx_bytes: bytes) -> list[str]:
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
             document = parse_xml(package.read("word/document.xml"))
-    except zipfile.BadZipFile, KeyError:
+    except _UNREADABLE_DOCX:
         document = None
     section = _first_section(document) if document is not None else None
     size = section.find(f"{{{W_NS}}}pgSz") if section is not None else None

@@ -18,6 +18,13 @@ from tests.test_container import (
 
 logger = logging.getLogger(__name__)
 
+# The image carries a Debian base, pandoc, tectonic and Playwright's Chromium. On a warm cache it is
+# built in seconds; on a cold one, which every CI runner has and which a local `docker builder prune`
+# leaves behind, it has taken past five minutes and timed out, and every container test then errors
+# at setup with nothing about the build in the message. The timeout is here to stop a hung build, not
+# to measure a cold one.
+BUILD_TIMEOUT_SECONDS = 1800
+
 
 @pytest.fixture(autouse=True)
 def disable_metrics_server():
@@ -62,7 +69,7 @@ def pandoc_container():
     try:
         cleanup_docker_resources()
 
-        subprocess.run(["docker", "build", "-t", TEST_IMAGE_FULL, "."], env={**os.environ, "DOCKER_BUILDKIT": "1"}, timeout=300, check=True)
+        subprocess.run(["docker", "build", "-t", TEST_IMAGE_FULL, "."], env={**os.environ, "DOCKER_BUILDKIT": "1"}, timeout=BUILD_TIMEOUT_SECONDS, check=True)
 
         container = client.containers.run(image=TEST_IMAGE_FULL, detach=True, name=TEST_CONTAINER_NAME, ports={"9082": 9082}, init=True)
 
