@@ -201,10 +201,18 @@ SIZED_SVG = '<svg width="200" height="100" viewBox="0 0 200 100"></svg>'
         # A later declaration wins, and `!important` wins over a later one
         ("width: 100px; width: 400px;", "400px", "200px"),
         ("width: 100px !important; width: 400px;", "100px", "50px"),
-        # A cap brings the size in, with the ratio it had
+        # A length is a length whatever unit it is stated in
+        ("width: 2in;", "192px", "96px"),
+        ("width: 150pt;", "200px", "100px"),
+        ("width: 400;", "400px", "200px"),
+        # A cap holds the side it is the cap of, and the side which follows that one
         ("width: 400px; max-width: 300px;", "300px", "150px"),
-        ("width: 400px; max-height: 50px;", "100px", "50px"),
+        ("width: 400px; max-height: 50px;", "400px", "50px"),
+        # A side the document states is held by its own cap and by no other
+        ("width: 400px; height: 100px; max-width: 200px;", "200px", "100px"),
+        # Both sides follow the drawing, so a cap shrinks the whole of it
         ("max-width: 100px;", "100px", None),
+        ("max-height: 25px;", "50px", None),
         # A cap this cannot read leaves the size alone
         ("width: 400px; max-width: 50%;", "400px", "200px"),
         # A cap the image already fits changes nothing
@@ -314,7 +322,31 @@ def test_nothing_is_rasterized_at_a_size_with_a_side_the_raster_carries():
     assert SvgProcessor()._render_size_px(None) is None
 
 
-@pytest.mark.parametrize("value,expected", [("abcpx", None), ("10", None), (None, None), ("10px", 10), ("10.2px", 11), ("infpx", None)])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        # A length, in each unit which says how long it is on its own
+        ("10px", 10),
+        ("10.2px", 11),
+        ("10", 10),
+        ("1in", 96),
+        ("1cm", 38),
+        ("10mm", 38),
+        ("72pt", 96),
+        ("1pc", 16),
+        # A unit which stands for something else on every element, and what is no length at all
+        ("50%", None),
+        ("10em", None),
+        ("100vw", None),
+        ("auto", None),
+        ("abcpx", None),
+        ("-10px", None),
+        ("0px", None),
+        (None, None),
+        ("infpx", None),
+        ("9" * 400 + "px", None),
+    ],
+)
 def test_px_value(value, expected):
     assert SvgProcessor._px_value(value) == expected
 

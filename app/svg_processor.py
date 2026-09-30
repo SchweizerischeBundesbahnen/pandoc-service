@@ -19,7 +19,7 @@ import math
 import os
 import re
 import xml.etree.ElementTree as ET
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from bs4 import BeautifulSoup, Tag
 
@@ -43,6 +43,11 @@ class SvgProcessor:
     # What a browser is asked to rasterize at most, after the scale factor: one side, and the pixels of it
     MAX_RENDER_SIDE = 10_000
     MAX_RENDER_PIXELS = 50_000_000
+
+    # What a CSS px is worth in the units a length can be stated in, the absolute ones alone. A unit
+    # which stands for something else on every element is not here: it cannot be read without that
+    # element. The same table as `app/html_image_pre_process.py`, which sizes a raster by it.
+    ABSOLUTE_UNITS_IN_PX: ClassVar[dict[str, float]] = {"px": 1.0, "in": 96.0, "cm": 96 / 2.54, "mm": 96 / 25.4, "pt": 96 / 72, "pc": 16.0}
     IMAGE_PNG = "image/png"
     IMAGE_SVG = "image/svg+xml"
     NON_SVG_CONTENT_TYPES = ("image/jpeg", "image/png", "image/gif")
@@ -191,10 +196,12 @@ class SvgProcessor:
         which keeps the ratio of the image it is given.
 
         Where the document states a size this can read, that size is the one drawn, brought inside
-        `max-width` and `max-height` as a browser brings it. Where it states one side, the other
-        follows the ratio of the SVG, which a viewBox is what makes it keep. Where it states nothing
-        this can read, the width of the SVG is the size, as it always was. Only a percentage is left
-        alone: it is a share of a width no one here knows.
+        `max-width` and `max-height` as a browser brings it: a side the document states is held by
+        its own cap and by no other, so a capped width leaves a stated height where it was. Where it
+        states one side, the other follows the ratio of the SVG, which a viewBox is what makes it
+        keep. Where it states nothing this can read, the width of the SVG is the size, as it always
+        was, and a cap there shrinks the whole of the drawing. Only a percentage is left alone: it is
+        a share of a width no one here knows.
         """
         style = self._style_declarations(node)
         stated_width, stated_height = style.get("width"), style.get("height")
@@ -202,38 +209,44 @@ class SvgProcessor:
             return None
 
         width, height = self._px_value(stated_width), self._px_value(stated_height)
+        max_width, max_height = self._px_value(style.get("max-width")), self._px_value(style.get("max-height"))
         own_width, own_height, _ = self.extract_svg_dimensions_as_px(svg)
 
         if width is None and height is None:
+            # Both sides follow the drawing, so a cap shrinks the whole of it, with the ratio it had
             if not isinstance(own_width, int):
                 return None
-            width = own_width
+            return self._whole_drawing_inside_the_caps(own_width, own_height, max_width, max_height)
+
+        width, height = self._inside_its_own_cap(width, max_width), self._inside_its_own_cap(height, max_height)
+
         # The drawing is scaled into the size asked for, which a viewBox is what makes possible. Without
         # one there is no ratio to complete a single side with, and the raster carries it instead.
-        elif self.parse_viewbox(svg) != (None, None) and own_width and own_height:
+        if self.parse_viewbox(svg) != (None, None) and own_width and own_height:
             if width is None:
-                width = math.ceil(height * own_width / own_height)  # type: ignore[operator]
+                width = self._inside_its_own_cap(max(1, math.ceil(height * own_width / own_height)), max_width)  # type: ignore[operator]
             elif height is None:
-                height = math.ceil(width * own_height / own_width)
+                height = self._inside_its_own_cap(max(1, math.ceil(width * own_height / own_width)), max_height)
 
-        return self._inside_the_caps(style, width, height)
+        return width, height
 
-    def _inside_the_caps(self, style: dict[str, str], width: int | None, height: int | None) -> tuple[int | None, int | None]:
-        """The size brought inside `max-width` and `max-height`, with the ratio it had.
+    @staticmethod
+    def _inside_its_own_cap(side: int | None, cap: int | None) -> int | None:
+        """A side held by the cap on that same axis, which is the only one to hold it."""
+        return side if side is None or cap is None else min(side, cap)
 
-        A cap this cannot read as a length, a percentage among others, is left to the target.
+    @staticmethod
+    def _whole_drawing_inside_the_caps(own_width: int, own_height: int | None, max_width: int | None, max_height: int | None) -> tuple[int, None]:
+        """The width of a drawing both of whose sides follow it, brought inside the caps it is given.
+
+        The height is left to the raster, which carries the ratio of the SVG, so a cap on it is met by
+        shrinking the width in the same measure.
         """
         factor = 1.0
-        for cap, side in (("max-width", width), ("max-height", height)):
-            limit = self._px_value(style.get(cap))
-            if limit is not None and side is not None and side > limit:
-                factor = min(factor, limit / side)
-        if math.isclose(factor, 1.0):
-            return width, height
-        return (
-            max(1, round(width * factor)) if width is not None else None,
-            max(1, round(height * factor)) if height is not None else None,
-        )
+        for cap, side in ((max_width, own_width), (max_height, own_height)):
+            if cap is not None and side is not None and side > cap:
+                factor = min(factor, cap / side)
+        return (own_width if math.isclose(factor, 1.0) else max(1, round(own_width * factor))), None
 
     def _render_size_px(self, drawn_size: tuple[int | None, int | None] | None) -> tuple[int, int] | None:
         """The size to rasterize at, or None to rasterize the SVG at its own size.
@@ -257,17 +270,25 @@ class SvgProcessor:
             return None
         return width, height
 
-    @staticmethod
-    def _px_value(value: str | None) -> int | None:
-        """A CSS length in px, or None for anything else - a percentage has no meaning without a layout."""
-        if value is None or not value.endswith("px"):
+    @classmethod
+    def _px_value(cls, value: str | None) -> int | None:
+        """A CSS length in px, where the unit it is stated in says how long it is on its own.
+
+        A unit which stands for something else on every element - a percentage, `em`, `vw` - reads as
+        none: it cannot be resolved without the layout the target has and this does not. A bare number
+        is px, which is how pandoc and `filters/inline_styles.lua` both read one.
+        """
+        if value is None:
             return None
-        try:
-            length = float(value[:-2].strip())
-        except ValueError:
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*", value)
+        if match is None:
             return None
-        # `infpx` parses as a float and would raise on the way to an int
-        return math.ceil(length) if math.isfinite(length) else None
+        factor = cls.ABSOLUTE_UNITS_IN_PX.get(match.group(2) or "px")
+        if factor is None:
+            return None
+        length = float(match.group(1)) * factor
+        # A number long enough to reach infinity would raise on the way to an int
+        return math.ceil(length) if math.isfinite(length) and length > 0 else None
 
     def _style_declarations(self, node: Tag) -> dict[str, str]:
         """The inline style of the element, as property to value, lowercased.

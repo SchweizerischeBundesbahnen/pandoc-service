@@ -72,12 +72,19 @@ falling back to the env var, then to `1.0`. The `docx-exporter` extension sends
 this as its "Image density" setting (96/192/300/600 dpi → 1.0/2.0/3.125/6.25).
 
 **The size the document gives.** An image is drawn at the size its `style` states
-(`width` and/or `height` in px), brought inside `max-width` and `max-height` as a
-browser brings it, and the SVG is rasterized at that size times the scale factor, so
-the drawing stays sharp wherever it is enlarged. Where the document states one side,
-the other follows the ratio of the SVG. Where it states no size a length can be read
-from, the SVG's own size is the one drawn. A percentage is the one thing left to the
-target: it is a share of a width only the target knows.
+(`width` and/or `height`, in any unit which says how long it is on its own: `px`,
+`in`, `cm`, `mm`, `pt`, `pc`, or a bare number read as px), and the SVG is rasterized
+at that size times the scale factor, so the drawing stays sharp wherever it is
+enlarged. Where the document states one side, the other follows the ratio of the SVG.
+Where it states no size a length can be read from, the SVG's own size is the one
+drawn. A percentage is the one thing left to the target: it is a share of a width only
+the target knows.
+
+`max-width` and `max-height` hold the size as a browser holds it. A side the document
+states is held by its own cap and by no other, so a capped width leaves a stated height
+where it was; a side which follows the drawing follows the capped one too. Where the
+document states no size at all, both sides follow the drawing, and a cap shrinks the
+whole of it.
 
 The size is written onto the `<img>` as a `width`/`height` attribute, which is what
 the writer of every target reads. Rasterization alone is capped, at 10000 px a side
