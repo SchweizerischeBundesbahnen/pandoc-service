@@ -28,7 +28,7 @@ from app.auth import ApiKeyError, get_api_keys, is_request_authorized, require_a
 from app.schema import VersionSchema
 from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options, load_tls_options
 
-from . import docx_latex_pre_process, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
+from . import docx_latex_pre_process, docx_page_geometry, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
 from .constants import API_VERSION, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
@@ -609,6 +609,7 @@ def _build_pandoc_command(
     apply_docx_latex_filters: bool,
     preserve_table_styles: bool = False,
     reference_doc: str | None = None,
+    page_geometry: list[str] | None = None,
 ) -> list[str]:
     """Build the pandoc CLI invocation for run_pandoc_conversion."""
     # Source format gains the +styles extension on the docx->latex path so the
@@ -696,6 +697,12 @@ def _build_pandoc_command(
 
     if validated_options:
         cmd.extend(validated_options)
+
+    # The page size and margins of the DOCX, so the PDF lays the content out
+    # on the page Word does. Built by this service from the document, never
+    # taken from the request: see app/docx_page_geometry.py.
+    if page_geometry:
+        cmd.extend(page_geometry)
 
     # The reference document is the template file this service wrote from the
     # upload of the request. It is a parameter, not one of the options a client
@@ -836,7 +843,9 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # rewrites run in a single unzip/re-zip pass (docx_latex_pre_process) so an
     # image-heavy document's media is recompressed once, not three times.
     apply_docx_latex_filters = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
+    page_geometry: list[str] | None = None
     if apply_docx_latex_filters:
+        page_geometry = docx_page_geometry.geometry_variables(source_data)
         source_data = docx_latex_pre_process.preprocess(source_data)
 
     # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another
@@ -874,6 +883,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
                 apply_docx_latex_filters=apply_docx_latex_filters,
                 preserve_table_styles=preserve_table_styles,
                 reference_doc=reference_doc,
+                page_geometry=page_geometry,
             )
 
             # Run pandoc with validated parameters and measure duration
