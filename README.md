@@ -122,6 +122,26 @@ The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
 is informational and does not by itself mark the service unhealthy. The Chromium
 version is reported by the `/version` endpoint.
 
+### Inline CSS in HTML to DOCX
+
+Pandoc's DOCX writer ignores the `style` attribute of an HTML element. For an `html` to `docx`
+conversion, `filters/inline_styles.lua` carries the inline CSS across instead:
+
+| Element | CSS the DOCX keeps |
+|---|---|
+| `<span>` | `font-weight`, `font-style`, `text-decoration`, `color`, `background-color`, `font-size`, `font-family` |
+| `<h1>`..`<h6>`, `<div>` | a bold `font-weight` (`bold`, `bolder`, or 600 and more) |
+| `<p>`, `<div>` | `margin-left` and `text-align`, as the indent and justification of the paragraph |
+| `<img>` | `width` and `height` |
+| `<td>`, `<th>` | `background-color`, borders and `vertical-align`, with `preserve_table_styles=true` |
+
+A bold `<div>` makes everything inside it bold, lists, table cells and nested divs included, until an
+element declares a `font-weight` of its own. That is how a browser renders it. The color of a `<span>` is read in
+hex or `rgb()` notation only; a named color such as `red` is dropped.
+
+An anchor (`<a id>`, or a `<span>` with an `id`) stays a bookmark in the DOCX, also inside styled text,
+so a link to it still jumps there.
+
 ### External resources of a document
 
 A document names its own resources: an image, a stylesheet, a font. The writers which embed media
