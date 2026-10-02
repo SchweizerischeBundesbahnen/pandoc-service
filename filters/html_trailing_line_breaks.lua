@@ -25,6 +25,12 @@
 -- <br/> after a closed block (<p>text</p><br/>) is such a paragraph too, so it
 -- stays an empty line.
 --
+-- A paragraph that holds an image keeps its break too. Without it, an image
+-- paragraph next to a caption holds nothing but the image, and when the DOCX
+-- is converted to PDF, pandoc's DOCX reader pairs the two into a figure: a
+-- centered float with a "Figure N:" label of its own, which may even take the
+-- caption of the image before.
+--
 -- Only runs for HTML sources converted to DOCX (the controller gates it).
 
 -- Inlines whose content is a list of inlines. A Note holds blocks, so it is
@@ -109,9 +115,22 @@ local function strip_trailing_break(inlines)
   return false
 end
 
+-- True when `inlines` holds an Image, at any depth.
+local function has_image(inlines)
+  for _, inline in ipairs(inlines) do
+    if inline.t == "Image" then
+      return true
+    end
+    if INLINE_CONTAINERS[inline.t] and has_image(inline.content) then
+      return true
+    end
+  end
+  return false
+end
+
 local function strip(block)
   local content = block.content
-  if not has_content(content) or not strip_trailing_break(content) then
+  if not has_content(content) or has_image(content) or not strip_trailing_break(content) then
     return nil
   end
   block.content = content

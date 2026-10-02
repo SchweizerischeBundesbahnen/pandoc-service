@@ -4,15 +4,18 @@ Converts HTML to DOCX through the pandoc-service container, which applies the
 filter to every HTML to DOCX conversion, and reads the paragraphs of the
 produced ``document.xml``. A ``<br/>`` that ends a line of text must not reach
 the DOCX, where Word would render it as an empty line the HTML does not show.
-A ``<br/>`` between two lines, and the one that makes an empty line on its own,
-must stay.
+A ``<br/>`` between two lines, the one that makes an empty line on its own, and
+the one in a paragraph that holds an image must stay.
 """
 
 from __future__ import annotations
 
+import base64
 import io
 import re
+import struct
 import zipfile
+import zlib
 
 from tests.test_container import TestParameters
 
@@ -103,3 +106,25 @@ def test_empty_anchor_after_dropped_break_stays_a_bookmark(test_parameters: Test
 def test_break_after_closed_paragraph_before_empty_anchor_is_kept(test_parameters: TestParameters):
     paragraphs = _paragraphs(test_parameters, '<p>some paragraph</p><br/><a id="anchor"></a>')
     assert paragraphs == [("some paragraph", 0), ("", 1)]
+
+
+def _png() -> str:
+    """A 1x1 PNG as a data URI."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + chunk(b"IEND", b"")
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+def test_break_after_image_is_kept(test_parameters: TestParameters):
+    assert _paragraphs(test_parameters, f'<p><img src="{_png()}"/><br/></p>') == [("", 1)]
+
+
+def test_break_after_image_before_caption_is_kept(test_parameters: TestParameters):
+    """Without the break the image paragraph holds nothing but the image, and a DOCX to PDF conversion pairs it with the caption into a figure."""
+    caption = '<p class="polarion-rte-caption-paragraph">Figure <span class="polarion-rte-caption" data-sequence="Figure">1</span> First Picture</p>'
+    paragraphs = _paragraphs(test_parameters, f'<p><img src="{_png()}"/><br/></p>{caption}')
+    assert paragraphs == [("", 1), ("Figure 1 First Picture", 0)]
