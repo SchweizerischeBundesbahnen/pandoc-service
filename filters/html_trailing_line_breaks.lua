@@ -17,10 +17,13 @@
 -- This filter removes one trailing LineBreak from each Para and Plain, along
 -- with the spaces around it. It looks into a trailing inline container (Span,
 -- Strong, Link, ...) too, since a <br/> inside <span>text<br/></span> ends the
--- line the same way. A paragraph that holds nothing but line breaks is left
--- alone: <p><br/></p> is how Polarion writes an empty line, and the break is
--- what keeps it. A <br/> after a closed block (<p>text</p><br/>) is such a
--- paragraph too, so it stays an empty line.
+-- line the same way. It also looks past empty containers after the break,
+-- such as an empty anchor (<br/><a id="..."></a>), and keeps them.
+--
+-- A paragraph that holds nothing but line breaks is left alone: <p><br/></p>
+-- is how Polarion writes an empty line, and the break is what keeps it. A
+-- <br/> after a closed block (<p>text</p><br/>) is such a paragraph too, so it
+-- stays an empty line.
 --
 -- Only runs for HTML sources converted to DOCX (the controller gates it).
 
@@ -50,12 +53,32 @@ local function has_content(inlines)
   return false
 end
 
+-- True for a space, or for a container that holds nothing but spaces, such as
+-- the empty <a id="..."></a> anchors Polarion writes. A browser opens no line
+-- for them, so they do not keep a <br/> before them visible.
+local function is_blank(inline)
+  if is_space(inline) then
+    return true
+  end
+  if not INLINE_CONTAINERS[inline.t] then
+    return false
+  end
+  for _, child in ipairs(inline.content) do
+    if not is_blank(child) then
+      return false
+    end
+  end
+  return true
+end
+
 -- Remove the LineBreak that ends `inlines`, if any, together with the spaces
--- around it. Changes `inlines` in place and returns true when one was removed.
--- A container's content is read as a copy, so a changed one is assigned back.
+-- around it. Empty containers after the break are kept: an anchor with an id
+-- is a bookmark. Changes `inlines` in place and returns true when a break was
+-- removed. A container's content is read as a copy, so a changed one is
+-- assigned back.
 local function strip_trailing_break(inlines)
   local last = #inlines
-  while last > 0 and is_space(inlines[last]) do
+  while last > 0 and is_blank(inlines[last]) do
     last = last - 1
   end
   if last == 0 then
@@ -64,10 +87,14 @@ local function strip_trailing_break(inlines)
   local inline = inlines[last]
   if inline.t == "LineBreak" then
     for i = #inlines, last, -1 do
-      inlines:remove(i)
+      if i == last or is_space(inlines[i]) then
+        inlines:remove(i)
+      end
     end
-    while #inlines > 0 and is_space(inlines[#inlines]) do
-      inlines:remove(#inlines)
+    local before = last - 1
+    while before > 0 and is_space(inlines[before]) do
+      inlines:remove(before)
+      before = before - 1
     end
     return true
   end

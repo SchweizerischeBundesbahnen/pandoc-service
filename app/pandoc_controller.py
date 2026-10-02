@@ -646,23 +646,27 @@ def _build_pandoc_command(
     # the styled-span text disappears entirely, so the filter must be gated
     # on both source and target.
     if source_format == "html" and target_format == "docx":
-        # Drop the <br/> that ends a line of text, which a browser does not
-        # show but Word renders as an empty line. First, so that a break inside
-        # a styled span is gone before inline_styles turns the span into raw
-        # OOXML. See filters/html_trailing_line_breaks.lua.
-        cmd.append(f"--lua-filter={FILTERS['html_trailing_line_breaks']}")
-        cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
-        # Pairs with the html_lists_pre_process pass on the source bytes: the
-        # preprocessor wraps orphan <ol>/<ul> with a sentinel <li>, and this
-        # filter strips the marker paragraph that pandoc would otherwise emit
-        # for those synthetic list items.
-        cmd.append(f"--lua-filter={FILTERS['html_lists']}")
-        # Mark genuine Polarion captions (paragraphs carrying the
-        # <span data-sequence=...> counter) with the "Caption" style so
-        # docx_references_post_process recognises them structurally instead of by
-        # a leaky "text starts with Table/Figure" check. See
-        # filters/html_captions.lua.
-        cmd.append(f"--lua-filter={FILTERS['html_captions']}")
+        cmd.extend(
+            [
+                # Drop the <br/> that ends a line of text, which a browser does not
+                # show but Word renders as an empty line. First, so that a break inside
+                # a styled span is gone before inline_styles turns the span into raw
+                # OOXML. See filters/html_trailing_line_breaks.lua.
+                f"--lua-filter={FILTERS['html_trailing_line_breaks']}",
+                f"--lua-filter={FILTERS['inline_styles']}",
+                # Pairs with the html_lists_pre_process pass on the source bytes: the
+                # preprocessor wraps orphan <ol>/<ul> with a sentinel <li>, and this
+                # filter strips the marker paragraph that pandoc would otherwise emit
+                # for those synthetic list items.
+                f"--lua-filter={FILTERS['html_lists']}",
+                # Mark genuine Polarion captions (paragraphs carrying the
+                # <span data-sequence=...> counter) with the "Caption" style so
+                # docx_references_post_process recognises them structurally instead of by
+                # a leaky "text starts with Table/Figure" check. See
+                # filters/html_captions.lua.
+                f"--lua-filter={FILTERS['html_captions']}",
+            ]
+        )
         # Opt-in: preserve CSS table cell styles (background-color, borders)
         # by rebuilding styled tables as raw OOXML via the Lua filter.
         if preserve_table_styles:
