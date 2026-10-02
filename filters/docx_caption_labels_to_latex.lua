@@ -16,6 +16,11 @@
 -- before the table — matching the expected PDF layout where caption
 -- numbering is part of the visible text, not a LaTeX counter.
 --
+-- Figures have the same problem: a Caption-styled paragraph directly before a
+-- paragraph that holds only an image becomes a Figure, and LaTeX renders it as
+-- a centered float with its own "Figure N:" label. Word shows the caption and
+-- the image as two ordinary paragraphs, so the Figure is split back into them.
+--
 -- Only runs for the LaTeX writer (gated in PandocController on
 -- docx → pdf/latex).
 
@@ -47,4 +52,26 @@ function Table(tbl)
 
   -- Return caption as a plain paragraph before the table
   return { pandoc.Para(inlines), tbl }
+end
+
+-- Split a Figure back into the caption paragraph and the image paragraph it was
+-- built from. Pandoc pairs a caption with the image after it, so the caption
+-- comes first. The custom style of the image paragraph is on the Figure itself
+-- and goes back onto a Div around the image.
+function Figure(fig)
+  if not fig.caption or not fig.caption.long or #fig.caption.long == 0 then
+    return nil
+  end
+
+  local body = {}
+  for _, block in ipairs(fig.content) do
+    body[#body + 1] = block.t == "Plain" and pandoc.Para(block.content) or block
+  end
+
+  local blocks = {}
+  for _, block in ipairs(fig.caption.long) do
+    blocks[#blocks + 1] = block
+  end
+  blocks[#blocks + 1] = pandoc.Div(body, fig.attr)
+  return blocks
 end

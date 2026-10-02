@@ -68,6 +68,7 @@ FILTERS = {
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
+    "html_trailing_line_breaks": f"{FILTER_BASE_PATH}/html_trailing_line_breaks.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
@@ -94,6 +95,7 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
         f"--lua-filter={FILTERS['html_lists']}",
         f"--lua-filter={FILTERS['html_tables_to_latex']}",
         f"--lua-filter={FILTERS['html_captions']}",
+        f"--lua-filter={FILTERS['html_trailing_line_breaks']}",
         f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
         "--track-changes=all",
         "--pdf-engine=tectonic",
@@ -644,6 +646,11 @@ def _build_pandoc_command(
     # the styled-span text disappears entirely, so the filter must be gated
     # on both source and target.
     if source_format == "html" and target_format == "docx":
+        # Drop the <br/> that ends a line of text, which a browser does not
+        # show but Word renders as an empty line. First, so that a break inside
+        # a styled span is gone before inline_styles turns the span into raw
+        # OOXML. See filters/html_trailing_line_breaks.lua.
+        cmd.append(f"--lua-filter={FILTERS['html_trailing_line_breaks']}")
         cmd.append(f"--lua-filter={FILTERS['inline_styles']}")
         # Pairs with the html_lists_pre_process pass on the source bytes: the
         # preprocessor wraps orphan <ol>/<ul> with a sentinel <li>, and this
