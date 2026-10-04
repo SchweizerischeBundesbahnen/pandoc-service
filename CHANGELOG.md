@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.6.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.6.0...v2.6.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.142.1 ([3520fd7](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3520fd727f330c27a000e7d6db36cc70a9064918))
+* **deps:** update dependency fastapi to v0.142.2 ([5e8facd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5e8facd1a79c17683387afe917876df1e714a515))
+* **deps:** update dependency pytest-mock to v3.16.0 ([120260e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/120260e0f51a56aa1159a80254c135c1fb28a750))
+* **deps:** update dependency tox to v4.64.4 ([09496a2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/09496a243a1ea4488b0b6d62767477110cc83e34))
+* **deps:** update dependency tox to v4.64.5 ([365f3e4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/365f3e4abb73bae42e297a6a45d9b9d6d5bff6de))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.12.22 ([0385896](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/038589642344a9202fed423f2c705107d3cf8b1d))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.12.23 ([39cc8ca](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/39cc8ca4cd143f2422fbb6c9e44c94625e5e6718))
+* remove extra empty line before bullets in description of work items ([#260](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/260)) ([82a2ac6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/82a2ac6ea46acbe6ce1c8039abc3202f464ef408))
+
 ## [2.6.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.5.3...v2.6.0) (2026-09-30)
 
 
