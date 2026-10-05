@@ -22,8 +22,10 @@
 -- end of the block, or next to a LineBreak. It looks into inline containers
 -- (Span, Strong, Link, ...), so a run that crosses their boundaries collapses
 -- too. A non-breaking space is part of a Str, so it stays, as in a browser.
--- A container styled white-space: pre, pre-wrap or break-spaces keeps its
--- spaces, since a browser keeps them too.
+-- An element styled white-space: pre, pre-wrap or break-spaces keeps its
+-- spaces, since a browser keeps them too. White-space is inherited, so this
+-- holds for a Div and everything inside it, up to a nested Div that sets it
+-- back to normal, nowrap or pre-line.
 --
 -- Only runs for HTML sources converted to DOCX (the controller gates it).
 
@@ -38,18 +40,32 @@ local function is_space(inline)
   return inline.t == "Space" or inline.t == "SoftBreak"
 end
 
--- True for a container whose style keeps whitespace as written.
-local function preserves_whitespace(inline)
-  local attributes = inline.attributes
-  if not attributes then
-    return false
-  end
-  local style = attributes["style"]
+-- "keep" when the style of `el` keeps whitespace as written, "collapse" when
+-- it collapses it, nil when it does not say and the parent's applies.
+local function white_space(el)
+  local attributes = el.attributes
+  local style = attributes and attributes["style"]
   if not style then
-    return false
+    return nil
   end
   local value = style:lower():match("white%-space%s*:%s*([%w%-]+)")
-  return value == "pre" or value == "pre-wrap" or value == "break-spaces"
+  if value == "pre" or value == "pre-wrap" or value == "break-spaces" then
+    return "keep"
+  end
+  if value == "normal" or value == "nowrap" or value == "pre-line" then
+    return "collapse"
+  end
+  return nil
+end
+
+-- True when `inlines` holds nothing but empty containers, at any depth.
+local function is_empty(inlines)
+  for _, inline in ipairs(inlines) do
+    if not INLINE_CONTAINERS[inline.t] or not is_empty(inline.content) then
+      return false
+    end
+  end
+  return true
 end
 
 -- Walk `inlines` in reading order (`step` 1) or backwards (`step` -1) and drop
@@ -72,9 +88,14 @@ local function drop_spaces(inlines, step, state)
       state.at_edge = true
     elseif inline.t == "LineBreak" then
       state.at_edge = true
-    elseif INLINE_CONTAINERS[inline.t] and not preserves_whitespace(inline) then
-      -- an empty container leaves the state as it is, as in a browser
-      inline.content = drop_spaces(inline.content, step, state)
+    elseif INLINE_CONTAINERS[inline.t] then
+      -- an empty container leaves the state as it is, as in a browser,
+      -- whatever its style
+      if white_space(inline) ~= "keep" then
+        inline.content = drop_spaces(inline.content, step, state)
+      elseif not is_empty(inline.content) then
+        state.at_edge = false
+      end
     else
       state.at_edge = false
     end
@@ -99,14 +120,31 @@ local function collapse(block)
   return block
 end
 
-function Para(el)
-  return collapse(el)
-end
+local collapsing
 
-function Plain(el)
-  return collapse(el)
-end
+-- Inside a Div that keeps whitespace, only a nested Div that collapses it
+-- again has its text collapsed.
+local keeping = {
+  traverse = "topdown",
+  Div = function(div)
+    if white_space(div) == "collapse" then
+      return pandoc.walk_block(div, collapsing), false
+    end
+    return nil
+  end,
+}
 
-function Header(el)
-  return collapse(el)
-end
+collapsing = {
+  traverse = "topdown",
+  Div = function(div)
+    if white_space(div) == "keep" then
+      return pandoc.walk_block(div, keeping), false
+    end
+    return nil
+  end,
+  Para = collapse,
+  Plain = collapse,
+  Header = collapse,
+}
+
+return { collapsing }

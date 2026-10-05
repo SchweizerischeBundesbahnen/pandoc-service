@@ -90,3 +90,19 @@ def test_preformatted_span_keeps_its_leading_space(test_parameters: TestParamete
 
 def test_run_across_span_boundary_in_heading_is_one_space(test_parameters: TestParameters):
     assert _texts(test_parameters, "<h2><span>Chapter </span> Title</h2>") == ["Chapter Title"]
+
+
+def test_preformatted_div_keeps_spaces_of_its_spans(test_parameters: TestParameters):
+    """White-space is inherited: a pre-wrap <div> keeps the spaces of the spans inside it."""
+    body = '<div style="white-space: pre-wrap"><p><span>one </span> <span> two</span></p></div>'
+    assert _texts(test_parameters, body) == ["one   two"]
+
+
+def test_div_setting_whitespace_back_to_normal_collapses_again(test_parameters: TestParameters):
+    body = '<div style="white-space: pre-wrap"><div style="white-space: normal"><p><span>one </span> <span> two</span></p></div></div>'
+    assert _texts(test_parameters, body) == ["one two"]
+
+
+def test_empty_preformatted_span_does_not_keep_the_space_after_it(test_parameters: TestParameters):
+    """An empty element ends no whitespace run, whatever its style, so a bookmark at the start of a line leaves no space."""
+    assert _texts(test_parameters, '<p><span style="white-space: pre"><a id="anchor"></a></span> text</p>') == ["text"]
