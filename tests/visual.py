@@ -37,7 +37,7 @@ def render_pages(pdf: bytes) -> list[Image.Image]:
     """
     document = pdfium.PdfDocument(pdf)
     try:
-        return [page.render(scale=DPI / 72).to_pil().convert("RGB") for page in document]
+        return [page.render(scale=DPI / 72, rev_byteorder=True).to_pil() for page in document]
     finally:
         document.close()
 
