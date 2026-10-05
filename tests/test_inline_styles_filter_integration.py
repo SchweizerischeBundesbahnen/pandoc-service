@@ -985,17 +985,38 @@ def test_an_anchor_rewritten_as_runs_stays_a_bookmark(test_parameters: TestParam
     assert len(ids) == len(set(ids)), f"bookmark ids collide: {ids!r}"
 
 
+def _bookmarked_texts(doc: ET.Element, name: str) -> list[str]:
+    """The text each bookmark called ``name`` encloses, in document order."""
+    open_ids: dict[str, list[str]] = {}
+    texts: list[str] = []
+    for el in doc.iter():
+        if el.tag == f"{{{W_NS}}}bookmarkStart" and el.get(f"{{{W_NS}}}name") == name:
+            open_ids[el.get(f"{{{W_NS}}}id") or ""] = []
+        elif el.tag == f"{{{W_NS}}}bookmarkEnd" and el.get(f"{{{W_NS}}}id") in open_ids:
+            texts.append("".join(open_ids.pop(el.get(f"{{{W_NS}}}id") or "")))
+        elif el.tag == f"{{{W_NS}}}t":
+            for parts in open_ids.values():
+                parts.append(el.text or "")
+    return texts
+
+
 def test_many_non_ascii_anchors_in_one_document_all_stay_bookmarks(test_parameters: TestParameters):
-    """The names of all non-ASCII identifiers are asked of the writer at once, so each must come back to its own identifier."""
+    """The names of all non-ASCII identifiers are asked of the writer at once, so each must come back to its own identifier.
+
+    A link's anchor is the writer's name for the link target, so a wrong pairing shows on the bookmarks: each link must
+    lead to a bookmark around the targets of its own identifier, not just to some bookmark.
+    """
     identifiers = ["目标", "⭐", "target⭐", "Ελλάδα", "日本語", "ab⭐cd", "目标", "x" * 45 + "é"]
     targets = "".join(
-        f'<p><span style="color: #FF0000;">nested <span id="{identifier}">target</span></span></p>' if i % 2 else f'<p><span id="{identifier}" style="color: #FF0000;">target</span></p>' for i, identifier in enumerate(identifiers)
+        f'<p><span style="color: #FF0000;">nested <span id="{identifier}">target {i}</span></span></p>' if i % 2 else f'<p><span id="{identifier}" style="color: #FF0000;">target {i}</span></p>' for i, identifier in enumerate(identifiers)
     )
     links = "".join(f'<p><a href="#{identifier}">jump {i}</a></p>' for i, identifier in enumerate(identifiers))
     doc = _document_xml(test_parameters, targets + links)
 
-    names = _bookmark_names(doc)
     for i, identifier in enumerate(identifiers):
         link = _w_p_with_text(doc, f"jump {i}").find(f".//{{{W_NS}}}hyperlink")
         assert link is not None
-        assert link.get(f"{{{W_NS}}}anchor") in names, f"link to {identifier!r} points at {link.get(f'{{{W_NS}}}anchor')!r}, bookmarks found: {names!r}"
+        anchor = link.get(f"{{{W_NS}}}anchor") or ""
+        expected = [f"target {j}" for j, other in enumerate(identifiers) if other == identifier]
+        found = _bookmarked_texts(doc, anchor)
+        assert found == expected, f"link to {identifier!r} points at {anchor!r}, around {found!r} instead of {expected!r}"
