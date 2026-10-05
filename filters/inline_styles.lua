@@ -377,12 +377,20 @@ end
 local next_bookmark_id = 100000
 
 -- The name pandoc's writer gives the same identifier (toBookmarkName in
--- Writers/Docx/OpenXML.hs), so that its links find the bookmark: Word takes a
--- name of at most 40 characters starting with a letter, anything else becomes
--- a hash of it.
+-- Writers/Docx/OpenXML.hs), so that its links find the bookmark: an identifier
+-- of fewer than 40 letters, digits and underscores gets a "_" prefix, anything
+-- else becomes "_" and a hash of it. Haskell's isAlphaNum also accepts
+-- non-ASCII letters, so a non-ASCII character counts as one here.
+local function is_bookmark_word(identifier)
+  for _, code in utf8.codes(identifier) do
+    if code < 128 and not string.char(code):match("[%w_]") then return false end
+  end
+  return true
+end
+
 local function bookmark_name(identifier)
-  if identifier:match("^%a") and utf8.len(identifier) <= 40 then return identifier end
-  return "X" .. pandoc.utils.sha1(identifier):sub(2)
+  if utf8.len(identifier) < 40 and is_bookmark_word(identifier) then return "_" .. identifier end
+  return "_" .. pandoc.utils.sha1(identifier):sub(2)
 end
 
 local function with_bookmark(span, runs)

@@ -15,6 +15,8 @@ Why an integration test (vs. mocked unit tests):
 """
 
 import base64
+import hashlib
+import re
 import struct
 import zipfile
 import zlib
@@ -28,6 +30,13 @@ from tests.test_container import TestParameters
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+
+def _pandoc_bookmark_name(identifier: str) -> str:
+    """The bookmark name pandoc's DOCX writer gives an identifier (toBookmarkName in Writers/Docx/OpenXML.hs)."""
+    if len(identifier) < 40 and re.fullmatch(r"\w+", identifier):
+        return "_" + identifier
+    return "_" + hashlib.sha1(identifier.encode()).hexdigest()[1:]  # noqa: S324
 
 
 def _convert_html_to_docx(test_parameters: TestParameters, html: str) -> bytes:
@@ -873,10 +882,10 @@ def test_bold_heading_keeps_its_anchor(test_parameters: TestParameters):
 
     para = _w_p_with_text(doc, "Title")
     names = [b.get(f"{{{W_NS}}}name") for b in para.iter(f"{{{W_NS}}}bookmarkStart")]
-    assert "anchor-1" in names, f"bookmark lost, found {names!r}"
+    assert _pandoc_bookmark_name("anchor-1") in names, f"bookmark lost, found {names!r}"
     _assert_all_bold(para)
     link = _w_p_with_text(doc, "the heading").find(f".//{{{W_NS}}}hyperlink")
-    assert link is not None and link.get(f"{{{W_NS}}}anchor") == "anchor-1"
+    assert link is not None and link.get(f"{{{W_NS}}}anchor") == _pandoc_bookmark_name("anchor-1")
 
 
 def test_bold_div_keeps_a_link(test_parameters: TestParameters):
@@ -936,7 +945,7 @@ def test_bold_heading_keeps_the_text_of_its_anchor_bold(test_parameters: TestPar
 
     para = _w_p_with_text(doc, "Anchored")
     names = [b.get(f"{{{W_NS}}}name") for b in para.iter(f"{{{W_NS}}}bookmarkStart")]
-    assert "anchor-2" in names, f"bookmark lost, found {names!r}"
+    assert _pandoc_bookmark_name("anchor-2") in names, f"bookmark lost, found {names!r}"
     _assert_all_bold(para)
 
 
