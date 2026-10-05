@@ -134,18 +134,19 @@ def test_run_pandoc_conversion_does_not_append_inline_styles_filter_for_html_to_
         assert f"--lua-filter={FILTERS['inline_styles']}" not in cmd
 
 
-def test_html_trailing_line_breaks_filter_registered():
-    """The html_trailing_line_breaks filter must be registered and allowlisted."""
-    assert "html_trailing_line_breaks" in FILTERS
-    assert f"--lua-filter={FILTERS['html_trailing_line_breaks']}" in ALLOWED_PANDOC_OPTIONS
+@pytest.mark.parametrize("name", ["html_trailing_line_breaks", "html_whitespace"])
+def test_html_whitespace_filters_registered(name):
+    """The html_trailing_line_breaks and html_whitespace filters must be registered and allowlisted."""
+    assert name in FILTERS
+    assert f"--lua-filter={FILTERS[name]}" in ALLOWED_PANDOC_OPTIONS
 
 
 @pytest.mark.parametrize(
     ("source_format", "target_format", "expected"),
     [("html", "docx", True), ("html", "html", False), ("html", "pdf", False), ("markdown", "docx", False)],
 )
-def test_run_pandoc_conversion_appends_html_trailing_line_breaks_filter_for_html_to_docx_only(source_format, target_format, expected):
-    """The filter runs for html -> docx only, and before inline_styles turns styled spans into raw OOXML."""
+def test_run_pandoc_conversion_appends_html_whitespace_filters_for_html_to_docx_only(source_format, target_format, expected):
+    """Both filters run for html -> docx only, and before inline_styles turns styled spans into raw OOXML."""
     with (
         patch("subprocess.run") as mock_subprocess,
         patch("pathlib.Path.open", mock_open(read_data=b"output")),
@@ -170,9 +171,11 @@ def test_run_pandoc_conversion_appends_html_trailing_line_breaks_filter_for_html
         mock_subprocess.assert_called_once()
         cmd = mock_subprocess.call_args.args[0]
         trailing_line_breaks = f"--lua-filter={FILTERS['html_trailing_line_breaks']}"
+        whitespace = f"--lua-filter={FILTERS['html_whitespace']}"
         assert (trailing_line_breaks in cmd) is expected
+        assert (whitespace in cmd) is expected
         if expected:
-            assert cmd.index(trailing_line_breaks) < cmd.index(f"--lua-filter={FILTERS['inline_styles']}")
+            assert cmd.index(trailing_line_breaks) < cmd.index(whitespace) < cmd.index(f"--lua-filter={FILTERS['inline_styles']}")
 
 
 def test_preserve_table_styles_appends_metadata_flag():
