@@ -68,6 +68,8 @@ local function is_empty(inlines)
   return true
 end
 
+local keep_spaces
+
 -- Walk `inlines` in reading order (`step` 1) or backwards (`step` -1) and drop
 -- each space that comes right after the start of a line or after a space
 -- already kept. `state.at_edge` carries that across container boundaries.
@@ -94,6 +96,7 @@ local function drop_spaces(inlines, step, state)
       if white_space(inline) ~= "keep" then
         inline.content = drop_spaces(inline.content, step, state)
       elseif not is_empty(inline.content) then
+        inline.content = keep_spaces(inline.content)
         state.at_edge = false
       end
     else
@@ -114,37 +117,56 @@ local function drop_spaces(inlines, step, state)
   return result
 end
 
-local function collapse(block)
-  local content = drop_spaces(block.content, 1, { at_edge = true })
-  block.content = drop_spaces(content, -1, { at_edge = true })
-  return block
+-- Collapse the runs of `inlines`. With `at_edge`, it starts and ends a line,
+-- so its leading and trailing spaces go too.
+local function collapse_inlines(inlines, at_edge)
+  local content = drop_spaces(inlines, 1, { at_edge = at_edge })
+  return drop_spaces(content, -1, { at_edge = at_edge })
 end
 
-local collapsing
-
--- Inside a Div that keeps whitespace, only a nested Div that collapses it
--- again has its text collapsed.
-local keeping = {
-  traverse = "topdown",
-  Div = function(div)
-    if white_space(div) == "collapse" then
-      return pandoc.walk_block(div, collapsing), false
+-- Keep the spaces of `inlines`, except inside a container that collapses
+-- them again. Its runs collapse among themselves. A space next to the kept
+-- spaces around it stays, since CSS collapses only collapsible spaces.
+keep_spaces = function(inlines)
+  for i, inline in ipairs(inlines) do
+    if INLINE_CONTAINERS[inline.t] then
+      if white_space(inline) == "collapse" then
+        inline.content = collapse_inlines(inline.content, false)
+      else
+        inline.content = keep_spaces(inline.content)
+      end
+      inlines[i] = inline
     end
-    return nil
-  end,
-}
+  end
+  return inlines
+end
 
-collapsing = {
-  traverse = "topdown",
-  Div = function(div)
-    if white_space(div) == "keep" then
-      return pandoc.walk_block(div, keeping), false
+-- The filter for blocks whose whitespace is kept (`keep`) or collapsed. A Div
+-- that changes the mode has its content walked with the other one. `:walk`
+-- honors the top-down traversal, unlike pandoc.walk_block, so a paragraph is
+-- reached only through the Divs around it.
+local function blocks_filter(keep)
+  local function inlines_block(block)
+    if keep then
+      block.content = keep_spaces(block.content)
+    else
+      block.content = collapse_inlines(block.content, true)
     end
-    return nil
-  end,
-  Para = collapse,
-  Plain = collapse,
-  Header = collapse,
-}
+    return block
+  end
+  return {
+    traverse = "topdown",
+    Div = function(div)
+      local mode = white_space(div)
+      if mode == nil or (mode == "keep") == keep then
+        return nil
+      end
+      return div:walk(blocks_filter(mode == "keep")), false
+    end,
+    Para = inlines_block,
+    Plain = inlines_block,
+    Header = inlines_block,
+  }
+end
 
-return { collapsing }
+return { blocks_filter(false) }

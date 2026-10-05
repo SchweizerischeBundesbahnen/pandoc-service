@@ -106,3 +106,14 @@ def test_div_setting_whitespace_back_to_normal_collapses_again(test_parameters: 
 def test_empty_preformatted_span_does_not_keep_the_space_after_it(test_parameters: TestParameters):
     """An empty element ends no whitespace run, whatever its style, so a bookmark at the start of a line leaves no space."""
     assert _texts(test_parameters, '<p><span style="white-space: pre"><a id="anchor"></a></span> text</p>') == ["text"]
+
+
+def test_span_setting_whitespace_back_to_normal_collapses_its_runs(test_parameters: TestParameters):
+    body = '<div style="white-space: pre-wrap"><p><span style="white-space: normal"><span>one </span> <span> two</span></span></p></div>'
+    assert _texts(test_parameters, body) == ["one two"]
+
+
+def test_preformatted_div_inside_normal_div_inside_preformatted_div_keeps_spaces(test_parameters: TestParameters):
+    """Each style change is seen top down, so the innermost pre-wrap applies."""
+    body = '<div style="white-space: pre-wrap"><div style="white-space: normal"><div style="white-space: pre-wrap"><p><span>one </span> <span> two</span></p></div></div></div>'
+    assert _texts(test_parameters, body) == ["one   two"]
