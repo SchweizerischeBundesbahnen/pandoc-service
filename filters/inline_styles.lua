@@ -381,33 +381,64 @@ local next_bookmark_id = 100000
 -- of fewer than 40 letters, digits and underscores gets a "_" prefix, anything
 -- else becomes "_" and a hash of it. Letters and digits are those of Haskell's
 -- isAlphaNum, which knows every Unicode letter and number but no symbol, and
--- Lua has no table of them. So an identifier with a non-ASCII character is
--- named by the writer itself: a document holding just that bookmark is
--- written, and the name is read back from it.
+-- Lua has no table of them. So the names of identifiers with a non-ASCII
+-- character are asked of the writer itself, all at once before the main pass
+-- (resolve_bookmark_names): one document holding an empty bookmark for each is
+-- written, and the names are read back from it. That is one extra write per
+-- conversion, of a document that grows with the input like the conversion
+-- itself, however many such identifiers the input holds.
 local bookmark_names = {}
 
-local function bookmark_name_from_writer(identifier)
-  local doc = pandoc.Pandoc({ pandoc.Para({ pandoc.Span({}, pandoc.Attr(identifier)) }) })
-  local archive = pandoc.zip.Archive(pandoc.write(doc, "docx"))
+local function has_non_ascii(identifier)
+  return identifier:find("[\128-\255]") ~= nil
+end
+
+local function hashed_bookmark_name(identifier)
+  return "_" .. pandoc.utils.sha1(identifier):sub(2)
+end
+
+local function resolve_bookmark_names(doc)
+  local identifiers, seen = {}, {}
+  doc.blocks:walk({
+    Span = function(span)
+      local identifier = span.identifier
+      if identifier ~= "" and has_non_ascii(identifier) and not seen[identifier] then
+        seen[identifier] = true
+        identifiers[#identifiers + 1] = identifier
+      end
+    end,
+  })
+  if #identifiers == 0 then return end
+
+  local spans = {}
+  for i, identifier in ipairs(identifiers) do
+    spans[i] = pandoc.Span({}, pandoc.Attr(identifier))
+  end
+  local archive = pandoc.zip.Archive(pandoc.write(pandoc.Pandoc({ pandoc.Para(spans) }), "docx"))
   for _, entry in ipairs(archive.entries) do
     if entry.path == "word/document.xml" then
-      return entry:contents():match('<w:bookmarkStart[^>]-w:name="([^"]*)"')
+      local names = {}
+      for name in entry:contents():gmatch('<w:bookmarkStart[^>]-w:name="([^"]*)"') do
+        names[#names + 1] = name
+      end
+      -- the writer bookmarks the spans in order; anything else is not trusted
+      if #names == #identifiers then
+        for i, identifier in ipairs(identifiers) do
+          bookmark_names[identifier] = names[i]
+        end
+      end
     end
   end
-  return nil
 end
 
 local function bookmark_name(identifier)
-  if not identifier:find("[\128-\255]") then
+  if not has_non_ascii(identifier) then
     if #identifier < 40 and not identifier:find("[^%w_]") then return "_" .. identifier end
-    return "_" .. pandoc.utils.sha1(identifier):sub(2)
+    return hashed_bookmark_name(identifier)
   end
-  local name = bookmark_names[identifier]
-  if not name then
-    name = bookmark_name_from_writer(identifier) or ("_" .. pandoc.utils.sha1(identifier):sub(2))
-    bookmark_names[identifier] = name
-  end
-  return name
+  -- unresolved only if the writer's output was not as expected; the hash is
+  -- then right whenever the identifier holds a symbol
+  return bookmark_names[identifier] or hashed_bookmark_name(identifier)
 end
 
 local function with_bookmark(span, runs)
@@ -566,6 +597,10 @@ function meta_pass.Meta(meta)
   if meta.preserve_table_styles then
     preserve_table_styles = true
   end
+end
+
+function meta_pass.Pandoc(doc)
+  resolve_bookmark_names(doc)
 end
 
 -- ---- Pass 2: rewrite AST elements ----

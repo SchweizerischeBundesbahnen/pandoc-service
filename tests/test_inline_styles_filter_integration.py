@@ -983,3 +983,19 @@ def test_an_anchor_rewritten_as_runs_stays_a_bookmark(test_parameters: TestParam
     assert _bookmark_names(doc).count(anchor) == 1, f"link points at {anchor!r}, bookmarks found: {_bookmark_names(doc)!r}"
     ids = [b.get(f"{{{W_NS}}}id") for b in doc.iter(f"{{{W_NS}}}bookmarkStart")]
     assert len(ids) == len(set(ids)), f"bookmark ids collide: {ids!r}"
+
+
+def test_many_non_ascii_anchors_in_one_document_all_stay_bookmarks(test_parameters: TestParameters):
+    """The names of all non-ASCII identifiers are asked of the writer at once, so each must come back to its own identifier."""
+    identifiers = ["目标", "⭐", "target⭐", "Ελλάδα", "日本語", "ab⭐cd", "目标", "x" * 45 + "é"]
+    targets = "".join(
+        f'<p><span style="color: #FF0000;">nested <span id="{identifier}">target</span></span></p>' if i % 2 else f'<p><span id="{identifier}" style="color: #FF0000;">target</span></p>' for i, identifier in enumerate(identifiers)
+    )
+    links = "".join(f'<p><a href="#{identifier}">jump {i}</a></p>' for i, identifier in enumerate(identifiers))
+    doc = _document_xml(test_parameters, targets + links)
+
+    names = _bookmark_names(doc)
+    for i, identifier in enumerate(identifiers):
+        link = _w_p_with_text(doc, f"jump {i}").find(f".//{{{W_NS}}}hyperlink")
+        assert link is not None
+        assert link.get(f"{{{W_NS}}}anchor") in names, f"link to {identifier!r} points at {link.get(f'{{{W_NS}}}anchor')!r}, bookmarks found: {names!r}"
