@@ -117,3 +117,9 @@ def test_preformatted_div_inside_normal_div_inside_preformatted_div_keeps_spaces
     """Each style change is seen top down, so the innermost pre-wrap applies."""
     body = '<div style="white-space: pre-wrap"><div style="white-space: normal"><div style="white-space: pre-wrap"><p><span>one </span> <span> two</span></p></div></div></div>'
     assert _texts(test_parameters, body) == ["one   two"]
+
+
+def test_normal_span_at_line_edges_inside_preformatted_div_drops_its_edge_spaces(test_parameters: TestParameters):
+    """The spaces of a white-space: normal span stay collapsible, and CSS drops collapsible spaces at the start and end of a line."""
+    body = '<div style="white-space: pre-wrap"><p><span style="white-space: normal"> one</span> two <span style="white-space: normal">three </span><br/><span style="white-space: normal"> four</span></p></div>'
+    assert _texts(test_parameters, body) == ["one two three\nfour"]

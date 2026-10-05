@@ -58,25 +58,17 @@ local function white_space(el)
   return nil
 end
 
--- True when `inlines` holds nothing but empty containers, at any depth.
-local function is_empty(inlines)
-  for _, inline in ipairs(inlines) do
-    if not INLINE_CONTAINERS[inline.t] or not is_empty(inline.content) then
-      return false
-    end
-  end
-  return true
-end
-
-local keep_spaces
-
--- Walk `inlines` in reading order (`step` 1) or backwards (`step` -1) and drop
--- each space that comes right after the start of a line or after a space
--- already kept. `state.at_edge` carries that across container boundaries.
+-- Walk `inlines` in reading order (`step` 1) or backwards (`step` -1). With
+-- `keep`, a space is kept as written; otherwise it is collapsible, and it is
+-- dropped when it comes right after a line edge or after another collapsible
+-- space. `state.at_edge` carries that across container boundaries: a line
+-- start or end, a LineBreak and a collapsible space set it, any text and a
+-- kept space clear it, and an empty container of any style leaves it as it
+-- is, as in a browser. Each container switches `keep` by its own style.
 -- Walked forwards, this collapses runs and drops spaces at line starts.
--- Walked backwards afterwards, when no two spaces are adjacent any more, it
--- drops spaces at line ends. Returns the new list.
-local function drop_spaces(inlines, step, state)
+-- Walked backwards afterwards, when no two collapsible spaces are adjacent
+-- any more, it drops spaces at line ends. Returns the new list.
+local function walk_spaces(inlines, step, state, keep)
   local first, last = 1, #inlines
   if step < 0 then
     first, last = last, first
@@ -84,25 +76,27 @@ local function drop_spaces(inlines, step, state)
   local kept = {}
   for i = first, last, step do
     local inline = inlines[i]
-    local keep = true
+    local include = true
     if is_space(inline) then
-      keep = not state.at_edge
-      state.at_edge = true
+      if keep then
+        state.at_edge = false
+      else
+        include = not state.at_edge
+        state.at_edge = true
+      end
     elseif inline.t == "LineBreak" then
       state.at_edge = true
     elseif INLINE_CONTAINERS[inline.t] then
-      -- an empty container leaves the state as it is, as in a browser,
-      -- whatever its style
-      if white_space(inline) ~= "keep" then
-        inline.content = drop_spaces(inline.content, step, state)
-      elseif not is_empty(inline.content) then
-        inline.content = keep_spaces(inline.content)
-        state.at_edge = false
+      local mode = white_space(inline)
+      local inner_keep = keep
+      if mode ~= nil then
+        inner_keep = mode == "keep"
       end
+      inline.content = walk_spaces(inline.content, step, state, inner_keep)
     else
       state.at_edge = false
     end
-    if keep then
+    if include then
       kept[#kept + 1] = inline
     end
   end
@@ -117,41 +111,14 @@ local function drop_spaces(inlines, step, state)
   return result
 end
 
--- Collapse the runs of `inlines`. With `at_edge`, it starts and ends a line,
--- so its leading and trailing spaces go too.
-local function collapse_inlines(inlines, at_edge)
-  local content = drop_spaces(inlines, 1, { at_edge = at_edge })
-  return drop_spaces(content, -1, { at_edge = at_edge })
-end
-
--- Keep the spaces of `inlines`, except inside a container that collapses
--- them again. Its runs collapse among themselves. A space next to the kept
--- spaces around it stays, since CSS collapses only collapsible spaces.
-keep_spaces = function(inlines)
-  for i, inline in ipairs(inlines) do
-    if INLINE_CONTAINERS[inline.t] then
-      if white_space(inline) == "collapse" then
-        inline.content = collapse_inlines(inline.content, false)
-      else
-        inline.content = keep_spaces(inline.content)
-      end
-      inlines[i] = inline
-    end
-  end
-  return inlines
-end
-
 -- The filter for blocks whose whitespace is kept (`keep`) or collapsed. A Div
 -- that changes the mode has its content walked with the other one. `:walk`
 -- honors the top-down traversal, unlike pandoc.walk_block, so a paragraph is
 -- reached only through the Divs around it.
 local function blocks_filter(keep)
   local function inlines_block(block)
-    if keep then
-      block.content = keep_spaces(block.content)
-    else
-      block.content = collapse_inlines(block.content, true)
-    end
+    local content = walk_spaces(block.content, 1, { at_edge = true }, keep)
+    block.content = walk_spaces(content, -1, { at_edge = true }, keep)
     return block
   end
   return {
