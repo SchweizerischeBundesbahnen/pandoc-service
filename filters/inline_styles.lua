@@ -379,18 +379,35 @@ local next_bookmark_id = 100000
 -- The name pandoc's writer gives the same identifier (toBookmarkName in
 -- Writers/Docx/OpenXML.hs), so that its links find the bookmark: an identifier
 -- of fewer than 40 letters, digits and underscores gets a "_" prefix, anything
--- else becomes "_" and a hash of it. Haskell's isAlphaNum also accepts
--- non-ASCII letters, so a non-ASCII character counts as one here.
-local function is_bookmark_word(identifier)
-  for _, code in utf8.codes(identifier) do
-    if code < 128 and not string.char(code):match("[%w_]") then return false end
+-- else becomes "_" and a hash of it. Letters and digits are those of Haskell's
+-- isAlphaNum, which knows every Unicode letter and number but no symbol, and
+-- Lua has no table of them. So an identifier with a non-ASCII character is
+-- named by the writer itself: a document holding just that bookmark is
+-- written, and the name is read back from it.
+local bookmark_names = {}
+
+local function bookmark_name_from_writer(identifier)
+  local doc = pandoc.Pandoc({ pandoc.Para({ pandoc.Span({}, pandoc.Attr(identifier)) }) })
+  local archive = pandoc.zip.Archive(pandoc.write(doc, "docx"))
+  for _, entry in ipairs(archive.entries) do
+    if entry.path == "word/document.xml" then
+      return entry:contents():match('<w:bookmarkStart[^>]-w:name="([^"]*)"')
+    end
   end
-  return true
+  return nil
 end
 
 local function bookmark_name(identifier)
-  if utf8.len(identifier) < 40 and is_bookmark_word(identifier) then return "_" .. identifier end
-  return "_" .. pandoc.utils.sha1(identifier):sub(2)
+  if not identifier:find("[\128-\255]") then
+    if #identifier < 40 and not identifier:find("[^%w_]") then return "_" .. identifier end
+    return "_" .. pandoc.utils.sha1(identifier):sub(2)
+  end
+  local name = bookmark_names[identifier]
+  if not name then
+    name = bookmark_name_from_writer(identifier) or ("_" .. pandoc.utils.sha1(identifier):sub(2))
+    bookmark_names[identifier] = name
+  end
+  return name
 end
 
 local function with_bookmark(span, runs)

@@ -963,6 +963,10 @@ LONG_ID = "work-item-anchor-a-project-with-a-long-name/EL-264"
         pytest.param('<p><strong><em><a id="target"></a>Target</em> <span style="color: #FF0000;">red</span></strong></p>', "target", id="nested-in-strong"),
         pytest.param('<p><span id="target" style="color: #FF0000;">Target</span></p>', "target", id="on-a-styled-span"),
         pytest.param(f'<p><span id="{LONG_ID}" style="color: #FF0000;">Target</span></p>', LONG_ID, id="longer-than-word-allows"),
+        # pandoc keeps a letter of any script but hashes a symbol, which no simple rule tells apart
+        pytest.param('<p><span id="目标" style="color: #FF0000;">Target</span></p>', "目标", id="non-ascii-letters"),
+        pytest.param('<p><span id="⭐" style="color: #FF0000;">Target</span></p>', "⭐", id="symbol"),
+        pytest.param('<p><span id="target⭐" style="color: #FF0000;">Target</span></p>', "target⭐", id="letters-and-a-symbol"),
     ],
 )
 def test_an_anchor_rewritten_as_runs_stays_a_bookmark(test_parameters: TestParameters, html: str, target: str):
