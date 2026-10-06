@@ -3,113 +3,71 @@ schemaVersion: 2.0.0
 commandTests:
   - name: Python installation - check uv-installed Python is in venv
     command: which
-    args:
-      - python3
-    expectedOutput:
-      - /opt/pandoc/.venv/bin/python3
+    args: [python3]
+    expectedOutput: [/opt/pandoc/.venv/bin/python3]
   - name: Python version is correct
     command: python3
-    args:
-      - --version
-    expectedOutput:
-      - Python 3.14.*
+    args: [--version]
+    expectedOutput: [Python 3.14.*]
   - name: uv version is correct
     command: uv
-    args:
-      - --version
-    expectedOutput:
-      - uv 0.*.*
+    args: [--version]
+    expectedOutput: [uv 0.*.*]
   # Note: Tini was replaced with Docker's --init flag (see issue #32)
   # Use 'docker run --init' or 'init: true' in docker-compose.yaml
   - name: Pandoc version is correct
     command: pandoc
-    args:
-      - --version
-    expectedOutput:
-      - pandoc 3.*.*
+    args: [--version]
+    expectedOutput: [pandoc 3.*.*]
   - name: Tectonic is installed
     command: tectonic
-    args:
-      - --version
-    expectedOutput:
-      - Tectonic 0.*
+    args: [--version]
+    expectedOutput: [Tectonic 0.*]
   # The bundle is warmed at build time so that no pdf conversion downloads it at run time.
   # These files are the ones a plain warm-up document does not pull in.
   - name: Tectonic bundle is pre-baked into the image
     command: bash
-    args:
-      - -c
-      - test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name geometry.sty -o -name
-        lmmonolt10-bold.otf \) | wc -l)" -eq 7
+    args: [-c, test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name geometry.sty -o -name lmmonolt10-bold.otf \) | wc -l)" -eq 7]
     exitCode: 0
   - name: Playwright Chromium is installed for SVG rasterization
     command: bash
-    args:
-      - -c
-      - ls -d /opt/playwright/chromium-*
+    args: [-c, ls -d /opt/playwright/chromium-*]
     exitCode: 0
   - name: Tox should not be installed
     command: uv
-    args:
-      - run
-      - --no-sync
-      - tox
-      - --version
+    args: [run, --no-sync, tox, --version]
     exitCode: 2
   - name: Pytest should not be installed
     command: uv
-    args:
-      - run
-      - --no-sync
-      - pytest
-      - --version
+    args: [run, --no-sync, pytest, --version]
     exitCode: 2
   - name: Ruff should not be installed
     command: uv
-    args:
-      - run
-      - --no-sync
-      - ruff
-      - --version
+    args: [run, --no-sync, ruff, --version]
     exitCode: 2
   - name: Mypy should not be installed
     command: uv
-    args:
-      - run
-      - --no-sync
-      - mypy
-      - --version
+    args: [run, --no-sync, mypy, --version]
     exitCode: 2
   - name: Pre-commit should not be installed
     command: uv
-    args:
-      - run
-      - --no-sync
-      - pre-commit
-      - --version
+    args: [run, --no-sync, pre-commit, --version]
     exitCode: 2
   - name: Log directory exists
     command: test
-    args:
-      - -d
-      - /opt/pandoc/logs
+    args: [-d, /opt/pandoc/logs]
     exitCode: 0
   - name: Log directory is writable
     command: touch
-    args:
-      - /opt/pandoc/logs/test.log
+    args: [/opt/pandoc/logs/test.log]
     exitCode: 0
   - name: Python logging module is available
     command: python3
-    args:
-      - -c
-      - import logging; logging.basicConfig(); logging.info('test')
+    args: [-c, import logging; logging.basicConfig(); logging.info('test')]
     exitCode: 0
   - name: uv-installed Python directory exists
     command: test
-    args:
-      - -d
-      - /opt/python
+    args: [-d, /opt/python]
     exitCode: 0
 fileExistenceTests:
   - name: Log directory

@@ -2,16 +2,10 @@
 name: Build & Release
 on:
   push:
-    branches:
-      - '**'
+    branches: ['**']
   pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:  # Manual trigger
 permissions:
   contents: read
@@ -83,9 +77,7 @@ jobs:
       release-type: simple
       include-v-in-tag: false
   docker-build-and-publish:
-    needs:
-      - verify-with-tox
-      - release-please
+    needs: [verify-with-tox, release-please]
     runs-on: ubuntu-latest
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
