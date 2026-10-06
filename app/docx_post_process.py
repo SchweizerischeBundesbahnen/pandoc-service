@@ -208,11 +208,21 @@ def _resolve_image_extent(requested: tuple[str, str], px_width: int, px_height: 
 
 
 def _requested_extent(requested: tuple[str, str], px_width: int, px_height: int, text_width: int | None) -> tuple[int, int]:
-    """The size the node asks for, in EMU, before any limit."""
+    """The size the node asks for, in EMU, before any limit.
+
+    When one side alone is a percentage, pandoc's writer ignores a length on
+    the other side and scales it by the file's aspect ratio, so this does too.
+    """
     native_width = round(px_width * EMU_1_INCH / 96)
     native_height = round(px_height * EMU_1_INCH / 96)
     width = _dimension_to_emu(requested[0], text_width)
     height = _dimension_to_emu(requested[1], text_width)
+    width_is_share = requested[0].strip().endswith("%")
+    height_is_share = requested[1].strip().endswith("%")
+    if width_is_share and not height_is_share and width is not None:
+        height = None
+    elif height_is_share and not width_is_share and height is not None:
+        width = None
 
     if width is not None and height is not None:
         return width, height
@@ -884,15 +894,23 @@ def _cap_extent_height(extent: Any, max_height: int) -> None:
     if max_height <= 0 or height <= max_height:
         return
     new_width = int(width * max_height / height)
-    extent.set("cx", str(new_width))
-    extent.set("cy", str(max_height))
-    # The picture's own frame states the size too; keep the two in step. An <a:ext> of an
-    # extension list carries a uri and no size, and is left alone.
+    _set_drawing_size(extent, new_width, max_height)
+    logger.debug(f"Capped image height: {width} x {height} -> {new_width} x {max_height}")
+
+
+def _set_drawing_size(extent: Any, width: int, height: int) -> None:
+    """Give a drawing a new size, in its <wp:extent> and in the frame of its picture.
+
+    The picture's own frame states the size too, and Word can crop or distort a
+    picture whose frame disagrees with its extent. An <a:ext> of an extension
+    list carries a uri and no size, and is left alone.
+    """
+    extent.set("cx", str(width))
+    extent.set("cy", str(height))
     for frame_ext in extent.getparent().iter(f"{{{DRAWING_NS}}}ext"):
         if frame_ext.get("cx") is not None:
-            frame_ext.set("cx", str(new_width))
-            frame_ext.set("cy", str(max_height))
-    logger.debug(f"Capped image height: {width} x {height} -> {new_width} x {max_height}")
+            frame_ext.set("cx", str(width))
+            frame_ext.set("cy", str(height))
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
@@ -920,9 +938,7 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
             new_width = int(max_image_width)
             new_height = int(height * scale_factor)  # Maintain aspect ratio
 
-            # Apply new size
-            extent.set("cx", str(new_width))
-            extent.set("cy", str(new_height))
+            _set_drawing_size(extent, new_width, new_height)
 
             logger.debug(f"Resized to: {new_width} x {new_height}")
             modified = True

@@ -2268,6 +2268,14 @@ def test_resolve_image_extent_resolves_a_percentage():
     assert _resolve_image_extent(("50%", "10%"), 200, 100, 4000) == (2000, 400)
 
 
+def test_resolve_image_extent_ignores_a_length_beside_a_single_percentage():
+    """pandoc sizes the side a lone percentage leaves from the file's aspect ratio, not from a length given there."""
+    from app.docx_post_process import _resolve_image_extent
+
+    assert _resolve_image_extent(("50%", "200px"), 200, 100, 4000) == (2000, 1000)
+    assert _resolve_image_extent(("100px", "25%"), 200, 100, 4000) == (2000, 1000)
+
+
 def test_resolve_image_extent_brings_a_wide_image_back_to_the_text_width():
     """The writer brings every image back to the text width, the requested ratio kept."""
     from app.docx_post_process import EMU_1_INCH, _resolve_image_extent
@@ -2311,3 +2319,25 @@ def test_placeholder_image_in_a_cell_is_brought_back_to_its_column():
     table.cell(0, 0).paragraphs[0].add_run(_placeholder("50%"))
 
     assert _extents(_processed(doc))[0][0] == (2000 - 2 * 108) * 635
+
+
+def test_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
+    """A frame left at the old size lets Word crop or distort the picture."""
+    doc, table = _table_with_image([2000, 2000], image_inches=6)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _frame_extents(doc) == _extents(doc)
+    assert _extents(doc)[0][0] == (2000 - 2 * 108) * 635
+
+
+def test_placeholder_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
+    doc = _document_with_page(_A4_PAGE)
+    table = doc.add_table(rows=1, cols=4)
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        col.set(f"{{{SCHEMA}}}w", "2000")
+    table.cell(0, 0).paragraphs[0].add_run(_placeholder("", image_width_px=3000, image_height_px=300))
+
+    result = _processed(doc)
+
+    assert _frame_extents(result) == _extents(result)

@@ -774,6 +774,20 @@ def test_percentage_sized_image_keeps_the_paragraph_formatting(test_parameters: 
     assert _ind_left(doc.find(f".//{{{W_NS}}}p")) == "600", "the indent was lost"
 
 
+def test_length_beside_a_percentage_is_ignored_as_the_writer_ignores_it(test_parameters: TestParameters):
+    """<img height="200" style="width:50%">: pandoc keeps the file's aspect ratio and drops the 200 px.
+
+    The placeholder carries both sides, so it has to drop the length too, or
+    the image comes out stretched where the writer's own is not.
+    """
+    image = f'<img src="{_png_data_uri(200, 100)}" height="200" style="width:50%">'
+    plain = _drawing_extent(_convert_html_to_docx(test_parameters, f"<p>{image}</p>"))
+    formatted = _drawing_extent(_convert_html_to_docx(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>'))
+
+    assert plain == (420 * 12700 // 2, 420 * 12700 // 4)
+    assert formatted == plain
+
+
 # ---- Image size inside a styled table ---------------------------------------
 #
 # A styled table is rebuilt as raw OOXML, so its images are {{IMG:}}
@@ -837,6 +851,15 @@ def test_percentage_image_in_a_styled_table_is_sized_like_in_a_plain_one(test_pa
     image = f'<img src="{_png_data_uri(200, 100)}" style="width:10%">'
     plain = _drawing_extent(_convert_html_to_docx(test_parameters, _table_with_image(image, styled=False), query))
     styled = _drawing_extent(_convert_html_to_docx(test_parameters, _table_with_image(image, styled=True), query))
+
+    assert plain == (PANDOC_DEFAULT_TEXT_WIDTH_EMU // 10, PANDOC_DEFAULT_TEXT_WIDTH_EMU // 20)
+    assert styled == plain
+
+
+def test_length_beside_a_percentage_in_a_styled_table_is_ignored(test_parameters: TestParameters):
+    image = f'<img src="{_png_data_uri(200, 100)}" height="200" style="width:10%">'
+    plain = _drawing_extent(_convert_html_to_docx(test_parameters, _table_with_image(image, styled=False), "?preserve_table_styles=true"))
+    styled = _drawing_extent(_convert_html_to_docx(test_parameters, _table_with_image(image, styled=True), "?preserve_table_styles=true"))
 
     assert plain == (PANDOC_DEFAULT_TEXT_WIDTH_EMU // 10, PANDOC_DEFAULT_TEXT_WIDTH_EMU // 20)
     assert styled == plain
