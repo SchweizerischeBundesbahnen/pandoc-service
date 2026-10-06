@@ -12,10 +12,15 @@
 --   left/right (<wp:effectExtent>)   -> \hspace{<pt>} before/after it
 
 local EMU_PER_POINT = 12700
+-- TeX's largest dimension is just under 16384pt.
+local MAX_POINTS = 16000
 
 local function points(value)
-  -- %.4g keeps the LaTeX short and drops a trailing ".0".
-  return string.format("%.4gpt", value)
+  -- Fixed-point: %g writes 1e4 and 1e-5 as exponents, which TeX cannot read.
+  value = math.max(-MAX_POINTS, math.min(MAX_POINTS, value))
+  local s = string.format("%.2f", value):gsub("%.?0+$", "")
+  if s == "" or s == "-" or s == "-0" then s = "0" end
+  return s .. "pt"
 end
 
 function Image(el)

@@ -40,6 +40,8 @@ def _image(title: str) -> str:
         pytest.param("{{PICLAYOUT:-6|0|19050}}", "a\\raisebox{-3pt}{" + GRAPHIC + "}\\hspace{1.5pt}b", id="shift-and-gap"),
         pytest.param("{{PICLAYOUT:4|12700|0}}", "a\\hspace{1pt}\\raisebox{2pt}{" + GRAPHIC + "}b", id="raise-and-left-gap"),
         pytest.param("{{PICLAYOUT:0|0|0}}", "a" + GRAPHIC + "b", id="nothing-to-do"),
+        # %g would write these as 1e+04 and 7.874e-05, which TeX cannot read
+        pytest.param("{{PICLAYOUT:-40000|1|127000000}}", "a\\hspace{0pt}\\raisebox{-16000pt}{" + GRAPHIC + "}\\hspace{10000pt}b", id="extreme-values"),
     ],
 )
 def test_marker_sets_the_picture_in_raisebox_and_hspace(test_parameters: TestParameters, title: str, expected: str):
