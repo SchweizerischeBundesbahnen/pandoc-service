@@ -39,13 +39,13 @@ def _pandoc_bookmark_name(identifier: str) -> str:
     return "_" + hashlib.sha1(identifier.encode()).hexdigest()[1:]  # noqa: S324
 
 
-def _convert_html_to_docx(test_parameters: TestParameters, html: str) -> bytes:
+def _convert_html_to_docx(test_parameters: TestParameters, html: str, query: str = "") -> bytes:
     """Convert HTML to DOCX via the pandoc-service container API.
 
     Returns the raw DOCX bytes. Raises AssertionError if the service returns
     a non-2xx status.
     """
-    url = f"{test_parameters.base_url}/convert/html/to/docx"
+    url = f"{test_parameters.base_url}/convert/html/to/docx{query}"
     response = test_parameters.request_session.post(url, data=html)
     if response.status_code // 100 != 2:
         raise AssertionError(f"pandoc-service returned {response.status_code}:\n{response.text}")
@@ -759,12 +759,11 @@ def test_unsized_image_in_a_formatted_paragraph_stays_native(test_parameters: Te
     assert _drawing_extent(_convert_html_to_docx(test_parameters, html)) == (20 * EMU_PER_PX, 40 * EMU_PER_PX)
 
 
-def test_percentage_sized_image_falls_back_to_the_writer(test_parameters: TestParameters):
-    """A percentage is a share of the text width, which only the writer knows.
+def test_percentage_sized_image_keeps_the_paragraph_formatting(test_parameters: TestParameters):
+    """A percentage is a share of the text width the writer sized its images against.
 
-    A raw <wp:extent> is absolute, so such a paragraph gives up its indent and
-    is handed back to pandoc - the same trade the filter makes for math. The
-    extent must match what the unformatted paragraph produces.
+    app/docx_post_process.py reads it the same way, so a formatted paragraph
+    keeps its indent and the image the size of an unformatted one.
     """
     image = f'<img src="{_png_data_uri(20, 40)}" style="width:50%;">'
     plain = _drawing_extent(_convert_html_to_docx(test_parameters, f"<p>{image}</p>"))
@@ -772,7 +771,115 @@ def test_percentage_sized_image_falls_back_to_the_writer(test_parameters: TestPa
 
     assert _drawing_extent(formatted_bytes) == plain, "the percentage size was not preserved"
     doc = ET.fromstring(zipfile.ZipFile(BytesIO(formatted_bytes)).read("word/document.xml"))
-    assert doc.find(f".//{{{W_NS}}}ind") is None, "the indent should have been given up to keep the size"
+    assert _ind_left(doc.find(f".//{{{W_NS}}}p")) == "600", "the indent was lost"
+
+
+# ---- Image size inside a styled table ---------------------------------------
+#
+# A styled table is rebuilt as raw OOXML, so its images are {{IMG:}}
+# placeholders too. They are sized as pandoc sizes the image of a plain table:
+# a percentage is a share of the text width pandoc used, and the column limits
+# the result.
+
+PANDOC_DEFAULT_TEXT_WIDTH_EMU = 420 * 12700
+A4_TEMPLATE_TEXT_WIDTH_EMU = 481 * 12700  # A4 less 2 cm on each side, in whole points as pandoc counts it
+
+
+def _table_with_image(image: str, styled: bool) -> str:
+    style = ' style="background-color:#eeeeee"' if styled else ""
+    others = "".join(f"<td{style}>cell {i}</td>" for i in range(3))
+    return f"<table><tbody><tr><td{style}>{image}</td>{others}</tr></tbody></table>"
+
+
+def _a4_template(test_parameters: TestParameters) -> bytes:
+    """The service's own template with an A4 page and 2 cm side margins."""
+    response = test_parameters.request_session.get(f"{test_parameters.base_url}/docx-template")
+    assert response.status_code == 200, response.text
+    source = zipfile.ZipFile(BytesIO(response.content))
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                page = '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="0" w:footer="0" w:gutter="0"/>'
+                data = data.decode().replace("<w:sectPr>", f"<w:sectPr>{page}", 1).encode()
+            target.writestr(item, data)
+    return out.getvalue()
+
+
+def _convert_with_template(test_parameters: TestParameters, html: str, template: bytes) -> bytes:
+    url = f"{test_parameters.base_url}/convert/html/to/docx-with-template?preserve_table_styles=true"
+    response = test_parameters.request_session.post(url, files={"source": ("source.html", html), "template": ("template.docx", template)})
+    if response.status_code // 100 != 2:
+        raise AssertionError(f"pandoc-service returned {response.status_code}:\n{response.text}")
+    return response.content
+
+
+def _cell_limit(docx_bytes: bytes) -> int:
+    """The widest an image in the first cell may be.
+
+    The rebuilt table states no column widths, so the limit is an even share
+    of the 6.5 inch text width app/docx_post_process.py assumes for a page
+    the document does not state.
+    """
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    columns = doc.findall(f".//{{{W_NS}}}tblGrid/{{{W_NS}}}gridCol")
+    assert columns and all(column.get(f"{{{W_NS}}}w") is None for column in columns), "the rebuilt table now states its column widths"
+    return int(6.5 * 914400) // len(columns)
+
+
+@pytest.mark.parametrize("query", ["?preserve_table_styles=true", "?preserve_table_styles=true&paper_size=A4"])
+def test_percentage_image_in_a_styled_table_is_sized_like_in_a_plain_one(test_parameters: TestParameters, query: str):
+    """10% fits the column, so the share of the page pandoc used is what both tables show.
+
+    A paper size reaches the page after pandoc has sized its images, so it changes neither.
+    """
+    image = f'<img src="{_png_data_uri(200, 100)}" style="width:10%">'
+    plain = _drawing_extent(_convert_html_to_docx(test_parameters, _table_with_image(image, styled=False), query))
+    styled = _drawing_extent(_convert_html_to_docx(test_parameters, _table_with_image(image, styled=True), query))
+
+    assert plain == (PANDOC_DEFAULT_TEXT_WIDTH_EMU // 10, PANDOC_DEFAULT_TEXT_WIDTH_EMU // 20)
+    assert styled == plain
+
+
+def test_percentage_image_in_a_styled_table_uses_the_page_of_the_template(test_parameters: TestParameters):
+    template = _a4_template(test_parameters)
+    image = f'<img src="{_png_data_uri(200, 100)}" style="width:10%">'
+    plain = _drawing_extent(_convert_with_template(test_parameters, _table_with_image(image, styled=False), template))
+    styled = _drawing_extent(_convert_with_template(test_parameters, _table_with_image(image, styled=True), template))
+
+    assert plain == (A4_TEMPLATE_TEXT_WIDTH_EMU // 10, A4_TEMPLATE_TEXT_WIDTH_EMU // 20)
+    assert styled == plain
+
+
+def test_full_width_image_in_a_formatted_paragraph_uses_the_page_of_the_template(test_parameters: TestParameters):
+    template = _a4_template(test_parameters)
+    image = f'<img src="{_png_data_uri(200, 100)}" style="width:100%">'
+    plain = _drawing_extent(_convert_with_template(test_parameters, f"<p>{image}</p>", template))
+    formatted = _drawing_extent(_convert_with_template(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>', template))
+
+    assert plain == (A4_TEMPLATE_TEXT_WIDTH_EMU, A4_TEMPLATE_TEXT_WIDTH_EMU // 2)
+    assert formatted == plain
+
+
+@pytest.mark.parametrize("style", ["width:50%", "width:100%", ""])
+def test_image_in_a_styled_table_stays_inside_its_column(test_parameters: TestParameters, style: str):
+    """3000 px is wider than the page; the image is brought back to its column, not left at 31 inches."""
+    image = f'<img src="{_png_data_uri(3000, 300)}" style="{style}">'
+    docx_bytes = _convert_html_to_docx(test_parameters, _table_with_image(image, styled=True), "?preserve_table_styles=true")
+
+    cx, cy = _drawing_extent(docx_bytes)
+    assert 0 < cx <= _cell_limit(docx_bytes)
+    assert cy * 10 == pytest.approx(cx, abs=10), "the aspect ratio was not kept"
+
+
+def test_wide_image_in_a_formatted_paragraph_is_brought_back_to_the_page(test_parameters: TestParameters):
+    image = f'<img src="{_png_data_uri(3000, 300)}">'
+    plain = _drawing_extent(_convert_html_to_docx(test_parameters, f"<p>{image}</p>"))
+    formatted = _drawing_extent(_convert_html_to_docx(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>'))
+
+    assert plain == (PANDOC_DEFAULT_TEXT_WIDTH_EMU, PANDOC_DEFAULT_TEXT_WIDTH_EMU // 10)
+    assert formatted == plain
 
 
 def test_no_image_placeholder_survives_into_the_output(test_parameters: TestParameters):

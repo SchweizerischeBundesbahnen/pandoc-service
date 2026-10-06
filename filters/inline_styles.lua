@@ -717,6 +717,8 @@ end
 -- OOXML cannot embed an image at all, so the placeholder has to carry them:
 -- without them app/docx_post_process.py falls back to the file's own pixel
 -- size and an <img width="100"> of a 20px picture comes out at 20px.
+-- A percentage goes out as written: app/docx_post_process.py reads it as a
+-- share of the text width pandoc used, as the writer does.
 --
 -- "|" separates the fields because it cannot occur in a validated dimension
 -- (digits, a unit, or "%") and does not occur in a data: URI's base64 either.
@@ -724,16 +726,6 @@ end
 local function image_placeholder(img)
   local width, height = image_dimensions(img)
   return "{{IMG:" .. width .. "|" .. height .. "|" .. escape_xml(img.src) .. "}}"
-end
-
--- A percentage dimension is a share of the text width, which only the writer
--- knows; a raw <wp:extent> is absolute. Treat such an image as lossy so a
--- formatted paragraph hands itself back to the writer rather than render it
--- at the wrong size. A table cell has no fallback and keeps the placeholder.
-local function has_relative_dimension(img)
-  local width, height = image_dimensions(img)
-  -- Plain find, so the needle is the literal "%", not a pattern escape.
-  return width:find("%", 1, true) ~= nil or height:find("%", 1, true) ~= nil
 end
 
 -- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
@@ -758,7 +750,6 @@ local function inlines_to_runs(inlines, seed)
     elseif r.t == "Image" and r.src and r.src ~= "" then
       -- Images need writer-level relationship handling. Emit a
       -- placeholder for the Python post-processor.
-      if has_relative_dimension(r) then lossy = true end
       run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
         .. image_placeholder(r)
         .. "</w:t></w:r>"
@@ -785,7 +776,6 @@ local function inlines_to_runs(inlines, seed)
           text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
           link_runs[#link_runs + 1] = text
         elseif lr.t == "Image" and lr.src and lr.src ~= "" then
-          if has_relative_dimension(lr) then lossy = true end
           link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
             .. image_placeholder(lr)
             .. "</w:t></w:r>"
