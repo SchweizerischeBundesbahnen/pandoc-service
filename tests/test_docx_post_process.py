@@ -2318,6 +2318,22 @@ def test_image_layout_bottom_reads_the_label_past_a_space():
     assert _position(picture_run) == "-8"
 
 
+def test_image_layout_reads_the_label_past_the_next_icon():
+    import copy
+
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||}}", label_size=32)
+    # A second marked icon between the first one and the 16pt label
+    second_marker, second_picture = copy.deepcopy(picture_run.getprevious()), copy.deepcopy(picture_run)
+    picture_run.addnext(second_marker)
+    second_marker.addnext(second_picture)
+
+    _apply_image_layouts(doc)
+
+    assert [_position(picture_run), _position(second_picture)] == ["-8", "-8"]
+
+
 def test_image_layout_ignores_a_length_too_large_for_a_float():
     from app.docx_post_process import _apply_image_layouts
 

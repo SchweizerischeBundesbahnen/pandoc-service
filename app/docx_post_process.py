@@ -327,12 +327,9 @@ def _apply_image_layouts(doc: DocumentObject) -> None:
     if not markers:
         return
     styles = {style.get(f"{{{SCHEMA}}}styleId"): style for style in doc.styles.element.findall(f"{{{SCHEMA}}}style")}
-    for t_el, match in markers:
-        picture = _take_marked_picture(t_el)
-        if picture is None:
-            continue
-        picture_run, inline = picture
-
+    # Every marker goes before any picture is placed: a marker left in a paragraph would read as the label of the icon before it.
+    pictures = [(picture, match) for t_el, match in markers if (picture := _take_marked_picture(t_el))]
+    for (picture_run, inline), match in pictures:
         valign, margin_left, margin_right = match.groups()
         position = _picture_position(doc, styles, picture_run, inline, valign)
         if position:
