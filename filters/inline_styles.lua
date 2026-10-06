@@ -962,6 +962,10 @@ function filter.Header(el)
   return el
 end
 
+-- The block types this filter has a handler for; filter.Div calls them for a
+-- child of a formatted wrapper, which pandoc does not do (see there).
+local BLOCKS_WITH_A_HANDLER = { Div = true, Header = true, Table = true }
+
 function filter.Div(el)
   -- Returning nil below would discard this wrapping, hence `bold and el`.
   local bold = declares_bold(el)
@@ -978,6 +982,18 @@ function filter.Div(el)
     if block.t == "Para" or block.t == "Plain" then
       local rb = build_para_w_p(block.content, twips, jc)
       result[#result + 1] = rb or block
+    elseif BLOCKS_WITH_A_HANDLER[block.t] then
+      -- pandoc does not hand the blocks of a returned list back to this
+      -- filter, only their children, so a styled table or a caption's own
+      -- marker Div in the wrapper would be skipped. Call its handler here.
+      local replaced = filter[block.t](block)
+      if replaced == nil then
+        result[#result + 1] = block
+      elseif replaced.t then
+        result[#result + 1] = replaced
+      else
+        append_all(result, replaced)
+      end
     else
       -- Anything else in the wrapper (nested lists, code blocks, ...) keeps
       -- its normal writer treatment. Indent/alignment aren't applied to

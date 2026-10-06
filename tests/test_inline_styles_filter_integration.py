@@ -788,6 +788,54 @@ def test_length_beside_a_percentage_is_ignored_as_the_writer_ignores_it(test_par
     assert formatted == plain
 
 
+# ---- Blocks inside a formatted wrapper --------------------------------------
+#
+# Polarion wraps a centered or right-aligned table and its caption in
+# <div style="text-align: center;">, which becomes a pandoc-para wrapper.
+# filter.Div returns a list for it, and pandoc does not hand the blocks of a
+# returned list back to the filter, so the wrapper has to call their handlers.
+
+
+def _aligned_table_with_caption(margins: str, align: str) -> str:
+    cell = 'style="background-color:#F0F0F0;border:1px solid #CCCCCC;"'
+    return (
+        '<div style="text-align: center;">'
+        f'<table style="width: 25%;{margins}"><tr><td {cell}>Cell 1</td></tr></table>'
+        f'<p class="polarion-rte-caption-paragraph" style="text-align: {align};">'
+        'Table <span data-sequence="Table" class="polarion-rte-caption">1</span> Caption</p>'
+        "</div>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("margins", "align"),
+    [
+        ("margin-left: auto;margin-right: auto;", "center"),
+        ("margin-left: auto;margin-right: 0px;", "right"),
+    ],
+)
+def test_table_and_caption_in_an_aligned_wrapper_keep_their_formatting(test_parameters: TestParameters, margins: str, align: str):
+    html = _aligned_table_with_caption(margins, align)
+    docx_bytes = _convert_html_to_docx(test_parameters, html, "?preserve_table_styles=true")
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+
+    tbl = doc.find(f".//{{{W_NS}}}tbl")
+    shading = tbl.find(f".//{{{W_NS}}}tc/{{{W_NS}}}tcPr/{{{W_NS}}}shd")
+    assert shading is not None and shading.get(f"{{{W_NS}}}fill") == "F0F0F0", "the cell styling was lost"
+    assert tbl.find(f"{{{W_NS}}}tblPr/{{{W_NS}}}jc").get(f"{{{W_NS}}}val") == align
+
+    caption = _w_p_with_text(doc, "Caption")
+    assert caption.find(f"{{{W_NS}}}pPr/{{{W_NS}}}pStyle").get(f"{{{W_NS}}}val") == "Caption"
+    assert caption.find(f"{{{W_NS}}}pPr/{{{W_NS}}}jc").get(f"{{{W_NS}}}val") == align, "the caption lost its alignment"
+
+
+def test_bold_heading_in_an_aligned_wrapper_stays_bold(test_parameters: TestParameters):
+    html = '<div style="text-align: center;"><h2 style="font-weight: bold;">Title</h2><p>Text</p></div>'
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(_convert_html_to_docx(test_parameters, html))).read("word/document.xml"))
+
+    _assert_all_bold(_w_p_with_text(doc, "Title"))
+
+
 # ---- Image size inside a styled table ---------------------------------------
 #
 # A styled table is rebuilt as raw OOXML, so its images are {{IMG:}}
