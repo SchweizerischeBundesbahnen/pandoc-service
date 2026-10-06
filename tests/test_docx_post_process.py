@@ -2303,6 +2303,33 @@ def test_image_layout_middle_centers_the_picture_on_half_the_x_height(label_size
     assert _position(picture_run) == expected
 
 
+def test_image_layout_bottom_reads_the_label_past_a_space():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||}}", label_size=32)
+    # An unsized space between the icon and its 16pt label
+    picture_run.addnext(picture_run.makeelement(f"{{{SCHEMA}}}r", {}))
+    space = picture_run.getnext()
+    space.append(space.makeelement(f"{{{SCHEMA}}}t", {}))
+    space[0].text = " "
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) == "-8"
+
+
+def test_image_layout_ignores_a_length_too_large_for_a_float():
+    from app.docx_post_process import _apply_image_layouts
+
+    huge = "9" * 400
+    doc, picture_run = _paragraph_with_marked_picture(f"{{{{IMGLAYOUT:-{huge}px||{huge}px}}}}")
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) is None
+    assert _effect_extent(picture_run) is None
+
+
 def test_image_layout_margins_add_to_the_effect_extent():
     from app.docx_post_process import _apply_image_layouts
 

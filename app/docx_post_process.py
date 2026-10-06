@@ -1,6 +1,7 @@
 import base64
 import io
 import logging
+import math
 import re
 import sys
 from pathlib import Path
@@ -307,7 +308,9 @@ def _signed_dimension_to_emu(value: str) -> int | None:
     factor = _UNIT_TO_EMU.get(match.group(2).lower())
     if factor is None:
         return None
-    return round(float(match.group(1)) * factor)
+    emu = float(match.group(1)) * factor
+    # A long enough run of digits is an infinite float, which round() refuses.
+    return round(emu) if math.isfinite(emu) else None
 
 
 def _apply_image_layouts(doc: DocumentObject) -> None:
@@ -364,7 +367,8 @@ def _text_size_half_points(doc: DocumentObject, styles: dict[str, Any], picture_
     paragraph = next(picture_run.iterancestors(f"{{{SCHEMA}}}p"), None)
     if paragraph is None:
         return _default_size_half_points(doc)
-    runs = [run for run in paragraph.iter(f"{{{SCHEMA}}}r") if run is picture_run or run.find(f"{{{SCHEMA}}}t") is not None]
+    # A run of spaces says nothing of the label's size, so it is passed over.
+    runs = [run for run in paragraph.iter(f"{{{SCHEMA}}}r") if run is picture_run or "".join(t.text or "" for t in run.iter(f"{{{SCHEMA}}}t")).strip()]
     index = runs.index(picture_run)
     nearest = (runs[index + 1 :] + runs[:index][::-1])[:1]
     for text_run in nearest:
