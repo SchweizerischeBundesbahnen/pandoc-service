@@ -143,7 +143,7 @@ def test_parse_failure_passes_input_through(mocker):
     """If lxml raises, we MUST return the input bytes unchanged so the
     conversion pipeline doesn't 500 on malformed HTML."""
     mocker.patch(
-        "app.html_lists_pre_process.html.document_fromstring",
+        "app.html_lists_pre_process.parse_document",
         side_effect=ValueError("synthetic parse failure"),
     )
     src = b"<ol><ol><li>x</li></ol></ol>"
@@ -156,7 +156,7 @@ def test_parse_failure_logs_warning(mocker, caplog):
     import logging
 
     mocker.patch(
-        "app.html_lists_pre_process.html.document_fromstring",
+        "app.html_lists_pre_process.parse_document",
         side_effect=ValueError("boom"),
     )
     caplog.set_level(logging.WARNING, logger="app.html_lists_pre_process")
@@ -265,3 +265,15 @@ def test_full_html_document_input_is_handled():
     out = html_lists_pre_process.preprocess(src)
     assert _count_sentinels(out) == 1
     assert b"Level 1" in out and b"Level 2" in out and b"Level 3" in out
+
+
+def test_content_after_a_huge_image_survives():
+    """A data: URI over libxml2's 10 MB limit used to end the parsed tree, and the rewrite dropped the rest."""
+    from tests.test_html_document import HUGE_SRC
+
+    src = f'<ol><ol><li>x</li></ol></ol><img src="{HUGE_SRC}"><p>after</p>'.encode()
+    out = html_lists_pre_process.preprocess(src)
+
+    assert _count_sentinels(out) == 1
+    assert HUGE_SRC.encode() in out
+    assert b"<p>after</p>" in out

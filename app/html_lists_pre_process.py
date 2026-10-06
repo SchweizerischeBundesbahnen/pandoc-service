@@ -29,6 +29,8 @@ import logging
 
 from lxml import etree, html  # type: ignore[import-untyped]
 
+from app.html_document import parse_document
+
 logger = logging.getLogger(__name__)
 
 SUPPRESS_MARKER_CLASS = "pandoc-suppress-marker"
@@ -59,7 +61,7 @@ def preprocess(source: bytes) -> bytes:
         # title (it falls back to "First Paragraph"). A bare fragment is
         # harmlessly wrapped in <html><body> (pandoc reads it the same), and we
         # only re-serialize at all when an orphan list was actually wrapped.
-        doc = html.document_fromstring(source)
+        doc = parse_document(source)
     except _PARSE_FAILURES:
         logger.warning("html_lists_pre_process: HTML parse failed; passing input through")
         return source

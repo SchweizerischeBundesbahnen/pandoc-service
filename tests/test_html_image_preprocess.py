@@ -176,3 +176,15 @@ def test_reads_jpeg_dimensions():
 
 def test_unknown_format_returns_none():
     assert html_image_pre_process._read_raster_size(b"not an image at all!!") is None
+
+
+def test_content_after_a_huge_image_survives():
+    """A data: URI over libxml2's 10 MB limit used to end the parsed tree, and the rewrite dropped the rest."""
+    from tests.test_html_document import HUGE_SRC
+
+    src = f'<img src="{_data_uri(_png(20, 10))}"><img src="{HUGE_SRC}"><p>after</p>'.encode()
+    out = html_image_pre_process.preprocess(src)
+
+    assert b'width="20px"' in out
+    assert HUGE_SRC.encode() in out
+    assert b"<p>after</p>" in out

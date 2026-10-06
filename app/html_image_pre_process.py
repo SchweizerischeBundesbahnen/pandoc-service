@@ -36,6 +36,8 @@ import struct
 
 from lxml import etree, html  # type: ignore[import-untyped]
 
+from app.html_document import parse_document
+
 logger = logging.getLogger(__name__)
 
 # CSS px per inch (the browser/CSS reference resolution). Setting an explicit
@@ -73,7 +75,7 @@ def preprocess(source: bytes) -> bytes:
         # head and the title would fall back to "First Paragraph". A bare
         # fragment is harmlessly wrapped in <html><body> (pandoc reads it the
         # same), and we only re-serialize at all when an image was actually sized.
-        doc = html.document_fromstring(source)
+        doc = parse_document(source)
     except _PARSE_FAILURES:
         logger.warning("html_image_pre_process: HTML parse failed; passing input through")
         return source

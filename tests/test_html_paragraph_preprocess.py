@@ -262,7 +262,7 @@ def test_parse_failure_passes_input_through(mocker):
     # extra imports here; the assertion is "any caught exception returns the
     # original source untouched".
     mocker.patch(
-        "app.html_paragraph_pre_process.html.document_fromstring",
+        "app.html_paragraph_pre_process.parse_document",
         side_effect=ValueError("synthetic parse failure"),
     )
     src = b'<p style="margin-left: 40px">x</p>'
@@ -277,7 +277,7 @@ def test_parse_failure_logs_warning(mocker, caplog):
     import logging
 
     mocker.patch(
-        "app.html_paragraph_pre_process.html.document_fromstring",
+        "app.html_paragraph_pre_process.parse_document",
         side_effect=ValueError("boom"),
     )
     caplog.set_level(logging.WARNING, logger="app.html_paragraph_pre_process")
@@ -610,3 +610,15 @@ def test_styled_p_inside_a_heading_div_is_still_wrapped():
     out = html_paragraph_pre_process.preprocess(src).decode()
     assert "pandoc-para" in out
     assert "heading-7" in out
+
+
+def test_content_after_a_huge_image_survives():
+    """A data: URI over libxml2's 10 MB limit used to end the parsed tree, and the rewrite dropped the rest."""
+    from tests.test_html_document import HUGE_SRC
+
+    src = f'<p style="text-align: center">x</p><img src="{HUGE_SRC}"><p>after</p>'.encode()
+    out = html_paragraph_pre_process.preprocess(src)
+
+    assert _align_after_preprocess(src) == "center"
+    assert HUGE_SRC.encode() in out
+    assert b"<p>after</p>" in out
