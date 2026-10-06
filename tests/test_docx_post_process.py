@@ -2341,3 +2341,221 @@ def test_placeholder_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
     result = _processed(doc)
 
     assert _frame_extents(result) == _extents(result)
+
+
+# ---- _apply_image_layouts ----
+
+WP_SCHEMA = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+
+
+def _paragraph_with_marked_picture(marker: str, label_size: int | None = None, picture_rpr: str = ""):
+    """A paragraph holding a marker run, a picture run and a label run."""
+    import io
+
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    picture_run = paragraph.add_run()
+    picture_run.add_picture(io.BytesIO(_png_bytes(16, 16)))
+    if picture_rpr:
+        picture_run._r.insert(0, parse_xml(f"<w:rPr {nsdecls('w')}>{picture_rpr}</w:rPr>"))
+    picture_run._r.addprevious(parse_xml(f'<w:r {nsdecls("w")}><w:t xml:space="preserve">{marker}</w:t></w:r>'))
+    label = paragraph.add_run("Draft")
+    if label_size is not None:
+        label.font.size = label_size * 6350
+    return doc, picture_run._r
+
+
+def _position(run) -> str | None:
+    position = run.find(f"{{{SCHEMA}}}rPr/{{{SCHEMA}}}position")
+    return None if position is None else position.get(f"{{{SCHEMA}}}val")
+
+
+def _effect_extent(run) -> dict[str, str] | None:
+    effect_extent = run.find(f".//{{{WP_SCHEMA}}}effectExtent")
+    return None if effect_extent is None else dict(effect_extent.attrib)
+
+
+def test_image_layout_bottom_lowers_the_picture_by_the_descent_of_its_label():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||2px}}", label_size=24)
+
+    _apply_image_layouts(doc)
+
+    # A quarter of 12pt, in half-points
+    assert _position(picture_run) == "-6"
+    assert _effect_extent(picture_run) == {"l": "0", "t": "0", "r": "19050", "b": "0"}
+    assert "IMGLAYOUT" not in etree.tostring(doc.element.body, encoding="unicode")
+
+
+def test_image_layout_bottom_falls_back_to_the_paragraph_style_size():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:text-bottom||}}")
+    doc.styles["Normal"].font.size = 20 * 6350
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) == "-5"
+
+
+def test_image_layout_bottom_falls_back_to_the_document_default_size():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||}}")
+    normal = doc.styles["Normal"].element.find(f"{{{SCHEMA}}}rPr")
+    if normal is not None:
+        for sz in normal.findall(f"{{{SCHEMA}}}sz"):
+            normal.remove(sz)
+    defaults = doc.styles.element.find(f"{{{SCHEMA}}}docDefaults/{{{SCHEMA}}}rPrDefault/{{{SCHEMA}}}rPr")
+    for sz in defaults.findall(f"{{{SCHEMA}}}sz"):
+        defaults.remove(sz)
+
+    _apply_image_layouts(doc)
+
+    # Word's own 10pt
+    assert _position(picture_run) == "-5"
+
+
+@pytest.mark.parametrize(
+    ("valign", "expected"),
+    [
+        ("-3pt", "-6"),
+        ("4px", "6"),
+        ("-0.1pt", None),
+        ("top", None),
+        ("", None),
+    ],
+)
+def test_image_layout_length_shifts_the_picture_by_that_length(valign: str, expected: str | None):
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture(f"{{{{IMGLAYOUT:{valign}||}}}}")
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) == expected
+    assert _effect_extent(picture_run) is None
+
+
+@pytest.mark.parametrize(
+    ("label_size", "picture_px", "expected"),
+    [
+        # A 16px icon beside 12pt text: a quarter of 12pt up, half of 12pt down
+        (24, 16, "-6"),
+        (20, 16, "-7"),
+        (24, 8, None),
+    ],
+)
+def test_image_layout_middle_centers_the_picture_on_half_the_x_height(label_size: int, picture_px: int, expected: str | None):
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:middle||}}", label_size=label_size)
+    picture_run.find(f".//{{{WP_SCHEMA}}}extent").set("cy", str(picture_px * 9525))
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) == expected
+
+
+def test_image_layout_bottom_reads_the_label_past_a_space():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||}}", label_size=32)
+    # An unsized space between the icon and its 16pt label
+    picture_run.addnext(picture_run.makeelement(f"{{{SCHEMA}}}r", {}))
+    space = picture_run.getnext()
+    space.append(space.makeelement(f"{{{SCHEMA}}}t", {}))
+    space[0].text = " "
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) == "-8"
+
+
+def test_image_layout_reads_the_label_past_the_next_icon():
+    import copy
+
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||}}", label_size=32)
+    # A second marked icon between the first one and the 16pt label
+    second_marker, second_picture = copy.deepcopy(picture_run.getprevious()), copy.deepcopy(picture_run)
+    picture_run.addnext(second_marker)
+    second_marker.addnext(second_picture)
+
+    _apply_image_layouts(doc)
+
+    assert [_position(picture_run), _position(second_picture)] == ["-8", "-8"]
+
+
+def test_image_layout_ignores_a_length_too_large_for_a_float():
+    from app.docx_post_process import _apply_image_layouts
+
+    huge = "9" * 400
+    doc, picture_run = _paragraph_with_marked_picture(f"{{{{IMGLAYOUT:-{huge}px||{huge}px}}}}")
+
+    _apply_image_layouts(doc)
+
+    assert _position(picture_run) is None
+    assert _effect_extent(picture_run) is None
+
+
+def test_image_layout_margins_add_to_the_effect_extent():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:|1pt|-2px}}")
+
+    _apply_image_layouts(doc)
+
+    # A negative margin is not space
+    assert _effect_extent(picture_run) == {"l": "12700", "t": "0", "r": "0", "b": "0"}
+    assert _position(picture_run) is None
+
+
+def test_image_layout_position_keeps_the_schema_order_of_run_properties():
+    from app.docx_post_process import _apply_image_layouts
+
+    doc, picture_run = _paragraph_with_marked_picture("{{IMGLAYOUT:-1pt||}}", picture_rpr='<w:b/><w:position w:val="4"/><w:sz w:val="30"/>')
+
+    _apply_image_layouts(doc)
+
+    r_pr = picture_run.find(f"{{{SCHEMA}}}rPr")
+    assert [etree.QName(child).localname for child in r_pr] == ["b", "position", "sz"]
+    assert _position(picture_run) == "-2"
+
+
+def test_image_layout_marker_without_a_picture_is_removed():
+    from docx import Document
+
+    from app.docx_post_process import _apply_image_layouts
+
+    doc = Document()
+    doc.add_paragraph("{{IMGLAYOUT:bottom||2px}}")
+    doc.add_paragraph("Text {{IMGLAYOUT:bottom||}} inside")
+
+    _apply_image_layouts(doc)
+
+    texts = [paragraph.text for paragraph in doc.paragraphs]
+    # Only a run holding nothing but a marker is a marker
+    assert texts == ["", "Text {{IMGLAYOUT:bottom||}} inside"]
+
+
+def test_process_applies_image_layouts():
+    import io
+
+    from docx import Document
+
+    doc, _ = _paragraph_with_marked_picture("{{IMGLAYOUT:bottom||2px}}", label_size=20)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    result = Document(io.BytesIO(docx_post_process.process(buffer.getvalue())))
+
+    picture_run = result.element.body.find(f".//{{{SCHEMA}}}drawing").getparent()
+    assert _position(picture_run) == "-5"
+    assert _effect_extent(picture_run)["r"] == "19050"

@@ -95,6 +95,54 @@ local function apply_image_style_dimensions(img)
   end
 end
 
+-- Inline image layout: CSS vertical-align and horizontal margins on an <img>.
+--
+-- The DOCX writer drops both, and Word puts the bottom of an inline picture on
+-- the text baseline, so an icon styled `vertical-align:bottom;
+-- margin-right:2px` (Polarion's enum icons) sits too high and touches its
+-- label. Both have an OOXML form - <w:position> on the picture's run and
+-- <wp:effectExtent> on its <wp:inline> - but a filter cannot reach the run the
+-- writer creates for an image. So the filter puts a marker run
+--
+--     {{IMGLAYOUT:<vertical-align>|<margin-left>|<margin-right>}}
+--
+-- right before the Image, and app/docx_post_process.py applies it to the
+-- picture that follows and removes it. Each field is empty when not given.
+--
+-- This is a trust boundary, like image_dim(): the marker lands inside a <w:t>,
+-- so only a keyword from the allowlist or a number with an absolute unit ever
+-- reaches it.
+local IMG_LAYOUT_UNITS = { [""] = true, px = true, ["in"] = true, cm = true, mm = true, pt = true, pc = true }
+-- The keywords app/docx_post_process.py maps. Others (top, text-top, ...)
+-- leave the picture on the baseline.
+local IMG_VERTICAL_ALIGN_KEYWORDS = { bottom = true, ["text-bottom"] = true, middle = true }
+
+local function image_layout_length(value, allow_negative)
+  if not value then return nil end
+  local sign, num, unit = value:match("^%s*(%-?)(%d+%.?%d*)%s*(%a*)%s*$")
+  if not num or not IMG_LAYOUT_UNITS[unit] then return nil end
+  if sign == "-" and not allow_negative then return nil end
+  return sign .. num .. unit
+end
+
+-- The {{IMGLAYOUT:}} marker run for an Image, or nil when its style asks for
+-- nothing this can map.
+local function image_layout_marker(img)
+  local style = img.attributes and img.attributes.style
+  if not style then return nil end
+  local props = parse_style(style)
+  local valign = props["vertical-align"]
+  if not (valign and IMG_VERTICAL_ALIGN_KEYWORDS[valign]) then
+    valign = image_layout_length(valign, true)
+  end
+  local margin_left = image_layout_length(props["margin-left"], false)
+  local margin_right = image_layout_length(props["margin-right"], false)
+  if not (valign or margin_left or margin_right) then return nil end
+  return pandoc.RawInline("openxml", '<w:r><w:t xml:space="preserve">{{IMGLAYOUT:'
+    .. (valign or "") .. "|" .. (margin_left or "") .. "|" .. (margin_right or "")
+    .. "}}</w:t></w:r>")
+end
+
 -- Accept "#RRGGBB", "RRGGBB", "#RGB", "RGB", or "rgb(r,g,b)" and return
 -- the canonical 6-char uppercase hex string Word expects ("FF0000"), or
 -- nil when the value can't be parsed.
@@ -572,6 +620,8 @@ walk = function(inlines, props, vert_align)
       -- images that sit inside a styled span (idempotent — it never overwrites
       -- an already-set dimension).
       apply_image_style_dimensions(inline)
+      local marker = image_layout_marker(inline)
+      if marker then result[#result + 1] = marker end
       result[#result + 1] = inline
     else
       -- Anything else (Note, Cite, Math, Quoted, SmallCaps, ...) needs
@@ -626,6 +676,8 @@ end
 -- a styled span) never enter walk(), so size them here from their CSS style.
 function filter.Image(el)
   apply_image_style_dimensions(el)
+  local marker = image_layout_marker(el)
+  if marker then return { marker, el } end
   return el
 end
 

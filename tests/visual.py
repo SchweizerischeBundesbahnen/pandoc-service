@@ -20,7 +20,7 @@ from PIL import Image, ImageChops
 
 EXPECTED_DIR = Path(__file__).parent / "data" / "expected"
 OUTPUT_DIR = Path(__file__).parent / "output"
-DPI = 50
+DPI = 300
 # A pixel differs when any of its channels moves by more than this.
 PIXEL_TOLERANCE = 32
 # The share of differing pixels a page may have.

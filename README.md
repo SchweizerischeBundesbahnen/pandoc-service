@@ -132,12 +132,17 @@ conversion, `filters/inline_styles.lua` carries the inline CSS across instead:
 | `<span>` | `font-weight`, `font-style`, `text-decoration`, `color`, `background-color`, `font-size`, `font-family` |
 | `<h1>`..`<h6>`, `<div>` | a bold `font-weight` (`bold`, `bolder`, or 600 and more) |
 | `<p>`, `<div>` | `margin-left` and `text-align`, as the indent and justification of the paragraph |
-| `<img>` | `width` and `height` |
+| `<img>` | `width` and `height`; `vertical-align` and `margin-left`/`margin-right` on an inline image |
 | `<td>`, `<th>` | `background-color`, borders and `vertical-align`, with `preserve_table_styles=true` |
 
 A bold `<div>` makes everything inside it bold, lists, table cells and nested divs included, until an
 element declares a `font-weight` of its own. That is how a browser renders it. The color of a `<span>` is read in
 hex or `rgb()` notation only; a named color such as `red` is dropped.
+
+An inline image takes `vertical-align` as `bottom`, `text-bottom`, `middle` or an absolute length, and an
+absolute, non-negative margin. The keywords use estimated font metrics of the text next to the image:
+`bottom` and `text-bottom` lower the image by a descent of a quarter of the font size, and `middle` centers it
+a quarter of the font size above the baseline. Other keywords are not mapped, and the image stays on the baseline.
 
 An anchor (`<a id>`, or a `<span>` with an `id`) stays a bookmark in the DOCX, also inside styled text,
 so a link to it still jumps there.
