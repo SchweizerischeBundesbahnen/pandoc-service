@@ -38,6 +38,13 @@ jobs:
         run: uv sync --all-groups --frozen
       - name: 🧪 Run tests
         run: uv run tox
+      - name: 🧱 Build image for the structure test
+        # The tests remove the image they build. The build cache they leave makes this build quick.
+        run: docker build --tag pandoc-service:structure-test .
+      - name: 🧪 Container structure test
+        uses: docker://ghcr.io/googlecontainertools/container-structure-test:1.22.1@sha256:710da3ca8ed29a42423315592f74f02df4e3d2ba19f1df7257bd481ea75ba5aa
+        with:
+          args: test --image pandoc-service:structure-test --config tests/container/container-structure-test.yaml
       - name: SonarCloud scan for PR
         uses: sonarsource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v8
         if: github.event_name == 'pull_request'

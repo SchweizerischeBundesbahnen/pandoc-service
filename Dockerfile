@@ -123,10 +123,12 @@ RUN PYTHON_VERSION=$(awk '/^python / {print $2}' .tool-versions) && \
 
 # Install dependencies and Playwright's bundled Chromium (+ its OS deps).
 # PLAYWRIGHT_BROWSERS_PATH keeps the browser in a fixed, predictable location.
+# Playwright runs with --no-sync: a plain "uv run" syncs the default groups
+# again and would put the dev group (ruff, mypy, pre-commit) into the image.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev && \
-    uv run playwright install chromium --with-deps
+    uv run --no-sync playwright install chromium --with-deps
 
 # Put the venv on PATH (so python/pandoc tooling resolves without activation) and
 # set PYTHONPATH to the working dir.
