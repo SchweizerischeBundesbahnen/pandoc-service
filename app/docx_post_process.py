@@ -322,33 +322,19 @@ def _apply_image_layouts(doc: DocumentObject) -> None:
     margins become <wp:effectExtent>, the only extra space beside an inline
     picture that Word lays out: it ignores distL/distR and w:spacing there.
     """
-    styles: dict[str, Any] | None = None
-    for t_el in list(doc.element.body.iter(f"{{{SCHEMA}}}t")):
-        match = _IMG_LAYOUT_MARKER_RE.match(t_el.text or "")
-        marker_run = t_el.getparent()
-        if match is None or marker_run is None or marker_run.tag != f"{{{SCHEMA}}}r":
+    # Collected before any is removed: removing a run while the tree is walked skips the next one.
+    markers = [(t_el, match) for t_el in doc.element.body.iter(f"{{{SCHEMA}}}t") if (match := _IMG_LAYOUT_MARKER_RE.match(t_el.text or ""))]
+    if not markers:
+        return
+    styles = {style.get(f"{{{SCHEMA}}}styleId"): style for style in doc.styles.element.findall(f"{{{SCHEMA}}}style")}
+    for t_el, match in markers:
+        picture = _take_marked_picture(t_el)
+        if picture is None:
             continue
-        picture_run = marker_run.getnext()
-        marker_run.getparent().remove(marker_run)
-        if picture_run is None or picture_run.tag != f"{{{SCHEMA}}}r":
-            continue
-        inline = picture_run.find(f"{{{SCHEMA}}}drawing/{{{WP_NS}}}inline")
-        if inline is None:
-            continue
+        picture_run, inline = picture
 
         valign, margin_left, margin_right = match.groups()
-        if valign in _FONT_RELATIVE_VERTICAL_ALIGN:
-            if styles is None:
-                styles = {style.get(f"{{{SCHEMA}}}styleId"): style for style in doc.styles.element.findall(f"{{{SCHEMA}}}style")}
-            text_size = _text_size_half_points(doc, styles, picture_run)
-            if valign == "middle":
-                picture_height = int(inline.find(f"{{{WP_NS}}}extent").get("cy", "0")) / EMU_HALF_POINT
-                position = round(text_size * X_HEIGHT_RATIO / 2 - picture_height / 2)
-            else:
-                position = -round(text_size * DESCENT_RATIO)
-        else:
-            shift = _signed_dimension_to_emu(valign)
-            position = round(shift / EMU_HALF_POINT) if shift is not None else 0
+        position = _picture_position(doc, styles, picture_run, inline, valign)
         if position:
             _set_run_position(picture_run, position)
 
@@ -356,6 +342,31 @@ def _apply_image_layouts(doc: DocumentObject) -> None:
         right = max(_signed_dimension_to_emu(margin_right) or 0, 0)
         if left or right:
             _widen_effect_extent(inline, left, right)
+
+
+def _take_marked_picture(t_el: Any) -> tuple[Any, Any] | None:
+    """Remove a marker's run and return the run and <wp:inline> of the picture after it, or None."""
+    marker_run = t_el.getparent()
+    if marker_run is None or marker_run.tag != f"{{{SCHEMA}}}r":
+        return None
+    picture_run = marker_run.getnext()
+    marker_run.getparent().remove(marker_run)
+    if picture_run is None or picture_run.tag != f"{{{SCHEMA}}}r":
+        return None
+    inline = picture_run.find(f"{{{SCHEMA}}}drawing/{{{WP_NS}}}inline")
+    return None if inline is None else (picture_run, inline)
+
+
+def _picture_position(doc: DocumentObject, styles: dict[str, Any], picture_run: Any, inline: Any, valign: str) -> int:
+    """The <w:position> for a picture's vertical-align, in half-points; 0 for none."""
+    if valign not in _FONT_RELATIVE_VERTICAL_ALIGN:
+        shift = _signed_dimension_to_emu(valign)
+        return round(shift / EMU_HALF_POINT) if shift is not None else 0
+    text_size = _text_size_half_points(doc, styles, picture_run)
+    if valign == "middle":
+        picture_height = int(inline.find(f"{{{WP_NS}}}extent").get("cy", "0")) / EMU_HALF_POINT
+        return round(text_size * X_HEIGHT_RATIO / 2 - picture_height / 2)
+    return -round(text_size * DESCENT_RATIO)
 
 
 def _text_size_half_points(doc: DocumentObject, styles: dict[str, Any], picture_run: Any) -> int:
