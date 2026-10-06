@@ -970,3 +970,95 @@ def test_an_anchor_rewritten_as_runs_stays_a_bookmark(test_parameters: TestParam
     assert _bookmark_names(doc).count(anchor) == 1, f"link points at {anchor!r}, bookmarks found: {_bookmark_names(doc)!r}"
     ids = [b.get(f"{{{W_NS}}}id") for b in doc.iter(f"{{{W_NS}}}bookmarkStart")]
     assert len(ids) == len(set(ids)), f"bookmark ids collide: {ids!r}"
+
+
+# ==== Inline image layout (vertical-align, margins) ========================
+#
+# The filter puts an {{IMGLAYOUT:}} marker run before an <img> carrying
+# vertical-align or a horizontal margin, and app/docx_post_process.py turns it
+# into <w:position> on the picture's run and <wp:effectExtent> on its inline.
+
+
+def _picture_runs(doc: ET.Element) -> list[ET.Element]:
+    return [run for run in doc.iter(f"{{{W_NS}}}r") if run.find(f"{{{W_NS}}}drawing") is not None]
+
+
+def _picture_position(run: ET.Element) -> str | None:
+    position = run.find(f"{{{W_NS}}}rPr/{{{W_NS}}}position")
+    return None if position is None else position.get(f"{{{W_NS}}}val")
+
+
+def _picture_effect_extent(run: ET.Element) -> tuple[str | None, str | None]:
+    effect_extent = run.find(f".//{{{WP_NS}}}effectExtent")
+    return (None, None) if effect_extent is None else (effect_extent.get("l"), effect_extent.get("r"))
+
+
+def test_enum_icon_in_a_styled_span_sits_on_the_text_bottom(test_parameters: TestParameters):
+    """Polarion's enum icon: an <img> inside a bold fields span, so it goes through walk()."""
+    icon = f'<img style="vertical-align:bottom;border:0px;margin-right:2px;" src="{_png_data_uri(16, 16)}" alt=""/>'
+    html = f'<p><span style="font-weight:bold;"><span class="polarion-JSEnumOption" title="Draft">{icon}Draft</span></span></p>'
+
+    doc = _document_xml(test_parameters, html)
+
+    (run,) = _picture_runs(doc)
+    # A quarter of pandoc's default 12pt body text, in half-points
+    assert _picture_position(run) == "-6"
+    assert _picture_effect_extent(run) == ("0", str(2 * EMU_PER_PX))
+    assert "IMGLAYOUT" not in "".join(t.text or "" for t in doc.iter(f"{{{W_NS}}}t"))
+
+
+def test_document_icon_in_a_link_is_centered(test_parameters: TestParameters):
+    """A document icon inside a link, styled as pdf-exporter's stylesheet styles .polarion-Icons."""
+    icon = f'<img style="vertical-align:middle;margin-right:2px;" src="{_png_data_uri(16, 16)}" class="polarion-Icons"/>'
+    html = f'<ul><li><a href="https://example.com/doc"><span style="white-space:nowrap;">{icon}</span>Administration Specification</a></li></ul>'
+
+    (run,) = _picture_runs(_document_xml(test_parameters, html))
+
+    # A quarter of 12pt up, half of the 12pt icon down, in half-points
+    assert _picture_position(run) == "-6"
+    assert _picture_effect_extent(run) == ("0", str(2 * EMU_PER_PX))
+
+
+def test_image_outside_a_styled_span_takes_a_length(test_parameters: TestParameters):
+    """A plain <img> goes through filter.Image instead."""
+    html = f'<p>before <img style="vertical-align:-3pt;margin-left:1pt;" src="{_png_data_uri(8, 8)}"/> after</p>'
+
+    (run,) = _picture_runs(_document_xml(test_parameters, html))
+
+    assert _picture_position(run) == "-6"
+    assert _picture_effect_extent(run) == ("12700", "0")
+
+
+def test_image_in_a_formatted_paragraph_keeps_its_layout(test_parameters: TestParameters):
+    """A formatted paragraph embeds its image through the {{IMG:}} placeholder; the layout must reach it too."""
+    html = f'<div class="pandoc-para" data-indent-twips="600"><p>pic <img style="vertical-align:2pt;margin-right:3px;" src="{_png_data_uri(8, 8)}"/> here</p></div>'
+
+    doc = _document_xml(test_parameters, html)
+
+    (run,) = _picture_runs(doc)
+    assert _picture_position(run) == "4"
+    assert _picture_effect_extent(run) == ("0", str(3 * EMU_PER_PX))
+    assert _w_p_with_text(doc, "pic").find(f"{{{W_NS}}}pPr/{{{W_NS}}}ind") is not None
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        pytest.param("", id="no-style"),
+        pytest.param("vertical-align:top;", id="unmapped-keyword"),
+        pytest.param("vertical-align:1em;", id="font-relative-unit"),
+        pytest.param("margin-right:-2px;", id="negative-margin"),
+        pytest.param("vertical-align:1px</w:t></w:r><w:r><w:t>x;", id="injection"),
+    ],
+)
+def test_image_without_a_mappable_layout_is_left_alone(test_parameters: TestParameters, style: str):
+    html = f'<p>a <img style="{style}" src="{_png_data_uri(8, 8)}"/> b</p>'
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    (run,) = _picture_runs(doc)
+    assert _picture_position(run) is None
+    assert _picture_effect_extent(run) in ((None, None), ("0", "0"))
+    assert b"IMGLAYOUT" not in docx_bytes
