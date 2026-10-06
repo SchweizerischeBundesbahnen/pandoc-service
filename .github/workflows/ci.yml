@@ -2,10 +2,16 @@
 name: Build & Release
 on:
   push:
-    branches: ['**']
+    branches:
+      - '**'
   pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   workflow_dispatch:  # Manual trigger
 permissions:
   contents: read
@@ -38,6 +44,17 @@ jobs:
         run: uv sync --all-groups --frozen
       - name: 🧪 Run tests
         run: uv run tox
+      - name: 🧪 Container structure test
+        env:
+          CST_VERSION: v1.22.1
+          CST_SHA256: fa35e89512a8978585f76cf41397956d2e3a30c62c2ad3fb857b1597074d14ca
+        # The image is the one tox builds for the container tests and keeps
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/container-structure-test" \
+            "https://github.com/GoogleContainerTools/container-structure-test/releases/download/$CST_VERSION/container-structure-test-linux-amd64"
+          echo "$CST_SHA256  $RUNNER_TEMP/container-structure-test" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/container-structure-test"
+          "$RUNNER_TEMP/container-structure-test" test --image pandoc-service-test:latest --config tests/container/container-structure-test.yaml
       - name: SonarCloud scan for PR
         uses: sonarsource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v8
         if: github.event_name == 'pull_request'
@@ -70,7 +87,9 @@ jobs:
       release-type: simple
       include-v-in-tag: false
   docker-build-and-publish:
-    needs: [verify-with-tox, release-please]
+    needs:
+      - verify-with-tox
+      - release-please
     runs-on: ubuntu-latest
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
