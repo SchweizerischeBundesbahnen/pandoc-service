@@ -1,6 +1,7 @@
 import base64
 import io
 import logging
+import math
 import re
 import sys
 from pathlib import Path
@@ -99,6 +100,8 @@ def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str |
     apply_math_colors(doc)
     _replace_image_placeholders(doc)
     _cap_image_heights(doc)
+    # After the cap, which can make a picture lower: vertical-align: middle centers on its height.
+    _apply_image_layouts(doc)
     _replace_link_placeholders(doc)
     add_table_of_contents_entries(doc)
     enable_auto_update_fields(doc)
@@ -274,6 +277,170 @@ def _resolve_image_src(src: str) -> bytes | None:
     if src:
         logger.warning("Unsupported image src scheme (only data: URIs are supported): %s", src[:80])
     return None
+
+
+# {{IMGLAYOUT:<vertical-align>|<margin-left>|<margin-right>}} - see
+# image_layout_marker in filters/inline_styles.lua. The marker is a run of its
+# own, right before the run of the picture it describes.
+_IMG_LAYOUT_MARKER_RE = re.compile(r"^\{\{IMGLAYOUT:([^|]*)\|([^|]*)\|([^|]*)\}\}$")
+_SIGNED_DIMENSION_RE = re.compile(r"^(-?\d+(?:\.\d+)?)([a-z]*)$", re.IGNORECASE)
+EMU_HALF_POINT = EMU_1_INCH // 144
+# The share of the font size below the baseline, where vertical-align: bottom
+# puts the bottom of a picture. The font's own descent is unknown here, so this
+# is an estimate: exact for Calibri, and 0.5pt too deep at 12pt for Arial.
+DESCENT_RATIO = 0.25
+# The share of the font size a lowercase x takes, half of which is where
+# vertical-align: middle puts the middle of a picture. An estimate as well:
+# Calibri's is 0.47, Arial's 0.52.
+X_HEIGHT_RATIO = 0.5
+_FONT_RELATIVE_VERTICAL_ALIGN = frozenset({"bottom", "text-bottom", "middle"})
+# The size Word gives text that no style sizes: 10pt.
+DEFAULT_FONT_HALF_POINTS = 20
+# The <w:rPr> children that come after <w:position> in the schema (CT_RPr).
+_RPR_AFTER_POSITION = frozenset({"sz", "szCs", "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout", "specVanish", "oMath"})
+
+
+def _signed_dimension_to_emu(value: str) -> int | None:
+    """Convert a CSS length that may be negative to EMU, or None."""
+    match = _SIGNED_DIMENSION_RE.match(value.strip())
+    if not match:
+        return None
+    factor = _UNIT_TO_EMU.get(match.group(2).lower())
+    if factor is None:
+        return None
+    emu = float(match.group(1)) * factor
+    # A long enough run of digits is an infinite float, which round() refuses.
+    return round(emu) if math.isfinite(emu) else None
+
+
+def _apply_image_layouts(doc: DocumentObject) -> None:
+    """Apply ``{{IMGLAYOUT:}}`` markers to the pictures that follow them.
+
+    The DOCX writer drops CSS vertical-align and margins of an <img>, and Word
+    puts the bottom of an inline picture on the baseline. vertical-align
+    becomes <w:position> on the picture's run, which lowers or raises it. The
+    margins become <wp:effectExtent>, the only extra space beside an inline
+    picture that Word lays out: it ignores distL/distR and w:spacing there.
+    """
+    # Collected before any is removed: removing a run while the tree is walked skips the next one.
+    markers = [(t_el, match) for t_el in doc.element.body.iter(f"{{{SCHEMA}}}t") if (match := _IMG_LAYOUT_MARKER_RE.match(t_el.text or ""))]
+    if not markers:
+        return
+    styles = {style.get(f"{{{SCHEMA}}}styleId"): style for style in doc.styles.element.findall(f"{{{SCHEMA}}}style")}
+    # Every marker goes before any picture is placed: a marker left in a paragraph would read as the label of the icon before it.
+    pictures = [(picture, match) for t_el, match in markers if (picture := _take_marked_picture(t_el))]
+    for (picture_run, inline), match in pictures:
+        valign, margin_left, margin_right = match.groups()
+        position = _picture_position(doc, styles, picture_run, inline, valign)
+        if position:
+            _set_run_position(picture_run, position)
+
+        left = max(_signed_dimension_to_emu(margin_left) or 0, 0)
+        right = max(_signed_dimension_to_emu(margin_right) or 0, 0)
+        if left or right:
+            _widen_effect_extent(inline, left, right)
+
+
+def _take_marked_picture(t_el: Any) -> tuple[Any, Any] | None:
+    """Remove a marker's run and return the run and <wp:inline> of the picture after it, or None."""
+    marker_run = t_el.getparent()
+    if marker_run is None or marker_run.tag != f"{{{SCHEMA}}}r":
+        return None
+    picture_run = marker_run.getnext()
+    marker_run.getparent().remove(marker_run)
+    if picture_run is None or picture_run.tag != f"{{{SCHEMA}}}r":
+        return None
+    inline = picture_run.find(f"{{{SCHEMA}}}drawing/{{{WP_NS}}}inline")
+    return None if inline is None else (picture_run, inline)
+
+
+def _picture_position(doc: DocumentObject, styles: dict[str, Any], picture_run: Any, inline: Any, valign: str) -> int:
+    """The <w:position> for a picture's vertical-align, in half-points; 0 for none."""
+    if valign not in _FONT_RELATIVE_VERTICAL_ALIGN:
+        shift = _signed_dimension_to_emu(valign)
+        return round(shift / EMU_HALF_POINT) if shift is not None else 0
+    text_size = _text_size_half_points(doc, styles, picture_run)
+    if valign == "middle":
+        picture_height = int(inline.find(f"{{{WP_NS}}}extent").get("cy", "0")) / EMU_HALF_POINT
+        return round(text_size * X_HEIGHT_RATIO / 2 - picture_height / 2)
+    return -round(text_size * DESCENT_RATIO)
+
+
+def _text_size_half_points(doc: DocumentObject, styles: dict[str, Any], picture_run: Any) -> int:
+    """The font size of the text around a picture, in half-points.
+
+    Read from the nearest run with text in the same paragraph, the one after
+    the picture first, since a label follows its icon.
+    """
+    paragraph = next(picture_run.iterancestors(f"{{{SCHEMA}}}p"), None)
+    if paragraph is None:
+        return _default_size_half_points(doc)
+    # A run of spaces says nothing of the label's size, so it is passed over.
+    runs = [run for run in paragraph.iter(f"{{{SCHEMA}}}r") if run is picture_run or "".join(t.text or "" for t in run.iter(f"{{{SCHEMA}}}t")).strip()]
+    index = runs.index(picture_run)
+    nearest = (runs[index + 1 :] + runs[:index][::-1])[:1]
+    for text_run in nearest:
+        size = _half_points(text_run.find(f"{{{SCHEMA}}}rPr/{{{SCHEMA}}}sz")) or _style_size_half_points(styles, _val(text_run.find(f"{{{SCHEMA}}}rPr/{{{SCHEMA}}}rStyle")))
+        if size:
+            return size
+
+    paragraph_style = _val(paragraph.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}pStyle"))
+    if paragraph_style is None:
+        paragraph_style = next((style_id for style_id, style in styles.items() if style.get(f"{{{SCHEMA}}}type") == "paragraph" and style.get(f"{{{SCHEMA}}}default") in ("1", "true")), None)
+    return _style_size_half_points(styles, paragraph_style) or _default_size_half_points(doc)
+
+
+def _default_size_half_points(doc: DocumentObject) -> int:
+    return _half_points(doc.styles.element.find(f"{{{SCHEMA}}}docDefaults/{{{SCHEMA}}}rPrDefault/{{{SCHEMA}}}rPr/{{{SCHEMA}}}sz")) or DEFAULT_FONT_HALF_POINTS
+
+
+def _style_size_half_points(styles: dict[str, Any], style_id: str | None) -> int | None:
+    """The font size a style states or inherits through basedOn, in half-points."""
+    seen: set[str] = set()
+    while style_id is not None and style_id not in seen and style_id in styles:
+        seen.add(style_id)
+        style = styles[style_id]
+        size = _half_points(style.find(f"{{{SCHEMA}}}rPr/{{{SCHEMA}}}sz"))
+        if size:
+            return size
+        style_id = _val(style.find(f"{{{SCHEMA}}}basedOn"))
+    return None
+
+
+def _val(element: Any) -> str | None:
+    return element.get(f"{{{SCHEMA}}}val") if element is not None else None
+
+
+def _half_points(sz: Any) -> int | None:
+    value = _val(sz)
+    return int(value) if value is not None and value.isdigit() and int(value) > 0 else None
+
+
+def _set_run_position(run: Any, half_points: int) -> None:
+    """Give a run its <w:position>, at the place in <w:rPr> the schema wants."""
+    r_pr = run.find(f"{{{SCHEMA}}}rPr")
+    if r_pr is None:
+        r_pr = run.makeelement(f"{{{SCHEMA}}}rPr", {})
+        run.insert(0, r_pr)
+    for old in r_pr.findall(f"{{{SCHEMA}}}position"):
+        r_pr.remove(old)
+    position = r_pr.makeelement(f"{{{SCHEMA}}}position", {f"{{{SCHEMA}}}val": str(half_points)})
+    follower = next((child for child in r_pr if etree.QName(child).localname in _RPR_AFTER_POSITION), None)
+    if follower is not None:
+        follower.addprevious(position)
+    else:
+        r_pr.append(position)
+
+
+def _widen_effect_extent(inline: Any, left: int, right: int) -> None:
+    """Add space left and right of an inline picture, in EMU."""
+    effect_extent = inline.find(f"{{{WP_NS}}}effectExtent")
+    if effect_extent is None:
+        effect_extent = inline.makeelement(f"{{{WP_NS}}}effectExtent", {"l": "0", "t": "0", "r": "0", "b": "0"})
+        # The schema wants it right after <wp:extent>, which an inline always has.
+        inline.find(f"{{{WP_NS}}}extent").addnext(effect_extent)
+    effect_extent.set("l", str(int(effect_extent.get("l", "0")) + left))
+    effect_extent.set("r", str(int(effect_extent.get("r", "0")) + right))
 
 
 def _replace_link_placeholders(doc: DocumentObject) -> None:

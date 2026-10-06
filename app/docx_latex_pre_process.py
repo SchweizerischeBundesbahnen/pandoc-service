@@ -1,24 +1,25 @@
 """Single-pass docx→latex preprocessing.
 
-For LaTeX/PDF targets five independent rewrites run on the source DOCX before
+For LaTeX/PDF targets several independent rewrites run on the source DOCX before
 pandoc reads it: colour/size runs (:mod:`app.docx_color_pre_process`), paragraph
 alignment/indent (:mod:`app.docx_paragraph_pre_process`), list-level tagging
 (:mod:`app.docx_list_level_pre_process`), table-cell backgrounds
-(:mod:`app.docx_table_pre_process`), and math-run colour encoding
-(:mod:`app.docx_math_color_pre_process`). Run separately they each unzip the whole
-package, rewrite their body parts and re-zip — so an image-heavy document gets
-its media decompressed and recompressed five times, quintupling the peak memory
-and CPU of the step.
+(:mod:`app.docx_table_pre_process`), math-run colour encoding
+(:mod:`app.docx_math_color_pre_process`), and the offset and side space of inline
+pictures (:mod:`app.docx_image_layout_pre_process`). Run separately they each unzip
+the whole package, rewrite their body parts and re-zip — so an image-heavy document
+gets its media decompressed and recompressed for every rewrite, multiplying the peak
+memory and CPU of the step.
 
 This module orchestrates the same per-part transforms over a single unzip /
 re-zip: the media is held once and the body XML flows through the existing
 ``rewrite_part`` helpers, so the produced DOCX is byte-for-byte identical to
-chaining the five ``preprocess`` calls — only much lighter on memory.
+running each rewrite on its own — only much lighter on memory.
 """
 
 from __future__ import annotations
 
-from . import docx_color_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_paragraph_pre_process, docx_table_pre_process
+from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_paragraph_pre_process, docx_table_pre_process
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -50,17 +51,21 @@ def _rewrite_body_part(
     rewritten, math_color_changed = docx_math_color_pre_process.rewrite_part(xml)
     if math_color_changed:
         xml, changed = rewritten, True
+    rewritten, image_layout_changed = docx_image_layout_pre_process.rewrite_part(xml)
+    if image_layout_changed:
+        xml, changed = rewritten, True
     return xml, changed
 
 
 def preprocess(docx_bytes: bytes) -> bytes:
-    """Apply the colour, paragraph, list-level, table-cell and math-colour
-    rewrites in one unzip/re-zip.
+    """Apply the colour, paragraph, list-level, table-cell, math-colour and
+    image-layout rewrites in one unzip/re-zip.
 
     Equivalent to chaining ``docx_color_pre_process.preprocess``,
     ``docx_paragraph_pre_process.preprocess``, ``docx_list_level_pre_process
     .preprocess``, ``docx_table_pre_process.preprocess`` and
-    ``docx_math_color_pre_process.preprocess`` but without re-zipping the package
+    ``docx_math_color_pre_process.preprocess``, followed by the image-layout
+    rewrite, but without re-zipping the package
     (and its media) between each step.
     """
     entries = read_entries(docx_bytes)
