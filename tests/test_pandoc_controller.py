@@ -1724,3 +1724,38 @@ def test_template_files_of_two_requests_do_not_collide():
 
     assert len(names) == 2
     assert names[0] != names[1]
+
+
+@pytest.mark.parametrize(
+    ("url", "request_kwargs"),
+    [
+        ("/convert/html/to/docx", {"content": b"<table><tr><td>x</td></tr></table>", "headers": {"Content-Type": "text/html"}}),
+        ("/convert/html/to/docx-with-template", {"files": {"source": ("source.html", b"<table><tr><td>x</td></tr></table>", "text/html")}}),
+    ],
+)
+def test_table_layouts_are_read_off_the_event_loop(url, request_kwargs):
+    """The scan parses the whole document, so on the event loop a large one would hold up every other request."""
+    import asyncio
+
+    ran_on_the_loop = {}
+
+    def fake_extract(source):
+        # get_running_loop only succeeds on the thread the loop runs on.
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            ran_on_the_loop["value"] = False
+        else:
+            ran_on_the_loop["value"] = True
+        return []
+
+    with (
+        patch("app.pandoc_controller.html_table_layout.extract", side_effect=fake_extract),
+        patch("app.pandoc_controller.run_pandoc_conversion", return_value=b"DOCX content"),
+        patch("app.pandoc_controller.postprocess_and_build_response", return_value=Response(b"DOCX content", status_code=200)),
+        TestClient(app) as test_client,
+    ):
+        response = test_client.post(url, **request_kwargs)
+
+    assert response.status_code == 200
+    assert ran_on_the_loop["value"] is False, "The table layout scan ran on the event loop thread"

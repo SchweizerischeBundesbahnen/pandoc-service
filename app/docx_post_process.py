@@ -92,13 +92,16 @@ _TBLPR_CHILD_ORDER = [
 
 def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[TableLayout] | None = None) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
+    # Read before the paper size replaces the page pandoc sized its images against.
+    text_width = _pandoc_text_width_emu(doc)
     _move_header_footer_references_to_first_section(doc)
     _replace_first_paragraph_styles(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
+    # Before the tables, so an image in a cell is brought back to its column.
+    _replace_image_placeholders(doc, text_width)
     _replace_table_properties(doc, table_layouts)
     _separate_adjacent_tables(doc)
     apply_math_colors(doc)
-    _replace_image_placeholders(doc)
     _cap_image_heights(doc)
     # After the cap, which can make a picture lower: vertical-align: middle centers on its height.
     _apply_image_layouts(doc)
@@ -134,39 +137,95 @@ _UNIT_TO_EMU: dict[str, float] = {
 # app/html_paragraph_pre_process.py, which carries the same note: the previous
 # `^\s*...\s*...\s*$` form was already linear-time but matched SonarCloud
 # S5852's "multiple \s* quantifiers" heuristic.
-_DIMENSION_RE = re.compile(r"^(\d+(?:\.\d+)?)([a-z]*)$", re.IGNORECASE)
+_DIMENSION_RE = re.compile(r"^(\d+(?:\.\d+)?)([a-z]*|%)$", re.IGNORECASE)
 _HREF_PLACEHOLDER_RE = re.compile(r"\{\{HREF:(.*?)\}\}")
 
 RELATIONSHIPS_SCHEMA = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"  # NOSONAR
 
+TWIPS_PER_POINT = 20
+EMU_PER_POINT = EMU_1_INCH // 72
+# The text width pandoc's DOCX writer uses when the reference document states no page: 420 pt.
+PANDOC_DEFAULT_TEXT_WIDTH_EMU = 420 * EMU_PER_POINT
 
-def _dimension_to_emu(value: str) -> int | None:
+
+def _pandoc_text_width_emu(doc: DocumentObject) -> int:
+    """The text width pandoc sized its images against, in EMU.
+
+    pandoc takes the page width less the side margins from the reference
+    document, whose sectPr it copies into the body, in whole points. Without
+    all three it uses 420 pt. It reads a percentage as a share of this width,
+    also a height, and brings a wider image back to it. Read it before the
+    paper size is replaced.
+    """
+    sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    if sect_pr is None:
+        return PANDOC_DEFAULT_TEXT_WIDTH_EMU
+    pg_sz = sect_pr.find(f"{{{SCHEMA}}}pgSz")
+    pg_mar = sect_pr.find(f"{{{SCHEMA}}}pgMar")
+    page_width = _int_attribute(pg_sz, "w")
+    left = _int_attribute(pg_mar, "left")
+    right = _int_attribute(pg_mar, "right")
+    if page_width is None or left is None or right is None or page_width - left - right <= 0:
+        return PANDOC_DEFAULT_TEXT_WIDTH_EMU
+    return (page_width - left - right) // TWIPS_PER_POINT * EMU_PER_POINT
+
+
+def _int_attribute(element: Any, name: str) -> int | None:
+    """A whole-number w: attribute of an element, or None when either is missing or unreadable."""
+    value = element.get(f"{{{SCHEMA}}}{name}") if element is not None else None
+    if value is None or not value.lstrip("-").isdigit():
+        return None
+    return int(value)
+
+
+def _dimension_to_emu(value: str, text_width: int | None = None) -> int | None:
     """Convert a CSS length from an image placeholder to EMU, or None.
 
-    None covers the empty field (the node carried no such dimension) and any
-    unit this cannot turn into an absolute length, notably a percentage — that
-    is a share of the text width, which only pandoc's writer knows.
+    A percentage is a share of `text_width`, as pandoc's writer reads it. None
+    covers the empty field (the node carried no such dimension), any unit this
+    cannot turn into an absolute length, and a percentage without a text width.
     """
     match = _DIMENSION_RE.match(value.strip())
     if not match:
         return None
+    if match.group(2) == "%":
+        return round(float(match.group(1)) * text_width / 100) if text_width is not None else None
     factor = _UNIT_TO_EMU.get(match.group(2).lower())
     if factor is None:
         return None
     return round(float(match.group(1)) * factor)
 
 
-def _resolve_image_extent(requested: tuple[str, str], px_width: int, px_height: int) -> tuple[int, int]:
+def _resolve_image_extent(requested: tuple[str, str], px_width: int, px_height: int, text_width: int | None = None) -> tuple[int, int]:
     """The <wp:extent> for an image, in EMU.
 
     A dimension given on the node wins. When only one is given the other is
     scaled to it, which is what the DOCX writer does, so the aspect ratio is
     kept. With neither, the file's own pixel size at the 96 dpi CSS reference.
+    An image wider than `text_width` is brought back to it, as the writer does.
+    """
+    width, height = _requested_extent(requested, px_width, px_height, text_width)
+    if text_width is not None and width > text_width:
+        return text_width, round(height * text_width / width)
+    return width, height
+
+
+def _requested_extent(requested: tuple[str, str], px_width: int, px_height: int, text_width: int | None) -> tuple[int, int]:
+    """The size the node asks for, in EMU, before any limit.
+
+    When one side alone is a percentage, pandoc's writer ignores a length on
+    the other side and scales it by the file's aspect ratio, so this does too.
     """
     native_width = round(px_width * EMU_1_INCH / 96)
     native_height = round(px_height * EMU_1_INCH / 96)
-    width = _dimension_to_emu(requested[0])
-    height = _dimension_to_emu(requested[1])
+    width = _dimension_to_emu(requested[0], text_width)
+    height = _dimension_to_emu(requested[1], text_width)
+    width_is_share = requested[0].strip().endswith("%")
+    height_is_share = requested[1].strip().endswith("%")
+    if width_is_share and not height_is_share and width is not None:
+        height = None
+    elif height_is_share and not width_is_share and height is not None:
+        width = None
 
     if width is not None and height is not None:
         return width, height
@@ -179,7 +238,7 @@ def _resolve_image_extent(requested: tuple[str, str], px_width: int, px_height: 
     return native_width, native_height
 
 
-def _replace_image_placeholders(doc: DocumentObject) -> None:
+def _replace_image_placeholders(doc: DocumentObject, text_width: int | None = None) -> None:
     """Replace ``{{IMG:<src>}}`` placeholders with real embedded images.
 
     The ``inline_styles.lua`` filter emits these markers when it rebuilds a
@@ -192,6 +251,12 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
     applied, because that is the only route by which they survive: a raw
     ``<wp:extent>`` has to be written here, and without them an
     ``<img width="100">`` of a 20px picture came out at 20px.
+
+    ``text_width`` is the width pandoc sized its own images against (see
+    ``_pandoc_text_width_emu``). A percentage is a share of it, and a wider
+    image is brought back to it, so a placeholder image gets the size pandoc
+    gives the same image. An image in a table cell is brought back to its
+    column afterwards, by ``_replace_table_properties``.
     """
     body = doc.element.body
     doc_pr_id = max((int(dp.get("id", "0")) for dp in body.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}docPr")), default=0)
@@ -216,7 +281,7 @@ def _replace_image_placeholders(doc: DocumentObject) -> None:
 
         try:
             r_id, img = doc.part.get_or_add_image(io.BytesIO(image_bytes))
-            width, height = _resolve_image_extent(requested, img.px_width, img.px_height)
+            width, height = _resolve_image_extent(requested, img.px_width, img.px_height, text_width)
             doc_pr_id += 1
 
             # Build the drawing XML
@@ -996,15 +1061,23 @@ def _cap_extent_height(extent: Any, max_height: int) -> None:
     if max_height <= 0 or height <= max_height:
         return
     new_width = int(width * max_height / height)
-    extent.set("cx", str(new_width))
-    extent.set("cy", str(max_height))
-    # The picture's own frame states the size too; keep the two in step. An <a:ext> of an
-    # extension list carries a uri and no size, and is left alone.
+    _set_drawing_size(extent, new_width, max_height)
+    logger.debug(f"Capped image height: {width} x {height} -> {new_width} x {max_height}")
+
+
+def _set_drawing_size(extent: Any, width: int, height: int) -> None:
+    """Give a drawing a new size, in its <wp:extent> and in the frame of its picture.
+
+    The picture's own frame states the size too, and Word can crop or distort a
+    picture whose frame disagrees with its extent. An <a:ext> of an extension
+    list carries a uri and no size, and is left alone.
+    """
+    extent.set("cx", str(width))
+    extent.set("cy", str(height))
     for frame_ext in extent.getparent().iter(f"{{{DRAWING_NS}}}ext"):
         if frame_ext.get("cx") is not None:
-            frame_ext.set("cx", str(new_width))
-            frame_ext.set("cy", str(max_height))
-    logger.debug(f"Capped image height: {width} x {height} -> {new_width} x {max_height}")
+            frame_ext.set("cx", str(width))
+            frame_ext.set("cy", str(height))
 
 
 def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
@@ -1032,9 +1105,7 @@ def _resize_images_in_cell(cell: _Cell, max_image_width: float) -> None:
             new_width = int(max_image_width)
             new_height = int(height * scale_factor)  # Maintain aspect ratio
 
-            # Apply new size
-            extent.set("cx", str(new_width))
-            extent.set("cy", str(new_height))
+            _set_drawing_size(extent, new_width, new_height)
 
             logger.debug(f"Resized to: {new_width} x {new_height}")
             modified = True

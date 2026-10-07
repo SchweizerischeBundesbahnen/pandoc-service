@@ -100,7 +100,7 @@ def test_break_before_empty_anchor_is_dropped(test_parameters: TestParameters):
 
 def test_empty_anchor_after_dropped_break_stays_a_bookmark(test_parameters: TestParameters):
     document_xml = _document_xml(test_parameters, '<div>Bullets:<br/> <a id="anchor"></a> <ul><li>Bullet</li></ul></div>')
-    assert re.search(r'<w:bookmarkStart [^>]*w:name="anchor"', document_xml), document_xml
+    assert re.search(r'<w:bookmarkStart [^>]*w:name="_anchor"', document_xml), document_xml
 
 
 def test_break_after_closed_paragraph_before_empty_anchor_is_kept(test_parameters: TestParameters):

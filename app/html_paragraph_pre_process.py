@@ -60,6 +60,8 @@ import re
 
 from lxml import etree, html  # type: ignore[import-untyped]
 
+from app.html_document import parse_document
+
 logger = logging.getLogger(__name__)
 
 PARA_CLASS = "pandoc-para"
@@ -142,7 +144,7 @@ def preprocess(source: bytes) -> bytes:
         # parent (<body>), so getparent()/insert() work without a synthetic root.
         # A bare fragment is harmlessly wrapped in <html><body>, and we only
         # re-serialize at all when a paragraph was actually wrapped.
-        doc = html.document_fromstring(source)
+        doc = parse_document(source)
     except _PARSE_FAILURES:
         logger.warning("html_paragraph_pre_process: HTML parse failed; passing input through")
         return source

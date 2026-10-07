@@ -768,6 +768,16 @@ def get_chromium_health() -> str:
     return "available" if get_chromium_manager().health_check() else "stopped"
 
 
+async def extract_table_layouts(source: str | bytes) -> list[html_table_layout.TableLayout]:
+    """Read the table layouts of an HTML source in a worker thread.
+
+    The scan parses the whole document, up to the request size limit, so on the event loop it
+    would hold up every other request and the graceful shutdown. It runs under the conversion
+    limiter, as the conversion does, so a large request waits for a free slot instead.
+    """
+    return await to_thread.run_sync(html_table_layout.extract, source, abandon_on_cancel=True, limiter=get_conversion_limiter())
+
+
 async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None = None) -> str | bytes:
     """Rasterize SVGs embedded in HTML to PNG via headless Chromium before pandoc runs.
 
@@ -998,7 +1008,7 @@ async def convert_docx_with_ref(
         # it, so the DOCX post-processor can restore it (pandoc keeps only an
         # auto width and no alignment). Read from the original source: SVG
         # rasterization below never touches tables.
-        table_layouts = html_table_layout.extract(source) if source_format == "html" else None
+        table_layouts = await extract_table_layouts(source) if source_format == "html" else None
 
         # Rasterize any embedded SVGs to PNG so Word gets a usable image
         # instead of the draw.io "Text is not SVG - cannot display" fallback.
@@ -1200,7 +1210,7 @@ async def convert(
         # it (only relevant when producing DOCX; other writers handle table
         # width natively). Read from the original source: SVG rasterization
         # below never touches tables.
-        table_layouts = html_table_layout.extract(source) if source_format == "html" and target_format == "docx" else None
+        table_layouts = await extract_table_layouts(source) if source_format == "html" and target_format == "docx" else None
 
         # Rasterize any embedded SVGs to PNG so renderers without full SVG
         # support (e.g. Word) get a usable image instead of a fallback warning.

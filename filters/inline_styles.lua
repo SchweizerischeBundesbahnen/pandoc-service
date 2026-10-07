@@ -425,12 +425,68 @@ end
 local next_bookmark_id = 100000
 
 -- The name pandoc's writer gives the same identifier (toBookmarkName in
--- Writers/Docx/OpenXML.hs), so that its links find the bookmark: Word takes a
--- name of at most 40 characters starting with a letter, anything else becomes
--- a hash of it.
+-- Writers/Docx/OpenXML.hs), so that its links find the bookmark: an identifier
+-- of fewer than 40 letters, digits and underscores gets a "_" prefix, anything
+-- else becomes "_" and a hash of it. Letters and digits are those of Haskell's
+-- isAlphaNum, which knows every Unicode letter and number but no symbol, and
+-- Lua has no table of them. So the names of identifiers with a non-ASCII
+-- character are asked of the writer itself, all at once before the main pass
+-- (resolve_bookmark_names): one document holding an empty bookmark for each is
+-- written, and the names are read back from it. That is one extra write per
+-- conversion, of a document that grows with the input like the conversion
+-- itself, however many such identifiers the input holds.
+local bookmark_names = {}
+
+local function has_non_ascii(identifier)
+  return identifier:find("[\128-\255]") ~= nil
+end
+
+local function hashed_bookmark_name(identifier)
+  return "_" .. pandoc.utils.sha1(identifier):sub(2)
+end
+
+local function resolve_bookmark_names(doc)
+  local identifiers, seen = {}, {}
+  doc.blocks:walk({
+    Span = function(span)
+      local identifier = span.identifier
+      if identifier ~= "" and has_non_ascii(identifier) and not seen[identifier] then
+        seen[identifier] = true
+        identifiers[#identifiers + 1] = identifier
+      end
+    end,
+  })
+  if #identifiers == 0 then return end
+
+  local spans = {}
+  for i, identifier in ipairs(identifiers) do
+    spans[i] = pandoc.Span({}, pandoc.Attr(identifier))
+  end
+  local archive = pandoc.zip.Archive(pandoc.write(pandoc.Pandoc({ pandoc.Para(spans) }), "docx"))
+  for _, entry in ipairs(archive.entries) do
+    if entry.path == "word/document.xml" then
+      local names = {}
+      for name in entry:contents():gmatch('<w:bookmarkStart[^>]-w:name="([^"]*)"') do
+        names[#names + 1] = name
+      end
+      -- the writer bookmarks the spans in order; anything else is not trusted
+      if #names == #identifiers then
+        for i, identifier in ipairs(identifiers) do
+          bookmark_names[identifier] = names[i]
+        end
+      end
+    end
+  end
+end
+
 local function bookmark_name(identifier)
-  if identifier:match("^%a") and utf8.len(identifier) <= 40 then return identifier end
-  return "X" .. pandoc.utils.sha1(identifier):sub(2)
+  if not has_non_ascii(identifier) then
+    if #identifier < 40 and not identifier:find("[^%w_]") then return "_" .. identifier end
+    return hashed_bookmark_name(identifier)
+  end
+  -- unresolved only if the writer's output was not as expected; the hash is
+  -- then right whenever the identifier holds a symbol
+  return bookmark_names[identifier] or hashed_bookmark_name(identifier)
 end
 
 local function with_bookmark(span, runs)
@@ -593,6 +649,10 @@ function meta_pass.Meta(meta)
   end
 end
 
+function meta_pass.Pandoc(doc)
+  resolve_bookmark_names(doc)
+end
+
 -- ---- Pass 2: rewrite AST elements ----
 local filter = {}
 
@@ -709,6 +769,8 @@ end
 -- OOXML cannot embed an image at all, so the placeholder has to carry them:
 -- without them app/docx_post_process.py falls back to the file's own pixel
 -- size and an <img width="100"> of a 20px picture comes out at 20px.
+-- A percentage goes out as written: app/docx_post_process.py reads it as a
+-- share of the text width pandoc used, as the writer does.
 --
 -- "|" separates the fields because it cannot occur in a validated dimension
 -- (digits, a unit, or "%") and does not occur in a data: URI's base64 either.
@@ -716,16 +778,6 @@ end
 local function image_placeholder(img)
   local width, height = image_dimensions(img)
   return "{{IMG:" .. width .. "|" .. height .. "|" .. escape_xml(img.src) .. "}}"
-end
-
--- A percentage dimension is a share of the text width, which only the writer
--- knows; a raw <wp:extent> is absolute. Treat such an image as lossy so a
--- formatted paragraph hands itself back to the writer rather than render it
--- at the wrong size. A table cell has no fallback and keeps the placeholder.
-local function has_relative_dimension(img)
-  local width, height = image_dimensions(img)
-  -- Plain find, so the needle is the literal "%", not a pattern escape.
-  return width:find("%", 1, true) ~= nil or height:find("%", 1, true) ~= nil
 end
 
 -- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
@@ -750,7 +802,6 @@ local function inlines_to_runs(inlines, seed)
     elseif r.t == "Image" and r.src and r.src ~= "" then
       -- Images need writer-level relationship handling. Emit a
       -- placeholder for the Python post-processor.
-      if has_relative_dimension(r) then lossy = true end
       run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
         .. image_placeholder(r)
         .. "</w:t></w:r>"
@@ -777,7 +828,6 @@ local function inlines_to_runs(inlines, seed)
           text = text:gsub("<w:r>(<w:t)", '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>%1')
           link_runs[#link_runs + 1] = text
         elseif lr.t == "Image" and lr.src and lr.src ~= "" then
-          if has_relative_dimension(lr) then lossy = true end
           link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
             .. image_placeholder(lr)
             .. "</w:t></w:r>"
@@ -964,6 +1014,10 @@ function filter.Header(el)
   return el
 end
 
+-- The block types this filter has a handler for; filter.Div calls them for a
+-- child of a formatted wrapper, which pandoc does not do (see there).
+local BLOCKS_WITH_A_HANDLER = { Div = true, Header = true, Table = true }
+
 function filter.Div(el)
   -- Returning nil below would discard this wrapping, hence `bold and el`.
   local bold = declares_bold(el)
@@ -980,6 +1034,18 @@ function filter.Div(el)
     if block.t == "Para" or block.t == "Plain" then
       local rb = build_para_w_p(block.content, twips, jc)
       result[#result + 1] = rb or block
+    elseif BLOCKS_WITH_A_HANDLER[block.t] then
+      -- pandoc does not hand the blocks of a returned list back to this
+      -- filter, only their children, so a styled table or a caption's own
+      -- marker Div in the wrapper would be skipped. Call its handler here.
+      local replaced = filter[block.t](block)
+      if replaced == nil then
+        result[#result + 1] = block
+      elseif replaced.t then
+        result[#result + 1] = replaced
+      else
+        append_all(result, replaced)
+      end
     else
       -- Anything else in the wrapper (nested lists, code blocks, ...) keeps
       -- its normal writer treatment. Indent/alignment aren't applied to

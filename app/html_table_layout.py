@@ -40,7 +40,9 @@ import logging
 import re
 from dataclasses import dataclass
 
-from lxml import etree, html  # type: ignore[import-untyped]
+from lxml import etree  # type: ignore[import-untyped]
+
+from app.html_document import parse_document
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +109,7 @@ def extract(source: bytes | str) -> list[TableLayout]:
     # sidesteps that (same approach as app/html_paragraph_pre_process.py).
     data = source if isinstance(source, bytes) else source.encode("utf-8")
     try:
-        doc = html.document_fromstring(data)
+        doc = parse_document(data)
     except _PARSE_FAILURES:
         logger.warning("html_table_layout: HTML parse failed; no table layouts extracted")
         return []

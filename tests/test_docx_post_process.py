@@ -2184,6 +2184,165 @@ def test_cell_margins_come_from_each_style_which_states_a_side():
     assert _first_image_width(doc) == (5280 - 600 - 400) * 635
 
 
+# ---- placeholder images sized like pandoc's own ----
+
+
+A4_TEXT_WIDTH_EMU = 481 * 12700  # A4 with 2 cm side margins: 481.9 pt, counted in whole points as pandoc does
+
+
+def _document_with_page(page_xml: str | None):
+    """A Document whose body sectPr states only the given page elements, or no sectPr at all."""
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    doc.element.body.remove(sect_pr)
+    if page_xml is not None:
+        doc.element.body.append(parse_xml(f"<w:sectPr {nsdecls('w')}>{page_xml}</w:sectPr>"))
+    return doc
+
+
+_A4_PAGE = '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="0" w:footer="0" w:gutter="0"/>'
+
+
+def _placeholder(width: str, image_width_px: int = 200, image_height_px: int = 100) -> str:
+    import base64
+
+    return f"{{{{IMG:{width}||data:image/png;base64,{base64.b64encode(_png_bytes(image_width_px, image_height_px)).decode()}}}}}"
+
+
+def _processed(doc, **kwargs) -> object:
+    import io
+
+    from docx import Document
+
+    from app.docx_post_process import process
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return Document(io.BytesIO(process(buffer.getvalue(), **kwargs)))
+
+
+def test_pandoc_text_width_is_the_page_less_its_side_margins():
+    from app.docx_post_process import _pandoc_text_width_emu
+
+    assert _pandoc_text_width_emu(_document_with_page(_A4_PAGE)) == A4_TEXT_WIDTH_EMU
+
+
+@pytest.mark.parametrize(
+    "page_xml",
+    [
+        None,
+        "",
+        '<w:pgSz w:w="11906" w:h="16838"/>',
+        '<w:pgMar w:left="1134" w:right="1134"/>',
+        '<w:pgSz w:w="11906"/><w:pgMar w:left="1134"/>',
+        '<w:pgSz w:w="wide"/><w:pgMar w:left="1134" w:right="1134"/>',
+        '<w:pgSz w:w="2000"/><w:pgMar w:left="1134" w:right="1134"/>',
+    ],
+)
+def test_pandoc_text_width_falls_back_to_420_points(page_xml):
+    """pandoc uses 420 pt when the reference document does not state the whole page."""
+    from app.docx_post_process import PANDOC_DEFAULT_TEXT_WIDTH_EMU, _pandoc_text_width_emu
+
+    assert PANDOC_DEFAULT_TEXT_WIDTH_EMU == 5334000
+    assert _pandoc_text_width_emu(_document_with_page(page_xml)) == PANDOC_DEFAULT_TEXT_WIDTH_EMU
+
+
+def test_dimension_to_emu_reads_a_percentage_as_a_share_of_the_text_width():
+    from app.docx_post_process import _dimension_to_emu
+
+    assert _dimension_to_emu("50%", 1000) == 500
+    assert _dimension_to_emu("12.5%", 1000) == 125
+    assert _dimension_to_emu("50%") is None
+
+
+def test_resolve_image_extent_resolves_a_percentage():
+    """A percentage of either side is a share of the text width; the other side keeps the aspect ratio."""
+    from app.docx_post_process import _resolve_image_extent
+
+    assert _resolve_image_extent(("50%", ""), 200, 100, 4000) == (2000, 1000)
+    assert _resolve_image_extent(("", "10%"), 200, 100, 4000) == (800, 400)
+    assert _resolve_image_extent(("50%", "10%"), 200, 100, 4000) == (2000, 400)
+
+
+def test_resolve_image_extent_ignores_a_length_beside_a_single_percentage():
+    """pandoc sizes the side a lone percentage leaves from the file's aspect ratio, not from a length given there."""
+    from app.docx_post_process import _resolve_image_extent
+
+    assert _resolve_image_extent(("50%", "200px"), 200, 100, 4000) == (2000, 1000)
+    assert _resolve_image_extent(("100px", "25%"), 200, 100, 4000) == (2000, 1000)
+
+
+def test_resolve_image_extent_brings_a_wide_image_back_to_the_text_width():
+    """The writer brings every image back to the text width, the requested ratio kept."""
+    from app.docx_post_process import EMU_1_INCH, _resolve_image_extent
+
+    assert _resolve_image_extent(("960px", "96px"), 20, 40, 5 * EMU_1_INCH) == (5 * EMU_1_INCH, EMU_1_INCH // 2)
+    assert _resolve_image_extent(("", ""), 960, 96, 5 * EMU_1_INCH) == (5 * EMU_1_INCH, EMU_1_INCH // 2)
+    assert _resolve_image_extent(("960px", ""), 20, 40, None) == (10 * EMU_1_INCH, 20 * EMU_1_INCH)
+
+
+def test_placeholder_percentage_is_a_share_of_the_page_pandoc_used():
+    doc = _document_with_page(_A4_PAGE)
+    doc.add_paragraph(_placeholder("50%"))
+
+    assert _extents(_processed(doc)) == [(A4_TEXT_WIDTH_EMU // 2, A4_TEXT_WIDTH_EMU // 4)]
+
+
+def test_placeholder_percentage_ignores_the_requested_paper_size():
+    """pandoc sized its images before the paper size reached the page, so the placeholder does too."""
+    from app.docx_post_process import PANDOC_DEFAULT_TEXT_WIDTH_EMU
+
+    # pandoc's own reference document: a sectPr that states no page
+    doc = _document_with_page("")
+    doc.add_paragraph(_placeholder("100%"))
+
+    assert _extents(_processed(doc, paper_size="A3", orientation="landscape")) == [(PANDOC_DEFAULT_TEXT_WIDTH_EMU, PANDOC_DEFAULT_TEXT_WIDTH_EMU // 2)]
+
+
+def test_placeholder_image_wider_than_the_page_is_brought_back_to_it():
+    doc = _document_with_page(_A4_PAGE)
+    doc.add_paragraph(_placeholder("", image_width_px=3000, image_height_px=300))
+
+    assert _extents(_processed(doc)) == [(A4_TEXT_WIDTH_EMU, A4_TEXT_WIDTH_EMU // 10)]
+
+
+def test_placeholder_image_in_a_cell_is_brought_back_to_its_column():
+    """The placeholder is resolved before the tables, so the column limit reaches it."""
+    doc = _document_with_page(_A4_PAGE)
+    table = doc.add_table(rows=1, cols=4)
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        col.set(f"{{{SCHEMA}}}w", "2000")
+    table.cell(0, 0).paragraphs[0].add_run(_placeholder("50%"))
+
+    assert _extents(_processed(doc))[0][0] == (2000 - 2 * 108) * 635
+
+
+def test_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
+    """A frame left at the old size lets Word crop or distort the picture."""
+    doc, table = _table_with_image([2000, 2000], image_inches=6)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _frame_extents(doc) == _extents(doc)
+    assert _extents(doc)[0][0] == (2000 - 2 * 108) * 635
+
+
+def test_placeholder_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
+    doc = _document_with_page(_A4_PAGE)
+    table = doc.add_table(rows=1, cols=4)
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        col.set(f"{{{SCHEMA}}}w", "2000")
+    table.cell(0, 0).paragraphs[0].add_run(_placeholder("", image_width_px=3000, image_height_px=300))
+
+    result = _processed(doc)
+
+    assert _frame_extents(result) == _extents(result)
+
+
 # ---- _apply_image_layouts ----
 
 WP_SCHEMA = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"

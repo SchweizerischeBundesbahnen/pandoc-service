@@ -209,3 +209,13 @@ def test_count_mismatch_falls_back_to_defaults():
     props = re.search(r"<w:tblPr>.*?</w:tblPr>", document_xml, re.DOTALL).group(0)
     assert '<w:tblW w:w="5000" w:type="pct"/>' in props
     assert "w:jc" not in props
+
+
+def test_tables_after_a_huge_image_are_extracted():
+    """A data: URI over libxml2's 10 MB limit used to end the parsed tree, so later tables were missed."""
+    from tests.test_html_document import HUGE_SRC
+
+    table = '<table style="width: {}"><tr><td>x</td></tr></table>'
+    src = f'<html><body>{table.format("40%")}<img src="{HUGE_SRC}">{table.format("60%")}</body></html>'
+
+    assert len(extract(src)) == 2
