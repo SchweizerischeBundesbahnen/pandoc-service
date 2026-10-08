@@ -878,16 +878,14 @@ def _convert_with_template(test_parameters: TestParameters, html: str, template:
 
 
 def _cell_limit(docx_bytes: bytes) -> int:
-    """The widest an image in the first cell may be.
+    """The widest an image in the first cell may be: its column less Word's default cell margins.
 
-    The rebuilt table states no column widths, so the limit is an even share
-    of the 6.5 inch text width app/docx_post_process.py assumes for a page
-    the document does not state.
+    The post-processor decides the column widths of the rebuilt table and writes them into its grid.
     """
     doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
     columns = doc.findall(f".//{{{W_NS}}}tblGrid/{{{W_NS}}}gridCol")
-    assert columns and all(column.get(f"{{{W_NS}}}w") is None for column in columns), "the rebuilt table now states its column widths"
-    return int(6.5 * 914400) // len(columns)
+    assert columns and all(column.get(f"{{{W_NS}}}w") for column in columns), "the rebuilt table states no column widths"
+    return (int(columns[0].get(f"{{{W_NS}}}w")) - 2 * 108) * 635
 
 
 @pytest.mark.parametrize("query", ["?preserve_table_styles=true", "?preserve_table_styles=true&paper_size=A4"])
