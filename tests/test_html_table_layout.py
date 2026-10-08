@@ -219,3 +219,41 @@ def test_tables_after_a_huge_image_are_extracted():
     src = f'<html><body>{table.format("40%")}<img src="{HUGE_SRC}">{table.format("60%")}</body></html>'
 
     assert len(extract(src)) == 2
+
+
+# ----------------------- column widths -----------------------
+
+
+def test_column_widths_come_from_the_cells_of_the_first_row():
+    """Polarion's work item attribute tables state 20 % and 80 % on their cells, which pandoc drops."""
+    html = '<table style="width: 100%"><tr><td style="width:20%; border: 1px solid">a</td><td style="width:80%">b</td></tr><tr><td style="width:50%">c</td><td>d</td></tr></table>'
+    assert extract(html)[0].column_widths == (("pct", 1000), ("pct", 4000))
+
+
+def test_column_widths_come_from_the_first_row_of_a_head():
+    html = "<table><thead><tr><th style='width: 30%'>a</th><th>b</th><th width='120'>c</th></tr></thead><tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody></table>"
+    assert extract(html)[0].column_widths == (("pct", 1500), None, ("dxa", 1800))
+
+
+def test_column_widths_of_a_colgroup_win_over_the_cells():
+    html = "<table><colgroup><col style='width: 25%'/><col span='2' width='10%'/></colgroup><tr><td style='width: 90%'>a</td><td>b</td><td>c</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1250), ("pct", 500), ("pct", 500))
+
+
+def test_a_cell_spanning_columns_states_no_width_for_any_of_them():
+    html = "<table><tr><td colspan='2' style='width: 60%'>a</td><td style='width: 40%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (None, None, ("pct", 2000))
+
+
+def test_a_table_without_column_widths_states_none():
+    html = "<table><tr><td>a</td><td style='width: auto'>b</td></tr></table>"
+    layout = extract(html)[0]
+    assert layout.column_widths is None
+    assert layout.is_empty
+
+
+def test_column_widths_of_a_nested_table_stay_its_own():
+    html = "<table><tr><td><table><tr><td style='width: 70%'>x</td><td style='width: 30%'>y</td></tr></table></td><td>b</td></tr></table>"
+    outer, inner = extract(html)
+    assert outer.column_widths is None
+    assert inner.column_widths == (("pct", 3500), ("pct", 1500))

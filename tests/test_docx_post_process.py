@@ -409,51 +409,40 @@ def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout)
             pass
 
 
-@patch("app.docx_post_process._process_table")
-@patch("app.docx_post_process._get_available_content_width_for_section")
-def test_replace_table_properties_by_section(mock_get_width, mock_process_table):
-    """Test that _replace_table_properties processes tables by section correctly."""
+def _fixed_width_table(doc, width_twips: int):
+    """A table carrying the dxa width the Lua filter writes for an absolute CSS width."""
+    table = doc.add_table(rows=1, cols=2)
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", str(width_twips))
+    tbl_w.set(f"{{{SCHEMA}}}type", "dxa")
+    return table
 
-    # Create mock document and sections
-    doc = MagicMock()
-    section1 = MagicMock()
-    section2 = MagicMock()
-    doc.sections = [section1, section2]
 
-    # Set up mock tables
-    table1 = MagicMock()
-    table2 = MagicMock()
-    doc.tables = [table1, table2]
+def _table_width_twips(table) -> int:
+    return int(table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW").get(f"{{{SCHEMA}}}w"))
 
-    # Set up table elements
-    tbl_element1 = MagicMock()
-    tbl_element1.tag = "w:tbl"
-    tbl_element2 = MagicMock()
-    tbl_element2.tag = "w:tbl"
 
-    table1._element = tbl_element1
-    table2._element = tbl_element2
+def test_replace_table_properties_clamps_each_table_to_its_own_section():
+    """A section break is a paragraph holding a sectPr, so a table after it is fitted to the next section."""
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Inches
 
-    # Set up document body with table and section break elements
-    section_break = MagicMock()
-    section_break.tag = "w:sectPr"
+    from app.docx_post_process import _get_available_content_width_for_section
 
-    doc.element.body = [tbl_element1, section_break, tbl_element2]
+    doc = Document()
+    portrait_table = _fixed_width_table(doc, 30000)
+    landscape = doc.add_section()
+    landscape.orientation = WD_ORIENT.LANDSCAPE
+    landscape.page_width, landscape.page_height = Inches(11), Inches(8.5)
+    landscape_table = _fixed_width_table(doc, 30000)
 
-    # Set up available width
-    max_width = 9144000
-    mock_get_width.return_value = max_width
-
-    # Call the function
     _replace_table_properties(doc)
 
-    # Verify _get_available_content_width_for_section was called for each section
-    assert mock_get_width.call_count == 2
-
-    # Verify _process_table was called for tables in correct sections
-    assert mock_process_table.call_count == 2
-    mock_process_table.assert_any_call(table1, 0, max_width, None)
-    mock_process_table.assert_any_call(table2, 0, max_width, None)
+    portrait_width, landscape_width = (_get_available_content_width_for_section(section) // 635 for section in doc.sections)
+    assert portrait_width < landscape_width
+    assert _table_width_twips(portrait_table) == portrait_width
+    assert _table_width_twips(landscape_table) == landscape_width
 
 
 def test_replace_size_and_orientation_both_none():
@@ -1996,6 +1985,13 @@ def _png_bytes_246(width: int = 30, height: int = 10) -> bytes:
     return buffer.getvalue()
 
 
+def _state_grid(table) -> None:
+    """Mark the grid as the widths the HTML states, as pandoc does for a colgroup: a table width, not an automatic one."""
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", "5000")
+    tbl_w.set(f"{{{SCHEMA}}}type", "pct")
+
+
 def _table_with_image(grid_twips: list[int], image_inches: float, merge: bool = False, cell_margin_twips: int | None = None):
     """A table whose grid states the given widths, an image in its first cell."""
     import io
@@ -2009,6 +2005,7 @@ def _table_with_image(grid_twips: list[int], image_inches: float, merge: bool = 
     table = doc.add_table(rows=1, cols=len(grid_twips))
     for col, width in zip(table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"), grid_twips, strict=True):
         col.set(f"{{{SCHEMA}}}w", str(width))
+    _state_grid(table)
     if cell_margin_twips is not None:
         table._tbl.tblPr.append(parse_xml(f'<w:tblCellMar {nsdecls("w")}><w:left w:w="{cell_margin_twips}" w:type="dxa"/><w:right w:w="{cell_margin_twips}" w:type="dxa"/></w:tblCellMar>'))
     cell = table.cell(0, 0)
@@ -2024,16 +2021,16 @@ def _first_image_width(doc) -> int:
 
 
 def test_image_in_a_cell_is_brought_back_to_its_column():
-    """Two columns of 264 px: the image fits its own column less the default cell margins, not half the page."""
-    doc, table = _table_with_image([5280, 5280], image_inches=6)
+    """Two columns of 312 px: the image fits its own column less the default cell margins."""
+    doc, table = _table_with_image([4680, 4680], image_inches=6)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
-    assert _first_image_width(doc) == (5280 - 2 * 108) * 635
+    assert _first_image_width(doc) == (4680 - 2 * 108) * 635
 
 
 def test_image_in_a_merged_cell_takes_the_sum_of_its_columns():
-    doc, table = _table_with_image([3000, 4000, 2000], image_inches=6, merge=True)
+    doc, table = _table_with_image([3000, 4000, 2360], image_inches=6, merge=True)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
@@ -2041,11 +2038,11 @@ def test_image_in_a_merged_cell_takes_the_sum_of_its_columns():
 
 
 def test_cell_margins_of_the_table_are_taken_off():
-    doc, table = _table_with_image([5280, 5280], image_inches=6, cell_margin_twips=300)
+    doc, table = _table_with_image([4680, 4680], image_inches=6, cell_margin_twips=300)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
-    assert _first_image_width(doc) == (5280 - 2 * 300) * 635
+    assert _first_image_width(doc) == (4680 - 2 * 300) * 635
 
 
 def test_image_which_fits_its_column_keeps_its_size():
@@ -2056,12 +2053,13 @@ def test_image_which_fits_its_column_keeps_its_size():
     assert _first_image_width(doc) == 914400
 
 
-def test_without_a_usable_grid_the_even_share_stays_the_limit():
+def test_without_a_usable_grid_the_content_decides_the_columns():
+    """The column holding the image takes what it needs, not an even share of the table."""
     doc, table = _table_with_image([0, 5280], image_inches=6)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
-    assert _first_image_width(doc) == int(6.5 * 914400 / 2)
+    assert _first_image_width(doc) == 6 * 914400
 
 
 def test_cell_margins_of_the_cell_win_and_start_end_count():
@@ -2069,14 +2067,14 @@ def test_cell_margins_of_the_cell_win_and_start_end_count():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    doc, table = _table_with_image([5280, 5280], image_inches=6, cell_margin_twips=300)
+    doc, table = _table_with_image([4680, 4680], image_inches=6, cell_margin_twips=300)
     tc_pr = table.cell(0, 0)._tc.get_or_add_tcPr()
     tc_pr.append(parse_xml(f'<w:tcMar {nsdecls("w")}><w:start w:w="50" w:type="dxa"/><w:end w:w="10" w:type="pct"/></w:tcMar>'))
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
     # left: the cell's 50; right: the pct value is ignored, so the table's 300 stays
-    assert _first_image_width(doc) == (5280 - 50 - 300) * 635
+    assert _first_image_width(doc) == (4680 - 50 - 300) * 635
 
 
 def test_a_cell_beyond_the_grid_falls_back_to_the_even_share():
@@ -2112,12 +2110,13 @@ def test_an_image_in_a_nested_table_stays_inside_the_cell_holding_it():
     outer = doc.add_table(rows=1, cols=2)
     for col, width in zip(outer._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"), [2880, 2880], strict=True):
         col.set(f"{{{SCHEMA}}}w", str(width))
+    _state_grid(outer)
     # The nested grid claims 7 inch inside a cell of 2 inch
     inner = outer.cell(0, 0).add_table(rows=1, cols=1)
     inner._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "10080")
     inner.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(7))
 
-    _process_table(outer, 0, max_width=int(6.5 * 914400))
+    _process_table(outer, 0, max_width=2 * 2880 * 635)
 
     # The outer cell is 2880 twips less its margins; the image is inside that, not inside 7 inch
     assert _first_image_width(doc) <= 2880 * 635
@@ -2140,9 +2139,10 @@ def test_cell_margins_of_the_table_style_are_taken_off():
         style_margins.find(f"{{{SCHEMA}}}{side}").set(f"{{{SCHEMA}}}w", "720")
     table = doc.add_table(rows=1, cols=1, style="Table Grid")
     table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "5280")
+    _state_grid(table)
     table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(6))
 
-    _process_table(table, 0, max_width=int(6.5 * 914400))
+    _process_table(table, 0, max_width=5280 * 635)
 
     # 5280 twips less 720 a side, which the default of 108 would have left far too wide
     assert _first_image_width(doc) == (5280 - 720 - 720) * 635
@@ -2176,9 +2176,10 @@ def test_cell_margins_come_from_each_style_which_states_a_side():
 
     table = doc.add_table(rows=1, cols=1, style="Table Grid")
     table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "5280")
+    _state_grid(table)
     table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(6))
 
-    _process_table(table, 0, max_width=int(6.5 * 914400))
+    _process_table(table, 0, max_width=5280 * 635)
 
     # 600 from the parent style, 400 from the style the table names; neither side falls back to 108
     assert _first_image_width(doc) == (5280 - 600 - 400) * 635
@@ -2313,19 +2314,21 @@ def test_placeholder_image_wider_than_the_page_is_brought_back_to_it():
 def test_placeholder_image_in_a_cell_is_brought_back_to_its_column():
     """The placeholder is resolved before the tables, so the column limit reaches it."""
     doc = _document_with_page(_A4_PAGE)
-    table = doc.add_table(rows=1, cols=4)
+    table = doc.add_table(rows=1, cols=2)
+    # Two halves of the A4 text width: 11906 less two margins of 1134
     for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
-        col.set(f"{{{SCHEMA}}}w", "2000")
+        col.set(f"{{{SCHEMA}}}w", "4819")
+    _state_grid(table)
     table.cell(0, 0).paragraphs[0].add_run(_placeholder("50%"))
 
-    assert _extents(_processed(doc))[0][0] == (2000 - 2 * 108) * 635
+    assert _extents(_processed(doc))[0][0] == (4819 - 2 * 108) * 635
 
 
 def test_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
     """A frame left at the old size lets Word crop or distort the picture."""
     doc, table = _table_with_image([2000, 2000], image_inches=6)
 
-    _process_table(table, 0, max_width=int(6.5 * 914400))
+    _process_table(table, 0, max_width=4000 * 635)
 
     assert _frame_extents(doc) == _extents(doc)
     assert _extents(doc)[0][0] == (2000 - 2 * 108) * 635
@@ -2559,3 +2562,118 @@ def test_process_applies_image_layouts():
     picture_run = result.element.body.find(f".//{{{SCHEMA}}}drawing").getparent()
     assert _position(picture_run) == "-5"
     assert _effect_extent(picture_run)["r"] == "19050"
+
+
+# ---- column widths decided before images in cells are fitted ----
+
+
+def _grid_twips(table) -> list[int]:
+    return [int(col.get(f"{{{SCHEMA}}}w")) for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")]
+
+
+def _cell_widths_twips(table) -> list[int]:
+    return [int(tc.find(f"{{{SCHEMA}}}tcPr/{{{SCHEMA}}}tcW").get(f"{{{SCHEMA}}}w")) for tc in table._tbl.iter(f"{{{SCHEMA}}}tc")]
+
+
+def test_an_image_in_a_column_the_html_states_fills_that_column():
+    """Polarion's attribute tables state 20 % and 80 % on their cells, and pandoc splits them evenly."""
+    from app.html_table_layout import TableLayout
+
+    doc, table = _table_with_image([4680, 4680], image_inches=9)
+    # The image sits in the first cell, so give that one the 80 %
+    layout = TableLayout(width_type="pct", width_value=5000, column_widths=(("pct", 4000), ("pct", 1000)))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400), layout_iter=iter([layout]))
+
+    assert _grid_twips(table) == [7488, 1872]
+    assert _cell_widths_twips(table) == [7488, 1872]
+    assert _first_image_width(doc) == (7488 - 2 * 108) * 635
+
+
+def test_an_image_in_a_column_of_a_guessed_grid_is_not_held_to_an_even_share():
+    """pandoc marks a grid it split evenly with an automatic table width; Word lays such a table out by its content."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        col.set(f"{{{SCHEMA}}}w", "3960")
+    table.cell(0, 0).paragraphs[0].add_run("Severity")
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(9))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    image_column = _grid_twips(table)[1]
+    assert sum(_grid_twips(table)) == pytest.approx(6.5 * 1440, abs=2)
+    assert image_column > 0.8 * 6.5 * 1440
+    assert _first_image_width(doc) == (image_column - 2 * 108) * 635
+
+
+def test_a_stated_grid_is_scaled_to_the_width_of_the_table():
+    """A grid pandoc took from a colgroup adds up to its own text width, not to the page the table is on."""
+    doc, table = _table_with_image([1584, 6336], image_inches=9)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _grid_twips(table) == [1872, 7488]
+    assert _first_image_width(doc) == (1872 - 2 * 108) * 635
+
+
+def test_a_cell_width_goes_after_a_cnf_style_and_replaces_the_one_there():
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _set_cell_width
+
+    tc = parse_xml(f'<w:tc {nsdecls("w")}><w:tcPr><w:cnfStyle w:val="100000000000"/><w:tcW w:w="5" w:type="pct"/><w:vAlign w:val="top"/></w:tcPr><w:p/></w:tc>')
+
+    _set_cell_width(tc, 1234)
+
+    assert [child.tag.split("}")[1] for child in tc.find(f"{{{SCHEMA}}}tcPr")] == ["cnfStyle", "tcW", "vAlign"]
+    assert tc.find(f"{{{SCHEMA}}}tcPr/{{{SCHEMA}}}tcW").get(f"{{{SCHEMA}}}w") == "1234"
+    assert tc.find(f"{{{SCHEMA}}}tcPr/{{{SCHEMA}}}tcW").get(f"{{{SCHEMA}}}type") == "dxa"
+
+
+@pytest.mark.parametrize(
+    ("tbl_w", "expected"),
+    [
+        ('<w:tblW w:w="2500" w:type="pct"/>', 5000),
+        ('<w:tblW w:w="50%" w:type="pct"/>', 5000),
+        ('<w:tblW w:w="9000" w:type="pct"/>', 10000),
+        ('<w:tblW w:w="10" w:type="dxa"/>', 10 * 635),
+        ('<w:tblW w:w="99999" w:type="dxa"/>', 10000),
+        ('<w:tblW w:w="0" w:type="auto"/>', 10000),
+        ("", 10000),
+    ],
+)
+def test_the_width_a_table_is_laid_out_at(tbl_w, expected):
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _table_width_emu
+
+    assert _table_width_emu(parse_xml(f"<w:tblPr {nsdecls('w')}>{tbl_w}</w:tblPr>"), 10000) == expected
+
+
+def test_inline_pictures_state_their_distances_from_the_text():
+    """LibreOffice reads a missing distance as about 0.3 cm and sets a picture that far in."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import WP_NS, _state_inline_distances
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(1))
+    inline = next(doc.element.body.iter(f"{{{WP_NS}}}inline"))
+    for side in ("distT", "distB", "distL", "distR"):
+        inline.attrib.pop(side, None)
+    inline.set("distL", "114300")
+
+    _state_inline_distances(doc)
+
+    assert {side: inline.get(side) for side in ("distT", "distB", "distL", "distR")} == {"distT": "0", "distB": "0", "distL": "114300", "distR": "0"}
