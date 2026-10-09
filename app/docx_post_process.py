@@ -113,7 +113,7 @@ def process(
     _replace_image_placeholders(doc, text_width)
     _state_inline_distances(doc)
     # Before the tables, so a column is decided by the size an image asks for.
-    _restore_requested_widths(doc, image_sizes, text_width)
+    _size_images_for_their_page(doc, image_sizes, text_width)
     _replace_table_properties(doc, table_layouts)
     _separate_adjacent_tables(doc)
     apply_math_colors(doc)
@@ -1215,14 +1215,18 @@ def _fit_images_to_text_width(doc: DocumentObject) -> None:
                 _fit_extent_width(extent, limit)
 
 
-def _restore_requested_widths(doc: DocumentObject, image_sizes: dict[str, list[RequestedSize]] | None, pandoc_text_width: int) -> None:
-    """Give an image pandoc narrowed to the template's page the room of the page it ends up on.
+def _size_images_for_their_page(doc: DocumentObject, image_sizes: dict[str, list[RequestedSize]] | None, pandoc_text_width: int) -> None:
+    """Size each image for the page it ends up on, from the size it asks for.
 
-    pandoc brings an image wider than the text of the template's page back to that width. A
-    landscape section of a portrait document, or a larger paper size, has more room, and the image
-    takes it, up to the size it asked for. Only an image as wide as pandoc's text width can have been
-    narrowed. A recorded size is taken for a picture only where its shape is the picture's: see
-    :mod:`app.html_image_sizes`. The passes after this one fit the image to its column and indent.
+    pandoc sizes an image against the text of the template's page: a percentage is a share of it,
+    and a wider image is brought back to it. The section the image ends up on can be wider, a
+    landscape page of a portrait document or a larger paper size, or narrower. An image pandoc
+    made of the size it asks for is made again against the text width of its own section.
+
+    The sizes come from the HTML, found again by the bytes of each image: see
+    :mod:`app.html_image_sizes`. A recorded size is taken only for the drawing pandoc made of it,
+    so one of another image with the same bytes is never applied. The passes after this one fit
+    the image to its column and its indent.
     """
     if not image_sizes:
         return
@@ -1235,10 +1239,10 @@ def _restore_requested_widths(doc: DocumentObject, image_sizes: dict[str, list[R
                 continue
             requested = next(queues.get(html_image_sizes.digest(image.blob), iter(())), None)
             text_width = text_widths[min(section_index, len(text_widths) - 1)]
-            # A page the section does not state is a guess, and an image is not widened on a guess.
-            if requested is None or text_width is None or abs(int(extent.get("cx", "0")) - pandoc_text_width) > EMU_PER_POINT:
-                continue
-            _widen_extent(extent, requested, image, pandoc_text_width, text_width)
+            # A page the section does not state is a guess, and an image is not sized on a guess. A page
+            # as wide as pandoc's, but for the whole points pandoc counts it in, keeps the size pandoc gave.
+            if requested is not None and text_width is not None and abs(text_width - pandoc_text_width) > EMU_PER_POINT:
+                _size_for_page(extent, requested, image, pandoc_text_width, text_width)
 
 
 def _stated_text_width(section: Section) -> int | None:
@@ -1258,21 +1262,19 @@ def _drawing_image(doc: DocumentObject, extent: Any) -> Any:
         return None
 
 
-def _widen_extent(extent: Any, requested: RequestedSize, image: Any, pandoc_text_width: int, max_width: int) -> None:
-    """Widen a drawing towards its requested size, no wider than max_width, keeping its shape."""
+def _size_for_page(extent: Any, requested: RequestedSize, image: Any, pandoc_text_width: int, text_width: int) -> None:
+    """Make a drawing again from the size it asks for, against text_width, where pandoc made it of that size."""
     try:
         px_width, px_height = image.image.px_width, image.image.px_height
     # An image python-docx cannot read has no pixel size to scale by.
     except Exception:  # noqa: BLE001
         return
-    width = int(extent.get("cx", "0"))
-    height = int(extent.get("cy", "0"))
-    target_width, target_height = _requested_extent((requested.width, requested.height), px_width, px_height, pandoc_text_width)
-    if width <= 0 or target_width <= width or abs(target_height * width - height * target_width) > target_width * height // 100:
+    size = (requested.width, requested.height)
+    made_width, made_height = _resolve_image_extent(size, px_width, px_height, pandoc_text_width)
+    # pandoc counts its text width in whole points, and rounds the height it scales
+    if abs(int(extent.get("cx", "0")) - made_width) > EMU_PER_POINT or abs(int(extent.get("cy", "0")) - made_height) > max(EMU_PER_POINT, made_height // 100):
         return
-    new_width = min(target_width, max_width)
-    if new_width > width:
-        _set_drawing_size(extent, new_width, round(height * new_width / width))
+    _set_drawing_size(extent, *_resolve_image_extent(size, px_width, px_height, text_width))
 
 
 def _numbering(doc: DocumentObject) -> Any:

@@ -933,14 +933,15 @@ def test_full_width_image_in_a_formatted_paragraph_uses_the_page_of_the_template
     assert formatted == (inside_the_indent, inside_the_indent // 2)
 
 
+@pytest.mark.parametrize("style", ["", "width:100%"])
 @pytest.mark.parametrize("query", ["", "&orientation=portrait"])
-def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameters: TestParameters, query: str):
+def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameters: TestParameters, query: str, style: str):
     """pandoc narrows the image to the portrait page of the template; the landscape page has more room.
 
     A page break marked landscape turns the pages above it, as Polarion marks them, and keeps
-    that orientation when the request asks for another one.
+    that orientation when the request asks for another one. A percentage is a share of that page.
     """
-    image = f'<img src="{_png_data_uri(3000, 300)}">'
+    image = f'<img src="{_png_data_uri(3000, 300)}" style="{style}">'
     html = f"<p>Portrait</p><p>\\newpage</p><p>\\pagePortrait</p><p>{image}</p><p>\\newpage</p><p>\\pageLandscape</p><p>Portrait again</p>"
 
     width, height = _drawing_extent(_convert_with_template(test_parameters, html, _a4_template(test_parameters), query))

@@ -2875,7 +2875,7 @@ def test_without_template_margins_a_section_break_is_left_as_it_is():
     assert margins is None
 
 
-# ---- _restore_requested_widths ----
+# ---- _size_images_for_their_page ----
 
 
 def _narrowed_image_document(requested_width: str = "3000px", image_width: int | None = None, orient: str = "landscape"):
@@ -2901,11 +2901,11 @@ def _narrowed_image_document(requested_width: str = "3000px", image_width: int |
 
 
 def test_an_image_pandoc_narrowed_takes_the_width_of_a_landscape_page():
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
 
     doc, pandoc_text_width, sizes = _narrowed_image_document()
 
-    _restore_requested_widths(doc, sizes, pandoc_text_width)
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
 
     landscape_width = _text_width(doc.sections[0])
     assert landscape_width > pandoc_text_width
@@ -2914,56 +2914,56 @@ def test_an_image_pandoc_narrowed_takes_the_width_of_a_landscape_page():
 
 
 def test_an_image_grows_no_wider_than_it_asks():
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
 
     doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width="7in")
 
-    _restore_requested_widths(doc, sizes, pandoc_text_width)
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
 
     assert _extents(doc)[0][0] == 7 * 914400
 
 
 def test_an_image_pandoc_did_not_narrow_keeps_its_size():
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
 
     doc, pandoc_text_width, sizes = _narrowed_image_document(image_width=914400 * 3)
 
-    _restore_requested_widths(doc, sizes, pandoc_text_width)
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
 
     assert _extents(doc) == [(914400 * 3, 914400)]
 
 
 def test_an_image_on_a_page_no_wider_keeps_its_size():
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
 
     doc, pandoc_text_width, sizes = _narrowed_image_document(orient="portrait")
 
-    _restore_requested_widths(doc, sizes, pandoc_text_width)
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
 
     assert _extents(doc)[0][0] == pandoc_text_width
 
 
 def test_a_recorded_size_of_another_shape_is_not_taken():
     """The shape tells a recorded size from one of another image with the same bytes."""
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
     from app.html_image_sizes import RequestedSize
 
     doc, pandoc_text_width, sizes = _narrowed_image_document()
     key = next(iter(sizes))
 
-    _restore_requested_widths(doc, {key: [RequestedSize("3000px", "3000px")]}, pandoc_text_width)
+    _size_images_for_their_page(doc, {key: [RequestedSize("3000px", "3000px")]}, pandoc_text_width)
 
     assert _extents(doc)[0][0] == pandoc_text_width
 
 
 def test_an_image_is_not_widened_on_a_page_its_section_does_not_state():
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
 
     doc, pandoc_text_width, sizes = _narrowed_image_document()
     landscape = doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
     landscape.remove(landscape.find(f"{{{SCHEMA}}}pgMar"))
 
-    _restore_requested_widths(doc, sizes, pandoc_text_width)
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
 
     assert _extents(doc)[0][0] == pandoc_text_width
 
@@ -2972,7 +2972,7 @@ def test_images_with_the_same_bytes_take_their_sizes_in_document_order():
     """The first copy was not narrowed and takes the first size; the second takes the second."""
     import io
 
-    from app.docx_post_process import _restore_requested_widths
+    from app.docx_post_process import _size_images_for_their_page
     from app.html_image_sizes import RequestedSize
 
     doc, pandoc_text_width, sizes = _narrowed_image_document()
@@ -2982,7 +2982,7 @@ def test_images_with_the_same_bytes_take_their_sizes_in_document_order():
     small.add_run().add_picture(io.BytesIO(_png_bytes(300, 100)), width=914400 * 3, height=914400)
     first.addprevious(small._p)
 
-    _restore_requested_widths(doc, {key: [RequestedSize("3in", ""), RequestedSize("8in", "")]}, pandoc_text_width)
+    _size_images_for_their_page(doc, {key: [RequestedSize("3in", ""), RequestedSize("8in", "")]}, pandoc_text_width)
 
     assert [width for width, _ in _extents(doc)] == [914400 * 3, 8 * 914400]
 
@@ -3080,3 +3080,44 @@ def test_a_fixed_width_table_keeps_the_column_widths_its_grid_states():
 
     assert _grid_twips(table) == [2000, 7000]
     assert _first_image_width(doc) == (2000 - 2 * 108) * 635
+
+
+@pytest.mark.parametrize("share", [100, 50])
+def test_a_percentage_image_is_a_share_of_the_landscape_page_it_ends_up_on(share):
+    """CSS reads a percentage against the text the image stands in, which a landscape page widens."""
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width=f"{share}%")
+    for extent in doc.element.body.iter(f"{{{WP_SCHEMA}}}extent"):
+        docx_post_process._set_drawing_size(extent, pandoc_text_width * share // 100, pandoc_text_width * share // 300)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    landscape_width = _text_width(doc.sections[0])
+    assert _extents(doc)[0][0] == round(landscape_width * share / 100)
+    assert _frame_extents(doc) == _extents(doc)
+
+
+def test_a_percentage_image_is_a_share_of_a_narrower_page_too():
+    """The shrinking pass only brings an image back to the whole width; a share of a narrower page is less."""
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, page_width, sizes = _narrowed_image_document(requested_width="50%", orient="portrait")
+    # pandoc sized it against a page twice as wide as the one it ends up on
+    pandoc_text_width = 2 * page_width
+    for extent in doc.element.body.iter(f"{{{WP_SCHEMA}}}extent"):
+        docx_post_process._set_drawing_size(extent, page_width, page_width // 3)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == round(_text_width(doc.sections[0]) / 2)
+
+
+def test_a_percentage_is_not_taken_for_a_drawing_pandoc_did_not_make_of_it():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width="50%", image_width=914400)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == 914400
