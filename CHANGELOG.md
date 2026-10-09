@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.8.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.7.0...v2.8.0) (2026-10-09)
+
+
+### Features
+
+* fit images and tables to page ([#269](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/269)) ([9191c2d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9191c2de7d05c9a9f1559ffd01b9c3425e0e9446))
+
+
+### Bug Fixes
+
+* **deps:** update dependency pypdfium2 to v5.14.0 ([7a682e8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/7a682e882b6936d0098b3c6256036aa83836756d))
+* **deps:** update dependency tox to v4.64.9 ([47df346](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/47df346a9b639cc2004cd4b9273e92cb4f713b7a))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.12.24 ([76bbad9](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/76bbad9468ceb3e41a4995a8d3cb95b81cb8e271))
+
 ## [2.7.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.6.0...v2.7.0) (2026-10-07)
 
 
