@@ -32,7 +32,7 @@ dev = [
     "types-psutil==7.2.2.20260906",
 ]
 test = [
-    "tox==4.64.8",
+    "tox==4.64.9",
     "tox-uv==1.36.1",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.2.0",
@@ -44,7 +44,7 @@ test = [
     "httpx==0.28.1",
     "pypdf==6.19.0",  # reads the text of a produced PDF in the container tests
     "coverage==7.16.2",
-    "pypdfium2==5.13.0",  # renders the pages of a produced PDF for the visual tests
+    "pypdfium2==5.14.0",  # renders the pages of a produced PDF for the visual tests
     "pillow==12.3.0",  # reads and writes the page images of the visual tests
 ]
 
