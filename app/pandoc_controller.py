@@ -1217,14 +1217,15 @@ async def convert(
         # it (only relevant when producing DOCX; other writers handle table
         # width natively). Read from the original source: SVG rasterization
         # below never touches tables.
-        table_layouts = await extract_table_layouts(source) if source_format == "html" and target_format == "docx" else None
+        html_to_docx = source_format == "html" and target_format == "docx"
+        table_layouts = await extract_table_layouts(source) if html_to_docx else None
 
         # Rasterize any embedded SVGs to PNG so renderers without full SVG
         # support (e.g. Word) get a usable image instead of a fallback warning.
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
         # After the rasterization, which gives an SVG its PNG and the size it is drawn at.
-        image_sizes = await extract_image_sizes(source) if source_format == "html" and target_format == "docx" else None
+        image_sizes = await extract_image_sizes(source) if html_to_docx else None
 
         # The pandoc subprocess runs in a worker thread. Called directly it would block
         # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
