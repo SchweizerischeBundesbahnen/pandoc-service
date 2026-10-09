@@ -928,7 +928,24 @@ def test_full_width_image_in_a_formatted_paragraph_uses_the_page_of_the_template
     formatted = _drawing_extent(_convert_with_template(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>', template))
 
     assert plain == (A4_TEMPLATE_TEXT_WIDTH_EMU, A4_TEMPLATE_TEXT_WIDTH_EMU // 2)
-    assert formatted == plain
+    # The indent takes its part of the page: A4 less 1134 twips a side, less the 600 of the paragraph
+    inside_the_indent = (11906 - 2 * 1134 - 600) * 635
+    assert formatted == (inside_the_indent, inside_the_indent // 2)
+
+
+def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameters: TestParameters):
+    """pandoc narrows the image to the portrait page of the template; the landscape page has more room.
+
+    A page break marked landscape turns the pages above it, as Polarion marks them.
+    """
+    image = f'<img src="{_png_data_uri(3000, 300)}">'
+    html = f"<p>Portrait</p><p>\\newpage</p><p>\\pagePortrait</p><p>{image}</p><p>\\newpage</p><p>\\pageLandscape</p><p>Portrait again</p>"
+
+    width, height = _drawing_extent(_convert_with_template(test_parameters, html, _a4_template(test_parameters)))
+
+    # A4 turned, less the template's 2 cm on each side
+    assert width == (16838 - 2 * 1134) * 635
+    assert height * 10 == pytest.approx(width, abs=10), "the aspect ratio was not kept"
 
 
 @pytest.mark.parametrize("style", ["width:50%", "width:100%", ""])

@@ -28,7 +28,7 @@ from app.auth import ApiKeyError, get_api_keys, is_request_authorized, require_a
 from app.schema import VersionSchema
 from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options, load_tls_options
 
-from . import docx_latex_pre_process, docx_page_geometry, docx_post_process, html_image_pre_process, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
+from . import docx_latex_pre_process, docx_page_geometry, docx_post_process, html_image_pre_process, html_image_sizes, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
 from .chromium_manager import get_chromium_manager
 from .constants import API_VERSION, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
@@ -778,6 +778,11 @@ async def extract_table_layouts(source: str | bytes) -> list[html_table_layout.T
     return await to_thread.run_sync(html_table_layout.extract, source, abandon_on_cancel=True, limiter=get_conversion_limiter())
 
 
+async def extract_image_sizes(source: str | bytes) -> dict[str, list[html_image_sizes.RequestedSize]]:
+    """Read the size each image of an HTML source asks for, in a worker thread, as the table layouts are read."""
+    return await to_thread.run_sync(html_image_sizes.extract, source, abandon_on_cancel=True, limiter=get_conversion_limiter())
+
+
 async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None = None) -> str | bytes:
     """Rasterize SVGs embedded in HTML to PNG via headless Chromium before pandoc runs.
 
@@ -1014,6 +1019,8 @@ async def convert_docx_with_ref(
         # instead of the draw.io "Text is not SVG - cannot display" fallback.
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
+        # After the rasterization, which gives an SVG its PNG and the size it is drawn at.
+        image_sizes = await extract_image_sizes(source) if source_format == "html" else None
 
         # The pandoc subprocess runs in a worker thread. Called directly it would block
         # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
@@ -1026,7 +1033,7 @@ async def convert_docx_with_ref(
             limiter=get_conversion_limiter(),
         )
 
-        response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation, table_layouts)
+        response = postprocess_and_build_response(output, "docx", file_name, paper_size, orientation, table_layouts, image_sizes)
 
         # Record success metrics
         duration_seconds = time.time() - conversion_start_time
@@ -1216,6 +1223,8 @@ async def convert(
         # support (e.g. Word) get a usable image instead of a fallback warning.
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor)
+        # After the rasterization, which gives an SVG its PNG and the size it is drawn at.
+        image_sizes = await extract_image_sizes(source) if source_format == "html" and target_format == "docx" else None
 
         # The pandoc subprocess runs in a worker thread. Called directly it would block
         # the event loop, and a blocked loop cannot act on SIGTERM: the graceful shutdown
@@ -1228,7 +1237,7 @@ async def convert(
             limiter=get_conversion_limiter(),
         )
 
-        response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation, table_layouts)
+        response = postprocess_and_build_response(output, target_format, file_name, paper_size, orientation, table_layouts, image_sizes)
 
         # Record success metrics
         duration_seconds = time.time() - conversion_start_time
@@ -1253,10 +1262,18 @@ async def get_docx_source_data(source_content: starlette.datastructures.UploadFi
     return source_content
 
 
-def postprocess_and_build_response(output: bytes, target_format: str, file_name: str, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[html_table_layout.TableLayout] | None = None) -> Response:
+def postprocess_and_build_response(
+    output: bytes,
+    target_format: str,
+    file_name: str,
+    paper_size: str | None = None,
+    orientation: str | None = None,
+    table_layouts: list[html_table_layout.TableLayout] | None = None,
+    image_sizes: dict[str, list[html_image_sizes.RequestedSize]] | None = None,
+) -> Response:
     if target_format == "docx":
         post_process_start = time.time()
-        output = docx_post_process.process(output, paper_size, orientation, table_layouts)
+        output = docx_post_process.process(output, paper_size, orientation, table_layouts, image_sizes)
         observe_post_processing_duration("docx", time.time() - post_process_start)
     elif target_format == "pptx":
         # For PPTX, paper_size parameter is repurposed as slide_size

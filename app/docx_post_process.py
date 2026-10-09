@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import logging
 import math
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import parse_xml
 from docx.oxml import parser as docx_parser
 from docx.oxml.ns import nsdecls
@@ -20,10 +22,12 @@ if TYPE_CHECKING:
     from docx.section import Section
     from docx.table import Table, _Cell
 
+    from app.html_image_sizes import RequestedSize
     from app.html_table_layout import TableLayout
 
-from app import docx_table_columns
+from app import docx_table_columns, html_image_sizes
 from app.docx_math_color_post_process import apply_math_colors
+from app.docx_paragraph_indent import ParagraphIndents
 from app.docx_references_post_process import add_table_of_contents_entries, enable_auto_update_fields
 
 # Patch the python-docx parser to handle large XML documents (> 10MB)
@@ -91,19 +95,29 @@ _TBLPR_CHILD_ORDER = [
 ]
 
 
-def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[TableLayout] | None = None) -> bytes:
+def process(
+    docx_bytes: bytes,
+    paper_size: str | None = None,
+    orientation: str | None = None,
+    table_layouts: list[TableLayout] | None = None,
+    image_sizes: dict[str, list[RequestedSize]] | None = None,
+) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
     # Read before the paper size replaces the page pandoc sized its images against.
     text_width = _pandoc_text_width_emu(doc)
     _move_header_footer_references_to_first_section(doc)
     _replace_first_paragraph_styles(doc)
+    _complete_section_geometry(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     # Before the tables, so an image in a cell is brought back to its column.
     _replace_image_placeholders(doc, text_width)
     _state_inline_distances(doc)
+    # Before the tables, so a column is decided by the size an image asks for.
+    _restore_requested_widths(doc, image_sizes, text_width)
     _replace_table_properties(doc, table_layouts)
     _separate_adjacent_tables(doc)
     apply_math_colors(doc)
+    _fit_images_to_text_width(doc)
     _cap_image_heights(doc)
     # After the cap, which can make a picture lower: vertical-align: middle centers on its height.
     _apply_image_layouts(doc)
@@ -616,6 +630,46 @@ def _separate_adjacent_tables(doc: DocumentObject) -> None:
             table_element.addnext(parse_xml(f"<w:p {nsdecls('w')}/>"))
 
 
+def _complete_section_geometry(doc: DocumentObject) -> None:
+    """Give a section break written without margins the page and margins of the template.
+
+    ``filters/page_orientation.lua`` turns a page to landscape or back with a section break which
+    states an A4 page and its orientation, and no margins. Word then lays the section out on its
+    own default margins, and the post-processor could not tell how wide its text is. The break takes
+    the margins of the template's page and its size, turned to the orientation the break states.
+    """
+    body_sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    page_margins = body_sect_pr.find(f"{{{SCHEMA}}}pgMar") if body_sect_pr is not None else None
+    if page_margins is None:
+        return
+    page_size = body_sect_pr.find(f"{{{SCHEMA}}}pgSz")
+    for sect_pr in doc.element.body.findall(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"):
+        if sect_pr.find(f"{{{SCHEMA}}}pgMar") is not None:
+            continue
+        own_size = sect_pr.find(f"{{{SCHEMA}}}pgSz")
+        if own_size is not None and page_size is not None:
+            _take_page_size(own_size, page_size)
+        own_size = sect_pr.find(f"{{{SCHEMA}}}pgSz")
+        margins = copy.deepcopy(page_margins)
+        if own_size is not None:
+            own_size.addnext(margins)
+        else:
+            sect_pr.append(margins)
+
+
+def _take_page_size(own_size: Any, page_size: Any) -> None:
+    """Give a section the size of the template's page, turned to the orientation the section states."""
+    width = _int_attribute(page_size, "w")
+    height = _int_attribute(page_size, "h")
+    if width is None or height is None:
+        return
+    landscape = own_size.get(f"{{{SCHEMA}}}orient") == "landscape"
+    if landscape != (width > height):
+        width, height = height, width
+    own_size.set(f"{{{SCHEMA}}}w", str(width))
+    own_size.set(f"{{{SCHEMA}}}h", str(height))
+
+
 def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:
     # If both parameters are None, no modifications needed
     if paper_size is None and orientation is None:
@@ -1125,6 +1179,117 @@ def _get_available_content_height_for_section(section: Section) -> int:
     top_margin = _margin_size(section.top_margin, DOCX_LETTER_TOP_BOTTOM_MARGIN)
     bottom_margin = _margin_size(section.bottom_margin, DOCX_LETTER_TOP_BOTTOM_MARGIN)
     return int(page_height - top_margin - bottom_margin)
+
+
+def _fit_images_to_text_width(doc: DocumentObject) -> None:
+    """Bring a picture wider than the text it stands in back to that width, keeping its shape.
+
+    pandoc fits a picture to the text width of the template's page, before the paper size and the
+    orientation replace that page, and without the indent of its paragraph. A list item is indented
+    by its numbering level, so a picture in it ran over the right margin by that much. A picture in a
+    table is fitted to its column instead: see `_replace_table_properties`.
+    """
+    text_widths = [_get_available_content_width_for_section(section) for section in doc.sections]
+    indents = ParagraphIndents(doc.styles.element, _numbering(doc))
+    for element, section_index in _body_by_section(doc):
+        if element.tag == f"{{{SCHEMA}}}tbl":
+            continue
+        text_width = text_widths[min(section_index, len(text_widths) - 1)]
+        paragraphs = [element] if element.tag == f"{{{SCHEMA}}}p" else element.iter(f"{{{SCHEMA}}}p")
+        for p in paragraphs:
+            if _in_table(p, element):
+                continue
+            limit = text_width - indents.width_taken(p) * TWIPS_TO_EMU
+            for extent in p.iter(f"{{{WP_NS}}}extent"):
+                _fit_extent_width(extent, limit)
+
+
+def _restore_requested_widths(doc: DocumentObject, image_sizes: dict[str, list[RequestedSize]] | None, pandoc_text_width: int) -> None:
+    """Give an image pandoc narrowed to the template's page the room of the page it ends up on.
+
+    pandoc brings an image wider than the text of the template's page back to that width. A
+    landscape section of a portrait document, or a larger paper size, has more room, and the image
+    takes it, up to the size it asked for. Only an image as wide as pandoc's text width can have been
+    narrowed. A recorded size is taken for a picture only where its shape is the picture's: see
+    :mod:`app.html_image_sizes`. The passes after this one fit the image to its column and indent.
+    """
+    if not image_sizes:
+        return
+    queues = {key: iter(sizes) for key, sizes in image_sizes.items()}
+    text_widths = [_stated_text_width(section) for section in doc.sections]
+    for element, section_index in _body_by_section(doc):
+        for extent in element.iter(f"{{{WP_NS}}}extent"):
+            image = _drawing_image(doc, extent)
+            if image is None:
+                continue
+            requested = next(queues.get(html_image_sizes.digest(image.blob), iter(())), None)
+            text_width = text_widths[min(section_index, len(text_widths) - 1)]
+            # A page the section does not state is a guess, and an image is not widened on a guess.
+            if requested is None or text_width is None or abs(int(extent.get("cx", "0")) - pandoc_text_width) > EMU_PER_POINT:
+                continue
+            _widen_extent(extent, requested, image, pandoc_text_width, text_width)
+
+
+def _stated_text_width(section: Section) -> int | None:
+    """The text width of a section which states its page width and side margins, else None."""
+    if section.page_width is None or section.left_margin is None or section.right_margin is None:
+        return None
+    return _get_available_content_width_for_section(section)
+
+
+def _drawing_image(doc: DocumentObject, extent: Any) -> Any:
+    """The image part a drawing shows, or None where it shows none this can read."""
+    blip = extent.getparent().find(f".//{{{DRAWING_NS}}}blip")
+    relationship = blip.get(f"{{{RELATIONSHIPS_SCHEMA}}}embed") if blip is not None else None
+    try:
+        return doc.part.related_parts[relationship] if relationship is not None else None
+    except KeyError:
+        return None
+
+
+def _widen_extent(extent: Any, requested: RequestedSize, image: Any, pandoc_text_width: int, max_width: int) -> None:
+    """Widen a drawing towards its requested size, no wider than max_width, keeping its shape."""
+    try:
+        px_width, px_height = image.image.px_width, image.image.px_height
+    # An image python-docx cannot read has no pixel size to scale by.
+    except Exception:  # noqa: BLE001
+        return
+    width = int(extent.get("cx", "0"))
+    height = int(extent.get("cy", "0"))
+    target_width, target_height = _requested_extent((requested.width, requested.height), px_width, px_height, pandoc_text_width)
+    if width <= 0 or target_width <= width or abs(target_height * width - height * target_width) > target_width * height // 100:
+        return
+    new_width = min(target_width, max_width)
+    if new_width > width:
+        _set_drawing_size(extent, new_width, round(height * new_width / width))
+
+
+def _numbering(doc: DocumentObject) -> Any:
+    """The numbering of the document, or None where it has none."""
+    try:
+        return doc.part.part_related_by(RT.NUMBERING).element  # type: ignore[attr-defined]
+    except KeyError:
+        return None
+
+
+def _in_table(element: Any, top: Any) -> bool:
+    """Whether the element sits in a table inside `top`."""
+    parent = element.getparent()
+    while parent is not None and parent is not top:
+        if parent.tag == f"{{{SCHEMA}}}tbl":
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def _fit_extent_width(extent: Any, max_width: int) -> None:
+    """Scale one drawing down to max_width, its height by the same factor."""
+    width = int(extent.get("cx", "0"))
+    height = int(extent.get("cy", "0"))
+    if max_width <= 0 or width <= max_width:
+        return
+    _set_drawing_size(extent, max_width, int(height * max_width / width))
+    logger.debug(f"Fitted image width: {width} x {height} -> {max_width}")
 
 
 def _cap_image_heights(doc: DocumentObject) -> None:

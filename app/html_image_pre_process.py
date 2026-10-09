@@ -90,12 +90,12 @@ def _size_images(root: html.HtmlElement) -> bool:
     """Set width/height on every eligible ``<img>`` under ``root``."""
     rewrote = False
     for img in root.iter("img"):
-        if _size_one_image(img):
+        if size_image(img):
             rewrote = True
     return rewrote
 
 
-def _size_one_image(img: html.HtmlElement) -> bool:
+def size_image(img: html.HtmlElement) -> bool:
     """Size a single ``<img>``; return True if it was modified."""
     # Already sized via an HTML attribute — leave it (an explicit <img width=..>
     # or the value app/svg_processor.py sets for rasterised SVGs).

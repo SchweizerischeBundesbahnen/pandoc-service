@@ -2677,3 +2677,305 @@ def test_inline_pictures_state_their_distances_from_the_text():
     _state_inline_distances(doc)
 
     assert {side: inline.get(side) for side in ("distT", "distB", "distL", "distR")} == {"distT": "0", "distB": "0", "distL": "114300", "distR": "0"}
+
+
+# ---- _fit_images_to_text_width ----
+
+
+def _text_width(section) -> int:
+    from app.docx_post_process import _get_available_content_width_for_section
+
+    return _get_available_content_width_for_section(section)
+
+
+def _as_list_item(paragraph, level: int) -> None:
+    """Make the paragraph a list item whose level is indented by an inch per level, as pandoc's numbering does."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    numbering = paragraph.part.numbering_part.element
+    levels = "".join(f'<w:lvl w:ilvl="{index}"><w:pPr><w:ind w:left="{1440 * (index + 1)}" w:hanging="360"/></w:pPr></w:lvl>' for index in range(3))
+    abstract = parse_xml(f'<w:abstractNum {nsdecls("w")} w:abstractNumId="990">{levels}</w:abstractNum>')
+    first_num = numbering.find(f"{{{SCHEMA}}}num")
+    if first_num is not None:
+        first_num.addprevious(abstract)
+    else:
+        numbering.append(abstract)
+    numbering.append(parse_xml(f'<w:num {nsdecls("w")} w:numId="1001"><w:abstractNumId w:val="990"/></w:num>'))
+    paragraph._p.get_or_add_pPr().append(parse_xml(f'<w:numPr {nsdecls("w")}><w:ilvl w:val="{level}"/><w:numId w:val="1001"/></w:numPr>'))
+
+
+def test_an_image_in_a_list_item_is_fitted_inside_the_indent_of_its_level():
+    import io
+
+    from docx import Document
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    text_width = _text_width(doc.sections[0])
+    paragraph = doc.add_paragraph()
+    paragraph.add_run().add_picture(io.BytesIO(_png_bytes()), width=text_width, height=text_width // 2)
+    _as_list_item(paragraph, level=1)
+
+    _fit_images_to_text_width(doc)
+
+    assert _extents(doc) == [(text_width - 2 * 1440 * 635, (text_width - 2 * 1440 * 635) // 2)]
+    assert _frame_extents(doc) == _extents(doc)
+
+
+def test_an_image_which_fits_beside_the_indent_keeps_its_size():
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run().add_picture(io.BytesIO(_png_bytes()), width=Inches(1), height=Inches(1))
+    _as_list_item(paragraph, level=0)
+
+    _fit_images_to_text_width(doc)
+
+    assert _extents(doc) == [(Inches(1), Inches(1))]
+
+
+def test_an_image_in_a_table_is_left_to_its_column():
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    doc.add_table(rows=1, cols=1).cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes()), width=Inches(20), height=Inches(1))
+
+    _fit_images_to_text_width(doc)
+
+    assert _extents(doc) == [(Inches(20), Inches(1))]
+
+
+def test_each_image_is_fitted_to_the_text_width_of_its_own_section():
+    import io
+
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Inches
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(20), height=Inches(2))
+    landscape = doc.add_section()
+    landscape.orientation = WD_ORIENT.LANDSCAPE
+    landscape.page_width, landscape.page_height = Inches(11), Inches(8.5)
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(20), height=Inches(2))
+
+    _fit_images_to_text_width(doc)
+
+    portrait_width, landscape_width = (_text_width(section) for section in doc.sections)
+    assert [width for width, _ in _extents(doc)] == [portrait_width, landscape_width]
+
+
+def test_a_smaller_paper_size_brings_an_image_back_to_its_page():
+    """pandoc fits an image to the template's page; the paper size replaces that page afterwards."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(6), height=Inches(3))
+    source = io.BytesIO()
+    doc.save(source)
+
+    result = Document(io.BytesIO(docx_post_process.process(source.getvalue(), "A5", "portrait")))
+
+    a5_width = _text_width(result.sections[0])
+    assert _extents(result) == [(a5_width, a5_width // 2)]
+
+
+# ---- section breaks of page_orientation.lua take the page of the template ----
+
+_LANDSCAPE_BREAK = '<w:p {ns}><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="landscape" w:w="16838" w:h="11906"/></w:sectPr></w:pPr></w:p>'
+
+
+def _add_orientation_break(doc, orient: str = "landscape", margins: str = "") -> None:
+    """Add the section break page_orientation.lua writes, closing the section above it."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    width, height = (16838, 11906) if orient == "landscape" else (11906, 16838)
+    paragraph = parse_xml(f'<w:p {nsdecls("w")}><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="{orient}" w:w="{width}" w:h="{height}"/>{margins}</w:sectPr></w:pPr></w:p>')
+    doc.element.body.find(f"{{{SCHEMA}}}sectPr").addprevious(paragraph)
+
+
+def _page(sect_pr) -> tuple[dict[str, str], dict[str, str] | None]:
+    size = dict(sect_pr.find(f"{{{SCHEMA}}}pgSz").attrib)
+    margins = sect_pr.find(f"{{{SCHEMA}}}pgMar")
+    return size, dict(margins.attrib) if margins is not None else None
+
+
+def test_an_orientation_break_takes_the_margins_and_the_turned_page_of_the_template():
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+
+    doc = Document()  # a Letter template, 12240 x 15840
+    _add_orientation_break(doc)
+
+    _complete_section_geometry(doc)
+
+    template_size, template_margins = _page(doc.element.body.find(f"{{{SCHEMA}}}sectPr"))
+    size, margins = _page(doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"))
+    assert size == {f"{{{SCHEMA}}}orient": "landscape", f"{{{SCHEMA}}}w": template_size[f"{{{SCHEMA}}}h"], f"{{{SCHEMA}}}h": template_size[f"{{{SCHEMA}}}w"]}
+    assert margins == template_margins
+    assert [child.tag.split("}")[1] for child in doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")] == ["type", "pgSz", "pgMar"]
+
+
+def test_a_section_break_stating_its_margins_is_left_as_it_is():
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+
+    doc = Document()
+    _add_orientation_break(doc, "portrait", '<w:pgMar w:left="10" w:right="10" w:top="10" w:bottom="10"/>')
+
+    _complete_section_geometry(doc)
+
+    size, margins = _page(doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"))
+    assert size[f"{{{SCHEMA}}}w"] == "11906"
+    assert margins is not None
+    assert margins[f"{{{SCHEMA}}}left"] == "10"
+
+
+def test_without_template_margins_a_section_break_is_left_as_it_is():
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+
+    doc = Document()
+    body_sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    body_sect_pr.remove(body_sect_pr.find(f"{{{SCHEMA}}}pgMar"))
+    _add_orientation_break(doc)
+
+    _complete_section_geometry(doc)
+
+    size, margins = _page(doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"))
+    assert size[f"{{{SCHEMA}}}w"] == "16838"
+    assert margins is None
+
+
+# ---- _restore_requested_widths ----
+
+
+def _narrowed_image_document(requested_width: str = "3000px", image_width: int | None = None, orient: str = "landscape"):
+    """A Letter document whose first section is turned to `orient`, holding an image pandoc narrowed to the portrait text width.
+
+    Returns the document, the portrait text width pandoc used and the sizes recorded for the image.
+    """
+    import io
+
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+    from app.html_image_sizes import RequestedSize, digest
+
+    doc = Document()
+    pandoc_text_width = _text_width(doc.sections[0])
+    image = _png_bytes(300, 100)
+    width = pandoc_text_width if image_width is None else image_width
+    doc.add_picture(io.BytesIO(image), width=width, height=width // 3)
+    _add_orientation_break(doc, orient)
+    _complete_section_geometry(doc)
+    return doc, pandoc_text_width, {digest(image): [RequestedSize(requested_width, "")]}
+
+
+def test_an_image_pandoc_narrowed_takes_the_width_of_a_landscape_page():
+    from app.docx_post_process import _restore_requested_widths
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+
+    _restore_requested_widths(doc, sizes, pandoc_text_width)
+
+    landscape_width = _text_width(doc.sections[0])
+    assert landscape_width > pandoc_text_width
+    assert _extents(doc) == [(landscape_width, round(pandoc_text_width // 3 * landscape_width / pandoc_text_width))]
+    assert _frame_extents(doc) == _extents(doc)
+
+
+def test_an_image_grows_no_wider_than_it_asks():
+    from app.docx_post_process import _restore_requested_widths
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width="7in")
+
+    _restore_requested_widths(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == 7 * 914400
+
+
+def test_an_image_pandoc_did_not_narrow_keeps_its_size():
+    from app.docx_post_process import _restore_requested_widths
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(image_width=914400 * 3)
+
+    _restore_requested_widths(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc) == [(914400 * 3, 914400)]
+
+
+def test_an_image_on_a_page_no_wider_keeps_its_size():
+    from app.docx_post_process import _restore_requested_widths
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(orient="portrait")
+
+    _restore_requested_widths(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == pandoc_text_width
+
+
+def test_a_recorded_size_of_another_shape_is_not_taken():
+    """The shape tells a recorded size from one of another image with the same bytes."""
+    from app.docx_post_process import _restore_requested_widths
+    from app.html_image_sizes import RequestedSize
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+    key = next(iter(sizes))
+
+    _restore_requested_widths(doc, {key: [RequestedSize("3000px", "3000px")]}, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == pandoc_text_width
+
+
+def test_an_image_is_not_widened_on_a_page_its_section_does_not_state():
+    from app.docx_post_process import _restore_requested_widths
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+    landscape = doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
+    landscape.remove(landscape.find(f"{{{SCHEMA}}}pgMar"))
+
+    _restore_requested_widths(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == pandoc_text_width
+
+
+def test_images_with_the_same_bytes_take_their_sizes_in_document_order():
+    """The first copy was not narrowed and takes the first size; the second takes the second."""
+    import io
+
+    from app.docx_post_process import _restore_requested_widths
+    from app.html_image_sizes import RequestedSize
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+    key = next(iter(sizes))
+    first = doc.element.body.find(f"{{{SCHEMA}}}p")
+    small = doc.add_paragraph()
+    small.add_run().add_picture(io.BytesIO(_png_bytes(300, 100)), width=914400 * 3, height=914400)
+    first.addprevious(small._p)
+
+    _restore_requested_widths(doc, {key: [RequestedSize("3in", ""), RequestedSize("8in", "")]}, pandoc_text_width)
+
+    assert [width for width, _ in _extents(doc)] == [914400 * 3, 8 * 914400]
