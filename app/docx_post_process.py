@@ -55,6 +55,11 @@ LINE_ALLOWANCE_EMU = EMU_1_INCH // 6
 WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 
+# Table elements, by the "w" prefix the lookups bind to SCHEMA.
+TBL_W = "w:tblW"
+TBL_GRID = "w:tblGrid"
+GRID_COL = "w:gridCol"
+
 # Paper sizes in TWIPS (portrait orientation: width x height)
 PAPER_SIZES = {
     "A5": {"width": 8419, "height": 11906},
@@ -889,7 +894,7 @@ def _grid_is_stated(tbl: Any, table_properties: Any) -> bool:
     ``filters/inline_styles.lua`` states the table width either way, and leaves a column the HTML
     gives no width without one in the grid.
     """
-    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
     return tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") not in (None, "auto") and _column_widths_emu(tbl) is not None
 
 
@@ -914,7 +919,7 @@ def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None
 
 def _table_width_emu(table_properties: Any, max_width: int) -> int:
     """The width the table is laid out at, in EMU: a share of `max_width`, or its own absolute width."""
-    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
     width_type = tbl_w.get(f"{{{SCHEMA}}}type") if tbl_w is not None else None
     value = (tbl_w.get(f"{{{SCHEMA}}}w") or "").strip() if tbl_w is not None else ""
     if width_type == "pct":
@@ -936,11 +941,11 @@ def _pct_fiftieths(value: str) -> int:
 def _write_column_widths(tbl: Any, widths: list[int]) -> None:
     """Write the column widths into the table grid and into the preferred width of each cell."""
     twips = [max(1, round(width / TWIPS_TO_EMU)) for width in widths]
-    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    grid = tbl.find(TBL_GRID, namespaces={"w": SCHEMA})
     if grid is None:
         grid = parse_xml(f"<w:tblGrid {nsdecls('w')}/>")
         tbl.find("w:tblPr", namespaces={"w": SCHEMA}).addnext(grid)
-    for column in grid.findall("w:gridCol", namespaces={"w": SCHEMA}):
+    for column in grid.findall(GRID_COL, namespaces={"w": SCHEMA}):
         grid.remove(column)
     for width in twips:
         grid.append(parse_xml(f'<w:gridCol {nsdecls("w")} w:w="{width}"/>'))
@@ -971,10 +976,10 @@ TWIPS_TO_EMU = 635
 
 def _column_widths_emu(tbl: Any) -> list[int] | None:
     """The width of each grid column, in EMU; None when the grid states no usable width."""
-    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    grid = tbl.find(TBL_GRID, namespaces={"w": SCHEMA})
     if grid is None:
         return None
-    widths = [int(col.get(f"{{{SCHEMA}}}w") or 0) for col in grid.findall("w:gridCol", namespaces={"w": SCHEMA})]
+    widths = [int(col.get(f"{{{SCHEMA}}}w") or 0) for col in grid.findall(GRID_COL, namespaces={"w": SCHEMA})]
     if not widths or min(widths) <= 0:
         return None
     return [width * TWIPS_TO_EMU for width in widths]
@@ -1070,7 +1075,7 @@ def _clamp_existing_fixed_width(tbl: Any, table_properties: Any, max_width: int)
     """Clamp a Lua-filter-set dxa width to the page width if it overflows."""
     if max_width <= 0:
         return
-    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
     current = int(tbl_w.get(f"{{{SCHEMA}}}w", "0"))
     clamped = _clamp_twips(current, max_width)
     if clamped < current:
@@ -1113,7 +1118,7 @@ def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | N
 
 def _has_existing_fixed_width(table_properties: Any) -> bool:
     """Return True if the table already has a fixed (dxa) width from the Lua filter."""
-    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
     if tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") == "dxa":
         w = tbl_w.get(f"{{{SCHEMA}}}w", "0")
         return int(w) > 0
@@ -1144,10 +1149,10 @@ def _rescale_table_grid(tbl: Any, target_twips: int) -> None:
     relative column sizing pandoc emitted; a zero/absent grid is distributed
     evenly.
     """
-    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    grid = tbl.find(TBL_GRID, namespaces={"w": SCHEMA})
     if grid is None:
         return
-    columns = grid.findall("w:gridCol", namespaces={"w": SCHEMA})
+    columns = grid.findall(GRID_COL, namespaces={"w": SCHEMA})
     if not columns:
         return
 
