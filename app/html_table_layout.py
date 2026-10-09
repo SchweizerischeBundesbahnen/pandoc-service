@@ -191,10 +191,19 @@ def _element_width(element: etree._Element) -> tuple[str, int] | None:
 
 
 def _span(value: str | None) -> int:
-    """The columns a colspan or a span covers: 1 where it is missing or not a positive number, at most MAX_COLUMNS."""
-    if value is None or not value.strip().isdigit():
+    """The columns a colspan or a span covers: 1 where it is missing or not a positive number, at most MAX_COLUMNS.
+
+    Only ASCII digits are a number: str.isdigit accepts characters int refuses, such as a superscript
+    two. A number longer than the cap's is above it, and is read as the cap without int, which refuses
+    a string of more than 4300 digits.
+    """
+    digits = (value or "").strip()
+    if not digits.isascii() or not digits.isdigit():
         return 1
-    return min(max(int(value), 1), MAX_COLUMNS)
+    significant = digits.lstrip("0")
+    if len(significant) > len(str(MAX_COLUMNS)):
+        return MAX_COLUMNS
+    return min(max(int(significant or "0"), 1), MAX_COLUMNS)
 
 
 def _parse_table_style(style: str) -> TableLayout:

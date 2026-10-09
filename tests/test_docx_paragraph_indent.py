@@ -107,3 +107,7 @@ def test_a_numbering_which_names_a_missing_abstract_numbering_states_nothing():
     numbering = parse_xml(f'<w:numbering {W}><w:num w:numId="3"><w:abstractNumId w:val="99"/></w:num></w:numbering>')
 
     assert ParagraphIndents(_styles(), numbering).width_taken(_list_item(0)) == 0
+
+
+def test_an_indent_which_is_not_ascii_digits_states_none():
+    assert ParagraphIndents(_styles(), None).width_taken(_paragraph('<w:ind w:left="²" w:right="300"/>')) == 300

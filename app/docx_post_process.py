@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 from app import docx_table_columns, html_image_sizes
 from app.docx_math_color_post_process import apply_math_colors
+from app.docx_numbers import whole_number
 from app.docx_paragraph_indent import ParagraphIndents
 from app.docx_references_post_process import add_table_of_contents_entries, enable_auto_update_fields
 
@@ -924,8 +925,9 @@ def _table_width_emu(table_properties: Any, max_width: int) -> int:
     value = (tbl_w.get(f"{{{SCHEMA}}}w") or "").strip() if tbl_w is not None else ""
     if width_type == "pct":
         return max_width * min(_pct_fiftieths(value), docx_table_columns.FULL_PCT) // docx_table_columns.FULL_PCT
-    if width_type == "dxa" and value.isdigit() and int(value) > 0:
-        width = int(value) * TWIPS_TO_EMU
+    twips = whole_number(value) if width_type == "dxa" else None
+    if twips is not None and twips > 0:
+        width = twips * TWIPS_TO_EMU
         return min(width, max_width) if max_width > 0 else width
     return max_width
 

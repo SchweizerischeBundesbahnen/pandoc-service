@@ -285,3 +285,26 @@ def test_a_table_as_wide_as_a_browser_allows_keeps_its_column_widths(html):
 def test_a_table_wider_than_a_browser_allows_states_no_column_widths():
     cols = "<col span='1000' style='width: 1%'/>" * 3
     assert extract(f"<table><colgroup>{cols}</colgroup><tr><td>a</td></tr></table>")[0].column_widths is None
+
+
+@pytest.mark.parametrize(
+    ("colspan", "covered"),
+    # As entities, which parse to the character whatever encoding the parser takes the bytes in
+    [("&#178;", 1), ("&#1633;&#1634;", 1), ("0003", 3), ("0" * 5000 + "2", 2), ("9" * 5000, html_table_layout.MAX_COLUMNS)],
+)
+def test_a_colspan_is_read_from_ascii_digits_without_failing_the_conversion(colspan, covered):
+    """str.isdigit accepts a superscript two, which int refuses; int refuses more than 4300 digits."""
+    html = f"<table><tr><td colspan='{colspan}'>a</td><td style='width: 40%'>b</td></tr></table>"
+
+    widths = extract(html)[0].column_widths
+
+    if covered < html_table_layout.MAX_COLUMNS:
+        assert widths == (*(None,) * covered, ("pct", 2000))
+    else:
+        assert widths is None
+
+
+def test_a_col_span_is_read_from_ascii_digits_without_failing_the_conversion():
+    html = "<table><colgroup><col span='&#178;' style='width: 30%'/><col style='width: 70%'/></colgroup><tr><td>a</td></tr></table>"
+
+    assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))

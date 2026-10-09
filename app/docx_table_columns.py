@@ -12,6 +12,8 @@ writes the result into the grid and into each cell, so Word lays the table out t
 
 from typing import TYPE_CHECKING, Any
 
+from app.docx_numbers import whole_number
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
@@ -241,10 +243,10 @@ class _FontSizes:
 
 def _int_value(element: Any, fallback: int) -> int:
     """The whole-number w:val of an element, or the fallback where it has none."""
-    value = element.get(f"{_W}val") if element is not None else None
-    return int(value) if value is not None and value.isdigit() else fallback
+    number = whole_number(element.get(f"{_W}val") if element is not None else None)
+    return fallback if number is None else number
 
 
 def _int_attribute(element: Any, name: str) -> int:
-    value = element.get(name)
-    return int(value) if value is not None and value.isdigit() else 0
+    number = whole_number(element.get(name))
+    return 0 if number is None else number

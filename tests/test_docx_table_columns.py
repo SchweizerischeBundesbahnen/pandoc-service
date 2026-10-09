@@ -185,3 +185,18 @@ def test_a_table_without_a_grid_is_laid_out_with_no_more_columns_than_html_allow
 
     assert widths is not None
     assert len(widths) == MAX_COLUMNS
+
+
+def test_a_template_stating_a_size_or_a_span_int_refuses_does_not_fail_the_layout():
+    """A superscript two passes str.isdigit and fails int; the defaults stand instead."""
+    table = parse_xml(
+        f'<w:tbl {nsdecls("w")}><w:tblPr/><w:tblGrid><w:gridCol w:w="1"/><w:gridCol w:w="1"/></w:tblGrid>'
+        f'<w:tr><w:tc><w:tcPr><w:gridSpan w:val="²"/></w:tcPr><w:p><w:r><w:rPr><w:sz w:val="²"/></w:rPr><w:t>Short</w:t></w:r></w:p></w:tc>'
+        f"<w:tc><w:p/></w:tc></w:tr></w:tbl>"
+    )
+    styles = parse_xml(f'<w:styles {nsdecls("w")}><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="{"9" * 5000}"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>')
+
+    widths = decide(table, 10 * INCH, None, _margins, styles)
+
+    assert widths is not None
+    assert len(widths) == 2

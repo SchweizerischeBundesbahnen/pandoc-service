@@ -8,6 +8,8 @@ style and the styles that one is based on, then the document defaults.
 
 from typing import Any
 
+from app.docx_numbers import whole_number
+
 SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR
 _W = f"{{{SCHEMA}}}"
 
@@ -124,6 +126,4 @@ def _first_line(sources: list[Any]) -> int:
 
 
 def _twips(value: str | None) -> int | None:
-    if value is None or not value.lstrip("-").isdigit():
-        return None
-    return int(value)
+    return whole_number(value, signed=True)
