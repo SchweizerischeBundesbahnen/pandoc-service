@@ -869,8 +869,8 @@ def _a4_template(test_parameters: TestParameters) -> bytes:
     return out.getvalue()
 
 
-def _convert_with_template(test_parameters: TestParameters, html: str, template: bytes) -> bytes:
-    url = f"{test_parameters.base_url}/convert/html/to/docx-with-template?preserve_table_styles=true"
+def _convert_with_template(test_parameters: TestParameters, html: str, template: bytes, query: str = "") -> bytes:
+    url = f"{test_parameters.base_url}/convert/html/to/docx-with-template?preserve_table_styles=true{query}"
     response = test_parameters.request_session.post(url, files={"source": ("source.html", html), "template": ("template.docx", template)})
     if response.status_code // 100 != 2:
         raise AssertionError(f"pandoc-service returned {response.status_code}:\n{response.text}")
@@ -933,15 +933,17 @@ def test_full_width_image_in_a_formatted_paragraph_uses_the_page_of_the_template
     assert formatted == (inside_the_indent, inside_the_indent // 2)
 
 
-def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameters: TestParameters):
+@pytest.mark.parametrize("query", ["", "&orientation=portrait"])
+def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameters: TestParameters, query: str):
     """pandoc narrows the image to the portrait page of the template; the landscape page has more room.
 
-    A page break marked landscape turns the pages above it, as Polarion marks them.
+    A page break marked landscape turns the pages above it, as Polarion marks them, and keeps
+    that orientation when the request asks for another one.
     """
     image = f'<img src="{_png_data_uri(3000, 300)}">'
     html = f"<p>Portrait</p><p>\\newpage</p><p>\\pagePortrait</p><p>{image}</p><p>\\newpage</p><p>\\pageLandscape</p><p>Portrait again</p>"
 
-    width, height = _drawing_extent(_convert_with_template(test_parameters, html, _a4_template(test_parameters)))
+    width, height = _drawing_extent(_convert_with_template(test_parameters, html, _a4_template(test_parameters), query))
 
     # A4 turned, less the template's 2 cm on each side
     assert width == (16838 - 2 * 1134) * 635

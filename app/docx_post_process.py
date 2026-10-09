@@ -675,16 +675,25 @@ def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = 
     if paper_size is None and orientation is None:
         return
 
+    body_sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
     for section in doc.sections:
         # Python-docx exposes no public API for this element.
         sect_pr = section._sectPr  # noqa: SLF001
         pg_sz = sect_pr.find(".//w:pgSz", namespaces={"w": SCHEMA})
+        # A page break turns the pages above it and keeps the orientation it states, as Polarion
+        # marks it: see filters/page_orientation.lua. The pages after the last break follow the request.
+        section_orientation = orientation if sect_pr is body_sect_pr or not _states_orientation(pg_sz) else None
 
         if paper_size is not None:
-            pg_sz = _set_paper_size(sect_pr, pg_sz, paper_size, orientation)
+            pg_sz = _set_paper_size(sect_pr, pg_sz, paper_size, section_orientation)
 
-        if orientation is not None:
-            _set_orientation(sect_pr, pg_sz, orientation)
+        if section_orientation is not None:
+            _set_orientation(sect_pr, pg_sz, section_orientation)
+
+
+def _states_orientation(pg_sz: Any) -> bool:
+    """Whether a page size states its orientation, as the section breaks of a page break do."""
+    return pg_sz is not None and pg_sz.get(f"{{{SCHEMA}}}orient") is not None
 
 
 def _set_paper_size(sect_pr: Any, pg_sz: Any, paper_size: str, orientation: str | None) -> Any:

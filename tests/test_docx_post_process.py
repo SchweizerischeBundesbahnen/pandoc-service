@@ -492,6 +492,8 @@ def test_replace_size_and_orientation_set_orientation_only():
     mock_pg_sz.attrib = {}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = landscape
@@ -518,6 +520,8 @@ def test_replace_size_and_orientation_both_parameters():
     mock_pg_sz.attrib = {}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with paper_size = LETTER and orientation = landscape
@@ -658,6 +662,8 @@ def test_set_orientation_portrait_removes_orient_attribute():
     mock_pg_sz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = portrait
@@ -693,6 +699,8 @@ def test_set_orientation_no_swap_if_already_correct():
     mock_pg_sz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = landscape (already landscape)
@@ -2979,3 +2987,57 @@ def test_images_with_the_same_bytes_take_their_sizes_in_document_order():
     _restore_requested_widths(doc, {key: [RequestedSize("3in", ""), RequestedSize("8in", "")]}, pandoc_text_width)
 
     assert [width for width, _ in _extents(doc)] == [914400 * 3, 8 * 914400]
+
+
+# ---- a page break keeps the orientation it states ----
+
+
+def _sections_orientation(doc) -> list[tuple[str | None, int, int]]:
+    """The orient attribute, width and height of each section's page, first to last."""
+    sizes = []
+    for section in doc.sections:
+        pg_sz = section._sectPr.find(f"{{{SCHEMA}}}pgSz")
+        sizes.append((pg_sz.get(f"{{{SCHEMA}}}orient"), int(pg_sz.get(f"{{{SCHEMA}}}w")), int(pg_sz.get(f"{{{SCHEMA}}}h"))))
+    return sizes
+
+
+@pytest.mark.parametrize(("orientation", "break_orient"), [("portrait", "landscape"), ("landscape", "portrait")])
+def test_a_page_break_keeps_its_orientation_and_the_rest_follows_the_request(orientation, break_orient):
+    """Polarion marks the pages above a page break as landscape or portrait; the requested orientation is for the rest."""
+    from docx import Document
+
+    doc = Document()
+    _add_orientation_break(doc, break_orient)
+
+    docx_post_process._replace_size_and_orientation(doc, "A4", orientation)
+
+    (first_orient, first_width, first_height), (_, last_width, last_height) = _sections_orientation(doc)
+    assert first_orient == break_orient
+    assert (first_width > first_height) == (break_orient == "landscape")
+    assert {first_width, first_height} == {11906, 16838}
+    assert (last_width > last_height) == (orientation == "landscape")
+    assert {last_width, last_height} == {11906, 16838}
+
+
+def test_a_page_break_takes_the_paper_size_in_its_own_orientation():
+    from docx import Document
+
+    doc = Document()
+    _add_orientation_break(doc, "landscape")
+
+    docx_post_process._replace_size_and_orientation(doc, "A5", "portrait")
+
+    assert [(width, height) for _, width, height in _sections_orientation(doc)] == [(11906, 8419), (8419, 11906)]
+
+
+def test_a_section_break_stating_no_orientation_follows_the_request():
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    doc.element.body.find(f"{{{SCHEMA}}}sectPr").addprevious(parse_xml(f'<w:p {nsdecls("w")}><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr></w:p>'))
+
+    docx_post_process._replace_size_and_orientation(doc, None, "landscape")
+
+    assert [width > height for _, width, height in _sections_orientation(doc)] == [True, True]
