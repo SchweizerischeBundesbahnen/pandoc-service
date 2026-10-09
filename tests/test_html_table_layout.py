@@ -219,3 +219,107 @@ def test_tables_after_a_huge_image_are_extracted():
     src = f'<html><body>{table.format("40%")}<img src="{HUGE_SRC}">{table.format("60%")}</body></html>'
 
     assert len(extract(src)) == 2
+
+
+# ----------------------- column widths -----------------------
+
+
+def test_column_widths_come_from_the_cells_of_the_first_row():
+    """Polarion's work item attribute tables state 20 % and 80 % on their cells, which pandoc drops."""
+    html = '<table style="width: 100%"><tr><td style="width:20%; border: 1px solid">a</td><td style="width:80%">b</td></tr><tr><td style="width:50%">c</td><td>d</td></tr></table>'
+    assert extract(html)[0].column_widths == (("pct", 1000), ("pct", 4000))
+
+
+def test_column_widths_come_from_the_first_row_of_a_head():
+    html = "<table><thead><tr><th style='width: 30%'>a</th><th>b</th><th width='120'>c</th></tr></thead><tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody></table>"
+    assert extract(html)[0].column_widths == (("pct", 1500), None, ("dxa", 1800))
+
+
+def test_column_widths_of_a_colgroup_win_over_the_cells():
+    html = "<table><colgroup><col style='width: 25%'/><col span='2' width='10%'/></colgroup><tr><td style='width: 90%'>a</td><td>b</td><td>c</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1250), ("pct", 500), ("pct", 500))
+
+
+def test_a_cell_spanning_columns_states_no_width_for_any_of_them():
+    html = "<table><tr><td colspan='2' style='width: 60%'>a</td><td style='width: 40%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (None, None, ("pct", 2000))
+
+
+def test_a_table_without_column_widths_states_none():
+    html = "<table><tr><td>a</td><td style='width: auto'>b</td></tr></table>"
+    layout = extract(html)[0]
+    assert layout.column_widths is None
+    assert layout.is_empty
+
+
+def test_column_widths_of_a_nested_table_stay_its_own():
+    html = "<table><tr><td><table><tr><td style='width: 70%'>x</td><td style='width: 30%'>y</td></tr></table></td><td>b</td></tr></table>"
+    outer, inner = extract(html)
+    assert outer.column_widths is None
+    assert inner.column_widths == (("pct", 3500), ("pct", 1500))
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><td colspan='100000000'>a</td><td style='width: 40%'>b</td></tr></table>",
+        "<table><colgroup><col span='100000000'/><col style='width: 40%'/></colgroup><tr><td>a</td></tr></table>",
+    ],
+)
+def test_a_huge_span_states_no_column_widths(html):
+    """A one-line tag must not make the service build a list of a hundred million columns."""
+    assert extract(html)[0].column_widths is None
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><td colspan='999'>a</td><td style='width: 40%'>b</td></tr></table>",
+        "<table><colgroup><col span='999'/><col style='width: 40%'/></colgroup><tr><td>a</td></tr></table>",
+    ],
+)
+def test_a_table_as_wide_as_a_browser_allows_keeps_its_column_widths(html):
+    assert extract(html)[0].column_widths == (*(None,) * 999, ("pct", 2000))
+
+
+def test_a_table_wider_than_a_browser_allows_states_no_column_widths():
+    cols = "<col span='1000' style='width: 1%'/>" * 3
+    assert extract(f"<table><colgroup>{cols}</colgroup><tr><td>a</td></tr></table>")[0].column_widths is None
+
+
+@pytest.mark.parametrize(
+    ("colspan", "covered"),
+    # As entities, which parse to the character whatever encoding the parser takes the bytes in
+    [("&#178;", 1), ("&#1633;&#1634;", 1), ("0003", 3), ("0" * 5000 + "2", 2), ("9" * 5000, html_table_layout.MAX_COLUMNS)],
+)
+def test_a_colspan_is_read_from_ascii_digits_without_failing_the_conversion(colspan, covered):
+    """str.isdigit accepts a superscript two, which int refuses; int refuses more than 4300 digits."""
+    html = f"<table><tr><td colspan='{colspan}'>a</td><td style='width: 40%'>b</td></tr></table>"
+
+    widths = extract(html)[0].column_widths
+
+    if covered < html_table_layout.MAX_COLUMNS:
+        assert widths == (*(None,) * covered, ("pct", 2000))
+    else:
+        assert widths is None
+
+
+def test_a_col_span_is_read_from_ascii_digits_without_failing_the_conversion():
+    html = "<table><colgroup><col span='&#178;' style='width: 30%'/><col style='width: 70%'/></colgroup><tr><td>a</td></tr></table>"
+
+    assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))
+
+
+def test_a_colgroup_without_widths_leaves_the_columns_to_the_cells():
+    html = "<table><colgroup><col/><col/></colgroup><tr><td style='width: 20%'>a</td><td style='width: 80%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1000), ("pct", 4000))
+
+
+def test_a_col_without_a_width_leaves_its_column_to_the_cell():
+    html = "<table><colgroup><col style='width: 30%'/><col/></colgroup><tr><td style='width: 90%'>a</td><td style='width: 70%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))
+
+
+def test_cells_beyond_the_colgroup_keep_their_widths():
+    html = "<table><colgroup><col style='width: 30%'/></colgroup><tr><td>a</td><td style='width: 70%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))

@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import logging
 import math
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import parse_xml
 from docx.oxml import parser as docx_parser
 from docx.oxml.ns import nsdecls
@@ -20,9 +22,13 @@ if TYPE_CHECKING:
     from docx.section import Section
     from docx.table import Table, _Cell
 
+    from app.html_image_sizes import RequestedSize
     from app.html_table_layout import TableLayout
 
+from app import docx_table_columns, html_image_sizes
 from app.docx_math_color_post_process import apply_math_colors
+from app.docx_numbers import whole_number
+from app.docx_paragraph_indent import ParagraphIndents
 from app.docx_references_post_process import add_table_of_contents_entries, enable_auto_update_fields
 
 # Patch the python-docx parser to handle large XML documents (> 10MB)
@@ -49,6 +55,11 @@ LINE_ALLOWANCE_EMU = EMU_1_INCH // 6
 
 WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
+
+# Table elements, by the "w" prefix the lookups bind to SCHEMA.
+TBL_W = "w:tblW"
+TBL_GRID = "w:tblGrid"
+GRID_COL = "w:gridCol"
 
 # Paper sizes in TWIPS (portrait orientation: width x height)
 PAPER_SIZES = {
@@ -90,18 +101,29 @@ _TBLPR_CHILD_ORDER = [
 ]
 
 
-def process(docx_bytes: bytes, paper_size: str | None = None, orientation: str | None = None, table_layouts: list[TableLayout] | None = None) -> bytes:
+def process(
+    docx_bytes: bytes,
+    paper_size: str | None = None,
+    orientation: str | None = None,
+    table_layouts: list[TableLayout] | None = None,
+    image_sizes: dict[str, list[RequestedSize]] | None = None,
+) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
     # Read before the paper size replaces the page pandoc sized its images against.
     text_width = _pandoc_text_width_emu(doc)
     _move_header_footer_references_to_first_section(doc)
     _replace_first_paragraph_styles(doc)
+    _complete_section_geometry(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     # Before the tables, so an image in a cell is brought back to its column.
     _replace_image_placeholders(doc, text_width)
+    _state_inline_distances(doc)
+    # Before the tables, so a column is decided by the size an image asks for.
+    _size_images_for_their_page(doc, image_sizes, text_width)
     _replace_table_properties(doc, table_layouts)
     _separate_adjacent_tables(doc)
     apply_math_colors(doc)
+    _fit_images_to_text_width(doc)
     _cap_image_heights(doc)
     # After the cap, which can make a picture lower: vertical-align: middle centers on its height.
     _apply_image_layouts(doc)
@@ -325,6 +347,18 @@ def _replace_image_placeholders(doc: DocumentObject, text_width: int | None = No
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not embed image from placeholder: {e}")
             t_el.text = t_el.text.replace(match.group(0), "[image]")
+
+
+def _state_inline_distances(doc: DocumentObject) -> None:
+    """Write the distances pandoc leaves out of an inline picture as zero, which is how Word reads them.
+
+    LibreOffice reads a missing distance as about 0.3 cm, so it sets the picture that far in from
+    the text. A picture as wide as its cell then runs over the cell's edge and is cut off.
+    """
+    for inline in doc.element.body.iter(f"{{{WP_NS}}}inline"):
+        for side in ("distT", "distB", "distL", "distR"):
+            if inline.get(side) is None:
+                inline.set(side, "0")
 
 
 def _resolve_image_src(src: str) -> bytes | None:
@@ -602,21 +636,70 @@ def _separate_adjacent_tables(doc: DocumentObject) -> None:
             table_element.addnext(parse_xml(f"<w:p {nsdecls('w')}/>"))
 
 
+def _complete_section_geometry(doc: DocumentObject) -> None:
+    """Give a section break written without margins the page and margins of the template.
+
+    ``filters/page_orientation.lua`` turns a page to landscape or back with a section break which
+    states an A4 page and its orientation, and no margins. Word then lays the section out on its
+    own default margins, and the post-processor could not tell how wide its text is. The break takes
+    the margins of the template's page and its size, turned to the orientation the break states.
+    """
+    body_sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    page_margins = body_sect_pr.find(f"{{{SCHEMA}}}pgMar") if body_sect_pr is not None else None
+    if page_margins is None:
+        return
+    page_size = body_sect_pr.find(f"{{{SCHEMA}}}pgSz")
+    for sect_pr in doc.element.body.findall(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"):
+        if sect_pr.find(f"{{{SCHEMA}}}pgMar") is not None:
+            continue
+        own_size = sect_pr.find(f"{{{SCHEMA}}}pgSz")
+        if own_size is not None and page_size is not None:
+            _take_page_size(own_size, page_size)
+        own_size = sect_pr.find(f"{{{SCHEMA}}}pgSz")
+        margins = copy.deepcopy(page_margins)
+        if own_size is not None:
+            own_size.addnext(margins)
+        else:
+            sect_pr.append(margins)
+
+
+def _take_page_size(own_size: Any, page_size: Any) -> None:
+    """Give a section the size of the template's page, turned to the orientation the section states."""
+    width = _int_attribute(page_size, "w")
+    height = _int_attribute(page_size, "h")
+    if width is None or height is None:
+        return
+    landscape = own_size.get(f"{{{SCHEMA}}}orient") == "landscape"
+    if landscape != (width > height):
+        width, height = height, width
+    own_size.set(f"{{{SCHEMA}}}w", str(width))
+    own_size.set(f"{{{SCHEMA}}}h", str(height))
+
+
 def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:
     # If both parameters are None, no modifications needed
     if paper_size is None and orientation is None:
         return
 
+    body_sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
     for section in doc.sections:
         # Python-docx exposes no public API for this element.
         sect_pr = section._sectPr  # noqa: SLF001
         pg_sz = sect_pr.find(".//w:pgSz", namespaces={"w": SCHEMA})
+        # A page break turns the pages above it and keeps the orientation it states, as Polarion
+        # marks it: see filters/page_orientation.lua. The pages after the last break follow the request.
+        section_orientation = orientation if sect_pr is body_sect_pr or not _states_orientation(pg_sz) else None
 
         if paper_size is not None:
-            pg_sz = _set_paper_size(sect_pr, pg_sz, paper_size, orientation)
+            pg_sz = _set_paper_size(sect_pr, pg_sz, paper_size, section_orientation)
 
-        if orientation is not None:
-            _set_orientation(sect_pr, pg_sz, orientation)
+        if section_orientation is not None:
+            _set_orientation(sect_pr, pg_sz, section_orientation)
+
+
+def _states_orientation(pg_sz: Any) -> bool:
+    """Whether a page size states its orientation, as the section breaks of a page break do."""
+    return pg_sz is not None and pg_sz.get(f"{{{SCHEMA}}}orient") is not None
 
 
 def _set_paper_size(sect_pr: Any, pg_sz: Any, paper_size: str, orientation: str | None) -> Any:
@@ -753,29 +836,25 @@ def _replace_table_properties(doc: DocumentObject, table_layouts: list[TableLayo
         else:
             logger.warning("html_table_layout: %d layouts for %d tables; skipping width/alignment (fallback to defaults)", len(table_layouts), table_count)
 
-    # Group tables by their section
-    for target_index, section in enumerate(doc.sections):
-        max_width = _get_available_content_width_for_section(section)
+    max_widths = [_get_available_content_width_for_section(section) for section in doc.sections]
+    # Python-docx exposes no public API for this element.
+    tables = {table._element: table for table in doc.tables}  # noqa: SLF001
+    for element, section_index in _body_by_section(doc):
+        table = tables.get(element)
+        if table is not None:
+            _process_table(table, 0, max_widths[min(section_index, len(max_widths) - 1)], layout_iter)
 
-        tables_in_section = []
-        current_section_index = 0
 
-        for element in doc.element.body:
-            # Section break
-            if element.tag.endswith("sectPr"):
-                current_section_index += 1
+def _body_by_section(doc: DocumentObject) -> Iterator[tuple[Any, int]]:
+    """Each child of the body, with the index of the section it belongs to.
 
-            # Table element
-            elif element.tag.endswith("tbl") and current_section_index == target_index:
-                for table in doc.tables:
-                    # Python-docx exposes no public API for this element.
-                    if table._element == element:  # noqa: SLF001
-                        tables_in_section.append(table)
-                        break
-
-        # Note: This gets all tables in the document section
-        for table in tables_in_section:
-            _process_table(table, 0, max_width, layout_iter)
+    A paragraph holding a sectPr closes its section. The body's own sectPr closes the last one.
+    """
+    section_index = 0
+    for element in doc.element.body:
+        yield element, section_index
+        if element.tag == f"{{{SCHEMA}}}p" and element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr") is not None:
+            section_index += 1
 
 
 def _process_table(table: Table, parent_columns_count: int, max_width: int, layout_iter: Iterator[TableLayout] | None = None) -> None:
@@ -790,13 +869,15 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
         table_properties = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
         tbl.insert(0, table_properties)
 
+    grid_is_stated = _grid_is_stated(tbl, table_properties)
     _apply_table_layout(tbl, table_properties, layout, max_width)
+    styles = _table_styles(table)
+    _lay_out_columns(tbl, table_properties, layout, max_width, styles, grid_is_stated=grid_is_stated)
 
-    # Read after the layout, which may have rescaled the grid.
+    # Read after the layout, which decided the grid.
     column_widths = _column_widths_emu(tbl)
 
     # Process nested tables
-    styles = _table_styles(table)
     for row in table.rows:
         for cell in row.cells:
             cell_width = _cell_image_width(tbl, cell, column_widths, max_width / columns_count, max_width, styles)
@@ -806,6 +887,90 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
                 _process_table(sub_table, columns_count, int(cell_width), layout_iter)
 
 
+def _grid_is_stated(tbl: Any, table_properties: Any) -> bool:
+    """Whether the grid holds the column widths the HTML states, read before the layout replaces the table width.
+
+    pandoc keeps the column widths of a ``<colgroup>`` in percent and then states the table width.
+    Without them it splits its text width evenly and leaves the table width automatic.
+    ``filters/inline_styles.lua`` states the table width either way, and leaves a column the HTML
+    gives no width without one in the grid.
+    """
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
+    return tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") not in (None, "auto") and _column_widths_emu(tbl) is not None
+
+
+def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int, styles: Any, *, grid_is_stated: bool) -> None:
+    """Decide the width of each column and write it into the grid and into each cell.
+
+    Images in a cell are fitted to the grid afterwards, and Word lays out the cells by their
+    widths, so the two agree. A grid holding the widths the HTML states is kept, scaled to the
+    table. Otherwise the widths the HTML states for the cells decide, and the content of each
+    column where it states none: see :mod:`app.docx_table_columns`.
+    """
+    table_width = _table_width_emu(table_properties, max_width)
+    stated = layout.column_widths if layout is not None else None
+    grid = _column_widths_emu(tbl)
+    if stated is None and grid_is_stated and grid is not None:
+        widths: list[int] | None = [width * table_width // sum(grid) for width in grid]
+    else:
+        widths = docx_table_columns.decide(tbl, table_width, stated, lambda tc: _cell_side_margins_emu(tbl, tc, styles), styles)
+    if widths:
+        _write_column_widths(tbl, widths)
+
+
+def _table_width_emu(table_properties: Any, max_width: int) -> int:
+    """The width the table is laid out at, in EMU: a share of `max_width`, or its own absolute width."""
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
+    width_type = tbl_w.get(f"{{{SCHEMA}}}type") if tbl_w is not None else None
+    value = (tbl_w.get(f"{{{SCHEMA}}}w") or "").strip() if tbl_w is not None else ""
+    if width_type == "pct":
+        return max_width * min(_pct_fiftieths(value), docx_table_columns.FULL_PCT) // docx_table_columns.FULL_PCT
+    twips = whole_number(value) if width_type == "dxa" else None
+    if twips is not None and twips > 0:
+        width = twips * TWIPS_TO_EMU
+        return min(width, max_width) if max_width > 0 else width
+    return max_width
+
+
+def _pct_fiftieths(value: str) -> int:
+    """A percentage table width in fiftieths of a percent. Strict OOXML writes it as "100%"."""
+    try:
+        return round(float(value[:-1]) * 50) if value.endswith("%") else int(value)
+    except ValueError:
+        return docx_table_columns.FULL_PCT
+
+
+def _write_column_widths(tbl: Any, widths: list[int]) -> None:
+    """Write the column widths into the table grid and into the preferred width of each cell."""
+    twips = [max(1, round(width / TWIPS_TO_EMU)) for width in widths]
+    grid = tbl.find(TBL_GRID, namespaces={"w": SCHEMA})
+    if grid is None:
+        grid = parse_xml(f"<w:tblGrid {nsdecls('w')}/>")
+        tbl.find("w:tblPr", namespaces={"w": SCHEMA}).addnext(grid)
+    for column in grid.findall(GRID_COL, namespaces={"w": SCHEMA}):
+        grid.remove(column)
+    for width in twips:
+        grid.append(parse_xml(f'<w:gridCol {nsdecls("w")} w:w="{width}"/>'))
+    for offset, span, tc in docx_table_columns.cells(tbl, len(twips)):
+        _set_cell_width(tc, sum(twips[offset : offset + span]))
+
+
+def _set_cell_width(tc: Any, width_twips: int) -> None:
+    """Set a cell's preferred width, where the schema puts it: first in its properties, after a cnfStyle."""
+    tc_pr = tc.find("w:tcPr", namespaces={"w": SCHEMA})
+    if tc_pr is None:
+        tc_pr = parse_xml(f"<w:tcPr {nsdecls('w')}/>")
+        tc.insert(0, tc_pr)
+    for tc_w in tc_pr.findall("w:tcW", namespaces={"w": SCHEMA}):
+        tc_pr.remove(tc_w)
+    tc_w = parse_xml(f'<w:tcW {nsdecls("w")} w:w="{width_twips}" w:type="dxa"/>')
+    cnf_style = tc_pr.find("w:cnfStyle", namespaces={"w": SCHEMA})
+    if cnf_style is not None:
+        cnf_style.addnext(tc_w)
+    else:
+        tc_pr.insert(0, tc_w)
+
+
 # Word's "Normal Table" style: 0.075 inch left and right of a cell's content.
 DEFAULT_CELL_SIDE_MARGIN_TWIPS = 108
 TWIPS_TO_EMU = 635
@@ -813,10 +978,10 @@ TWIPS_TO_EMU = 635
 
 def _column_widths_emu(tbl: Any) -> list[int] | None:
     """The width of each grid column, in EMU; None when the grid states no usable width."""
-    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    grid = tbl.find(TBL_GRID, namespaces={"w": SCHEMA})
     if grid is None:
         return None
-    widths = [int(col.get(f"{{{SCHEMA}}}w") or 0) for col in grid.findall("w:gridCol", namespaces={"w": SCHEMA})]
+    widths = [int(col.get(f"{{{SCHEMA}}}w") or 0) for col in grid.findall(GRID_COL, namespaces={"w": SCHEMA})]
     if not widths or min(widths) <= 0:
         return None
     return [width * TWIPS_TO_EMU for width in widths]
@@ -912,7 +1077,7 @@ def _clamp_existing_fixed_width(tbl: Any, table_properties: Any, max_width: int)
     """Clamp a Lua-filter-set dxa width to the page width if it overflows."""
     if max_width <= 0:
         return
-    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
     current = int(tbl_w.get(f"{{{SCHEMA}}}w", "0"))
     clamped = _clamp_twips(current, max_width)
     if clamped < current:
@@ -955,7 +1120,7 @@ def _apply_table_layout(tbl: Any, table_properties: Any, layout: TableLayout | N
 
 def _has_existing_fixed_width(table_properties: Any) -> bool:
     """Return True if the table already has a fixed (dxa) width from the Lua filter."""
-    tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
+    tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})
     if tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") == "dxa":
         w = tbl_w.get(f"{{{SCHEMA}}}w", "0")
         return int(w) > 0
@@ -986,10 +1151,10 @@ def _rescale_table_grid(tbl: Any, target_twips: int) -> None:
     relative column sizing pandoc emitted; a zero/absent grid is distributed
     evenly.
     """
-    grid = tbl.find("w:tblGrid", namespaces={"w": SCHEMA})
+    grid = tbl.find(TBL_GRID, namespaces={"w": SCHEMA})
     if grid is None:
         return
-    columns = grid.findall("w:gridCol", namespaces={"w": SCHEMA})
+    columns = grid.findall(GRID_COL, namespaces={"w": SCHEMA})
     if not columns:
         return
 
@@ -1034,6 +1199,119 @@ def _get_available_content_height_for_section(section: Section) -> int:
     return int(page_height - top_margin - bottom_margin)
 
 
+def _fit_images_to_text_width(doc: DocumentObject) -> None:
+    """Bring a picture wider than the text it stands in back to that width, keeping its shape.
+
+    pandoc fits a picture to the text width of the template's page, before the paper size and the
+    orientation replace that page, and without the indent of its paragraph. A list item is indented
+    by its numbering level, so a picture in it ran over the right margin by that much. A picture in a
+    table is fitted to its column instead: see `_replace_table_properties`.
+    """
+    text_widths = [_get_available_content_width_for_section(section) for section in doc.sections]
+    indents = ParagraphIndents(doc.styles.element, _numbering(doc))
+    for element, section_index in _body_by_section(doc):
+        if element.tag == f"{{{SCHEMA}}}tbl":
+            continue
+        text_width = text_widths[min(section_index, len(text_widths) - 1)]
+        paragraphs = [element] if element.tag == f"{{{SCHEMA}}}p" else element.iter(f"{{{SCHEMA}}}p")
+        for p in paragraphs:
+            if _in_table(p, element):
+                continue
+            limit = text_width - indents.width_taken(p) * TWIPS_TO_EMU
+            for extent in p.iter(f"{{{WP_NS}}}extent"):
+                _fit_extent_width(extent, limit)
+
+
+def _size_images_for_their_page(doc: DocumentObject, image_sizes: dict[str, list[RequestedSize]] | None, pandoc_text_width: int) -> None:
+    """Size each image for the page it ends up on, from the size it asks for.
+
+    pandoc sizes an image against the text of the template's page: a percentage is a share of it,
+    and a wider image is brought back to it. The section the image ends up on can be wider, a
+    landscape page of a portrait document or a larger paper size, or narrower. An image pandoc
+    made of the size it asks for is made again against the text width of its own section.
+
+    The sizes come from the HTML, found again by the bytes of each image: see
+    :mod:`app.html_image_sizes`. A recorded size is taken only for the drawing pandoc made of it,
+    so one of another image with the same bytes is never applied. The passes after this one fit
+    the image to its column and its indent.
+    """
+    if not image_sizes:
+        return
+    queues = {key: iter(sizes) for key, sizes in image_sizes.items()}
+    text_widths = [_stated_text_width(section) for section in doc.sections]
+    for element, section_index in _body_by_section(doc):
+        for extent in element.iter(f"{{{WP_NS}}}extent"):
+            image = _drawing_image(doc, extent)
+            if image is None:
+                continue
+            requested = next(queues.get(html_image_sizes.digest(image.blob), iter(())), None)
+            text_width = text_widths[min(section_index, len(text_widths) - 1)]
+            # A page the section does not state is a guess, and an image is not sized on a guess. A page
+            # as wide as pandoc's, but for the whole points pandoc counts it in, keeps the size pandoc gave.
+            if requested is not None and text_width is not None and abs(text_width - pandoc_text_width) > EMU_PER_POINT:
+                _size_for_page(extent, requested, image, pandoc_text_width, text_width)
+
+
+def _stated_text_width(section: Section) -> int | None:
+    """The text width of a section which states its page width and side margins, else None."""
+    if section.page_width is None or section.left_margin is None or section.right_margin is None:
+        return None
+    return _get_available_content_width_for_section(section)
+
+
+def _drawing_image(doc: DocumentObject, extent: Any) -> Any:
+    """The image part a drawing shows, or None where it shows none this can read."""
+    blip = extent.getparent().find(f".//{{{DRAWING_NS}}}blip")
+    relationship = blip.get(f"{{{RELATIONSHIPS_SCHEMA}}}embed") if blip is not None else None
+    try:
+        return doc.part.related_parts[relationship] if relationship is not None else None
+    except KeyError:
+        return None
+
+
+def _size_for_page(extent: Any, requested: RequestedSize, image: Any, pandoc_text_width: int, text_width: int) -> None:
+    """Make a drawing again from the size it asks for, against text_width, where pandoc made it of that size."""
+    try:
+        px_width, px_height = image.image.px_width, image.image.px_height
+    # An image python-docx cannot read has no pixel size to scale by.
+    except Exception:  # noqa: BLE001
+        return
+    size = (requested.width, requested.height)
+    made_width, made_height = _resolve_image_extent(size, px_width, px_height, pandoc_text_width)
+    # pandoc counts its text width in whole points, and rounds the height it scales
+    if abs(int(extent.get("cx", "0")) - made_width) > EMU_PER_POINT or abs(int(extent.get("cy", "0")) - made_height) > max(EMU_PER_POINT, made_height // 100):
+        return
+    _set_drawing_size(extent, *_resolve_image_extent(size, px_width, px_height, text_width))
+
+
+def _numbering(doc: DocumentObject) -> Any:
+    """The numbering of the document, or None where it has none."""
+    try:
+        return doc.part.part_related_by(RT.NUMBERING).element  # type: ignore[attr-defined]
+    except KeyError:
+        return None
+
+
+def _in_table(element: Any, top: Any) -> bool:
+    """Whether the element sits in a table inside `top`."""
+    parent = element.getparent()
+    while parent is not None and parent is not top:
+        if parent.tag == f"{{{SCHEMA}}}tbl":
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def _fit_extent_width(extent: Any, max_width: int) -> None:
+    """Scale one drawing down to max_width, its height by the same factor."""
+    width = int(extent.get("cx", "0"))
+    height = int(extent.get("cy", "0"))
+    if max_width <= 0 or width <= max_width:
+        return
+    _set_drawing_size(extent, max_width, int(height * max_width / width))
+    logger.debug(f"Fitted image width: {width} x {height} -> {max_width}")
+
+
 def _cap_image_heights(doc: DocumentObject) -> None:
     """Bring an image taller than its page back to the page, keeping its shape.
 
@@ -1044,14 +1322,10 @@ def _cap_image_heights(doc: DocumentObject) -> None:
     """
     # A document always has a section: the body's own sectPr, or python-docx's default.
     max_heights = [_get_available_content_height_for_section(section) - LINE_ALLOWANCE_EMU for section in doc.sections]
-    section_index = 0
-    for element in doc.element.body:
+    for element, section_index in _body_by_section(doc):
         max_height = max_heights[min(section_index, len(max_heights) - 1)]
         for extent in element.iter(f"{{{WP_NS}}}extent"):
             _cap_extent_height(extent, max_height)
-        # A paragraph holding a sectPr closes its section; the body's own sectPr is the last one.
-        if element.tag == f"{{{SCHEMA}}}p" and element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr") is not None:
-            section_index += 1
 
 
 def _cap_extent_height(extent: Any, max_height: int) -> None:

@@ -869,8 +869,8 @@ def _a4_template(test_parameters: TestParameters) -> bytes:
     return out.getvalue()
 
 
-def _convert_with_template(test_parameters: TestParameters, html: str, template: bytes) -> bytes:
-    url = f"{test_parameters.base_url}/convert/html/to/docx-with-template?preserve_table_styles=true"
+def _convert_with_template(test_parameters: TestParameters, html: str, template: bytes, query: str = "") -> bytes:
+    url = f"{test_parameters.base_url}/convert/html/to/docx-with-template?preserve_table_styles=true{query}"
     response = test_parameters.request_session.post(url, files={"source": ("source.html", html), "template": ("template.docx", template)})
     if response.status_code // 100 != 2:
         raise AssertionError(f"pandoc-service returned {response.status_code}:\n{response.text}")
@@ -878,16 +878,14 @@ def _convert_with_template(test_parameters: TestParameters, html: str, template:
 
 
 def _cell_limit(docx_bytes: bytes) -> int:
-    """The widest an image in the first cell may be.
+    """The widest an image in the first cell may be: its column less Word's default cell margins.
 
-    The rebuilt table states no column widths, so the limit is an even share
-    of the 6.5 inch text width app/docx_post_process.py assumes for a page
-    the document does not state.
+    The post-processor decides the column widths of the rebuilt table and writes them into its grid.
     """
     doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
     columns = doc.findall(f".//{{{W_NS}}}tblGrid/{{{W_NS}}}gridCol")
-    assert columns and all(column.get(f"{{{W_NS}}}w") is None for column in columns), "the rebuilt table now states its column widths"
-    return int(6.5 * 914400) // len(columns)
+    assert columns and all(column.get(f"{{{W_NS}}}w") for column in columns), "the rebuilt table states no column widths"
+    return (int(columns[0].get(f"{{{W_NS}}}w")) - 2 * 108) * 635
 
 
 @pytest.mark.parametrize("query", ["?preserve_table_styles=true", "?preserve_table_styles=true&paper_size=A4"])
@@ -930,7 +928,42 @@ def test_full_width_image_in_a_formatted_paragraph_uses_the_page_of_the_template
     formatted = _drawing_extent(_convert_with_template(test_parameters, f'<div class="pandoc-para" data-indent-twips="600"><p>{image}</p></div>', template))
 
     assert plain == (A4_TEMPLATE_TEXT_WIDTH_EMU, A4_TEMPLATE_TEXT_WIDTH_EMU // 2)
-    assert formatted == plain
+    # The indent takes its part of the page: A4 less 1134 twips a side, less the 600 of the paragraph
+    inside_the_indent = (11906 - 2 * 1134 - 600) * 635
+    assert formatted == (inside_the_indent, inside_the_indent // 2)
+
+
+@pytest.mark.parametrize("style", ["", "width:100%"])
+@pytest.mark.parametrize("query", ["", "&orientation=portrait"])
+def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameters: TestParameters, query: str, style: str):
+    """pandoc narrows the image to the portrait page of the template; the landscape page has more room.
+
+    A page break marked landscape turns the pages above it, as Polarion marks them, and keeps
+    that orientation when the request asks for another one. A percentage is a share of that page.
+    """
+    image = f'<img src="{_png_data_uri(3000, 300)}" style="{style}">'
+    html = f"<p>Portrait</p><p>\\newpage</p><p>\\pagePortrait</p><p>{image}</p><p>\\newpage</p><p>\\pageLandscape</p><p>Portrait again</p>"
+
+    width, height = _drawing_extent(_convert_with_template(test_parameters, html, _a4_template(test_parameters), query))
+
+    # A4 turned, less the template's 2 cm on each side
+    assert width == (16838 - 2 * 1134) * 635
+    assert height * 10 == pytest.approx(width, abs=10), "the aspect ratio was not kept"
+
+
+def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
+    """The HTML gives the columns no width, so the column of the image is not held to half the table."""
+    image = f'<img src="{_png_data_uri(3000, 300)}">'
+    html = f'<table style="width:600px"><tr><td style="background-color:#eeeeee">Short</td><td style="background-color:#eeeeee">{image}</td></tr></table>'
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html, "?preserve_table_styles=true")
+
+    cx, _ = _drawing_extent(docx_bytes)
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    label_column, image_column = (int(column.get(f"{{{W_NS}}}w")) for column in doc.findall(f".//{{{W_NS}}}tblGrid/{{{W_NS}}}gridCol"))
+    assert label_column + image_column == pytest.approx(600 * 15, abs=2)
+    assert image_column > label_column
+    assert cx == (image_column - 2 * 108) * 635
 
 
 @pytest.mark.parametrize("style", ["width:50%", "width:100%", ""])

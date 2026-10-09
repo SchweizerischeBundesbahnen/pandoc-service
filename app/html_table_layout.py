@@ -29,6 +29,10 @@ Only the properties that survive meaningfully into Word are extracted:
 * **indent** — a positive ``margin-left`` length on an otherwise left-aligned
   table becomes a left table indent (twips), mirroring the paragraph-indent
   handling in :mod:`app.html_paragraph_pre_process`.
+* **column widths** — the ``width`` of each ``<col>``, else of each cell of the
+  first row, in the same two forms as the table width. pandoc keeps them only
+  for a ``<colgroup>`` in percent, so the post-processor needs them to fit the
+  images in a cell to the column the HTML gives it.
 
 Everything is best-effort: any parse failure returns an empty list so the
 caller falls back to the previous behaviour rather than breaking a conversion.
@@ -39,6 +43,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from lxml import etree  # type: ignore[import-untyped]
 
@@ -48,6 +53,10 @@ logger = logging.getLogger(__name__)
 
 # OOXML: a table width of 100 % is expressed as 5000 fiftieths of a percent.
 MAX_PCT = 5000
+
+# The most columns a colspan or a span can cover, as the HTML standard and browsers have it. A table
+# wider than that states no column widths, so a short tag cannot make the service build a huge list.
+MAX_COLUMNS = 1000
 
 # CSS unit -> twips conversion factor. 1 twip = 1/1440 inch; CSS reference DPI
 # is 96, so 1 px = 15 twips. Mirrors app/html_paragraph_pre_process.py so table
@@ -83,17 +92,20 @@ class TableLayout:
     ``"dxa"`` (``width_value`` in twips) or ``None`` (no explicit width).
     ``jc`` is ``"left"``/``"center"``/``"right"`` or ``None``.
     ``indent_twips`` is a positive left table indent or ``None``.
+    ``column_widths`` holds one ``(width_type, width_value)`` per column, or
+    ``None`` for a column without a width; ``None`` when no column has one.
     """
 
     width_type: str | None = None
     width_value: int | None = None
     jc: str | None = None
     indent_twips: int | None = None
+    column_widths: tuple[tuple[str, int] | None, ...] | None = None
 
     @property
     def is_empty(self) -> bool:
         """True when nothing worth applying was recovered."""
-        return self.width_type is None and self.jc is None and self.indent_twips is None
+        return self.width_type is None and self.jc is None and self.indent_twips is None and self.column_widths is None
 
 
 def extract(source: bytes | str) -> list[TableLayout]:
@@ -116,7 +128,85 @@ def extract(source: bytes | str) -> list[TableLayout]:
 
     # iter("table") yields elements in document order (depth-first), matching
     # both pandoc's <w:tbl> emission order and the post-processor's traversal.
-    return [_parse_table_style(table.get("style") or "") for table in doc.iter("table")]
+    return [_parse_table(table) for table in doc.iter("table")]
+
+
+def _parse_table(table: etree._Element) -> TableLayout:
+    """Build a :class:`TableLayout` from a table's inline ``style`` and its column widths."""
+    layout = _parse_table_style(table.get("style") or "")
+    column_widths = _column_widths(table)
+    if column_widths is None:
+        return layout
+    return TableLayout(width_type=layout.width_type, width_value=layout.width_value, jc=layout.jc, indent_twips=layout.indent_twips, column_widths=column_widths)
+
+
+def _column_widths(table: etree._Element) -> tuple[tuple[str, int] | None, ...] | None:
+    """The width of each column: from its ``<col>``, else from the cell of the first row.
+
+    Each column is read on its own, as a browser reads it: a ``<col>`` without a width leaves its
+    column to the cell. A cell spanning columns says nothing about any one of them. ``None`` when
+    no column has a width.
+    """
+    widths = [col if col is not None else cell for col, cell in zip_longest(_col_widths(table), _first_row_widths(table))]
+    return tuple(widths) if any(width is not None for width in widths) else None
+
+
+def _col_widths(table: etree._Element) -> list[tuple[str, int] | None]:
+    columns = [child for child in table if child.tag == "col"]
+    for colgroup in (child for child in table if child.tag == "colgroup"):
+        columns.extend(col for col in colgroup if col.tag == "col")
+    widths: list[tuple[str, int] | None] = []
+    for col in columns:
+        widths.extend([_element_width(col)] * _span(col.get("span")))
+        if len(widths) > MAX_COLUMNS:
+            return []
+    return widths
+
+
+def _first_row_widths(table: etree._Element) -> list[tuple[str, int] | None]:
+    row = _first_row(table)
+    widths: list[tuple[str, int] | None] = []
+    for cell in (child for child in row if child.tag in ("td", "th")) if row is not None else ():
+        span = _span(cell.get("colspan"))
+        widths.extend([_element_width(cell)] if span == 1 else [None] * span)
+        if len(widths) > MAX_COLUMNS:
+            return []
+    return widths
+
+
+def _first_row(table: etree._Element) -> etree._Element | None:
+    """The table's own first row, never one of a nested table."""
+    for child in table:
+        if child.tag == "tr":
+            return child
+        if child.tag in ("thead", "tbody", "tfoot"):
+            row = next((tr for tr in child if tr.tag == "tr"), None)
+            if row is not None:
+                return row
+    return None
+
+
+def _element_width(element: etree._Element) -> tuple[str, int] | None:
+    """The ``width`` of the inline style, else of the attribute, as a stated width."""
+    width = _split_declarations(element.get("style") or "").get("width") or element.get("width")
+    width_type, width_value = _parse_width(width)
+    return (width_type, width_value) if width_type is not None and width_value is not None else None
+
+
+def _span(value: str | None) -> int:
+    """The columns a colspan or a span covers: 1 where it is missing or not a positive number, at most MAX_COLUMNS.
+
+    Only ASCII digits are a number: str.isdigit accepts characters int refuses, such as a superscript
+    two. A number longer than the cap's is above it, and is read as the cap without int, which refuses
+    a string of more than 4300 digits.
+    """
+    digits = (value or "").strip()
+    if not digits.isascii() or not digits.isdigit():
+        return 1
+    significant = digits.lstrip("0")
+    if len(significant) > len(str(MAX_COLUMNS)):
+        return MAX_COLUMNS
+    return min(max(int(significant or "0"), 1), MAX_COLUMNS)
 
 
 def _parse_table_style(style: str) -> TableLayout:

@@ -409,51 +409,40 @@ def test_process_table_with_nested_tables(mock_resize_images, mock_apply_layout)
             pass
 
 
-@patch("app.docx_post_process._process_table")
-@patch("app.docx_post_process._get_available_content_width_for_section")
-def test_replace_table_properties_by_section(mock_get_width, mock_process_table):
-    """Test that _replace_table_properties processes tables by section correctly."""
+def _fixed_width_table(doc, width_twips: int):
+    """A table carrying the dxa width the Lua filter writes for an absolute CSS width."""
+    table = doc.add_table(rows=1, cols=2)
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", str(width_twips))
+    tbl_w.set(f"{{{SCHEMA}}}type", "dxa")
+    return table
 
-    # Create mock document and sections
-    doc = MagicMock()
-    section1 = MagicMock()
-    section2 = MagicMock()
-    doc.sections = [section1, section2]
 
-    # Set up mock tables
-    table1 = MagicMock()
-    table2 = MagicMock()
-    doc.tables = [table1, table2]
+def _table_width_twips(table) -> int:
+    return int(table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW").get(f"{{{SCHEMA}}}w"))
 
-    # Set up table elements
-    tbl_element1 = MagicMock()
-    tbl_element1.tag = "w:tbl"
-    tbl_element2 = MagicMock()
-    tbl_element2.tag = "w:tbl"
 
-    table1._element = tbl_element1
-    table2._element = tbl_element2
+def test_replace_table_properties_clamps_each_table_to_its_own_section():
+    """A section break is a paragraph holding a sectPr, so a table after it is fitted to the next section."""
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Inches
 
-    # Set up document body with table and section break elements
-    section_break = MagicMock()
-    section_break.tag = "w:sectPr"
+    from app.docx_post_process import _get_available_content_width_for_section
 
-    doc.element.body = [tbl_element1, section_break, tbl_element2]
+    doc = Document()
+    portrait_table = _fixed_width_table(doc, 30000)
+    landscape = doc.add_section()
+    landscape.orientation = WD_ORIENT.LANDSCAPE
+    landscape.page_width, landscape.page_height = Inches(11), Inches(8.5)
+    landscape_table = _fixed_width_table(doc, 30000)
 
-    # Set up available width
-    max_width = 9144000
-    mock_get_width.return_value = max_width
-
-    # Call the function
     _replace_table_properties(doc)
 
-    # Verify _get_available_content_width_for_section was called for each section
-    assert mock_get_width.call_count == 2
-
-    # Verify _process_table was called for tables in correct sections
-    assert mock_process_table.call_count == 2
-    mock_process_table.assert_any_call(table1, 0, max_width, None)
-    mock_process_table.assert_any_call(table2, 0, max_width, None)
+    portrait_width, landscape_width = (_get_available_content_width_for_section(section) // 635 for section in doc.sections)
+    assert portrait_width < landscape_width
+    assert _table_width_twips(portrait_table) == portrait_width
+    assert _table_width_twips(landscape_table) == landscape_width
 
 
 def test_replace_size_and_orientation_both_none():
@@ -503,6 +492,8 @@ def test_replace_size_and_orientation_set_orientation_only():
     mock_pg_sz.attrib = {}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = landscape
@@ -529,6 +520,8 @@ def test_replace_size_and_orientation_both_parameters():
     mock_pg_sz.attrib = {}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with paper_size = LETTER and orientation = landscape
@@ -669,6 +662,8 @@ def test_set_orientation_portrait_removes_orient_attribute():
     mock_pg_sz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = portrait
@@ -704,6 +699,8 @@ def test_set_orientation_no_swap_if_already_correct():
     mock_pg_sz.attrib = {f"{{{SCHEMA}}}orient": "landscape"}
     mock_sect_pr.find.return_value = mock_pg_sz
     mock_section._sectPr = mock_sect_pr
+    # The only section of a document is the body's own
+    mock_doc.element.body.find.return_value = mock_sect_pr
     mock_doc.sections = [mock_section]
 
     # Call with orientation = landscape (already landscape)
@@ -1996,6 +1993,13 @@ def _png_bytes_246(width: int = 30, height: int = 10) -> bytes:
     return buffer.getvalue()
 
 
+def _state_grid(table) -> None:
+    """Mark the grid as the widths the HTML states, as pandoc does for a colgroup: a table width, not an automatic one."""
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", "5000")
+    tbl_w.set(f"{{{SCHEMA}}}type", "pct")
+
+
 def _table_with_image(grid_twips: list[int], image_inches: float, merge: bool = False, cell_margin_twips: int | None = None):
     """A table whose grid states the given widths, an image in its first cell."""
     import io
@@ -2009,6 +2013,7 @@ def _table_with_image(grid_twips: list[int], image_inches: float, merge: bool = 
     table = doc.add_table(rows=1, cols=len(grid_twips))
     for col, width in zip(table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"), grid_twips, strict=True):
         col.set(f"{{{SCHEMA}}}w", str(width))
+    _state_grid(table)
     if cell_margin_twips is not None:
         table._tbl.tblPr.append(parse_xml(f'<w:tblCellMar {nsdecls("w")}><w:left w:w="{cell_margin_twips}" w:type="dxa"/><w:right w:w="{cell_margin_twips}" w:type="dxa"/></w:tblCellMar>'))
     cell = table.cell(0, 0)
@@ -2024,16 +2029,16 @@ def _first_image_width(doc) -> int:
 
 
 def test_image_in_a_cell_is_brought_back_to_its_column():
-    """Two columns of 264 px: the image fits its own column less the default cell margins, not half the page."""
-    doc, table = _table_with_image([5280, 5280], image_inches=6)
+    """Two columns of 312 px: the image fits its own column less the default cell margins."""
+    doc, table = _table_with_image([4680, 4680], image_inches=6)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
-    assert _first_image_width(doc) == (5280 - 2 * 108) * 635
+    assert _first_image_width(doc) == (4680 - 2 * 108) * 635
 
 
 def test_image_in_a_merged_cell_takes_the_sum_of_its_columns():
-    doc, table = _table_with_image([3000, 4000, 2000], image_inches=6, merge=True)
+    doc, table = _table_with_image([3000, 4000, 2360], image_inches=6, merge=True)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
@@ -2041,11 +2046,11 @@ def test_image_in_a_merged_cell_takes_the_sum_of_its_columns():
 
 
 def test_cell_margins_of_the_table_are_taken_off():
-    doc, table = _table_with_image([5280, 5280], image_inches=6, cell_margin_twips=300)
+    doc, table = _table_with_image([4680, 4680], image_inches=6, cell_margin_twips=300)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
-    assert _first_image_width(doc) == (5280 - 2 * 300) * 635
+    assert _first_image_width(doc) == (4680 - 2 * 300) * 635
 
 
 def test_image_which_fits_its_column_keeps_its_size():
@@ -2056,12 +2061,13 @@ def test_image_which_fits_its_column_keeps_its_size():
     assert _first_image_width(doc) == 914400
 
 
-def test_without_a_usable_grid_the_even_share_stays_the_limit():
+def test_without_a_usable_grid_the_content_decides_the_columns():
+    """The column holding the image takes what it needs, not an even share of the table."""
     doc, table = _table_with_image([0, 5280], image_inches=6)
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
-    assert _first_image_width(doc) == int(6.5 * 914400 / 2)
+    assert _first_image_width(doc) == 6 * 914400
 
 
 def test_cell_margins_of_the_cell_win_and_start_end_count():
@@ -2069,14 +2075,14 @@ def test_cell_margins_of_the_cell_win_and_start_end_count():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
 
-    doc, table = _table_with_image([5280, 5280], image_inches=6, cell_margin_twips=300)
+    doc, table = _table_with_image([4680, 4680], image_inches=6, cell_margin_twips=300)
     tc_pr = table.cell(0, 0)._tc.get_or_add_tcPr()
     tc_pr.append(parse_xml(f'<w:tcMar {nsdecls("w")}><w:start w:w="50" w:type="dxa"/><w:end w:w="10" w:type="pct"/></w:tcMar>'))
 
     _process_table(table, 0, max_width=int(6.5 * 914400))
 
     # left: the cell's 50; right: the pct value is ignored, so the table's 300 stays
-    assert _first_image_width(doc) == (5280 - 50 - 300) * 635
+    assert _first_image_width(doc) == (4680 - 50 - 300) * 635
 
 
 def test_a_cell_beyond_the_grid_falls_back_to_the_even_share():
@@ -2112,12 +2118,13 @@ def test_an_image_in_a_nested_table_stays_inside_the_cell_holding_it():
     outer = doc.add_table(rows=1, cols=2)
     for col, width in zip(outer._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"), [2880, 2880], strict=True):
         col.set(f"{{{SCHEMA}}}w", str(width))
+    _state_grid(outer)
     # The nested grid claims 7 inch inside a cell of 2 inch
     inner = outer.cell(0, 0).add_table(rows=1, cols=1)
     inner._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "10080")
     inner.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(7))
 
-    _process_table(outer, 0, max_width=int(6.5 * 914400))
+    _process_table(outer, 0, max_width=2 * 2880 * 635)
 
     # The outer cell is 2880 twips less its margins; the image is inside that, not inside 7 inch
     assert _first_image_width(doc) <= 2880 * 635
@@ -2140,9 +2147,10 @@ def test_cell_margins_of_the_table_style_are_taken_off():
         style_margins.find(f"{{{SCHEMA}}}{side}").set(f"{{{SCHEMA}}}w", "720")
     table = doc.add_table(rows=1, cols=1, style="Table Grid")
     table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "5280")
+    _state_grid(table)
     table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(6))
 
-    _process_table(table, 0, max_width=int(6.5 * 914400))
+    _process_table(table, 0, max_width=5280 * 635)
 
     # 5280 twips less 720 a side, which the default of 108 would have left far too wide
     assert _first_image_width(doc) == (5280 - 720 - 720) * 635
@@ -2176,9 +2184,10 @@ def test_cell_margins_come_from_each_style_which_states_a_side():
 
     table = doc.add_table(rows=1, cols=1, style="Table Grid")
     table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")[0].set(f"{{{SCHEMA}}}w", "5280")
+    _state_grid(table)
     table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(6))
 
-    _process_table(table, 0, max_width=int(6.5 * 914400))
+    _process_table(table, 0, max_width=5280 * 635)
 
     # 600 from the parent style, 400 from the style the table names; neither side falls back to 108
     assert _first_image_width(doc) == (5280 - 600 - 400) * 635
@@ -2313,19 +2322,21 @@ def test_placeholder_image_wider_than_the_page_is_brought_back_to_it():
 def test_placeholder_image_in_a_cell_is_brought_back_to_its_column():
     """The placeholder is resolved before the tables, so the column limit reaches it."""
     doc = _document_with_page(_A4_PAGE)
-    table = doc.add_table(rows=1, cols=4)
+    table = doc.add_table(rows=1, cols=2)
+    # Two halves of the A4 text width: 11906 less two margins of 1134
     for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
-        col.set(f"{{{SCHEMA}}}w", "2000")
+        col.set(f"{{{SCHEMA}}}w", "4819")
+    _state_grid(table)
     table.cell(0, 0).paragraphs[0].add_run(_placeholder("50%"))
 
-    assert _extents(_processed(doc))[0][0] == (2000 - 2 * 108) * 635
+    assert _extents(_processed(doc))[0][0] == (4819 - 2 * 108) * 635
 
 
 def test_image_in_a_cell_keeps_its_frame_in_step_with_its_extent():
     """A frame left at the old size lets Word crop or distort the picture."""
     doc, table = _table_with_image([2000, 2000], image_inches=6)
 
-    _process_table(table, 0, max_width=int(6.5 * 914400))
+    _process_table(table, 0, max_width=4000 * 635)
 
     assert _frame_extents(doc) == _extents(doc)
     assert _extents(doc)[0][0] == (2000 - 2 * 108) * 635
@@ -2559,3 +2570,554 @@ def test_process_applies_image_layouts():
     picture_run = result.element.body.find(f".//{{{SCHEMA}}}drawing").getparent()
     assert _position(picture_run) == "-5"
     assert _effect_extent(picture_run)["r"] == "19050"
+
+
+# ---- column widths decided before images in cells are fitted ----
+
+
+def _grid_twips(table) -> list[int]:
+    return [int(col.get(f"{{{SCHEMA}}}w")) for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol")]
+
+
+def _cell_widths_twips(table) -> list[int]:
+    return [int(tc.find(f"{{{SCHEMA}}}tcPr/{{{SCHEMA}}}tcW").get(f"{{{SCHEMA}}}w")) for tc in table._tbl.iter(f"{{{SCHEMA}}}tc")]
+
+
+def test_an_image_in_a_column_the_html_states_fills_that_column():
+    """Polarion's attribute tables state 20 % and 80 % on their cells, and pandoc splits them evenly."""
+    from app.html_table_layout import TableLayout
+
+    doc, table = _table_with_image([4680, 4680], image_inches=9)
+    # The image sits in the first cell, so give that one the 80 %
+    layout = TableLayout(width_type="pct", width_value=5000, column_widths=(("pct", 4000), ("pct", 1000)))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400), layout_iter=iter([layout]))
+
+    assert _grid_twips(table) == [7488, 1872]
+    assert _cell_widths_twips(table) == [7488, 1872]
+    assert _first_image_width(doc) == (7488 - 2 * 108) * 635
+
+
+def test_an_image_in_a_column_of_a_guessed_grid_is_not_held_to_an_even_share():
+    """pandoc marks a grid it split evenly with an automatic table width; Word lays such a table out by its content."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        col.set(f"{{{SCHEMA}}}w", "3960")
+    table.cell(0, 0).paragraphs[0].add_run("Severity")
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(9))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    image_column = _grid_twips(table)[1]
+    assert sum(_grid_twips(table)) == pytest.approx(6.5 * 1440, abs=2)
+    assert image_column > 0.8 * 6.5 * 1440
+    assert _first_image_width(doc) == (image_column - 2 * 108) * 635
+
+
+def test_a_stated_grid_is_scaled_to_the_width_of_the_table():
+    """A grid pandoc took from a colgroup adds up to its own text width, not to the page the table is on."""
+    doc, table = _table_with_image([1584, 6336], image_inches=9)
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _grid_twips(table) == [1872, 7488]
+    assert _first_image_width(doc) == (1872 - 2 * 108) * 635
+
+
+def test_a_cell_width_goes_after_a_cnf_style_and_replaces_the_one_there():
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _set_cell_width
+
+    tc = parse_xml(f'<w:tc {nsdecls("w")}><w:tcPr><w:cnfStyle w:val="100000000000"/><w:tcW w:w="5" w:type="pct"/><w:vAlign w:val="top"/></w:tcPr><w:p/></w:tc>')
+
+    _set_cell_width(tc, 1234)
+
+    assert [child.tag.split("}")[1] for child in tc.find(f"{{{SCHEMA}}}tcPr")] == ["cnfStyle", "tcW", "vAlign"]
+    assert tc.find(f"{{{SCHEMA}}}tcPr/{{{SCHEMA}}}tcW").get(f"{{{SCHEMA}}}w") == "1234"
+    assert tc.find(f"{{{SCHEMA}}}tcPr/{{{SCHEMA}}}tcW").get(f"{{{SCHEMA}}}type") == "dxa"
+
+
+@pytest.mark.parametrize(
+    ("tbl_w", "expected"),
+    [
+        ('<w:tblW w:w="2500" w:type="pct"/>', 5000),
+        ('<w:tblW w:w="50%" w:type="pct"/>', 5000),
+        ('<w:tblW w:w="9000" w:type="pct"/>', 10000),
+        ('<w:tblW w:w="10" w:type="dxa"/>', 10 * 635),
+        ('<w:tblW w:w="99999" w:type="dxa"/>', 10000),
+        ('<w:tblW w:w="0" w:type="auto"/>', 10000),
+        ("", 10000),
+    ],
+)
+def test_the_width_a_table_is_laid_out_at(tbl_w, expected):
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _table_width_emu
+
+    assert _table_width_emu(parse_xml(f"<w:tblPr {nsdecls('w')}>{tbl_w}</w:tblPr>"), 10000) == expected
+
+
+def test_inline_pictures_state_their_distances_from_the_text():
+    """LibreOffice reads a missing distance as about 0.3 cm and sets a picture that far in."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import WP_NS, _state_inline_distances
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(1))
+    inline = next(doc.element.body.iter(f"{{{WP_NS}}}inline"))
+    for side in ("distT", "distB", "distL", "distR"):
+        inline.attrib.pop(side, None)
+    inline.set("distL", "114300")
+
+    _state_inline_distances(doc)
+
+    assert {side: inline.get(side) for side in ("distT", "distB", "distL", "distR")} == {"distT": "0", "distB": "0", "distL": "114300", "distR": "0"}
+
+
+# ---- _fit_images_to_text_width ----
+
+
+def _text_width(section) -> int:
+    from app.docx_post_process import _get_available_content_width_for_section
+
+    return _get_available_content_width_for_section(section)
+
+
+def _as_list_item(paragraph, level: int) -> None:
+    """Make the paragraph a list item whose level is indented by an inch per level, as pandoc's numbering does."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    numbering = paragraph.part.numbering_part.element
+    levels = "".join(f'<w:lvl w:ilvl="{index}"><w:pPr><w:ind w:left="{1440 * (index + 1)}" w:hanging="360"/></w:pPr></w:lvl>' for index in range(3))
+    abstract = parse_xml(f'<w:abstractNum {nsdecls("w")} w:abstractNumId="990">{levels}</w:abstractNum>')
+    first_num = numbering.find(f"{{{SCHEMA}}}num")
+    if first_num is not None:
+        first_num.addprevious(abstract)
+    else:
+        numbering.append(abstract)
+    numbering.append(parse_xml(f'<w:num {nsdecls("w")} w:numId="1001"><w:abstractNumId w:val="990"/></w:num>'))
+    paragraph._p.get_or_add_pPr().append(parse_xml(f'<w:numPr {nsdecls("w")}><w:ilvl w:val="{level}"/><w:numId w:val="1001"/></w:numPr>'))
+
+
+def test_an_image_in_a_list_item_is_fitted_inside_the_indent_of_its_level():
+    import io
+
+    from docx import Document
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    text_width = _text_width(doc.sections[0])
+    paragraph = doc.add_paragraph()
+    paragraph.add_run().add_picture(io.BytesIO(_png_bytes()), width=text_width, height=text_width // 2)
+    _as_list_item(paragraph, level=1)
+
+    _fit_images_to_text_width(doc)
+
+    assert _extents(doc) == [(text_width - 2 * 1440 * 635, (text_width - 2 * 1440 * 635) // 2)]
+    assert _frame_extents(doc) == _extents(doc)
+
+
+def test_an_image_which_fits_beside_the_indent_keeps_its_size():
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run().add_picture(io.BytesIO(_png_bytes()), width=Inches(1), height=Inches(1))
+    _as_list_item(paragraph, level=0)
+
+    _fit_images_to_text_width(doc)
+
+    assert _extents(doc) == [(Inches(1), Inches(1))]
+
+
+def test_an_image_in_a_table_is_left_to_its_column():
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    doc.add_table(rows=1, cols=1).cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes()), width=Inches(20), height=Inches(1))
+
+    _fit_images_to_text_width(doc)
+
+    assert _extents(doc) == [(Inches(20), Inches(1))]
+
+
+def test_each_image_is_fitted_to_the_text_width_of_its_own_section():
+    import io
+
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Inches
+
+    from app.docx_post_process import _fit_images_to_text_width
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(20), height=Inches(2))
+    landscape = doc.add_section()
+    landscape.orientation = WD_ORIENT.LANDSCAPE
+    landscape.page_width, landscape.page_height = Inches(11), Inches(8.5)
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(20), height=Inches(2))
+
+    _fit_images_to_text_width(doc)
+
+    portrait_width, landscape_width = (_text_width(section) for section in doc.sections)
+    assert [width for width, _ in _extents(doc)] == [portrait_width, landscape_width]
+
+
+def test_a_smaller_paper_size_brings_an_image_back_to_its_page():
+    """pandoc fits an image to the template's page; the paper size replaces that page afterwards."""
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    doc = Document()
+    doc.add_picture(io.BytesIO(_png_bytes()), width=Inches(6), height=Inches(3))
+    source = io.BytesIO()
+    doc.save(source)
+
+    result = Document(io.BytesIO(docx_post_process.process(source.getvalue(), "A5", "portrait")))
+
+    a5_width = _text_width(result.sections[0])
+    assert _extents(result) == [(a5_width, a5_width // 2)]
+
+
+# ---- section breaks of page_orientation.lua take the page of the template ----
+
+
+def _add_orientation_break(doc, orient: str = "landscape", margins: str = "") -> None:
+    """Add the section break page_orientation.lua writes, closing the section above it."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    width, height = (16838, 11906) if orient == "landscape" else (11906, 16838)
+    paragraph = parse_xml(f'<w:p {nsdecls("w")}><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="{orient}" w:w="{width}" w:h="{height}"/>{margins}</w:sectPr></w:pPr></w:p>')
+    doc.element.body.find(f"{{{SCHEMA}}}sectPr").addprevious(paragraph)
+
+
+def _page(sect_pr) -> tuple[dict[str, str], dict[str, str] | None]:
+    size = dict(sect_pr.find(f"{{{SCHEMA}}}pgSz").attrib)
+    margins = sect_pr.find(f"{{{SCHEMA}}}pgMar")
+    return size, dict(margins.attrib) if margins is not None else None
+
+
+def test_an_orientation_break_takes_the_margins_and_the_turned_page_of_the_template():
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+
+    doc = Document()  # a Letter template, 12240 x 15840
+    _add_orientation_break(doc)
+
+    _complete_section_geometry(doc)
+
+    template_size, template_margins = _page(doc.element.body.find(f"{{{SCHEMA}}}sectPr"))
+    size, margins = _page(doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"))
+    assert size == {f"{{{SCHEMA}}}orient": "landscape", f"{{{SCHEMA}}}w": template_size[f"{{{SCHEMA}}}h"], f"{{{SCHEMA}}}h": template_size[f"{{{SCHEMA}}}w"]}
+    assert margins == template_margins
+    assert [child.tag.split("}")[1] for child in doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")] == ["type", "pgSz", "pgMar"]
+
+
+def test_a_section_break_stating_its_margins_is_left_as_it_is():
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+
+    doc = Document()
+    _add_orientation_break(doc, "portrait", '<w:pgMar w:left="10" w:right="10" w:top="10" w:bottom="10"/>')
+
+    _complete_section_geometry(doc)
+
+    size, margins = _page(doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"))
+    assert size[f"{{{SCHEMA}}}w"] == "11906"
+    assert margins is not None
+    assert margins[f"{{{SCHEMA}}}left"] == "10"
+
+
+def test_without_template_margins_a_section_break_is_left_as_it_is():
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+
+    doc = Document()
+    body_sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    body_sect_pr.remove(body_sect_pr.find(f"{{{SCHEMA}}}pgMar"))
+    _add_orientation_break(doc)
+
+    _complete_section_geometry(doc)
+
+    size, margins = _page(doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr"))
+    assert size[f"{{{SCHEMA}}}w"] == "16838"
+    assert margins is None
+
+
+# ---- _size_images_for_their_page ----
+
+
+def _narrowed_image_document(requested_width: str = "3000px", image_width: int | None = None, orient: str = "landscape"):
+    """A Letter document whose first section is turned to `orient`, holding an image pandoc narrowed to the portrait text width.
+
+    Returns the document, the portrait text width pandoc used and the sizes recorded for the image.
+    """
+    import io
+
+    from docx import Document
+
+    from app.docx_post_process import _complete_section_geometry
+    from app.html_image_sizes import RequestedSize, digest
+
+    doc = Document()
+    pandoc_text_width = _text_width(doc.sections[0])
+    image = _png_bytes(300, 100)
+    width = pandoc_text_width if image_width is None else image_width
+    doc.add_picture(io.BytesIO(image), width=width, height=width // 3)
+    _add_orientation_break(doc, orient)
+    _complete_section_geometry(doc)
+    return doc, pandoc_text_width, {digest(image): [RequestedSize(requested_width, "")]}
+
+
+def test_an_image_pandoc_narrowed_takes_the_width_of_a_landscape_page():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    landscape_width = _text_width(doc.sections[0])
+    assert landscape_width > pandoc_text_width
+    assert _extents(doc) == [(landscape_width, round(pandoc_text_width // 3 * landscape_width / pandoc_text_width))]
+    assert _frame_extents(doc) == _extents(doc)
+
+
+def test_an_image_grows_no_wider_than_it_asks():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width="7in")
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == 7 * 914400
+
+
+def test_an_image_pandoc_did_not_narrow_keeps_its_size():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(image_width=914400 * 3)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc) == [(914400 * 3, 914400)]
+
+
+def test_an_image_on_a_page_no_wider_keeps_its_size():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(orient="portrait")
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == pandoc_text_width
+
+
+def test_a_recorded_size_of_another_shape_is_not_taken():
+    """The shape tells a recorded size from one of another image with the same bytes."""
+    from app.docx_post_process import _size_images_for_their_page
+    from app.html_image_sizes import RequestedSize
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+    key = next(iter(sizes))
+
+    _size_images_for_their_page(doc, {key: [RequestedSize("3000px", "3000px")]}, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == pandoc_text_width
+
+
+def test_an_image_is_not_widened_on_a_page_its_section_does_not_state():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+    landscape = doc.element.body.find(f"{{{SCHEMA}}}p/{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
+    landscape.remove(landscape.find(f"{{{SCHEMA}}}pgMar"))
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == pandoc_text_width
+
+
+def test_images_with_the_same_bytes_take_their_sizes_in_document_order():
+    """The first copy was not narrowed and takes the first size; the second takes the second."""
+    import io
+
+    from app.docx_post_process import _size_images_for_their_page
+    from app.html_image_sizes import RequestedSize
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document()
+    key = next(iter(sizes))
+    first = doc.element.body.find(f"{{{SCHEMA}}}p")
+    small = doc.add_paragraph()
+    small.add_run().add_picture(io.BytesIO(_png_bytes(300, 100)), width=914400 * 3, height=914400)
+    first.addprevious(small._p)
+
+    _size_images_for_their_page(doc, {key: [RequestedSize("3in", ""), RequestedSize("8in", "")]}, pandoc_text_width)
+
+    assert [width for width, _ in _extents(doc)] == [914400 * 3, 8 * 914400]
+
+
+# ---- a page break keeps the orientation it states ----
+
+
+def _sections_orientation(doc) -> list[tuple[str | None, int, int]]:
+    """The orient attribute, width and height of each section's page, first to last."""
+    sizes = []
+    for section in doc.sections:
+        pg_sz = section._sectPr.find(f"{{{SCHEMA}}}pgSz")
+        sizes.append((pg_sz.get(f"{{{SCHEMA}}}orient"), int(pg_sz.get(f"{{{SCHEMA}}}w")), int(pg_sz.get(f"{{{SCHEMA}}}h"))))
+    return sizes
+
+
+@pytest.mark.parametrize(("orientation", "break_orient"), [("portrait", "landscape"), ("landscape", "portrait")])
+def test_a_page_break_keeps_its_orientation_and_the_rest_follows_the_request(orientation, break_orient):
+    """Polarion marks the pages above a page break as landscape or portrait; the requested orientation is for the rest."""
+    from docx import Document
+
+    doc = Document()
+    _add_orientation_break(doc, break_orient)
+
+    docx_post_process._replace_size_and_orientation(doc, "A4", orientation)
+
+    (first_orient, first_width, first_height), (_, last_width, last_height) = _sections_orientation(doc)
+    assert first_orient == break_orient
+    assert (first_width > first_height) == (break_orient == "landscape")
+    assert {first_width, first_height} == {11906, 16838}
+    assert (last_width > last_height) == (orientation == "landscape")
+    assert {last_width, last_height} == {11906, 16838}
+
+
+def test_a_page_break_takes_the_paper_size_in_its_own_orientation():
+    from docx import Document
+
+    doc = Document()
+    _add_orientation_break(doc, "landscape")
+
+    docx_post_process._replace_size_and_orientation(doc, "A5", "portrait")
+
+    assert [(width, height) for _, width, height in _sections_orientation(doc)] == [(11906, 8419), (8419, 11906)]
+
+
+def test_a_section_break_stating_no_orientation_follows_the_request():
+    from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = Document()
+    doc.element.body.find(f"{{{SCHEMA}}}sectPr").addprevious(parse_xml(f'<w:p {nsdecls("w")}><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr></w:p>'))
+
+    docx_post_process._replace_size_and_orientation(doc, None, "landscape")
+
+    assert [width > height for _, width, height in _sections_orientation(doc)] == [True, True]
+
+
+def test_an_image_in_a_fixed_width_table_whose_columns_the_html_leaves_open_is_not_held_to_an_even_share():
+    """inline_styles.lua states the width of a px-wide table, and leaves a column the HTML gives no width without one in the grid.
+
+    The table is wider than the page, so the clamp fills the empty grid evenly before the columns are decided.
+    """
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", "12000")
+    tbl_w.set(f"{{{SCHEMA}}}type", "dxa")
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        del col.attrib[f"{{{SCHEMA}}}w"]
+    table.cell(0, 0).paragraphs[0].add_run("Short")
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(9))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    image_column = _grid_twips(table)[1]
+    assert sum(_grid_twips(table)) == pytest.approx(6.5 * 1440, abs=2)
+    assert image_column > 0.8 * 6.5 * 1440
+    assert _first_image_width(doc) == (image_column - 2 * 108) * 635
+
+
+def test_a_fixed_width_table_keeps_the_column_widths_its_grid_states():
+    """A grid with widths under a stated table width holds the widths the HTML gives, as a colgroup does."""
+    doc, table = _table_with_image([2000, 7000], image_inches=9)
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", "9000")
+    tbl_w.set(f"{{{SCHEMA}}}type", "dxa")
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _grid_twips(table) == [2000, 7000]
+    assert _first_image_width(doc) == (2000 - 2 * 108) * 635
+
+
+@pytest.mark.parametrize("share", [100, 50])
+def test_a_percentage_image_is_a_share_of_the_landscape_page_it_ends_up_on(share):
+    """CSS reads a percentage against the text the image stands in, which a landscape page widens."""
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width=f"{share}%")
+    for extent in doc.element.body.iter(f"{{{WP_SCHEMA}}}extent"):
+        docx_post_process._set_drawing_size(extent, pandoc_text_width * share // 100, pandoc_text_width * share // 300)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    landscape_width = _text_width(doc.sections[0])
+    assert _extents(doc)[0][0] == round(landscape_width * share / 100)
+    assert _frame_extents(doc) == _extents(doc)
+
+
+def test_a_percentage_image_is_a_share_of_a_narrower_page_too():
+    """The shrinking pass only brings an image back to the whole width; a share of a narrower page is less."""
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, page_width, sizes = _narrowed_image_document(requested_width="50%", orient="portrait")
+    # pandoc sized it against a page twice as wide as the one it ends up on
+    pandoc_text_width = 2 * page_width
+    for extent in doc.element.body.iter(f"{{{WP_SCHEMA}}}extent"):
+        docx_post_process._set_drawing_size(extent, page_width, page_width // 3)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == round(_text_width(doc.sections[0]) / 2)
+
+
+def test_a_percentage_is_not_taken_for_a_drawing_pandoc_did_not_make_of_it():
+    from app.docx_post_process import _size_images_for_their_page
+
+    doc, pandoc_text_width, sizes = _narrowed_image_document(requested_width="50%", image_width=914400)
+
+    _size_images_for_their_page(doc, sizes, pandoc_text_width)
+
+    assert _extents(doc)[0][0] == 914400
