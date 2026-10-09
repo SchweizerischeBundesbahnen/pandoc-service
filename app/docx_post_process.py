@@ -863,7 +863,7 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
         table_properties = parse_xml(f"<w:tblPr {nsdecls('w')}/>")
         tbl.insert(0, table_properties)
 
-    grid_is_stated = _grid_is_stated(table_properties)
+    grid_is_stated = _grid_is_stated(tbl, table_properties)
     _apply_table_layout(tbl, table_properties, layout, max_width)
     styles = _table_styles(table)
     _lay_out_columns(tbl, table_properties, layout, max_width, styles, grid_is_stated=grid_is_stated)
@@ -881,14 +881,16 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
                 _process_table(sub_table, columns_count, int(cell_width), layout_iter)
 
 
-def _grid_is_stated(table_properties: Any) -> bool:
+def _grid_is_stated(tbl: Any, table_properties: Any) -> bool:
     """Whether the grid holds the column widths the HTML states, read before the layout replaces the table width.
 
     pandoc keeps the column widths of a ``<colgroup>`` in percent and then states the table width.
     Without them it splits its text width evenly and leaves the table width automatic.
+    ``filters/inline_styles.lua`` states the table width either way, and leaves a column the HTML
+    gives no width without one in the grid.
     """
     tbl_w = table_properties.find("w:tblW", namespaces={"w": SCHEMA})
-    return tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") not in (None, "auto")
+    return tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") not in (None, "auto") and _column_widths_emu(tbl) is not None
 
 
 def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int, styles: Any, *, grid_is_stated: bool) -> None:

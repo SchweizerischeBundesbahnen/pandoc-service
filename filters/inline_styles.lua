@@ -1530,15 +1530,15 @@ function filter.Table(tbl)
   end
   xml[#xml + 1] = "</w:tblPr>"
 
-  -- Grid columns. When colspecs provide fractional widths, use them;
-  -- otherwise distribute the total width evenly across columns.
+  -- Grid columns. When colspecs provide fractional widths, use them.
+  -- Otherwise a column has no width here: app/docx_post_process.py lays the
+  -- columns out by their content, and an even split it would read as widths
+  -- the HTML states would hold an image in a cell to its share of the table.
   xml[#xml + 1] = "<w:tblGrid>"
   for i = 1, num_cols do
     local cw = tbl.colspecs[i] and tbl.colspecs[i][2]
     if cw and tbl_total_twips then
       xml[#xml + 1] = '<w:gridCol w:w="' .. math.floor(cw * tbl_total_twips) .. '"/>'
-    elseif tbl_total_twips then
-      xml[#xml + 1] = '<w:gridCol w:w="' .. math.floor(tbl_total_twips / num_cols) .. '"/>'
     else
       xml[#xml + 1] = "<w:gridCol/>"
     end

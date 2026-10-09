@@ -3039,3 +3039,44 @@ def test_a_section_break_stating_no_orientation_follows_the_request():
     docx_post_process._replace_size_and_orientation(doc, None, "landscape")
 
     assert [width > height for _, width, height in _sections_orientation(doc)] == [True, True]
+
+
+def test_an_image_in_a_fixed_width_table_whose_columns_the_html_leaves_open_is_not_held_to_an_even_share():
+    """inline_styles.lua states the width of a px-wide table, and leaves a column the HTML gives no width without one in the grid.
+
+    The table is wider than the page, so the clamp fills the empty grid evenly before the columns are decided.
+    """
+    import io
+
+    from docx import Document
+    from docx.shared import Inches
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", "12000")
+    tbl_w.set(f"{{{SCHEMA}}}type", "dxa")
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        del col.attrib[f"{{{SCHEMA}}}w"]
+    table.cell(0, 0).paragraphs[0].add_run("Short")
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png_bytes_246()), width=Inches(9))
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    image_column = _grid_twips(table)[1]
+    assert sum(_grid_twips(table)) == pytest.approx(6.5 * 1440, abs=2)
+    assert image_column > 0.8 * 6.5 * 1440
+    assert _first_image_width(doc) == (image_column - 2 * 108) * 635
+
+
+def test_a_fixed_width_table_keeps_the_column_widths_its_grid_states():
+    """A grid with widths under a stated table width holds the widths the HTML gives, as a colgroup does."""
+    doc, table = _table_with_image([2000, 7000], image_inches=9)
+    tbl_w = table._tbl.tblPr.find(f"{{{SCHEMA}}}tblW")
+    tbl_w.set(f"{{{SCHEMA}}}w", "9000")
+    tbl_w.set(f"{{{SCHEMA}}}type", "dxa")
+
+    _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert _grid_twips(table) == [2000, 7000]
+    assert _first_image_width(doc) == (2000 - 2 * 108) * 635

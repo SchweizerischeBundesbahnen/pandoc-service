@@ -950,6 +950,21 @@ def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameter
     assert height * 10 == pytest.approx(width, abs=10), "the aspect ratio was not kept"
 
 
+def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
+    """The HTML gives the columns no width, so the column of the image is not held to half the table."""
+    image = f'<img src="{_png_data_uri(3000, 300)}">'
+    html = f'<table style="width:600px"><tr><td style="background-color:#eeeeee">Short</td><td style="background-color:#eeeeee">{image}</td></tr></table>'
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html, "?preserve_table_styles=true")
+
+    cx, _ = _drawing_extent(docx_bytes)
+    doc = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml"))
+    label_column, image_column = (int(column.get(f"{{{W_NS}}}w")) for column in doc.findall(f".//{{{W_NS}}}tblGrid/{{{W_NS}}}gridCol"))
+    assert label_column + image_column == pytest.approx(600 * 15, abs=2)
+    assert image_column > label_column
+    assert cx == (image_column - 2 * 108) * 635
+
+
 @pytest.mark.parametrize("style", ["width:50%", "width:100%", ""])
 def test_image_in_a_styled_table_stays_inside_its_column(test_parameters: TestParameters, style: str):
     """3000 px is wider than the page; the image is brought back to its column, not left at 31 inches."""
