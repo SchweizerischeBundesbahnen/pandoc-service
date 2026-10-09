@@ -2808,8 +2808,6 @@ def test_a_smaller_paper_size_brings_an_image_back_to_its_page():
 
 # ---- section breaks of page_orientation.lua take the page of the template ----
 
-_LANDSCAPE_BREAK = '<w:p {ns}><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="landscape" w:w="16838" w:h="11906"/></w:sectPr></w:pPr></w:p>'
-
 
 def _add_orientation_break(doc, orient: str = "landscape", margins: str = "") -> None:
     """Add the section break page_orientation.lua writes, closing the section above it."""

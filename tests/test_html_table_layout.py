@@ -257,3 +257,31 @@ def test_column_widths_of_a_nested_table_stay_its_own():
     outer, inner = extract(html)
     assert outer.column_widths is None
     assert inner.column_widths == (("pct", 3500), ("pct", 1500))
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><td colspan='100000000'>a</td><td style='width: 40%'>b</td></tr></table>",
+        "<table><colgroup><col span='100000000'/><col style='width: 40%'/></colgroup><tr><td>a</td></tr></table>",
+    ],
+)
+def test_a_huge_span_states_no_column_widths(html):
+    """A one-line tag must not make the service build a list of a hundred million columns."""
+    assert extract(html)[0].column_widths is None
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><td colspan='999'>a</td><td style='width: 40%'>b</td></tr></table>",
+        "<table><colgroup><col span='999'/><col style='width: 40%'/></colgroup><tr><td>a</td></tr></table>",
+    ],
+)
+def test_a_table_as_wide_as_a_browser_allows_keeps_its_column_widths(html):
+    assert extract(html)[0].column_widths == (*(None,) * 999, ("pct", 2000))
+
+
+def test_a_table_wider_than_a_browser_allows_states_no_column_widths():
+    cols = "<col span='1000' style='width: 1%'/>" * 3
+    assert extract(f"<table><colgroup>{cols}</colgroup><tr><td>a</td></tr></table>")[0].column_widths is None

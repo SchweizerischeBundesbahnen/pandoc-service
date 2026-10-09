@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 # OOXML: a table width of 100 % is expressed as 5000 fiftieths of a percent.
 MAX_PCT = 5000
 
+# The most columns a colspan or a span can cover, as the HTML standard and browsers have it. A table
+# wider than that states no column widths, so a short tag cannot make the service build a huge list.
+MAX_COLUMNS = 1000
+
 # CSS unit -> twips conversion factor. 1 twip = 1/1440 inch; CSS reference DPI
 # is 96, so 1 px = 15 twips. Mirrors app/html_paragraph_pre_process.py so table
 # and paragraph indents use one consistent conversion.
@@ -151,6 +155,8 @@ def _col_widths(table: etree._Element) -> list[tuple[str, int] | None]:
     widths: list[tuple[str, int] | None] = []
     for col in columns:
         widths.extend([_element_width(col)] * _span(col.get("span")))
+        if len(widths) > MAX_COLUMNS:
+            return []
     return widths
 
 
@@ -160,6 +166,8 @@ def _first_row_widths(table: etree._Element) -> list[tuple[str, int] | None]:
     for cell in (child for child in row if child.tag in ("td", "th")) if row is not None else ():
         span = _span(cell.get("colspan"))
         widths.extend([_element_width(cell)] if span == 1 else [None] * span)
+        if len(widths) > MAX_COLUMNS:
+            return []
     return widths
 
 
@@ -183,7 +191,10 @@ def _element_width(element: etree._Element) -> tuple[str, int] | None:
 
 
 def _span(value: str | None) -> int:
-    return int(value) if value is not None and value.strip().isdigit() and int(value) > 0 else 1
+    """The columns a colspan or a span covers: 1 where it is missing or not a positive number, at most MAX_COLUMNS."""
+    if value is None or not value.strip().isdigit():
+        return 1
+    return min(max(int(value), 1), MAX_COLUMNS)
 
 
 def _parse_table_style(style: str) -> TableLayout:

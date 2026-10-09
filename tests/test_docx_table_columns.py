@@ -174,3 +174,14 @@ def test_a_table_without_columns_has_no_widths():
     table = parse_xml(f"<w:tbl {nsdecls('w')}><w:tblPr/></w:tbl>")
 
     assert decide(table, INCH, None, _margins) is None
+
+
+def test_a_table_without_a_grid_is_laid_out_with_no_more_columns_than_html_allows():
+    from app.docx_table_columns import MAX_COLUMNS
+
+    table = parse_xml(f'<w:tbl {nsdecls("w")}><w:tblPr/><w:tr><w:tc><w:tcPr><w:gridSpan w:val="100000000"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>')
+
+    widths = decide(table, MAX_COLUMNS * 10, None, _margins)
+
+    assert widths is not None
+    assert len(widths) == MAX_COLUMNS

@@ -10,7 +10,6 @@ HTML states for the columns, and from what each column holds where it states non
 writes the result into the grid and into each cell, so Word lays the table out the same way.
 """
 
-import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -32,6 +31,9 @@ CHARACTER_WIDTH_EM = 0.5
 TAB_WIDTH_EMU = 457200
 # Word's font size where neither the text nor its styles state one: 10 pt, in half-points.
 DEFAULT_FONT_SIZE_HALF_POINTS = 20
+
+# The most columns a table without a grid is laid out with: the most a colspan covers in HTML.
+MAX_COLUMNS = 1000
 
 # A stated column width: ("pct", fiftieths of a percent) or ("dxa", twips).
 type ColumnWidth = tuple[str, int]
@@ -109,10 +111,15 @@ def _widen(widths: list[int], offset: int, span: int, needed: int) -> None:
 
 
 def _column_count(tbl: Any) -> int:
+    """The columns of the grid; without one, those the cells span, at most MAX_COLUMNS.
+
+    A table without a grid takes its count from gridSpan and gridBefore values, and a short element
+    stating a huge one must not make the post-processor build a list that long.
+    """
     grid = tbl.findall(f"{_W}tblGrid/{_W}gridCol")
     if grid:
         return len(grid)
-    return max((offset + span for offset, span, _ in cells(tbl, sys.maxsize)), default=0)
+    return max((offset + span for offset, span, _ in cells(tbl, MAX_COLUMNS)), default=0)
 
 
 def cells(tbl: Any, columns: int) -> list[tuple[int, int, Any]]:
