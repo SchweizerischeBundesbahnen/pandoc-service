@@ -84,19 +84,17 @@ class ParagraphIndents:
 
 def _numbering_reference(properties: list[Any]) -> tuple[str | None, str]:
     """The numbering and level the paragraph names, itself or through its style, nearest first."""
-    num_id: str | None = None
-    level: str | None = None
+    return _nearest_numbering_value(properties, "numId"), _nearest_numbering_value(properties, "ilvl") or "0"
+
+
+def _nearest_numbering_value(properties: list[Any], name: str) -> str | None:
+    """The value of numPr/<name> in the nearest properties which state it."""
     for element in properties:
-        num_pr = element.find(f"{_W}numPr") if element is not None else None
-        if num_pr is None:
-            continue
-        if num_id is None:
-            reference = num_pr.find(f"{_W}numId")
-            num_id = reference.get(f"{_W}val") if reference is not None else None
-        if level is None:
-            reference = num_pr.find(f"{_W}ilvl")
-            level = reference.get(f"{_W}val") if reference is not None else None
-    return num_id, level or "0"
+        reference = element.find(f"{_W}numPr/{_W}{name}") if element is not None else None
+        value = reference.get(f"{_W}val") if reference is not None else None
+        if value is not None:
+            return value
+    return None
 
 
 def _side(sources: list[Any], side: str) -> int:
