@@ -308,3 +308,18 @@ def test_a_col_span_is_read_from_ascii_digits_without_failing_the_conversion():
     html = "<table><colgroup><col span='&#178;' style='width: 30%'/><col style='width: 70%'/></colgroup><tr><td>a</td></tr></table>"
 
     assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))
+
+
+def test_a_colgroup_without_widths_leaves_the_columns_to_the_cells():
+    html = "<table><colgroup><col/><col/></colgroup><tr><td style='width: 20%'>a</td><td style='width: 80%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1000), ("pct", 4000))
+
+
+def test_a_col_without_a_width_leaves_its_column_to_the_cell():
+    html = "<table><colgroup><col style='width: 30%'/><col/></colgroup><tr><td style='width: 90%'>a</td><td style='width: 70%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))
+
+
+def test_cells_beyond_the_colgroup_keep_their_widths():
+    html = "<table><colgroup><col style='width: 30%'/></colgroup><tr><td>a</td><td style='width: 70%'>b</td></tr></table>"
+    assert extract(html)[0].column_widths == (("pct", 1500), ("pct", 3500))

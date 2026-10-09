@@ -43,6 +43,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from lxml import etree  # type: ignore[import-untyped]
 
@@ -142,9 +143,11 @@ def _parse_table(table: etree._Element) -> TableLayout:
 def _column_widths(table: etree._Element) -> tuple[tuple[str, int] | None, ...] | None:
     """The width of each column: from its ``<col>``, else from the cell of the first row.
 
-    A cell spanning columns says nothing about any one of them. ``None`` when no column has a width.
+    Each column is read on its own, as a browser reads it: a ``<col>`` without a width leaves its
+    column to the cell. A cell spanning columns says nothing about any one of them. ``None`` when
+    no column has a width.
     """
-    widths = _col_widths(table) or _first_row_widths(table)
+    widths = [col if col is not None else cell for col, cell in zip_longest(_col_widths(table), _first_row_widths(table))]
     return tuple(widths) if any(width is not None for width in widths) else None
 
 
