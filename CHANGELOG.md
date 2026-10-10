@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.8.0...v2.8.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.13.0 ([96ceb52](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/96ceb5239cd09be07895181a575bdc7b4b5aa784))
+
 ## [2.8.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.7.0...v2.8.0) (2026-10-09)
 
 
