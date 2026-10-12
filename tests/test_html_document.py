@@ -62,3 +62,8 @@ def test_text_after_a_large_image_reaches_the_docx(test_parameters: TestParamete
     assert response.status_code == 200, response.text
     document_xml = zipfile.ZipFile(io.BytesIO(response.content)).read("word/document.xml").decode()
     assert "Text after the image" in document_xml
+
+
+def test_text_is_read_as_utf_8_whatever_the_document_declares():
+    for source in ("<p>café 日本</p>".encode(), '<html><head><meta charset="iso-8859-1"></head><body><p>café 日本</p></body></html>'.encode()):
+        assert parse_document(source).text_content().endswith("café 日本")

@@ -28,7 +28,19 @@ from app.auth import ApiKeyError, get_api_keys, is_request_authorized, require_a
 from app.schema import VersionSchema
 from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options, load_tls_options
 
-from . import docx_latex_pre_process, docx_page_geometry, docx_post_process, html_image_pre_process, html_image_sizes, html_lists_pre_process, html_math_color_pre_process, html_paragraph_pre_process, html_table_layout, pptx_post_process
+from . import (
+    docx_latex_pre_process,
+    docx_page_geometry,
+    docx_post_process,
+    html_embedded_images,
+    html_image_pre_process,
+    html_image_sizes,
+    html_lists_pre_process,
+    html_math_color_pre_process,
+    html_paragraph_pre_process,
+    html_table_layout,
+    pptx_post_process,
+)
 from .chromium_manager import get_chromium_manager
 from .constants import API_VERSION, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
@@ -69,6 +81,7 @@ FILTERS = {
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
+    "html_embedded_images": f"{FILTER_BASE_PATH}/html_embedded_images.lua",
     "html_trailing_line_breaks": f"{FILTER_BASE_PATH}/html_trailing_line_breaks.lua",
     "html_whitespace": f"{FILTER_BASE_PATH}/html_whitespace.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
@@ -651,6 +664,9 @@ def _build_pandoc_command(
     if source_format == "html" and target_format == "docx":
         cmd.extend(
             [
+                # Load the images app/html_embedded_images.py took out of the HTML into the
+                # media bag. First, so that every image is there before any filter moves it.
+                f"--lua-filter={FILTERS['html_embedded_images']}",
                 # Drop the <br/> that ends a line of text, which a browser does not
                 # show but Word renders as an empty line. First, so that a break inside
                 # a styled span is gone before inline_styles turns the span into raw
@@ -898,14 +914,19 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # image so pandoc renders it at the 96 dpi CSS reference (not its 72 dpi
     # no-density fallback), honouring any CSS max-width. See
     # app/html_image_pre_process.py.
-    if source_format == "html" and target_format == "docx":
-        source_data = html_lists_pre_process.preprocess(source_data)
-        source_data = html_paragraph_pre_process.preprocess(source_data)
-        source_data = html_math_color_pre_process.preprocess(source_data)
-        source_data = html_image_pre_process.preprocess(source_data)
+    # And hand the data: images to pandoc as files, which takes a fraction of the
+    # memory and time. See app/html_embedded_images.py.
+    html_to_docx = source_format == "html" and target_format == "docx"
 
-    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file, tempfile.NamedTemporaryFile(delete=False) as output_file:
+    with (
+        tempfile.TemporaryDirectory() as images_directory,
+        tempfile.NamedTemporaryFile(mode="wb", delete=False) as source_file,
+        tempfile.NamedTemporaryFile(delete=False) as output_file,
+    ):
         try:
+            if html_to_docx:
+                source_data = _prepare_html_for_docx(source_data, Path(images_directory))
+
             # Write input data to temporary file
             source_file.write(source_data)
             source_file.flush()
@@ -924,19 +945,30 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
 
             # Run pandoc with validated parameters and measure duration
             subprocess_start_time = time.time()
-            subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE)
+            # Only the html -> docx command loads filters/html_embedded_images.lua, which reads the directory from it
+            environment = {**os.environ, html_embedded_images.DIRECTORY_VARIABLE: images_directory} if html_to_docx else None
+            subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, env=environment)
             subprocess_duration = time.time() - subprocess_start_time
             observe_subprocess_duration(subprocess_duration)
 
             # Read output
             with Path(output_file.name).open("rb") as f:
-                return f.read()
+                return html_embedded_images.restore_placeholders(f.read(), Path(images_directory))
         finally:
             # Clean up temporary files
             if Path(source_file.name).exists():
                 Path(source_file.name).unlink()
             if Path(output_file.name).exists():
                 Path(output_file.name).unlink()
+
+
+def _prepare_html_for_docx(source_data: bytes, images_directory: Path) -> bytes:
+    """Rewrite an HTML source for pandoc's DOCX writer, its data: images last, which the others read."""
+    source_data = html_lists_pre_process.preprocess(source_data)
+    source_data = html_paragraph_pre_process.preprocess(source_data)
+    source_data = html_math_color_pre_process.preprocess(source_data)
+    source_data = html_image_pre_process.preprocess(source_data)
+    return html_embedded_images.extract(source_data, images_directory)
 
 
 @app.post(
