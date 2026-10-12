@@ -73,7 +73,7 @@ def test_a_stated_pandoc_heap_limit_is_taken_as_it_is(cgroup, monkeypatch, value
     assert constants.get_pandoc_max_heap() == value.lower()
 
 
-@pytest.mark.parametrize("value", ["0", "off", "none", "false", "OFF"])
+@pytest.mark.parametrize("value", ["0", "off", "none", "false", "OFF", "0m", "0G", "000"])
 def test_a_pandoc_heap_limit_can_be_turned_off(cgroup, monkeypatch, value):
     cgroup[0].write_text("8589934592\n")
     monkeypatch.setenv("PANDOC_MAX_HEAP", value)

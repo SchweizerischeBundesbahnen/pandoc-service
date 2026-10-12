@@ -121,7 +121,8 @@ def get_pandoc_max_heap() -> str | None:
         return None
     if value:
         if _PANDOC_HEAP_RE.fullmatch(value):
-            return value
+            # GHC reads a zero size, "0m" as well as "0", as no limit
+            return value if int(value.rstrip("kmg")) > 0 else None
         logger.warning("Invalid PANDOC_MAX_HEAP value '%s', deriving the limit from the memory of the container", value)
     memory = _container_memory_limit()
     if memory is None:
