@@ -4,6 +4,7 @@ import platform
 import subprocess
 import tempfile
 import zipfile
+from http import HTTPStatus
 from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
@@ -1759,3 +1760,44 @@ def test_table_layouts_are_read_off_the_event_loop(url, request_kwargs):
 
     assert response.status_code == 200
     assert ran_on_the_loop["value"] is False, "The table layout scan ran on the event loop thread"
+
+
+def test_pandoc_runs_under_its_heap_limit():
+    from app.pandoc_controller import _build_pandoc_command
+
+    with patch("app.pandoc_controller.get_pandoc_max_heap", return_value="3072m"):
+        cmd = _build_pandoc_command(source_format="html", target_format="docx", source_path="in.html", output_path="out.docx", validated_options=[], apply_docx_latex_filters=False)
+
+    assert cmd[:4] == ["/usr/local/bin/pandoc", "+RTS", "-M3072m", "-RTS"]
+
+
+def test_pandoc_runs_without_runtime_options_when_it_has_no_heap_limit():
+    from app.pandoc_controller import _build_pandoc_command
+
+    with patch("app.pandoc_controller.get_pandoc_max_heap", return_value=None):
+        cmd = _build_pandoc_command(source_format="html", target_format="docx", source_path="in.html", output_path="out.docx", validated_options=[], apply_docx_latex_filters=False)
+
+    assert "+RTS" not in cmd
+
+
+def test_a_conversion_stopped_at_the_heap_limit_is_answered_as_too_large():
+    from app.pandoc_controller import PandocHeapExhaustedError, _run_pandoc, process_error
+
+    with (
+        patch("subprocess.run", side_effect=subprocess.CalledProcessError(251, ["pandoc"])),
+        patch("app.pandoc_controller.get_pandoc_max_heap", return_value="3072m"),
+        pytest.raises(PandocHeapExhaustedError) as raised,
+    ):
+        _run_pandoc(["pandoc"], None)
+
+    response = process_error(raised.value, HTTPStatus.BAD_REQUEST.phrase, HTTPStatus.BAD_REQUEST.value)
+    assert response.status_code == 413
+    assert "3072m" in response.body.decode()
+    assert "PANDOC_MAX_HEAP" in response.body.decode()
+
+
+def test_any_other_failure_of_pandoc_is_raised_as_it_is():
+    from app.pandoc_controller import _run_pandoc
+
+    with patch("subprocess.run", side_effect=subprocess.CalledProcessError(64, ["pandoc"])), pytest.raises(subprocess.CalledProcessError):
+        _run_pandoc(["pandoc"], None)

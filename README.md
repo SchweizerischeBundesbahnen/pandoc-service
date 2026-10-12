@@ -495,6 +495,8 @@ The conversion runs in a worker thread, so SIGTERM is acted on the moment it arr
 
 `MAX_CONCURRENT_PANDOC_CONVERSIONS` bounds how many conversions run at the same time (1 - 100, default: 2). Each one holds a worker thread and a pandoc process, and a PDF target adds a tectonic run on top, so raise the limit together with the CPU and the memory of the container.
 
+`PANDOC_MAX_HEAP` bounds the heap of each pandoc process, in the form of `+RTS -M`: `2g`, `512m`, or `0` for no limit. A conversion beyond it stops with `413 Request Entity Too Large` instead of growing until the kernel kills it, or kills another process of the container. Unset, the memory limit of the container less 1 GB for the service, Chromium and tectonic, and at least half of it, is shared between the conversions `MAX_CONCURRENT_PANDOC_CONVERSIONS` allows: with two conversions, `--memory 8g` gives each pandoc 3584 MB and `--memory 2g` 512 MB. A container without a memory limit gets no heap limit. The log names the limit at startup.
+
 Keep the stop grace period of the orchestrator above this value (`docker stop --time`, or `terminationGracePeriodSeconds` in Kubernetes). A shorter one ends in SIGKILL, which leaves the Chromium browser unclosed.
 
 The log line `Service shutdown complete` marks a shutdown which ran to the end.
