@@ -20,12 +20,19 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import re
 import zipfile
 from typing import TYPE_CHECKING
 
+from lxml import etree, html  # type: ignore[import-untyped]
+
+from app.html_document import parse_document
+
 if TYPE_CHECKING:
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # The variable filters/html_embedded_images.lua reads the directory of the images from.
 DIRECTORY_VARIABLE = "PANDOC_SERVICE_IMAGES_DIR"
@@ -33,25 +40,18 @@ DIRECTORY_VARIABLE = "PANDOC_SERVICE_IMAGES_DIR"
 # The raster formats the DOCX writer embeds as they are, by the subtype of their media type. An SVG
 # stays a data: URI: pandoc converts it, and app.svg_processor has made most of them PNG anyway.
 _EXTENSIONS = {
-    b"png": "png",
-    b"jpeg": "jpg",
-    b"jpg": "jpg",
-    b"gif": "gif",
-    b"bmp": "bmp",
-    b"tiff": "tiff",
+    "png": "png",
+    "jpeg": "jpg",
+    "jpg": "jpg",
+    "gif": "gif",
+    "bmp": "bmp",
+    "tiff": "tiff",
 }
 
-# An <img> tag up to its ">": a quoted value at a time, so a ">" inside a value does not end it. It
-# never crosses a "<", quoted or not, so each character is scanned from one tag start at most and
-# malformed HTML takes linear time. A tag holding a "<" in a value ends there.
-_IMG_TAG_RE = re.compile(rb"""<img\b(?:[^<>"']|"[^"<]*"|'[^'<]*')*""", re.IGNORECASE)
+_DATA_IMAGE_PREFIX = "data:image/"
 
-# An attribute of a tag: its name, and its value quoted or not. A "src=" inside the value of another
-# attribute is part of that value.
-_ATTRIBUTE_RE = re.compile(rb"""([^\s"'<>/=]+)(?:\s*=\s*("[^"<]*"|'[^'<]*'|[^\s"'<>]*))?""")
-
-# A base64 data: URI of an image: its subtype and its payload.
-_DATA_URI_RE = re.compile(rb"data:image/([a-z]+);base64,([a-z0-9+/=\s]*)", re.IGNORECASE)
+# See html_lists_pre_process for why these are named tuples rather than inline except-literals.
+_PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
 
 # The media subtype of each extension, for a data: URI rebuilt from a file.
 _SUBTYPES = {"png": "png", "jpg": "jpeg", "gif": "gif", "bmp": "bmp", "tiff": "tiff"}
@@ -69,41 +69,46 @@ _TEXT_PART_RE = re.compile(r"word/(document|header\d*|footer\d*|footnotes|endnot
 def extract(source: bytes, directory: Path) -> bytes:
     """Write the ``data:`` images of `source` into `directory` and name them in their ``src``.
 
-    Equal images share one file, as pandoc keeps one media part for equal ``data:`` URIs.
+    Equal images share one file, as pandoc keeps one media part for equal ``data:`` URIs. Returns
+    the input unchanged when it does not parse or holds no image to extract.
     """
+    try:
+        doc = parse_document(source)
+    except _PARSE_FAILURES:
+        logger.warning("html_embedded_images: HTML parse failed; passing input through")
+        return source
+
     names: dict[bytes, str] = {}
+    for img in doc.iter("img"):
+        name = _extract_image(img.get("src"), directory, names)
+        if name is not None:
+            img.set("src", name)
+    if not names:
+        return source
+    return html.tostring(doc, encoding="utf-8")
 
-    def file_name(uri: bytes) -> str | None:
-        match = _DATA_URI_RE.fullmatch(uri)
-        extension = _EXTENSIONS.get(match.group(1).lower()) if match else None
-        if match is None or extension is None:
-            return None
-        try:
-            image = base64.b64decode(match.group(2), validate=False)
-        except ValueError:
-            return None
-        if not image:
-            return None
-        key = hashlib.sha256(image).digest()
-        if key not in names:
-            names[key] = f"{_NAME_PREFIX}{len(names) + 1}.{extension}"
-            (directory / names[key]).write_bytes(image)
-        return names[key]
 
-    def replace(tag: re.Match[bytes]) -> bytes:
-        text = tag.group(0)
-        src = next((attribute for attribute in _ATTRIBUTE_RE.finditer(text, 4) if attribute.group(1).lower() == b"src"), None)
-        if src is None or not src.group(2):
-            return text
-        start, end = src.span(2)
-        quoted = text[start : start + 1] in (b'"', b"'")
-        name = file_name(text[start + 1 : end - 1] if quoted else text[start:end])
-        if name is None:
-            return text
-        value = text[start : start + 1] + name.encode() + text[start : start + 1] if quoted else name.encode()
-        return text[:start] + value + text[end:]
-
-    return _IMG_TAG_RE.sub(replace, source)
+def _extract_image(src: str | None, directory: Path, names: dict[bytes, str]) -> str | None:
+    """The file name of the image of a ``data:`` URI, written into `directory` once; None for any other src."""
+    header, _, payload = (src or "").partition(",")
+    media_type, _, encoding = header.lower().rpartition(";")
+    if not media_type.startswith(_DATA_IMAGE_PREFIX) or encoding != "base64":
+        return None
+    extension = _EXTENSIONS.get(media_type.removeprefix(_DATA_IMAGE_PREFIX).split(";")[0])
+    if extension is None:
+        return None
+    try:
+        image = base64.b64decode(payload, validate=False)
+    # binascii.Error, what an undecodable payload raises, is a ValueError
+    except ValueError:
+        return None
+    if not image:
+        return None
+    key = hashlib.sha256(image).digest()
+    if key not in names:
+        names[key] = f"{_NAME_PREFIX}{len(names) + 1}.{extension}"
+        (directory / names[key]).write_bytes(image)
+    return names[key]
 
 
 def restore_placeholders(docx: bytes, directory: Path) -> bytes:

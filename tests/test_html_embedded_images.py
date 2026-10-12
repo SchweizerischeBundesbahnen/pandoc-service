@@ -9,6 +9,7 @@ import zipfile
 from typing import TYPE_CHECKING
 
 from app import html_embedded_images
+from app.html_document import parse_document
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,13 +22,22 @@ def _uri(subtype: str, image: bytes) -> str:
     return f"data:image/{subtype};base64,{base64.b64encode(image).decode()}"
 
 
+def _srcs(source: bytes) -> list[str | None]:
+    return [img.get("src") for img in parse_document(source).iter("img")]
+
+
+def _files(directory: Path) -> dict[str, bytes]:
+    return {path.name: path.read_bytes() for path in sorted(directory.iterdir())}
+
+
 def test_an_image_is_written_into_the_directory_and_named_in_its_src(tmp_path: Path):
     source = f'<p><img alt="a" src="{_uri("png", PNG)}" style="width: 10px"/></p>'.encode()
 
     result = html_embedded_images.extract(source, tmp_path)
 
-    assert result == b'<p><img alt="a" src="pandoc-service-image-1.png" style="width: 10px"/></p>'
-    assert (tmp_path / "pandoc-service-image-1.png").read_bytes() == PNG
+    img = next(parse_document(result).iter("img"))
+    assert (img.get("src"), img.get("alt"), img.get("style")) == ("pandoc-service-image-1.png", "a", "width: 10px")
+    assert _files(tmp_path) == {"pandoc-service-image-1.png": PNG}
 
 
 def test_equal_images_share_one_file(tmp_path: Path):
@@ -35,38 +45,59 @@ def test_equal_images_share_one_file(tmp_path: Path):
 
     result = html_embedded_images.extract(source, tmp_path)
 
-    assert result == b'<img src="pandoc-service-image-1.png"><img src=\'pandoc-service-image-1.png\'><img src="pandoc-service-image-2.gif">'
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["pandoc-service-image-1.png", "pandoc-service-image-2.gif"]
+    assert _srcs(result) == ["pandoc-service-image-1.png", "pandoc-service-image-1.png", "pandoc-service-image-2.gif"]
+    assert _files(tmp_path) == {"pandoc-service-image-1.png": PNG, "pandoc-service-image-2.gif": GIF}
 
 
-def test_a_jpeg_keeps_its_bytes_under_the_jpg_extension(tmp_path: Path):
-    source = f'<IMG SRC="{_uri("JPEG", b"jpeg bytes")}">'.encode()
+def test_the_tag_and_the_media_type_are_read_in_any_case(tmp_path: Path):
+    source = f'<IMG SRC="{_uri("JPEG", b"jpeg bytes").replace("data:image", "DATA:IMAGE").replace("base64", "BASE64")}">'.encode()
 
-    assert html_embedded_images.extract(source, tmp_path) == b'<IMG SRC="pandoc-service-image-1.jpg">'
-    assert (tmp_path / "pandoc-service-image-1.jpg").read_bytes() == b"jpeg bytes"
+    assert _srcs(html_embedded_images.extract(source, tmp_path)) == ["pandoc-service-image-1.jpg"]
+    assert _files(tmp_path) == {"pandoc-service-image-1.jpg": b"jpeg bytes"}
 
 
 def test_base64_broken_over_lines_is_read(tmp_path: Path):
     encoded = base64.encodebytes(PNG * 20).decode()
-    source = f'<img src="data:image/png;base64,{encoded}">'.encode()
 
-    html_embedded_images.extract(source, tmp_path)
+    html_embedded_images.extract(f'<img src="data:image/png;base64,{encoded}">'.encode(), tmp_path)
 
-    assert (tmp_path / "pandoc-service-image-1.png").read_bytes() == PNG * 20
+    assert _files(tmp_path) == {"pandoc-service-image-1.png": PNG * 20}
 
 
-def test_what_is_no_raster_data_image_of_an_img_stays_as_it_is(tmp_path: Path):
+def test_the_src_is_read_as_html_reads_it(tmp_path: Path):
+    """Quoted values may hold ">", "<" and "src=", a src may go unquoted and carry an entity."""
+    source = (f'<img title="a > b" alt=\'c < d\' data-x=\' src="{_uri("gif", GIF)}"\' src="{_uri("png", PNG)}"><img src={_uri("png", PNG)}><img src="data:image/png;base64,{base64.b64encode(GIF * 3).decode()}&#61;">').encode()
+
+    result = html_embedded_images.extract(source, tmp_path)
+
+    assert _srcs(result) == ["pandoc-service-image-1.png", "pandoc-service-image-1.png", "pandoc-service-image-2.png"]
+    assert next(parse_document(result).iter("img")).get("data-x") == f' src="{_uri("gif", GIF)}"'
+    assert _files(tmp_path)["pandoc-service-image-2.png"] == GIF * 3
+
+
+def test_what_is_no_raster_data_image_of_an_img_is_left_alone(tmp_path: Path):
     source = (
         f'<img src="{_uri("svg+xml", b"<svg/>")}">'  # pandoc converts an SVG itself
         f'<img src="data:image/png,raw">'  # not base64
         f'<img src="data:image/png;base64,">'  # empty
         f'<img src="https://example.com/a.png">'
+        f"<img>"
         f'<a href="{_uri("png", PNG)}">link</a>'  # not an image of the document
         f'<img data-src="{_uri("png", PNG)}">'  # not its src
     ).encode()
 
-    assert html_embedded_images.extract(source, tmp_path) == source
+    assert html_embedded_images.extract(source, tmp_path) is source
     assert list(tmp_path.iterdir()) == []
+
+
+def test_malformed_html_takes_linear_time(tmp_path: Path):
+    source = b'<img title=">" ' * 200_000
+
+    start = time.perf_counter()
+    result = html_embedded_images.extract(source, tmp_path)
+
+    assert result is source
+    assert time.perf_counter() - start < 5
 
 
 def _docx(parts: dict[str, bytes]) -> bytes:
@@ -114,36 +145,3 @@ def test_a_document_without_placeholders_is_returned_unchanged(tmp_path: Path):
 
 def test_the_output_of_a_conversion_which_extracted_nothing_is_not_read(tmp_path: Path):
     assert html_embedded_images.restore_placeholders(b"%PDF-1.7 not a zip", tmp_path) == b"%PDF-1.7 not a zip"
-
-
-def test_a_quoted_attribute_holding_a_greater_than_sign_does_not_hide_the_src(tmp_path: Path):
-    source = f'<img title="a > b" alt=\'c > d\' src="{_uri("png", PNG)}"/>'.encode()
-
-    result = html_embedded_images.extract(source, tmp_path)
-
-    assert result == b'<img title="a > b" alt=\'c > d\' src="pandoc-service-image-1.png"/>'
-
-
-def test_a_src_inside_another_attribute_is_not_taken_for_the_src(tmp_path: Path):
-    source = f'<img title=" src=&quot;x&quot;" data-x=\' src="{_uri("png", PNG)}"\' src="{_uri("gif", GIF)}">'.encode()
-
-    result = html_embedded_images.extract(source, tmp_path)
-
-    assert result == f'<img title=" src=&quot;x&quot;" data-x=\' src="{_uri("png", PNG)}"\' src="pandoc-service-image-1.gif">'.encode()
-
-
-def test_unfinished_tags_are_scanned_once(tmp_path: Path):
-    """Each search stops at the next "<", so malformed HTML takes time linear in its length."""
-    source = b'<img title=">" ' * 20_000
-
-    start = time.perf_counter()
-    result = html_embedded_images.extract(source, tmp_path)
-
-    assert result == source
-    assert time.perf_counter() - start < 2
-
-
-def test_a_less_than_sign_in_a_quoted_value_keeps_the_data_uri(tmp_path: Path):
-    source = f'<img title="a < b" src="{_uri("png", PNG)}">'.encode()
-
-    assert html_embedded_images.extract(source, tmp_path) == source
