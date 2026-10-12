@@ -18,7 +18,6 @@ files, before the directory is removed.
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import io
 import re
@@ -42,15 +41,17 @@ _EXTENSIONS = {
     b"tiff": "tiff",
 }
 
-# The src of an <img> holding a base64 data: URI of one of those formats. The attributes before it
-# are skipped a quoted value at a time, so a ">" or a "src=" inside a value is not taken for the end
-# of the tag or for its src. No search crosses a "<", quoted or not, so each character is scanned
-# from one tag start at most and malformed HTML takes linear time. A tag the expression does not
-# match, a "<" in a value before the src among them, keeps its data: URI, which pandoc reads as before.
-_IMG_DATA_URI_RE = re.compile(
-    rb"""(<img\b(?:[^<>"']|"[^"<]*"|'[^'<]*')*?\ssrc\s*=\s*)(["'])data:image/([a-z]+);base64,([A-Za-z0-9+/=\s]*)\2""",
-    re.IGNORECASE,
-)
+# An <img> tag up to its ">": a quoted value at a time, so a ">" inside a value does not end it. It
+# never crosses a "<", quoted or not, so each character is scanned from one tag start at most and
+# malformed HTML takes linear time. A tag holding a "<" in a value ends there.
+_IMG_TAG_RE = re.compile(rb"""<img\b(?:[^<>"']|"[^"<]*"|'[^'<]*')*""", re.IGNORECASE)
+
+# An attribute of a tag: its name, and its value quoted or not. A "src=" inside the value of another
+# attribute is part of that value.
+_ATTRIBUTE_RE = re.compile(rb"""([^\s"'<>/=]+)(?:\s*=\s*("[^"<]*"|'[^'<]*'|[^\s"'<>]*))?""")
+
+# A base64 data: URI of an image: its subtype and its payload.
+_DATA_URI_RE = re.compile(rb"data:image/([a-z]+);base64,([a-z0-9+/=\s]*)", re.IGNORECASE)
 
 # The media subtype of each extension, for a data: URI rebuilt from a file.
 _SUBTYPES = {"png": "png", "jpg": "jpeg", "gif": "gif", "bmp": "bmp", "tiff": "tiff"}
@@ -72,26 +73,37 @@ def extract(source: bytes, directory: Path) -> bytes:
     """
     names: dict[bytes, str] = {}
 
-    def replace(match: re.Match[bytes]) -> bytes:
-        extension = _EXTENSIONS.get(match.group(3).lower())
-        if extension is None:
-            return match.group(0)
+    def file_name(uri: bytes) -> str | None:
+        match = _DATA_URI_RE.fullmatch(uri)
+        extension = _EXTENSIONS.get(match.group(1).lower()) if match else None
+        if match is None or extension is None:
+            return None
         try:
-            image = base64.b64decode(match.group(4), validate=False)
-        except binascii.Error, ValueError:
-            return match.group(0)
+            image = base64.b64decode(match.group(2), validate=False)
+        except ValueError:
+            return None
         if not image:
-            return match.group(0)
+            return None
         key = hashlib.sha256(image).digest()
-        name = names.get(key)
-        if name is None:
-            name = f"{_NAME_PREFIX}{len(names) + 1}.{extension}"
-            names[key] = name
-            (directory / name).write_bytes(image)
-        quote = match.group(2)
-        return match.group(1) + quote + name.encode() + quote
+        if key not in names:
+            names[key] = f"{_NAME_PREFIX}{len(names) + 1}.{extension}"
+            (directory / names[key]).write_bytes(image)
+        return names[key]
 
-    return _IMG_DATA_URI_RE.sub(replace, source)
+    def replace(tag: re.Match[bytes]) -> bytes:
+        text = tag.group(0)
+        src = next((attribute for attribute in _ATTRIBUTE_RE.finditer(text, 4) if attribute.group(1).lower() == b"src"), None)
+        if src is None or not src.group(2):
+            return text
+        start, end = src.span(2)
+        quoted = text[start : start + 1] in (b'"', b"'")
+        name = file_name(text[start + 1 : end - 1] if quoted else text[start:end])
+        if name is None:
+            return text
+        value = text[start : start + 1] + name.encode() + text[start : start + 1] if quoted else name.encode()
+        return text[:start] + value + text[end:]
+
+    return _IMG_TAG_RE.sub(replace, source)
 
 
 def restore_placeholders(docx: bytes, directory: Path) -> bytes:
