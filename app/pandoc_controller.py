@@ -42,7 +42,7 @@ from . import (
     pptx_post_process,
 )
 from .chromium_manager import get_chromium_manager
-from .constants import API_VERSION, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions
+from .constants import API_VERSION, PANDOC_HEAP_EXHAUSTED_EXIT_CODE, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions, get_pandoc_max_heap
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
 from .prometheus_metrics import (
@@ -272,6 +272,8 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:
     # limiter below bounds what the container runs at once.
     app_instance.state.pandoc_limiter = anyio.CapacityLimiter(get_max_concurrent_pandoc_conversions())
     logger.info("Conversions limited to %d at the same time", app_instance.state.pandoc_limiter.total_tokens)
+    app_instance.state.pandoc_max_heap = get_pandoc_max_heap()
+    logger.info("pandoc heap limited to %s", app_instance.state.pandoc_max_heap or "nothing")
 
     # Start the persistent Chromium browser used to rasterize embedded SVGs.
     await _start_chromium()
@@ -636,7 +638,7 @@ def _build_pandoc_command(
     # filters can pick up. +empty_paragraphs keeps the empty paragraphs Word
     # prints as blank lines; docx_empty_paragraphs_to_latex renders them.
     pandoc_source_format = f"{source_format}+styles+empty_paragraphs" if apply_docx_latex_filters else source_format
-    cmd = [PANDOC_PATH, "-f", pandoc_source_format, "-t", target_format, "-o", output_path, source_path]
+    cmd = [PANDOC_PATH, *_heap_limit_options(), "-f", pandoc_source_format, "-t", target_format, "-o", output_path, source_path]
 
     # A document names its own resources, and the writers embedding media fetch
     # them: an address on the network, or a path in this container. The sandbox
@@ -748,6 +750,44 @@ def _build_pandoc_command(
     if reference_doc:
         cmd.append(f"--reference-doc={reference_doc}")
     return cmd
+
+
+class PandocHeapExhaustedError(Exception):
+    """A conversion which pandoc stopped at its heap limit, answered as a document too large to convert."""
+
+    def __init__(self, limit: str) -> None:
+        self.message = f"The document needs more memory than a conversion may take ({limit}). Raise PANDOC_MAX_HEAP or the memory of the container."
+        super().__init__(self.message)
+
+
+def get_pandoc_heap_limit() -> str | None:
+    """
+    Return the heap limit of each pandoc process, worked out once.
+
+    The lifespan works it out at startup and logs it, so every conversion runs with the limit the
+    log names and a misconfiguration is warned about once. It is worked out here too, for an
+    application started without its lifespan, as several tests do. See get_pandoc_max_heap.
+    """
+    if not hasattr(app.state, "pandoc_max_heap"):
+        app.state.pandoc_max_heap = get_pandoc_max_heap()
+    limit: str | None = app.state.pandoc_max_heap
+    return limit
+
+
+def _heap_limit_options() -> list[str]:
+    """The runtime options which hold pandoc to its heap limit."""
+    limit = get_pandoc_heap_limit()
+    return ["+RTS", f"-M{limit}", "-RTS"] if limit else []
+
+
+def _run_pandoc(cmd: list[str], environment: dict[str, str] | None) -> None:
+    """Run pandoc, telling a conversion stopped at the heap limit from any other failure."""
+    try:
+        subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, env=environment)
+    except subprocess.CalledProcessError as e:
+        if e.returncode == PANDOC_HEAP_EXHAUSTED_EXIT_CODE:
+            raise PandocHeapExhaustedError(get_pandoc_heap_limit() or "no limit") from e
+        raise
 
 
 def is_sandbox_enabled() -> bool:
@@ -947,7 +987,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             subprocess_start_time = time.time()
             # Only the html -> docx command loads filters/html_embedded_images.lua, which reads the directory from it
             environment = {**os.environ, html_embedded_images.DIRECTORY_VARIABLE: images_directory} if html_to_docx else None
-            subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, env=environment)
+            _run_pandoc(cmd, environment)
             subprocess_duration = time.time() - subprocess_start_time
             observe_subprocess_duration(subprocess_duration)
 
@@ -1327,6 +1367,9 @@ def postprocess_and_build_response(
 
 
 def process_error(e: Exception, err_msg: str, status: int) -> PlainTextResponse:
+    # Whichever endpoint converted it, a document too large for the heap limit is not a bad request
+    if isinstance(e, PandocHeapExhaustedError):
+        err_msg, status = HTTPStatus.REQUEST_ENTITY_TOO_LARGE.phrase, HTTPStatus.REQUEST_ENTITY_TOO_LARGE.value
     sanitized_err_msg = err_msg.replace("\r\n", "").replace("\n", "")
     logger.error("%s: %s", sanitized_err_msg, e, exc_info=e)
     return PlainTextResponse(
