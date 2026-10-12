@@ -22,6 +22,7 @@ import hashlib
 import io
 import logging
 import re
+import secrets
 import zipfile
 from typing import TYPE_CHECKING
 
@@ -56,11 +57,13 @@ _PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
 # The media subtype of each extension, for a data: URI rebuilt from a file.
 _SUBTYPES = {"png": "png", "jpg": "jpeg", "gif": "gif", "bmp": "bmp", "tiff": "tiff"}
 
-# The name an extracted image is given. filters/html_embedded_images.lua accepts this form only.
+# The name an extracted image is given: this prefix, a token of the conversion and a number.
+# filters/html_embedded_images.lua accepts this form only. The token is random, so a src the
+# document writes itself never names an image of the conversion.
 _NAME_PREFIX = "pandoc-service-image-"
 
 # {{IMG:<width>|<height>|<src>}}: see image_placeholder in filters/inline_styles.lua.
-_PLACEHOLDER_RE = re.compile(rf"(\{{\{{IMG:[^|]*\|[^|]*\|)({_NAME_PREFIX}\d+\.([a-z]+))(\}}\}})".encode())
+_PLACEHOLDER_RE = re.compile(rf"(\{{\{{IMG:[^|]*\|[^|]*\|)({_NAME_PREFIX}[0-9a-f]+-\d+\.([a-z]+))(\}}\}})".encode())
 
 # The parts of a DOCX whose text can hold a placeholder.
 _TEXT_PART_RE = re.compile(r"word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml")
@@ -79,8 +82,9 @@ def extract(source: bytes, directory: Path) -> bytes:
         return source
 
     names: dict[bytes, str] = {}
+    token = secrets.token_hex(16)
     for img in doc.iter("img"):
-        name = _extract_image(img.get("src"), directory, names)
+        name = _extract_image(img.get("src"), directory, names, token)
         if name is not None:
             img.set("src", name)
     if not names:
@@ -88,7 +92,7 @@ def extract(source: bytes, directory: Path) -> bytes:
     return html.tostring(doc, encoding="utf-8")
 
 
-def _extract_image(src: str | None, directory: Path, names: dict[bytes, str]) -> str | None:
+def _extract_image(src: str | None, directory: Path, names: dict[bytes, str], token: str) -> str | None:
     """The file name of the image of a ``data:`` URI, written into `directory` once; None for any other src."""
     header, _, payload = (src or "").partition(",")
     media_type, _, encoding = header.lower().rpartition(";")
@@ -106,7 +110,7 @@ def _extract_image(src: str | None, directory: Path, names: dict[bytes, str]) ->
         return None
     key = hashlib.sha256(image).digest()
     if key not in names:
-        names[key] = f"{_NAME_PREFIX}{len(names) + 1}.{extension}"
+        names[key] = f"{_NAME_PREFIX}{token}-{len(names) + 1}.{extension}"
         (directory / names[key]).write_bytes(image)
     return names[key]
 

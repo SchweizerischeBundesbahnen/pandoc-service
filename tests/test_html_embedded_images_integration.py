@@ -64,9 +64,11 @@ def test_an_image_in_a_styled_span_and_in_a_styled_table_reaches_the_docx(test_p
 
 
 def test_a_document_naming_an_image_file_itself_gets_no_image(test_parameters: TestParameters):
+    """Neither a path of the container nor a name of the form the service gives the images of the conversion."""
     red = _image((255, 0, 0), "PNG")
-    html = f'<p><img src="{_uri("png", red)}"/></p><p><img src="pandoc-service-image-2.png"/><img src="/etc/hostname"/></p>'
+    html = f'<p><img src="pandoc-service-image-1.png"/><img src="pandoc-service-image-0123abcd-1.png"/><img src="/etc/hostname"/></p><p><img src="{_uri("png", red)}"/></p>'
 
     docx = _convert(test_parameters, html)
 
     assert _media(docx) == [red]
+    assert _drawings(docx) == 1
