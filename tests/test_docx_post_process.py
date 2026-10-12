@@ -2620,6 +2620,30 @@ def test_an_image_in_a_column_of_a_guessed_grid_is_not_held_to_an_even_share():
     assert _first_image_width(doc) == (image_column - 2 * 108) * 635
 
 
+def test_an_even_grid_pandoc_gives_a_table_with_a_line_break_is_laid_out_by_its_content():
+    """pandoc splits a table evenly and states its width when a cell holds a line break; the HTML states no column; #272."""
+    from docx import Document
+
+    from app.html_table_layout import TableLayout
+
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    for col in table._tbl.tblGrid.findall(f"{{{SCHEMA}}}gridCol"):
+        col.set(f"{{{SCHEMA}}}w", "4680")
+    _state_grid(table)
+    table.cell(0, 0).paragraphs[0].add_run("Store")
+    definition = table.cell(0, 1).paragraphs[0]
+    definition.add_run("An area of the portal that lists a subset of the eBooks of the library.").add_break()
+    definition.add_run("(eBooks that users can purchase a personal copy license for.)")
+
+    _process_table(table, 0, max_width=int(6.5 * 914400), layout_iter=iter([TableLayout(width_type="pct", width_value=5000)]))
+
+    term, definition_column = _grid_twips(table)
+    assert term < 0.25 * 6.5 * 1440
+    assert definition_column > 0.75 * 6.5 * 1440
+    assert _cell_widths_twips(table) == [term, definition_column]
+
+
 def test_a_stated_grid_is_scaled_to_the_width_of_the_table():
     """A grid pandoc took from a colgroup adds up to its own text width, not to the page the table is on."""
     doc, table = _table_with_image([1584, 6336], image_inches=9)
