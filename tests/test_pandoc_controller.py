@@ -1765,7 +1765,7 @@ def test_table_layouts_are_read_off_the_event_loop(url, request_kwargs):
 def test_pandoc_runs_under_its_heap_limit():
     from app.pandoc_controller import _build_pandoc_command
 
-    with patch("app.pandoc_controller.get_pandoc_max_heap", return_value="3072m"):
+    with patch("app.pandoc_controller.get_pandoc_heap_limit", return_value="3072m"):
         cmd = _build_pandoc_command(source_format="html", target_format="docx", source_path="in.html", output_path="out.docx", validated_options=[], apply_docx_latex_filters=False)
 
     assert cmd[:4] == ["/usr/local/bin/pandoc", "+RTS", "-M3072m", "-RTS"]
@@ -1774,7 +1774,7 @@ def test_pandoc_runs_under_its_heap_limit():
 def test_pandoc_runs_without_runtime_options_when_it_has_no_heap_limit():
     from app.pandoc_controller import _build_pandoc_command
 
-    with patch("app.pandoc_controller.get_pandoc_max_heap", return_value=None):
+    with patch("app.pandoc_controller.get_pandoc_heap_limit", return_value=None):
         cmd = _build_pandoc_command(source_format="html", target_format="docx", source_path="in.html", output_path="out.docx", validated_options=[], apply_docx_latex_filters=False)
 
     assert "+RTS" not in cmd
@@ -1785,7 +1785,7 @@ def test_a_conversion_stopped_at_the_heap_limit_is_answered_as_too_large():
 
     with (
         patch("subprocess.run", side_effect=subprocess.CalledProcessError(251, ["pandoc"])),
-        patch("app.pandoc_controller.get_pandoc_max_heap", return_value="3072m"),
+        patch("app.pandoc_controller.get_pandoc_heap_limit", return_value="3072m"),
         pytest.raises(PandocHeapExhaustedError) as raised,
     ):
         _run_pandoc(["pandoc"], None)
@@ -1801,3 +1801,16 @@ def test_any_other_failure_of_pandoc_is_raised_as_it_is():
 
     with patch("subprocess.run", side_effect=subprocess.CalledProcessError(64, ["pandoc"])), pytest.raises(subprocess.CalledProcessError):
         _run_pandoc(["pandoc"], None)
+
+
+def test_the_heap_limit_is_worked_out_once():
+    from app.pandoc_controller import app, get_pandoc_heap_limit
+
+    if hasattr(app.state, "pandoc_max_heap"):
+        del app.state.pandoc_max_heap
+    try:
+        with patch("app.pandoc_controller.get_pandoc_max_heap", return_value="512m") as worked_out:
+            assert [get_pandoc_heap_limit(), get_pandoc_heap_limit()] == ["512m", "512m"]
+        assert worked_out.call_count == 1
+    finally:
+        del app.state.pandoc_max_heap

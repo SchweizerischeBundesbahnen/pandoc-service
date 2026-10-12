@@ -272,7 +272,8 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:
     # limiter below bounds what the container runs at once.
     app_instance.state.pandoc_limiter = anyio.CapacityLimiter(get_max_concurrent_pandoc_conversions())
     logger.info("Conversions limited to %d at the same time", app_instance.state.pandoc_limiter.total_tokens)
-    logger.info("pandoc heap limited to %s", get_pandoc_max_heap() or "nothing")
+    app_instance.state.pandoc_max_heap = get_pandoc_max_heap()
+    logger.info("pandoc heap limited to %s", app_instance.state.pandoc_max_heap or "nothing")
 
     # Start the persistent Chromium browser used to rasterize embedded SVGs.
     await _start_chromium()
@@ -759,9 +760,23 @@ class PandocHeapExhaustedError(Exception):
         super().__init__(self.message)
 
 
+def get_pandoc_heap_limit() -> str | None:
+    """
+    Return the heap limit of each pandoc process, worked out once.
+
+    The lifespan works it out at startup and logs it, so every conversion runs with the limit the
+    log names and a misconfiguration is warned about once. It is worked out here too, for an
+    application started without its lifespan, as several tests do. See get_pandoc_max_heap.
+    """
+    if not hasattr(app.state, "pandoc_max_heap"):
+        app.state.pandoc_max_heap = get_pandoc_max_heap()
+    limit: str | None = app.state.pandoc_max_heap
+    return limit
+
+
 def _heap_limit_options() -> list[str]:
-    """The runtime options which hold pandoc to its heap limit; see get_pandoc_max_heap."""
-    limit = get_pandoc_max_heap()
+    """The runtime options which hold pandoc to its heap limit."""
+    limit = get_pandoc_heap_limit()
     return ["+RTS", f"-M{limit}", "-RTS"] if limit else []
 
 
@@ -771,7 +786,7 @@ def _run_pandoc(cmd: list[str], environment: dict[str, str] | None) -> None:
         subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, env=environment)
     except subprocess.CalledProcessError as e:
         if e.returncode == PANDOC_HEAP_EXHAUSTED_EXIT_CODE:
-            raise PandocHeapExhaustedError(get_pandoc_max_heap() or "no limit") from e
+            raise PandocHeapExhaustedError(get_pandoc_heap_limit() or "no limit") from e
         raise
 
 

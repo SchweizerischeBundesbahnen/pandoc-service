@@ -110,7 +110,8 @@ def get_pandoc_max_heap() -> str | None:
     The heap limit of each pandoc process, in the form of ``+RTS -M``, or None for none.
 
     pandoc beyond its limit stops with "Heap exhausted" instead of growing until the kernel kills
-    it, or kills another process of the container. PANDOC_MAX_HEAP states it, such as ``2g``, or
+    it, or kills another process of the container. The limit holds the Haskell heap only: what the
+    Lua filters and the C libraries of pandoc allocate lies outside it, so it is no hard bound. PANDOC_MAX_HEAP states it, such as ``2g``, or
     ``0`` for no limit. Unset, the memory limit of the container less 1 GB for the rest of it, at
     least half of the memory, is shared between the conversions which may run at the same time.
     A container without a memory limit gets none.
