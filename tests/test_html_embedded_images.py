@@ -113,3 +113,19 @@ def test_a_document_without_placeholders_is_returned_unchanged(tmp_path: Path):
 
 def test_the_output_of_a_conversion_which_extracted_nothing_is_not_read(tmp_path: Path):
     assert html_embedded_images.restore_placeholders(b"%PDF-1.7 not a zip", tmp_path) == b"%PDF-1.7 not a zip"
+
+
+def test_a_quoted_attribute_holding_a_greater_than_sign_does_not_hide_the_src(tmp_path: Path):
+    source = f'<img title="a > b" alt=\'c > d\' src="{_uri("png", PNG)}"/>'.encode()
+
+    result = html_embedded_images.extract(source, tmp_path)
+
+    assert result == b'<img title="a > b" alt=\'c > d\' src="pandoc-service-image-1.png"/>'
+
+
+def test_a_src_inside_another_attribute_is_not_taken_for_the_src(tmp_path: Path):
+    source = f'<img title=" src=&quot;x&quot;" data-x=\' src="{_uri("png", PNG)}"\' src="{_uri("gif", GIF)}">'.encode()
+
+    result = html_embedded_images.extract(source, tmp_path)
+
+    assert result == f'<img title=" src=&quot;x&quot;" data-x=\' src="{_uri("png", PNG)}"\' src="pandoc-service-image-1.gif">'.encode()
