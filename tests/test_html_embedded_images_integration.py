@@ -72,3 +72,15 @@ def test_a_document_naming_an_image_file_itself_gets_no_image(test_parameters: T
 
     assert _media(docx) == [red]
     assert _drawings(docx) == 1
+
+
+def test_the_images_of_a_document_with_a_base_address_reach_the_docx(test_parameters: TestParameters):
+    """pandoc resolves a src against <base href>, a data: URI aside, so the filter gets the name inside an address."""
+    red, green = _image((255, 0, 0), "PNG"), _image((0, 255, 0), "PNG")
+    html = f'<html><head><base href="https://polarion.example/polarion/"/></head><body><p><img src="{_uri("png", red)}"/></p><p><span style="color: #00ff00">Text <img src="{_uri("png", green)}"/></span></p></body></html>'
+
+    docx = _convert(test_parameters, html)
+
+    assert sorted(_media(docx)) == sorted([red, green])
+    with zipfile.ZipFile(io.BytesIO(docx)) as archive:
+        assert "{{IMG:" not in archive.read("word/document.xml").decode()
