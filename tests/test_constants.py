@@ -117,7 +117,9 @@ def test_a_container_without_a_memory_limit_gets_no_pandoc_heap_limit(cgroup, v2
     assert constants.get_pandoc_max_heap() is None
 
 
-def test_a_small_container_still_gives_pandoc_some_heap(cgroup):
-    cgroup[0].write_text(str(32 * 1024 * 1024))
+def test_the_pandoc_heap_limits_never_add_up_to_more_than_the_container_memory(cgroup, monkeypatch, caplog):
+    cgroup[0].write_text(str(2 * 1024 * 1024 * 1024))
+    monkeypatch.setenv("MAX_CONCURRENT_PANDOC_CONVERSIONS", "40")
 
-    assert constants.get_pandoc_max_heap() == "64m"
+    assert constants.get_pandoc_max_heap() == "25m"  # 1 GiB, half of the memory, for 40 conversions
+    assert "40 conversions at the same time leave each pandoc 25 MB" in caplog.text

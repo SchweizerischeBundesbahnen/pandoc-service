@@ -1,5 +1,6 @@
 """Small shared helpers for environment configuration."""
 
+import functools
 import logging
 import os
 import re
@@ -95,7 +96,8 @@ def get_graceful_shutdown_timeout() -> int:
 # beside a large conversion, and the least share of the memory the pandoc processes get together
 _NON_PANDOC_MEMORY = 1024 * 1024 * 1024
 _MIN_PANDOC_MEMORY_SHARE = 0.5
-_MIN_PANDOC_HEAP_MB = 64
+# A heap below this fails most documents: the configuration earns a warning, but the budget holds
+_SMALL_PANDOC_HEAP_MB = 64
 _PANDOC_HEAP_RE = re.compile(r"\d+[kmg]?", re.IGNORECASE)
 _NO_PANDOC_HEAP_LIMIT = ("0", "none", "off", "false")
 # The memory limit of the container: cgroup v2, then v1. v1 states no limit as a value near 2**63.
@@ -124,8 +126,21 @@ def get_pandoc_max_heap() -> str | None:
     if memory is None:
         return None
     pandoc_memory = max(memory - _NON_PANDOC_MEMORY, int(memory * _MIN_PANDOC_MEMORY_SHARE))
-    share = pandoc_memory // get_max_concurrent_pandoc_conversions() // (1024 * 1024)
-    return f"{max(share, _MIN_PANDOC_HEAP_MB)}m"
+    conversions = get_max_concurrent_pandoc_conversions()
+    share = max(pandoc_memory // conversions // (1024 * 1024), 1)
+    if share < _SMALL_PANDOC_HEAP_MB:
+        _warn_of_a_small_heap(share, conversions)
+    return f"{share}m"
+
+
+@functools.cache
+def _warn_of_a_small_heap(share: int, conversions: int) -> None:
+    """Warn once that the memory of the container leaves each conversion too little."""
+    logger.warning(
+        "%d conversions at the same time leave each pandoc %d MB, which fails most documents: raise the memory of the container or lower MAX_CONCURRENT_PANDOC_CONVERSIONS",
+        conversions,
+        share,
+    )
 
 
 def _container_memory_limit() -> int | None:
