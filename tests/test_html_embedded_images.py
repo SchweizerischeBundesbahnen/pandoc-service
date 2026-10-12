@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import time
 import zipfile
 from typing import TYPE_CHECKING
 
@@ -129,3 +130,20 @@ def test_a_src_inside_another_attribute_is_not_taken_for_the_src(tmp_path: Path)
     result = html_embedded_images.extract(source, tmp_path)
 
     assert result == f'<img title=" src=&quot;x&quot;" data-x=\' src="{_uri("png", PNG)}"\' src="pandoc-service-image-1.gif">'.encode()
+
+
+def test_unfinished_tags_are_scanned_once(tmp_path: Path):
+    """Each search stops at the next "<", so malformed HTML takes time linear in its length."""
+    source = b'<img title=">" ' * 20_000
+
+    start = time.perf_counter()
+    result = html_embedded_images.extract(source, tmp_path)
+
+    assert result == source
+    assert time.perf_counter() - start < 2
+
+
+def test_a_less_than_sign_in_a_quoted_value_keeps_the_data_uri(tmp_path: Path):
+    source = f'<img title="a < b" src="{_uri("png", PNG)}">'.encode()
+
+    assert html_embedded_images.extract(source, tmp_path) == source

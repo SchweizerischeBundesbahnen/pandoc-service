@@ -44,10 +44,11 @@ _EXTENSIONS = {
 
 # The src of an <img> holding a base64 data: URI of one of those formats. The attributes before it
 # are skipped a quoted value at a time, so a ">" or a "src=" inside a value is not taken for the end
-# of the tag or for its src. A tag the expression does not match keeps its data: URI, which pandoc
-# reads as before.
+# of the tag or for its src. No search crosses a "<", quoted or not, so each character is scanned
+# from one tag start at most and malformed HTML takes linear time. A tag the expression does not
+# match, a "<" in a value before the src among them, keeps its data: URI, which pandoc reads as before.
 _IMG_DATA_URI_RE = re.compile(
-    rb"""(<img\b(?:[^>"']|"[^"]*"|'[^']*')*?\ssrc\s*=\s*)(["'])data:image/([a-z]+);base64,([A-Za-z0-9+/=\s]*)\2""",
+    rb"""(<img\b(?:[^<>"']|"[^"<]*"|'[^'<]*')*?\ssrc\s*=\s*)(["'])data:image/([a-z]+);base64,([A-Za-z0-9+/=\s]*)\2""",
     re.IGNORECASE,
 )
 
