@@ -906,11 +906,14 @@ def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None
     widths, so the two agree. A grid holding the widths the HTML states is kept, scaled to the
     table. Otherwise the widths the HTML states for the cells decide, and the content of each
     column where it states none: see :mod:`app.docx_table_columns`.
+
+    The grid is trusted only without the HTML of the table. pandoc also splits a table evenly
+    when a cell holds a line break, and the HTML then shows that it states no column.
     """
     table_width = _table_width_emu(table_properties, max_width)
     stated = layout.column_widths if layout is not None else None
     grid = _column_widths_emu(tbl)
-    if stated is None and grid_is_stated and grid is not None:
+    if layout is None and grid_is_stated and grid is not None:
         widths: list[int] | None = [width * table_width // sum(grid) for width in grid]
     else:
         widths = docx_table_columns.decide(tbl, table_width, stated, lambda tc: _cell_side_margins_emu(tbl, tc, styles), styles)
