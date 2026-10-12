@@ -175,3 +175,15 @@ def test_a_document_without_placeholders_is_returned_unchanged(tmp_path: Path):
 
 def test_the_output_of_a_conversion_which_extracted_nothing_is_not_read(tmp_path: Path):
     assert html_embedded_images.restore_placeholders(b"%PDF-1.7 not a zip", tmp_path) == b"%PDF-1.7 not a zip"
+
+
+def test_text_is_read_as_utf_8_as_pandoc_reads_it(tmp_path: Path):
+    """lxml guesses Latin-1 for HTML declaring no charset; pandoc reads UTF-8 whatever a document declares."""
+    image = f'<img src="{_uri("png", PNG)}">'
+    for source in (
+        f"<p>café Grüße 日本</p>{image}".encode(),
+        f'<html><head><meta charset="iso-8859-1"></head><body><p>café Grüße 日本</p>{image}</body></html>'.encode(),
+    ):
+        result = html_embedded_images.extract(source, tmp_path)
+
+        assert "café Grüße 日本" in result.decode("utf-8")

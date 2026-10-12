@@ -7,6 +7,10 @@ ends there, and a pre-processor that writes it back drops the rest of the
 document. ``huge_tree`` lifts those limits. The request size limit of the
 service still bounds the input.
 
+The input is read as UTF-8, as pandoc reads it whatever a document declares.
+Left to itself, libxml2 takes a document declaring no charset for Latin-1, and
+a pre-processor writing the tree back as UTF-8 turns "café" into "cafÃ©".
+
 The cost of a parse grows with the input, not with ``huge_tree``: about 3 ms
 and 1 MB of memory per MB parsed, and about 4 times the input at the peak when
 the tree is written back.
@@ -22,4 +26,4 @@ def parse_document(source: bytes) -> html.HtmlElement:
 
     A new parser per call keeps calls independent of each other; creating one is cheap.
     """
-    return html.document_fromstring(source, parser=html.HTMLParser(huge_tree=True))
+    return html.document_fromstring(source, parser=html.HTMLParser(huge_tree=True, encoding="utf-8"))
