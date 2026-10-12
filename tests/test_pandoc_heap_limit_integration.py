@@ -38,6 +38,7 @@ def heap_limited_url(pandoc_container):
                 if requests.get(f"{url}/version", timeout=2).status_code == 200:
                     break
             except requests.exceptions.RequestException:
+                # The service is still starting and refuses the connection: try again
                 pass
             time.sleep(1)
         else:
