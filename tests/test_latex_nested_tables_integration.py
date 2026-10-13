@@ -84,3 +84,20 @@ def test_an_image_only_in_a_nested_table_of_a_docx_reaches_the_pdf(test_paramete
 
     assert "Beside" in _text(pdf)
     assert _images(pdf) == 1
+
+
+def test_a_nested_table_with_an_identifier_a_foot_or_a_table_of_its_own_reaches_the_pdf(test_parameters: TestParameters):
+    html = (
+        "<table><tr><td>Outer</td><td>"
+        '<table id="t1"><tr><td>Identified</td></tr></table>'
+        "<table><tbody><tr><td>Body</td></tr></tbody><tfoot><tr><td>Footer</td></tr></tfoot></table>"
+        "<table><tr><td>Middle<table><tr><td>Deepest</td></tr></table></td></tr></table>"
+        "</td></tr></table>"
+    )
+
+    pdf = _post(test_parameters, "/convert/html/to/pdf", data=html.encode())
+
+    text = _text(pdf)
+    assert all(word in text for word in ("Outer", "Identified", "Body", "Footer", "Middle", "Deepest")), text
+    # The foot closes its table: it is set after the body
+    assert text.index("Body") < text.index("Footer"), text

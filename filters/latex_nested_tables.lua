@@ -12,7 +12,8 @@
 local AS_TABULAR = table.concat({
   "\\begingroup",
   "\\let\\longtable\\tabular",
-  "\\let\\pandocnestedbottomrule\\bottomrule",
+  -- The rule of the document, saved by the outermost nested table only
+  "\\ifdefined\\pandocnestedbottomrule\\else\\let\\pandocnestedbottomrule\\bottomrule\\fi",
   "\\def\\endlongtable{\\pandocnestedbottomrule\\endtabular}",
   "\\def\\bottomrule{\\noalign{}}",
   "\\def\\endhead{}\\def\\endfirsthead{}\\def\\endfoot{}\\def\\endlastfoot{}",
@@ -38,6 +39,20 @@ local function as_tabular(tbl)
   -- A caption needs a longtable or a float: it goes before the table as a paragraph
   local blocks = pandoc.Blocks(tbl.caption.long)
   tbl.caption = pandoc.Caption()
+  -- An identifier makes pandoc write \caption{}\label{} still: an anchor before the table keeps it
+  if tbl.identifier ~= "" then
+    blocks:insert(pandoc.Plain({ pandoc.Span({}, { id = tbl.identifier }) }))
+    tbl.identifier = ""
+  end
+  -- A longtable sets its foot at its end, a tabular where it is written, before the body
+  if #tbl.foot.rows > 0 and #tbl.bodies > 0 then
+    local last = tbl.bodies[#tbl.bodies]
+    for _, row in ipairs(tbl.foot.rows) do
+      last.body:insert(row)
+    end
+    tbl.bodies[#tbl.bodies] = last
+    tbl.foot = pandoc.TableFoot()
+  end
   blocks:insert(pandoc.RawBlock("latex", AS_TABULAR))
   blocks:insert(tbl)
   blocks:insert(pandoc.RawBlock("latex", "\\endgroup"))
