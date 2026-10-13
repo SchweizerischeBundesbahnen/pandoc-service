@@ -2092,7 +2092,7 @@ def test_a_cell_beyond_the_grid_falls_back_to_the_even_share():
     cell = MagicMock()
     cell._tc.grid_offset, cell._tc.grid_span = 3, 1
 
-    assert _cell_image_width(MagicMock(), cell, [5280 * 635, 5280 * 635], 1234.0, 6 * 914400) == 1234.0
+    assert _cell_image_width(cell, [5280 * 635, 5280 * 635], 1234.0, 6 * 914400, MagicMock()) == 1234.0
 
 
 def test_a_grid_wider_than_the_page_does_not_let_an_image_past_it():
@@ -2191,6 +2191,22 @@ def test_cell_margins_come_from_each_style_which_states_a_side():
 
     # 600 from the parent style, 400 from the style the table names; neither side falls back to 108
     assert _first_image_width(doc) == (5280 - 600 - 400) * 635
+
+
+def test_the_styles_of_a_table_are_read_once_for_all_its_cells():
+    """Each lookup scans every style of the document, and a table of thousands of cells did it for each; #286."""
+    from docx import Document
+
+    from app.docx_post_process import _process_table
+
+    doc = Document()
+    table = doc.add_table(rows=20, cols=5, style="Table Grid")
+    _state_grid(table)
+
+    with patch.object(docx_post_process, "_style_cell_margins", wraps=docx_post_process._style_cell_margins) as lookup:
+        _process_table(table, 0, max_width=int(6.5 * 914400))
+
+    assert lookup.call_count == 1
 
 
 # ---- placeholder images sized like pandoc's own ----

@@ -16,7 +16,7 @@ from docx.oxml.ns import nsdecls
 from lxml import etree  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from docx.document import Document as DocumentObject
     from docx.section import Section
@@ -872,7 +872,13 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
     grid_is_stated = _grid_is_stated(tbl, table_properties)
     _apply_table_layout(tbl, table_properties, layout, max_width)
     styles = _table_styles(table)
-    _lay_out_columns(tbl, table_properties, layout, max_width, styles, grid_is_stated=grid_is_stated)
+    # Read once for every cell: the margins of the table and its styles are the same in each
+    table_margins = _table_cell_margins(tbl, styles)
+
+    def cell_margins(tc: Any) -> int:
+        return _cell_side_margins_emu(table_margins, tc)
+
+    _lay_out_columns(tbl, table_properties, layout, max_width, styles, cell_margins, grid_is_stated=grid_is_stated)
 
     # Read after the layout, which decided the grid.
     column_widths = _column_widths_emu(tbl)
@@ -880,7 +886,7 @@ def _process_table(table: Table, parent_columns_count: int, max_width: int, layo
     # Process nested tables
     for row in table.rows:
         for cell in row.cells:
-            cell_width = _cell_image_width(tbl, cell, column_widths, max_width / columns_count, max_width, styles)
+            cell_width = _cell_image_width(cell, column_widths, max_width / columns_count, max_width, cell_margins)
             _resize_images_in_cell(cell, cell_width)
             # A nested table sits inside this cell, so nothing in it may be wider than the cell is
             for sub_table in cell.tables:
@@ -899,7 +905,7 @@ def _grid_is_stated(tbl: Any, table_properties: Any) -> bool:
     return tbl_w is not None and tbl_w.get(f"{{{SCHEMA}}}type") not in (None, "auto") and _column_widths_emu(tbl) is not None
 
 
-def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int, styles: Any, *, grid_is_stated: bool) -> None:
+def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None, max_width: int, styles: Any, cell_margins: Callable[[Any], int], *, grid_is_stated: bool) -> None:
     """Decide the width of each column and write it into the grid and into each cell.
 
     Images in a cell are fitted to the grid afterwards, and Word lays out the cells by their
@@ -916,7 +922,7 @@ def _lay_out_columns(tbl: Any, table_properties: Any, layout: TableLayout | None
     if layout is None and grid_is_stated and grid is not None:
         widths: list[int] | None = [width * table_width // sum(grid) for width in grid]
     else:
-        widths = docx_table_columns.decide(tbl, table_width, stated, lambda tc: _cell_side_margins_emu(tbl, tc, styles), styles)
+        widths = docx_table_columns.decide(tbl, table_width, stated, cell_margins, styles)
     if widths:
         _write_column_widths(tbl, widths)
 
@@ -1028,10 +1034,18 @@ def _style_cell_margins(styles: Any, tbl: Any) -> list[Any]:
     return chain
 
 
-def _cell_side_margins_emu(tbl: Any, tc: Any, styles: Any = None) -> int:
-    """Left plus right margin of a cell: its own, else the table's, else its styles', else Word's default."""
+def _table_cell_margins(tbl: Any, styles: Any) -> list[Any]:
+    """The `tblCellMar` of the styles of the table, then its own, weakest first: what every cell of it starts from."""
+    return [*_style_cell_margins(styles, tbl), tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA})]
+
+
+def _cell_side_margins_emu(table_margins: list[Any], tc: Any) -> int:
+    """Left plus right margin of a cell: its own, else the table's, else its styles', else Word's default.
+
+    `table_margins` is what :func:`_table_cell_margins` read for the table of the cell.
+    """
     total = 0
-    scopes = [*_style_cell_margins(styles, tbl), tbl.find("w:tblPr/w:tblCellMar", namespaces={"w": SCHEMA}), tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})]
+    scopes = [*table_margins, tc.find("w:tcPr/w:tcMar", namespaces={"w": SCHEMA})]
     for side, alternative in (("left", "start"), ("right", "end")):
         width = DEFAULT_CELL_SIDE_MARGIN_TWIPS
         # Last one wins, so they are read from the weakest scope to the strongest
@@ -1047,7 +1061,7 @@ def _cell_side_margins_emu(tbl: Any, tc: Any, styles: Any = None) -> int:
     return total * TWIPS_TO_EMU
 
 
-def _cell_image_width(tbl: Any, cell: _Cell, column_widths: list[int] | None, fallback: float, limit: float, styles: Any = None) -> float:
+def _cell_image_width(cell: _Cell, column_widths: list[int] | None, fallback: float, limit: float, cell_margins: Callable[[Any], int]) -> float:
     """The widest an image in the cell may be: its columns less the cell margins.
 
     A cell spanning columns takes the sum of them. Without a usable grid the even share of the page
@@ -1062,7 +1076,7 @@ def _cell_image_width(tbl: Any, cell: _Cell, column_widths: list[int] | None, fa
     columns = column_widths[tc.grid_offset : tc.grid_offset + tc.grid_span]
     if not columns:
         return min(fallback, limit)
-    return max(min(sum(columns) - _cell_side_margins_emu(tbl, tc, styles), limit), 1)
+    return max(min(sum(columns) - cell_margins(tc), limit), 1)
 
 
 def _clamp_twips(width_twips: int, max_width_emu: int) -> int:
