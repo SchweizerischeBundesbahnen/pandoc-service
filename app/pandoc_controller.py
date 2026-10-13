@@ -84,6 +84,7 @@ FILTERS = {
     "html_embedded_images": f"{FILTER_BASE_PATH}/html_embedded_images.lua",
     "html_trailing_line_breaks": f"{FILTER_BASE_PATH}/html_trailing_line_breaks.lua",
     "html_whitespace": f"{FILTER_BASE_PATH}/html_whitespace.lua",
+    "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
@@ -733,6 +734,12 @@ def _build_pandoc_command(
                 f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
             ]
         )
+
+    # A table nested in a table cell is set as a tabular, which LaTeX can set in a
+    # cell where pandoc's longtable fails. Last of the filters, and after the sandbox
+    # filters, which would drop its raw TeX as they drop the document's.
+    if target_format in _LATEX_TARGET_FORMATS:
+        cmd.append(f"--lua-filter={FILTERS['latex_nested_tables']}")
 
     if validated_options:
         cmd.extend(validated_options)
