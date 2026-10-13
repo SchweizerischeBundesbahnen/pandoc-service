@@ -25,8 +25,6 @@ EMU_PER_TWIP = 635
 EMU_PER_POINT = 12700
 # OOXML states a percentage in fiftieths of a percent: 100 % is 5000.
 FULL_PCT = 5000
-# The narrowest a picture is laid out when its column is short of space: one inch.
-MIN_IMAGE_WIDTH_EMU = 914400
 # An average character of a proportional font is about half its size wide.
 CHARACTER_WIDTH_EM = 0.5
 # Word's default tab stop: half an inch.
@@ -59,6 +57,11 @@ def decide(tbl: Any, table_width: int, stated: Sequence[ColumnWidth | None] | No
     for index, width in enumerate(stated_emu):
         if width is not None:
             minimums[index] = maximums[index] = width
+    # The columns without a stated width share what the stated ones leave
+    free = [index for index in range(columns) if not fixed[index]]
+    room = max(table_width - sum(width or 0 for width in stated_emu), 0)
+    for index, minimum in zip(free, _cap([minimums[index] for index in free], room), strict=True):
+        minimums[index] = minimum
     return distribute(minimums, maximums, table_width, fixed)
 
 
@@ -152,6 +155,24 @@ def _stated_emu(stated: Sequence[ColumnWidth | None] | None, columns: int, table
     return widths
 
 
+def _cap(minimums: list[int], width: int) -> list[int]:
+    """Lower the widest of `minimums` to one level until they fit `width`, the narrow ones left whole.
+
+    A picture wider than the table would otherwise take a share of the others' narrowest, and the
+    text beside it would break inside its words. It gives up what the table lacks instead.
+    """
+    if sum(minimums) <= width:
+        return minimums
+    level, rest = width, len(minimums)
+    for minimum in sorted(minimums):
+        if minimum * rest > level:
+            break
+        level -= minimum
+        rest -= 1
+    cap = level // rest if rest else 0
+    return [min(minimum, cap) for minimum in minimums]
+
+
 def _scale(widths: list[int], width: int) -> list[int]:
     total = sum(widths)
     if total <= 0:
@@ -185,7 +206,8 @@ def _paragraph_extent(p: Any, font_sizes: _FontSizes) -> tuple[int, int]:
     for element in p.iter(f"{_W}t", f"{_W}br", f"{_W}cr", f"{_W}tab", f"{{{WP_NS}}}extent"):
         if element.tag == f"{{{WP_NS}}}extent":
             width = _int_attribute(element, "cx")
-            minimum = max(minimum, min(width, MIN_IMAGE_WIDTH_EMU))
+            # A browser keeps a picture of its size and wraps the text beside it
+            minimum = max(minimum, width)
             line += width
         elif element.tag == f"{_W}t":
             character = font_sizes.run(element.getparent(), paragraph_size) * EMU_PER_POINT * CHARACTER_WIDTH_EM / 2
