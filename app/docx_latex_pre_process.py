@@ -19,7 +19,7 @@ running each rewrite on its own — only much lighter on memory.
 
 from __future__ import annotations
 
-from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_paragraph_pre_process, docx_table_pre_process
+from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_page_geometry, docx_paragraph_pre_process, docx_table_pre_process
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -28,6 +28,7 @@ def _rewrite_body_part(
     has_styles: bool,
     color_styles: dict[str, docx_color_pre_process._StyleSpec],
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec],
+    text_width_twips: int,
 ) -> tuple[bytes, bool]:
     """Run the colour → paragraph → list → table rewrites over one body part,
     collecting any synthetic styles into the shared dicts.  Returns
@@ -45,7 +46,7 @@ def _rewrite_body_part(
     rewritten, list_changed = docx_list_level_pre_process.rewrite_part(xml)
     if list_changed:
         xml, changed = rewritten, True
-    rewritten, table_changed = docx_table_pre_process.rewrite_part(xml)
+    rewritten, table_changed = docx_table_pre_process.rewrite_part(xml, text_width_twips)
     if table_changed:
         xml, changed = rewritten, True
     rewritten, math_color_changed = docx_math_color_pre_process.rewrite_part(xml)
@@ -83,9 +84,11 @@ def preprocess(docx_bytes: bytes) -> bytes:
     color_styles: dict[str, docx_color_pre_process._StyleSpec] = {}
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec] = {}
     changed = False
+    # The line LaTeX sets the PDF at, for the tables of every part
+    text_width_twips = docx_page_geometry.package_text_width_twips(entries)
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips)
         changed = changed or part_changed
 
     if not changed:
