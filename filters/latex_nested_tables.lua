@@ -11,10 +11,11 @@
 
 local AS_TABULAR = table.concat({
   "\\begingroup",
-  "\\let\\longtable\\tabular",
+  -- The \LTleft and \LTright glue the table filters set aligns the tabular as it did the longtable
+  "\\def\\longtable{\\par\\noindent\\hskip\\LTleft\\relax\\tabular}",
   -- The rule of the document, saved by the outermost nested table only
   "\\ifdefined\\pandocnestedbottomrule\\else\\let\\pandocnestedbottomrule\\bottomrule\\fi",
-  "\\def\\endlongtable{\\pandocnestedbottomrule\\endtabular}",
+  "\\def\\endlongtable{\\pandocnestedbottomrule\\endtabular\\hskip\\LTright\\relax\\par}",
   "\\def\\bottomrule{\\noalign{}}",
   "\\def\\endhead{}\\def\\endfirsthead{}\\def\\endfoot{}\\def\\endlastfoot{}",
 }, "\n")

@@ -101,3 +101,28 @@ def test_a_nested_table_with_an_identifier_a_foot_or_a_table_of_its_own_reaches_
     assert all(word in text for word in ("Outer", "Identified", "Body", "Footer", "Middle", "Deepest")), text
     # The foot closes its table: it is set after the body
     assert text.index("Body") < text.index("Footer"), text
+
+
+def _x_of(pdf: bytes, word: str) -> float:
+    """The left edge of the first text run holding `word` on the page, in PDF points."""
+    found: list[float] = []
+
+    def visit(text, cm, tm, _font, _size):
+        if word in text and not found:
+            found.append(tm[4] * cm[0] + cm[4])
+
+    PdfReader(io.BytesIO(pdf)).pages[0].extract_text(visitor_text=visit)
+    assert found, word
+    return found[0]
+
+
+def test_a_narrow_nested_table_keeps_its_alignment(test_parameters: TestParameters):
+    """A nested table of 40 % aligned right sits at the right of its cell, as the longtable glue put it."""
+    nested = '<table style="width: 40%; margin-left: auto; margin-right: 0"><tr><td>Aligned</td></tr></table>'
+    html = f'<table style="width: 100%"><tr><td>Outer</td><td>Start{nested}</td></tr></table>'
+
+    pdf = _post(test_parameters, "/convert/html/to/pdf", data=html.encode())
+
+    # The cell holds the right half of a 468 pt line from 306 pt: the table starts some 312 pt
+    # at its left edge, and past 400 pt aligned right
+    assert _x_of(pdf, "Aligned") > 380
