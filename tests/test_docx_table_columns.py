@@ -10,7 +10,7 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 from docx.shared import Inches
 
-from app.docx_table_columns import MIN_IMAGE_WIDTH_EMU, decide, distribute
+from app.docx_table_columns import decide, distribute
 
 _W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 INCH = 914400
@@ -108,7 +108,7 @@ def test_stated_widths_which_do_not_match_the_grid_are_ignored():
     assert widths[1] > widths[0]
 
 
-def test_an_image_in_a_crowded_table_keeps_at_least_an_inch():
+def test_an_image_in_a_crowded_table_keeps_its_width():
     _, table = _table(3)
     for index in range(2):
         table.cell(0, index).paragraphs[0].add_run(" ".join(["word"] * 400))
@@ -117,7 +117,155 @@ def test_an_image_in_a_crowded_table_keeps_at_least_an_inch():
     widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
 
     assert widths is not None
-    assert widths[2] >= MIN_IMAGE_WIDTH_EMU + MARGINS
+    assert widths[2] >= 5 * INCH + MARGINS
+
+
+def test_an_image_keeps_its_width_beside_a_long_line_of_text():
+    """A browser keeps an image of a stated width and wraps the text beside it; #277."""
+    _, table = _table(2)
+    table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(160 / 96))
+    table.cell(0, 1).paragraphs[0].add_run("The image keeps its 160 pixels, the description takes the rest of the width. " * 3)
+
+    widths = decide(table._tbl, int(6.27 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= int(160 / 96 * INCH) + MARGINS
+
+
+def test_an_image_wider_than_the_table_leaves_the_text_its_longest_word():
+    _, table = _table(2)
+    table.cell(0, 0).paragraphs[0].add_run("Description")
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert sum(widths) == pytest.approx(int(6.5 * INCH), abs=2)
+    # "Description" at the default 10 pt is some 0.8 inch, which its column keeps whole
+    assert widths[0] >= 11 * 10 * 12700 // 2 + MARGINS
+
+
+@pytest.mark.parametrize("stated", [[("pct", 2500), ("pct", 2500), None], [("dxa", 6000), ("dxa", 6000), None]])
+def test_a_picture_beside_stated_columns_which_fill_the_table_keeps_a_share(stated):
+    """Stated widths of 100 % or more leave no room; the open column still gets a share, as before #277."""
+    _, table = _table(3)
+    table.cell(0, 2).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(2))
+
+    widths = decide(table._tbl, int(6.5 * INCH), stated, _margins)
+
+    assert widths is not None
+    assert sum(widths) == pytest.approx(int(6.5 * INCH), abs=3)
+    # Its inch, scaled down alike with the stated columns to the width of the table
+    stated_width = 0.5 * 6.5 * INCH if stated[0][0] == "pct" else 6000 * 635  # 2500 fiftieths of a percent are 50 %
+    assert widths[2] >= INCH * widths[0] / stated_width - 2
+
+
+def test_a_text_column_beside_a_stated_column_of_the_full_width_keeps_a_share():
+    _, table = _table(2)
+    table.cell(0, 1).paragraphs[0].add_run("Description of some length")
+
+    widths = decide(table._tbl, int(6.5 * INCH), [("pct", 5000), None], _margins)
+
+    assert widths is not None
+    assert widths[1] > 0.3 * INCH
+
+
+def test_a_long_word_beside_a_picture_wider_than_the_table_stays_whole():
+    """The picture gives up the room the table lacks before a word breaks."""
+    _, table = _table(2)
+    word = "x" * 58  # 58 characters of 5 pt at the default 10 pt: some 4 inches
+    table.cell(0, 0).paragraphs[0].add_run(word)
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= 58 * 5 * 12700 + MARGINS
+    assert widths[1] >= INCH
+
+
+def test_a_merged_row_widens_the_floor_of_the_column_which_has_room_for_it():
+    """A cell spanning a picture and a word raises the floor where the picture has width to give, not evenly."""
+    _, table = _table(2, rows=2)
+    table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(6))
+    table.cell(0, 1).paragraphs[0].add_run("x" * 14)  # some 1 inch
+    table.cell(1, 0).merge(table.cell(1, 1)).paragraphs[0].add_run("y" * 58)  # some 4 inches
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, lambda _tc: 0)
+
+    assert widths is not None
+    # The word keeps its inch, and the picture gives up only the half inch the table lacks
+    assert widths[0] >= int(5.4 * INCH)
+
+
+def test_a_word_split_into_runs_by_its_formatting_is_one_word():
+    _, table = _table(2)
+    paragraph = table.cell(0, 0).paragraphs[0]
+    paragraph.add_run("x" * 29)
+    paragraph.add_run("x" * 29).bold = True  # one word of 58 characters, some 4 inches
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= 58 * 5 * 12700 + MARGINS
+
+
+def test_a_no_break_space_does_not_end_a_word():
+    _, table = _table(2)
+    table.cell(0, 0).paragraphs[0].add_run("x" * 29 + "\u00a0" + "x" * 28)  # 58 characters on one line
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= 58 * 5 * 12700 + MARGINS
+
+
+def test_a_space_between_runs_ends_a_word():
+    _, table = _table(2)
+    paragraph = table.cell(0, 0).paragraphs[0]
+    paragraph.add_run("x" * 29 + " ")
+    paragraph.add_run("x" * 29)
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] < 58 * 5 * 12700
+
+
+def test_overlapping_merged_cells_share_the_column_between_them():
+    """Two merged words overlapping on the middle column both keep their room beside two pictures."""
+    _, table = _table(3, rows=3)
+    for column in (0, 2):
+        table.cell(0, column).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(6))
+    table.cell(1, 0).merge(table.cell(1, 1)).paragraphs[0].add_run("y" * 58)  # some 4 inches
+    table.cell(2, 1).merge(table.cell(2, 2)).paragraphs[0].add_run("z" * 58)  # some 4 inches
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, lambda _tc: 0)
+
+    assert widths is not None
+    word = 58 * 5 * 12700
+    assert widths[0] + widths[1] >= word
+    assert widths[1] + widths[2] >= word
+    assert sum(widths) == pytest.approx(int(6.5 * INCH), abs=3)
+
+
+def test_merged_pictures_keep_their_width_where_all_of_them_fit():
+    """Pictures in merged cells hold their full width as well, where some layout fits them all."""
+    _, table = _table(3, rows=3)
+    for column in (0, 2):
+        table.cell(0, column).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(2))
+    table.cell(1, 0).merge(table.cell(1, 1)).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(4))
+    table.cell(2, 1).merge(table.cell(2, 2)).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(6))
+
+    widths = decide(table._tbl, 8 * INCH, None, lambda _tc: 0)
+
+    assert widths is not None
+    assert widths[0] >= 2 * INCH
+    assert widths[2] >= 2 * INCH
+    assert widths[0] + widths[1] >= 4 * INCH
+    assert widths[1] + widths[2] >= 6 * INCH
 
 
 def test_a_cell_spanning_columns_widens_them_by_what_they_lack():
