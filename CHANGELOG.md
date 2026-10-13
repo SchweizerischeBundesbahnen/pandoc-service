@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.9.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.8.0...v2.9.0) (2026-10-13)
+
+
+### Features
+
+* hold pandoc to a heap limit ([#276](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/276)) ([b1cb0be](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b1cb0be7880ab3d60cbd8d0c33c28f008345a0e5))
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.142.4 ([f4be352](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f4be3528602455dbf23dad61537f2daffd0ea8a2))
+* **deps:** update dependency fastapi to v0.143.0 ([b424350](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b424350a1c8e713ab37ace6f8f94351fa679d3ed))
+* **deps:** update dependency jgm/pandoc to v3.12.1 ([b47b222](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b47b222c3359d17f5c040d8240c2af6df4aa2bea))
+* **deps:** update dependency pypdf to v6.20.0 ([012bbc6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/012bbc692ed1d275cde281290d36b763fd9b8fc6))
+* **deps:** update dependency tox to v4.64.10 ([4c69371](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4c69371ada67c50f4b501485d5fc29741668715f))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.13.0 ([96ceb52](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/96ceb5239cd09be07895181a575bdc7b4b5aa784))
+* lay out a table with a line break by content ([#273](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/273)) ([be3f670](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/be3f67070a4f01793976af321d8a69a8469b7ec8))
+
+
+### Performance Improvements
+
+* hand data: images to pandoc as files ([#274](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/274)) ([d3f3694](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d3f36940886788ffee376db9fc773a6e217fee13))
+
 ## [2.8.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.7.0...v2.8.0) (2026-10-09)
 
 
