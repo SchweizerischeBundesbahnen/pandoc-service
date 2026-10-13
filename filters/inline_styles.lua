@@ -1300,6 +1300,9 @@ end
 -- Convert a single Block to a <w:p> OOXML string. Forward-declared because
 -- the Div branch recurses through it.
 local block_to_ooxml
+-- Build the raw OOXML <w:tbl> of a Table, defined with filter.Table below; a
+-- table nested in a cell is built by it too.
+local table_to_ooxml
 
 block_to_ooxml = function(block, jc_val, ind_twips, props)
   -- Polarion wraps a work item cell's content in <div style="text-align:...">,
@@ -1333,6 +1336,12 @@ block_to_ooxml = function(block, jc_val, ind_twips, props)
     return block.text
   end
 
+  -- A table nested in the cell stays a table, styled or not
+  if block.t == "Table" then
+    local raw = table_to_ooxml(block)
+    if raw then return raw.text end
+  end
+
   -- Fallback: extract plain text
   return "<w:p>" .. ppr .. "<w:r><w:t xml:space=\"preserve\">"
     .. escape_xml(pandoc.utils.stringify(block)) .. "</w:t></w:r></w:p>"
@@ -1364,6 +1373,8 @@ local function cell_blocks_to_ooxml(blocks, jc_val, props)
   end
   local out = table.concat(paras)
   if out == "" then return "<w:p/>" end
+  -- A cell ends with a paragraph, also after a nested table
+  if out:sub(-8) == "</w:tbl>" then out = out .. "<w:p/>" end
   return out
 end
 
@@ -1399,7 +1410,10 @@ function filter.Table(tbl)
   -- Check the opt-in metadata flag (set by meta_pass.Meta).
   if not preserve_table_styles then return nil end
   if not table_has_cell_styles(tbl) then return nil end
+  return table_to_ooxml(tbl)
+end
 
+table_to_ooxml = function(tbl)
   local num_cols = #tbl.colspecs
   if num_cols == 0 then return nil end
 
