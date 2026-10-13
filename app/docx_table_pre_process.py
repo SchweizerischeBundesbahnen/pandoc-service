@@ -88,9 +88,9 @@ _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 # OOXML table width of 100% == 5000 fiftieths of a percent.
 _MAX_PCT = 5000.0
 # Reference text width in twips for turning an absolute (dxa) table width into a
-# line fraction in a part without a section of its own, a header or a footer:
-# Letter (8.5in) minus 1in margins each side = 6.5in = 9360 twips. A body part
-# takes the text width of its first section, which LaTeX sets the PDF at.
+# line fraction when no document says otherwise: Letter (8.5in) minus 1in margins
+# each side = 6.5in = 9360 twips. Every part of a package takes the text width of
+# the first section of its document, which LaTeX sets the PDF at.
 _REFERENCE_WIDTH_TWIPS = 9360.0
 # Map an OOXML <w:jc w:val> to a canonical alignment token.
 _JC_TO_ALIGN = {"left": "left", "center": "center", "right": "right", "start": "left", "end": "right"}
@@ -124,8 +124,9 @@ def preprocess(docx_bytes: bytes) -> bytes:
         return docx_bytes
 
     changed = False
+    width = docx_page_geometry.package_text_width_twips(entries)
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_changed = rewrite_part(entries[part])
+        rewritten, part_changed = rewrite_part(entries[part], width)
         if part_changed:
             entries[part] = rewritten
             changed = True
@@ -542,7 +543,7 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
     return changed
 
 
-def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None) -> tuple[bytes, bool]:
     """Fix grid-column widths, tag styled table cells, carry table width/
     alignment, and neutralise caption styles in one body part.
 
@@ -554,9 +555,15 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
         return xml_bytes, False
 
     changed = False
-    # An absolute table width is a share of the line LaTeX sets: the text of the first section.
-    # A part without a body, a header or a footer, falls back to the Letter reference.
-    width = docx_page_geometry.text_width_twips(tree) if tree.find(f"{{{W_NS}}}body") is not None else _REFERENCE_WIDTH_TWIPS
+    # An absolute table width is a share of the line LaTeX sets the whole PDF at: the text of the
+    # first section of the document, which the caller reads once for every part, the footnotes
+    # among them. Called on its own, a part with a body reads it, and any other falls back to Letter.
+    if text_width_twips is not None:
+        width = text_width_twips
+    elif tree.find(f"{{{W_NS}}}body") is not None:
+        width = docx_page_geometry.text_width_twips(tree)
+    else:
+        width = _REFERENCE_WIDTH_TWIPS
 
     for tbl in tree.iter(_TBL_TAG):
         if _fix_grid_col_widths(tbl):

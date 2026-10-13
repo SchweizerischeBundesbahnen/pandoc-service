@@ -635,3 +635,16 @@ def test_an_absolute_width_is_a_share_of_the_text_of_the_first_section(section, 
     blob = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell(None, "a"), grid_widths=["4500"]), section)}))
 
     assert _first_cell_sentinel_kv(_body(blob))["tw"] == fraction
+
+
+def test_a_table_in_the_footnotes_takes_the_line_of_the_document():
+    """The footnotes have no section of their own; LaTeX sets them at the line of the body."""
+    landscape = '<w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/><w:pgMar w:left="1440" w:right="1440"/></w:sectPr>'
+    table = _table_with_pr('<w:tblW w:w="4500" w:type="dxa"/>', _table_cell(None, "a"), grid_widths=["4500"])
+    footnotes = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1">' + table + "</w:footnote></w:footnotes>").encode()
+
+    blob = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_plain_para(), landscape), "word/footnotes.xml": footnotes}))
+
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        footnotes_tree = ET.fromstring(archive.read("word/footnotes.xml"))
+    assert _first_cell_sentinel_kv(footnotes_tree)["tw"] == "0.3472"

@@ -67,6 +67,12 @@ def text_width_twips(document: Element) -> int:
     return width if width > 0 else LETTER["w"] - ONE_INCH_MARGINS["left"] - ONE_INCH_MARGINS["right"]
 
 
+def package_text_width_twips(entries: dict[str, bytes]) -> int:
+    """The text width of the first section of a DOCX package read into its parts, in twips."""
+    document = parse_xml(entries["word/document.xml"]) if "word/document.xml" in entries else None
+    return text_width_twips(document) if document is not None else LETTER["w"] - ONE_INCH_MARGINS["left"] - ONE_INCH_MARGINS["right"]
+
+
 def geometry_variables(docx_bytes: bytes) -> list[str]:
     """Pandoc ``-V geometry:...`` arguments for the page of the first section."""
     try:
