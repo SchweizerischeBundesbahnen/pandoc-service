@@ -50,6 +50,7 @@ from __future__ import annotations
 import logging
 from xml.etree import ElementTree as ET
 
+from . import docx_page_geometry
 from .docx_ooxml import W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
@@ -87,9 +88,9 @@ _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 # OOXML table width of 100% == 5000 fiftieths of a percent.
 _MAX_PCT = 5000.0
 # Reference text width in twips for turning an absolute (dxa) table width into a
-# line fraction: Letter (8.5in) minus 1in margins each side = 6.5in = 9360 twips.
-# Matches the Letter assumption in app/docx_post_process.py and the 468pt used by
-# filters/html_tables_to_latex.lua. Best-effort for absolute widths (same caveat).
+# line fraction in a part without a section of its own, a header or a footer:
+# Letter (8.5in) minus 1in margins each side = 6.5in = 9360 twips. A body part
+# takes the text width of its first section, which LaTeX sets the PDF at.
 _REFERENCE_WIDTH_TWIPS = 9360.0
 # Map an OOXML <w:jc w:val> to a canonical alignment token.
 _JC_TO_ALIGN = {"left": "left", "center": "center", "right": "right", "start": "left", "end": "right"}
@@ -409,11 +410,11 @@ def _tag_cell_properties(tbl: ET.Element) -> bool:
     return changed
 
 
-def _extract_table_layout(tbl: ET.Element) -> tuple[float | None, str | None, bool]:
+def _extract_table_layout(tbl: ET.Element, text_width_twips: float) -> tuple[float | None, str | None, bool]:
     """Return ``(width_fraction, alignment, is_absolute)`` from ``<w:tblPr>``.
 
     ``width_fraction`` is the table's share of the line width: ``pct`` -> value
-    / 5000; ``dxa`` -> twips / reference text width; both clamped to 1.0. It is
+    / 5000; ``dxa`` -> twips / ``text_width_twips``; both clamped to 1.0. It is
     None when there is no usable ``<w:tblW>``. ``alignment`` is left/center/right
     from ``<w:jc>``, or None. ``is_absolute`` is True when the width came from a
     ``dxa`` (absolute) value — such tables are usually deliberately narrow, so
@@ -439,7 +440,7 @@ def _extract_table_layout(tbl: ET.Element) -> tuple[float | None, str | None, bo
             if width_type == "pct":
                 fraction = min(value / _MAX_PCT, 1.0)
             elif width_type == "dxa":
-                fraction = min(value / _REFERENCE_WIDTH_TWIPS, 1.0)
+                fraction = min(value / text_width_twips, 1.0)
                 is_absolute = True
 
     align: str | None = None
@@ -463,7 +464,7 @@ def _first_own_cell(tbl: ET.Element) -> ET.Element | None:
     return None
 
 
-def _tag_table_layout(tbl: ET.Element) -> bool:
+def _tag_table_layout(tbl: ET.Element, text_width_twips: float) -> bool:
     """Tag the first cell with the table's width fraction and/or alignment.
 
     Every table with an explicit ``<w:tblW>`` is tagged, **including 100 %**:
@@ -475,7 +476,7 @@ def _tag_table_layout(tbl: ET.Element) -> bool:
     (This matches how the HTML path in filters/html_tables_to_latex.lua already
     handles full-width tables.) Returns True when a sentinel was written.
     """
-    fraction, align, is_absolute = _extract_table_layout(tbl)
+    fraction, align, is_absolute = _extract_table_layout(tbl, text_width_twips)
     kv: dict[str, str] = {}
     if fraction is not None:
         kv["tw"] = f"{min(fraction, 1.0):.4f}"
@@ -553,11 +554,14 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
         return xml_bytes, False
 
     changed = False
+    # An absolute table width is a share of the line LaTeX sets: the text of the first section.
+    # A part without a body, a header or a footer, falls back to the Letter reference.
+    width = docx_page_geometry.text_width_twips(tree) if tree.find(f"{{{W_NS}}}body") is not None else _REFERENCE_WIDTH_TWIPS
 
     for tbl in tree.iter(_TBL_TAG):
         if _fix_grid_col_widths(tbl):
             changed = True
-        if _tag_table_layout(tbl):
+        if _tag_table_layout(tbl, width):
             changed = True
         if _tag_cell_properties(tbl):
             changed = True

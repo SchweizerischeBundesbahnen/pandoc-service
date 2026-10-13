@@ -614,3 +614,24 @@ def test_cell_with_a_leading_paragraph_before_a_nested_table_is_read_from_it():
 
     outer_tc = next(_body(out).iter(f"{{{W_NS}}}tc"))
     assert "ha=justify" in (_first_run_text(outer_tc.find(f"{{{W_NS}}}p")) or "")
+
+
+@pytest.mark.parametrize(
+    ("section", "fraction"),
+    [
+        # Letter landscape, 1 inch margins: 15840 - 2 x 1440 = 12960 twips of text
+        ('<w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/><w:pgMar w:left="1440" w:right="1440"/></w:sectPr>', "0.3472"),
+        # A4 portrait, 2 cm margins: 11906 - 2 x 1134 = 9638 twips of text
+        ('<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:left="1134" w:right="1134"/></w:sectPr>', "0.4669"),
+        # No section: Letter portrait, 9360 twips of text
+        ("", "0.4808"),
+        # Margins which leave no text: Letter portrait stands in
+        ('<w:sectPr><w:pgSz w:w="2880"/><w:pgMar w:left="1440" w:right="1440"/></w:sectPr>', "0.4808"),
+    ],
+)
+def test_an_absolute_width_is_a_share_of_the_text_of_the_first_section(section, fraction):
+    """LaTeX sets the PDF at the page of the first section, a landscape one too; #279."""
+    tblpr = '<w:tblW w:w="4500" w:type="dxa"/>'
+    blob = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table_with_pr(tblpr, _table_cell(None, "a"), grid_widths=["4500"]), section)}))
+
+    assert _first_cell_sentinel_kv(_body(blob))["tw"] == fraction

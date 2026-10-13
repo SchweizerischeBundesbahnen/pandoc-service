@@ -55,6 +55,18 @@ def _inches(twips: int) -> str:
     return f"{twips / TWIPS_PER_INCH:.4f}in"
 
 
+def text_width_twips(document: Element) -> int:
+    """The width of the text of the first section, which LaTeX sets the whole PDF at, in twips."""
+    section = _first_section(document)
+    size = section.find(f"{{{W_NS}}}pgSz") if section is not None else None
+    margins = section.find(f"{{{W_NS}}}pgMar") if section is not None else None
+    left = _twips(margins, "left", ONE_INCH_MARGINS["left"])
+    right = _twips(margins, "right", ONE_INCH_MARGINS["right"])
+    width = _twips(size, "w", LETTER["w"]) - left - right
+    # Margins which leave no text are no page LaTeX can set: the Letter one stands in
+    return width if width > 0 else LETTER["w"] - ONE_INCH_MARGINS["left"] - ONE_INCH_MARGINS["right"]
+
+
 def geometry_variables(docx_bytes: bytes) -> list[str]:
     """Pandoc ``-V geometry:...`` arguments for the page of the first section."""
     try:
