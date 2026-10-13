@@ -162,6 +162,7 @@ COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lu
 COPY filters/html_embedded_images.lua "/usr/local/share/pandoc/filters/html_embedded_images.lua"
 COPY filters/html_trailing_line_breaks.lua "/usr/local/share/pandoc/filters/html_trailing_line_breaks.lua"
 COPY filters/html_whitespace.lua "/usr/local/share/pandoc/filters/html_whitespace.lua"
+COPY filters/latex_nested_tables.lua "/usr/local/share/pandoc/filters/latex_nested_tables.lua"
 COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/docx_caption_labels_to_latex.lua"
 COPY filters/docx_empty_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_empty_paragraphs_to_latex.lua"
 

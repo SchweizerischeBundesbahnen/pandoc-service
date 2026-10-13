@@ -1,0 +1,51 @@
+"""A table nested in a table cell reaches the PDF, written as a tabular; #278.
+
+pandoc writes a nested table as a longtable inside the minipage of its cell, which LaTeX cannot set:
+the TeX run failed with "TeX capacity exceeded".
+"""
+
+from __future__ import annotations
+
+import io
+
+from pypdf import PdfReader
+
+from tests.test_container import TestParameters
+
+NESTED = '<table><tr><td>Outer</td><td>Details:<table><tr><td style="background-color: #eeeeee">Status</td><td>Approved</td></tr><tr><td>Owner</td><td>Admin</td></tr></table></td></tr></table>'
+
+
+def _text(pdf: bytes) -> str:
+    return " ".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf)).pages)
+
+
+def _post(test_parameters: TestParameters, path: str, **kwargs) -> bytes:
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}{path}", **kwargs)
+    assert response.status_code == 200, response.text
+    return response.content
+
+
+def test_a_nested_table_of_html_reaches_the_pdf(test_parameters: TestParameters):
+    pdf = _post(test_parameters, "/convert/html/to/pdf", data=NESTED.encode())
+
+    text = _text(pdf)
+    assert all(word in text for word in ("Outer", "Details", "Status", "Approved", "Owner", "Admin")), text
+
+
+def test_a_nested_table_of_a_docx_reaches_the_pdf(test_parameters: TestParameters):
+    docx = _post(test_parameters, "/convert/html/to/docx?preserve_table_styles=false", data=NESTED.encode())
+
+    pdf = _post(test_parameters, "/convert/docx/to/pdf", files={"source": ("nested.docx", docx)})
+
+    text = _text(pdf)
+    assert all(word in text for word in ("Outer", "Details", "Status", "Approved", "Owner", "Admin")), text
+    assert "\ue010" not in text and "\ue011" not in text
+
+
+def test_a_nested_table_with_a_caption_or_of_the_float_class_reaches_the_pdf(test_parameters: TestParameters):
+    html = '<table><tr><td>Outer</td><td><table><caption>Inner caption</caption><tr><td>Captioned</td></tr></table><table class="float"><tr><td>Floating</td></tr></table></td></tr></table>'
+
+    pdf = _post(test_parameters, "/convert/html/to/pdf", data=html.encode())
+
+    text = _text(pdf)
+    assert all(word in text for word in ("Outer", "Inner caption", "Captioned", "Floating")), text
