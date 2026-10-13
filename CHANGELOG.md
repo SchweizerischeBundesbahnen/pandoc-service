@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.9.0...v2.9.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency ruff to v0.17.0 ([321a18c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/321a18c84b8071d89213e8a304953c16cb4b6d30))
+* **deps:** update dependency tox to v4.65.1 ([93e6f3d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/93e6f3d4430abf20180f9f40a525d6ccafa912ab))
+* keep a table nested in a preserved table a table ([#285](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/285)) ([d179444](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d179444d83d9df496aeb1c1bfa7f522da1ba54a8))
+* keep an image in a table cell at its width ([#281](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/281)) ([e5cfce0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e5cfce0a029ea4c9a042dcc38707dd48aa2f541a))
+* size an absolute table width by the page of the PDF ([#284](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/284)) ([f4f9f75](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f4f9f75504437c4e1a92f2e5814b5c9a75c3f7f5))
+* write a nested table as a tabular for LaTeX ([#282](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/282)) ([a882852](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a88285200afeca6d4ad651d930357e2d824d7942))
+
 ## [2.9.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.8.0...v2.9.0) (2026-10-13)
 
 
