@@ -144,6 +144,45 @@ def test_an_image_wider_than_the_table_leaves_the_text_its_longest_word():
     assert widths[0] >= 11 * 10 * 12700 // 2 + MARGINS
 
 
+@pytest.mark.parametrize("stated", [[("pct", 2500), ("pct", 2500), None], [("dxa", 6000), ("dxa", 6000), None]])
+def test_a_picture_beside_stated_columns_which_fill_the_table_keeps_a_share(stated):
+    """Stated widths of 100 % or more leave no room; the open column still gets a share, as before #277."""
+    _, table = _table(3)
+    table.cell(0, 2).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(2))
+
+    widths = decide(table._tbl, int(6.5 * INCH), stated, _margins)
+
+    assert widths is not None
+    assert sum(widths) == pytest.approx(int(6.5 * INCH), abs=3)
+    # Its inch, scaled down alike with the stated columns to the width of the table
+    stated_width = 0.5 * 6.5 * INCH if stated[0][0] == "pct" else 6000 * 635  # 2500 fiftieths of a percent are 50 %
+    assert widths[2] >= INCH * widths[0] / stated_width - 2
+
+
+def test_a_text_column_beside_a_stated_column_of_the_full_width_keeps_a_share():
+    _, table = _table(2)
+    table.cell(0, 1).paragraphs[0].add_run("Description of some length")
+
+    widths = decide(table._tbl, int(6.5 * INCH), [("pct", 5000), None], _margins)
+
+    assert widths is not None
+    assert widths[1] > 0.3 * INCH
+
+
+def test_a_long_word_beside_a_picture_wider_than_the_table_stays_whole():
+    """The picture gives up the room the table lacks before a word breaks."""
+    _, table = _table(2)
+    word = "x" * 58  # 58 characters of 5 pt at the default 10 pt: some 4 inches
+    table.cell(0, 0).paragraphs[0].add_run(word)
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= 58 * 5 * 12700 + MARGINS
+    assert widths[1] >= INCH
+
+
 def test_a_cell_spanning_columns_widens_them_by_what_they_lack():
     _, table = _table(2, rows=2)
     merged = table.cell(0, 0).merge(table.cell(0, 1))

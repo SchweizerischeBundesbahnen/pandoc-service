@@ -27,6 +27,9 @@ EMU_PER_POINT = 12700
 FULL_PCT = 5000
 # An average character of a proportional font is about half its size wide.
 CHARACTER_WIDTH_EM = 0.5
+# The narrowest a picture is lowered to when the table has no room for it at its width: an inch.
+# A column of text keeps its longest word whole before that.
+CAPPED_PICTURE_WIDTH_EMU = 914400
 # Word's default tab stop: half an inch.
 TAB_WIDTH_EMU = 457200
 # Word's font size where neither the text nor its styles state one: 10 pt, in half-points.
@@ -52,7 +55,7 @@ def decide(tbl: Any, table_width: int, stated: Sequence[ColumnWidth | None] | No
     stated_emu = _stated_emu(stated, columns, table_width)
     if all(width is not None for width in stated_emu):
         return _scale([width or 0 for width in stated_emu], table_width)
-    minimums, maximums = column_extents(tbl, columns, cell_margins, _FontSizes(styles))
+    minimums, maximums, floors = column_extents(tbl, columns, cell_margins, _FontSizes(styles))
     fixed = [width is not None for width in stated_emu]
     for index, width in enumerate(stated_emu):
         if width is not None:
@@ -60,7 +63,7 @@ def decide(tbl: Any, table_width: int, stated: Sequence[ColumnWidth | None] | No
     # The columns without a stated width share what the stated ones leave
     free = [index for index in range(columns) if not fixed[index]]
     room = max(table_width - sum(width or 0 for width in stated_emu), 0)
-    for index, minimum in zip(free, _cap([minimums[index] for index in free], room), strict=True):
+    for index, minimum in zip(free, _cap([minimums[index] for index in free], room, [floors[index] for index in free]), strict=True):
         minimums[index] = minimum
     return distribute(minimums, maximums, table_width, fixed)
 
@@ -87,25 +90,32 @@ def distribute(minimums: list[int], maximums: list[int], width: int, fixed: list
     return _scale(minimums, width)
 
 
-def column_extents(tbl: Any, columns: int, cell_margins: Callable[[Any], int], font_sizes: _FontSizes) -> tuple[list[int], list[int]]:
-    """The narrowest and the widest each column's content can be laid out at, in EMU, margins included."""
+def column_extents(tbl: Any, columns: int, cell_margins: Callable[[Any], int], font_sizes: _FontSizes) -> tuple[list[int], list[int], list[int]]:
+    """The narrowest and the widest each column's content can be laid out at, in EMU, margins included.
+
+    And the floor of each column: the narrowest it can still be with its pictures lowered to an
+    inch, below which its words would break. See _cap.
+    """
     minimums = [0] * columns
     maximums = [0] * columns
-    spanning: list[tuple[int, int, int, int]] = []
+    floors = [0] * columns
+    spanning: list[tuple[int, int, int, int, int]] = []
     for offset, span, tc in cells(tbl, columns):
-        content_min, content_max = _content_extent(tc, font_sizes, cell_margins)
+        content_min, content_max, content_floor = _content_extent(tc, font_sizes, cell_margins)
         margins = cell_margins(tc)
-        cell_min, cell_max = content_min + margins, content_max + margins
+        cell_min, cell_max, cell_floor = content_min + margins, content_max + margins, content_floor + margins
         if span == 1:
             minimums[offset] = max(minimums[offset], cell_min)
             maximums[offset] = max(maximums[offset], cell_max)
+            floors[offset] = max(floors[offset], cell_floor)
         else:
-            spanning.append((offset, span, cell_min, cell_max))
+            spanning.append((offset, span, cell_min, cell_max, cell_floor))
     # A cell spanning columns widens them only by what they lack for it, shared evenly.
-    for offset, span, cell_min, cell_max in spanning:
+    for offset, span, cell_min, cell_max, cell_floor in spanning:
         _widen(minimums, offset, span, cell_min)
         _widen(maximums, offset, span, cell_max)
-    return minimums, [max(minimum, maximum) for minimum, maximum in zip(minimums, maximums, strict=True)]
+        _widen(floors, offset, span, cell_floor)
+    return minimums, [max(minimum, maximum) for minimum, maximum in zip(minimums, maximums, strict=True)], floors
 
 
 def _widen(widths: list[int], offset: int, span: int, needed: int) -> None:
@@ -155,22 +165,31 @@ def _stated_emu(stated: Sequence[ColumnWidth | None] | None, columns: int, table
     return widths
 
 
-def _cap(minimums: list[int], width: int) -> list[int]:
+def _cap(minimums: list[int], width: int, floors: list[int]) -> list[int]:
     """Lower the widest of `minimums` to one level until they fit `width`, the narrow ones left whole.
 
     A picture wider than the table would otherwise take a share of the others' narrowest, and the
-    text beside it would break inside its words. It gives up what the table lacks instead.
+    text beside it would break inside its words. It gives up what the table lacks instead, though a
+    column goes no lower than its floor: its longest word, or its pictures at an inch. Where even
+    the floors do not fit, as beside stated widths filling the table, the columns keep them and are
+    scaled down with the others, as a picture always was.
     """
     if sum(minimums) <= width:
         return minimums
-    level, rest = width, len(minimums)
-    for minimum in sorted(minimums):
-        if minimum * rest > level:
-            break
-        level -= minimum
-        rest -= 1
-    cap = level // rest if rest else 0
-    return [min(minimum, cap) for minimum in minimums]
+    if sum(floors) >= width:
+        return floors
+
+    def fitted(level: int) -> list[int]:
+        return [max(floor, min(minimum, level)) for floor, minimum in zip(floors, minimums, strict=True)]
+
+    low, high = 0, max(minimums)
+    while low < high:
+        level = (low + high + 1) // 2
+        if sum(fitted(level)) <= width:
+            low = level
+        else:
+            high = level - 1
+    return fitted(low)
 
 
 def _scale(widths: list[int], width: int) -> list[int]:
@@ -180,46 +199,53 @@ def _scale(widths: list[int], width: int) -> list[int]:
     return [part * width // total for part in widths]
 
 
-def _content_extent(container: Any, font_sizes: _FontSizes, cell_margins: Callable[[Any], int]) -> tuple[int, int]:
-    """The narrowest and the widest the blocks of a cell can be laid out at, in EMU."""
-    minimum = maximum = 0
+def _content_extent(container: Any, font_sizes: _FontSizes, cell_margins: Callable[[Any], int]) -> tuple[int, int, int]:
+    """The narrowest, the widest and the floor the blocks of a cell can be laid out at, in EMU."""
+    minimum = maximum = floor = 0
     for child in container:
         if child.tag == f"{_W}p":
-            block_min, block_max = _paragraph_extent(child, font_sizes)
+            block_min, block_max, block_floor = _paragraph_extent(child, font_sizes)
         elif child.tag == f"{_W}tbl":
             # A nested table is as narrow and as wide as its columns together.
-            nested_min, nested_max = column_extents(child, _column_count(child), cell_margins, font_sizes)
-            block_min, block_max = sum(nested_min), sum(nested_max)
+            nested_min, nested_max, nested_floor = column_extents(child, _column_count(child), cell_margins, font_sizes)
+            block_min, block_max, block_floor = sum(nested_min), sum(nested_max), sum(nested_floor)
         elif child.tag in (f"{_W}sdt", f"{_W}sdtContent", f"{_W}customXml"):
-            block_min, block_max = _content_extent(child.find(f"{_W}sdtContent") if child.tag == f"{_W}sdt" else child, font_sizes, cell_margins)
+            block_min, block_max, block_floor = _content_extent(child.find(f"{_W}sdtContent") if child.tag == f"{_W}sdt" else child, font_sizes, cell_margins)
         else:
             continue
         minimum = max(minimum, block_min)
         maximum = max(maximum, block_max)
-    return minimum, maximum
+        floor = max(floor, block_floor)
+    return minimum, maximum, floor
 
 
-def _paragraph_extent(p: Any, font_sizes: _FontSizes) -> tuple[int, int]:
-    """The longest word or picture of a paragraph, and its longest line, in EMU."""
+def _paragraph_extent(p: Any, font_sizes: _FontSizes) -> tuple[int, int, int]:
+    """The longest word or picture of a paragraph, its longest line, and its floor, in EMU.
+
+    The floor is the longest word, or picture lowered to an inch.
+    """
     paragraph_size = font_sizes.paragraph(p)
-    minimum = line = longest = 0
+    minimum = line = longest = floor = 0
     for element in p.iter(f"{_W}t", f"{_W}br", f"{_W}cr", f"{_W}tab", f"{{{WP_NS}}}extent"):
         if element.tag == f"{{{WP_NS}}}extent":
             width = _int_attribute(element, "cx")
             # A browser keeps a picture of its size and wraps the text beside it
             minimum = max(minimum, width)
+            floor = max(floor, min(width, CAPPED_PICTURE_WIDTH_EMU))
             line += width
         elif element.tag == f"{_W}t":
             character = font_sizes.run(element.getparent(), paragraph_size) * EMU_PER_POINT * CHARACTER_WIDTH_EM / 2
             text = element.text or ""
-            minimum = max(minimum, *(round(len(word) * character) for word in text.split()), 0)
+            word = max((round(len(word) * character) for word in text.split()), default=0)
+            minimum = max(minimum, word)
+            floor = max(floor, word)
             line += round(len(text) * character)
         elif element.tag == f"{_W}tab":
             line += TAB_WIDTH_EMU
         else:
             longest = max(longest, line)
             line = 0
-    return minimum, max(longest, line)
+    return minimum, max(longest, line), floor
 
 
 class _FontSizes:
