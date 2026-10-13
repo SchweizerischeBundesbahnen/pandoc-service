@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
 TWIPS_PER_INCH = 1440
+DOCUMENT_PART = "word/document.xml"
 LETTER = {"w": 12240, "h": 15840}
 ONE_INCH_MARGINS = {"top": 1440, "right": 1440, "bottom": 1440, "left": 1440}
 
@@ -69,7 +70,7 @@ def text_width_twips(document: Element) -> int:
 
 def package_text_width_twips(entries: dict[str, bytes]) -> int:
     """The text width of the first section of a DOCX package read into its parts, in twips."""
-    document = parse_xml(entries["word/document.xml"]) if "word/document.xml" in entries else None
+    document = parse_xml(entries[DOCUMENT_PART]) if DOCUMENT_PART in entries else None
     return text_width_twips(document) if document is not None else LETTER["w"] - ONE_INCH_MARGINS["left"] - ONE_INCH_MARGINS["right"]
 
 
@@ -77,7 +78,7 @@ def geometry_variables(docx_bytes: bytes) -> list[str]:
     """Pandoc ``-V geometry:...`` arguments for the page of the first section."""
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
-            document = parse_xml(package.read("word/document.xml"))
+            document = parse_xml(package.read(DOCUMENT_PART))
     except _UNREADABLE_DOCX:
         document = None
     section = _first_section(document) if document is not None else None
