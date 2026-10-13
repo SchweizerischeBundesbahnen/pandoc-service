@@ -234,6 +234,23 @@ def test_a_space_between_runs_ends_a_word():
     assert widths[0] < 58 * 5 * 12700
 
 
+def test_overlapping_merged_cells_share_the_column_between_them():
+    """Two merged words overlapping on the middle column both keep their room beside two pictures."""
+    _, table = _table(3, rows=3)
+    for column in (0, 2):
+        table.cell(0, column).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(6))
+    table.cell(1, 0).merge(table.cell(1, 1)).paragraphs[0].add_run("y" * 58)  # some 4 inches
+    table.cell(2, 1).merge(table.cell(2, 2)).paragraphs[0].add_run("z" * 58)  # some 4 inches
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, lambda _tc: 0)
+
+    assert widths is not None
+    word = 58 * 5 * 12700
+    assert widths[0] + widths[1] >= word
+    assert widths[1] + widths[2] >= word
+    assert sum(widths) == pytest.approx(int(6.5 * INCH), abs=3)
+
+
 def test_a_cell_spanning_columns_widens_them_by_what_they_lack():
     _, table = _table(2, rows=2)
     merged = table.cell(0, 0).merge(table.cell(0, 1))

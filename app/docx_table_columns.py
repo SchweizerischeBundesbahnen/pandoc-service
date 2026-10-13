@@ -59,7 +59,7 @@ def decide(tbl: Any, table_width: int, stated: Sequence[ColumnWidth | None] | No
     stated_emu = _stated_emu(stated, columns, table_width)
     if all(width is not None for width in stated_emu):
         return _scale([width or 0 for width in stated_emu], table_width)
-    minimums, maximums, floors = column_extents(tbl, columns, cell_margins, _FontSizes(styles))
+    minimums, maximums, floors, spans = column_extents(tbl, columns, cell_margins, _FontSizes(styles))
     fixed = [width is not None for width in stated_emu]
     for index, width in enumerate(stated_emu):
         if width is not None:
@@ -67,7 +67,17 @@ def decide(tbl: Any, table_width: int, stated: Sequence[ColumnWidth | None] | No
     # The columns without a stated width share what the stated ones leave
     free = [index for index in range(columns) if not fixed[index]]
     room = max(table_width - sum(width or 0 for width in stated_emu), 0)
-    for index, minimum in zip(free, _cap([minimums[index] for index in free], room, [floors[index] for index in free]), strict=True):
+    position = {index: at for at, index in enumerate(free)}
+    free_spans: list[tuple[list[int], int]] = []
+    for offset, span, needed in spans:
+        covered = range(offset, offset + span)
+        # What a stated column under a spanning cell gives it, the free ones need not
+        lacking = needed - sum(stated_emu[index] or 0 for index in covered if fixed[index])
+        positions = [position[index] for index in covered if not fixed[index]]
+        if positions and lacking > 0:
+            free_spans.append((positions, lacking))
+    capped = _cap([minimums[index] for index in free], room, [floors[index] for index in free], free_spans)
+    for index, minimum in zip(free, capped, strict=True):
         minimums[index] = minimum
     return distribute(minimums, maximums, table_width, fixed)
 
@@ -94,11 +104,13 @@ def distribute(minimums: list[int], maximums: list[int], width: int, fixed: list
     return _scale(minimums, width)
 
 
-def column_extents(tbl: Any, columns: int, cell_margins: Callable[[Any], int], font_sizes: _FontSizes) -> tuple[list[int], list[int], list[int]]:
+def column_extents(tbl: Any, columns: int, cell_margins: Callable[[Any], int], font_sizes: _FontSizes) -> tuple[list[int], list[int], list[int], list[tuple[int, int, int]]]:
     """The narrowest and the widest each column's content can be laid out at, in EMU, margins included.
 
-    And the floor of each column: the narrowest it can still be with its pictures lowered to an
-    inch, below which its words would break. See _cap.
+    And the floor of each column: the narrowest its own cells can still be with their pictures
+    lowered to an inch, below which their words would break. A cell spanning columns does not raise
+    their floors: it is returned as the first column, the count and the floor it needs together,
+    for _cap to share between them. See _cap.
     """
     minimums = [0] * columns
     maximums = [0] * columns
@@ -115,32 +127,11 @@ def column_extents(tbl: Any, columns: int, cell_margins: Callable[[Any], int], f
         else:
             spanning.append((offset, span, cell_min, cell_max, cell_floor))
     # A cell spanning columns widens them only by what they lack for it, shared evenly.
-    for offset, span, cell_min, cell_max, cell_floor in spanning:
+    for offset, span, cell_min, cell_max, _cell_floor in spanning:
         _widen(minimums, offset, span, cell_min)
         _widen(maximums, offset, span, cell_max)
-        _widen_floors(floors, minimums, offset, span, cell_floor)
-    return minimums, [max(minimum, maximum) for minimum, maximum in zip(minimums, maximums, strict=True)], floors
-
-
-def _widen_floors(floors: list[int], minimums: list[int], offset: int, span: int, needed: int) -> None:
-    """Raise the floors under a spanning cell by what they lack for it, where the columns' narrowest leaves room.
-
-    A floor above its column's narrowest would hold a picture beside it narrower than need be, so
-    the lack goes first to the columns whose narrowest is above their floor, in proportion to that.
-    """
-    columns = range(offset, offset + span)
-    lacking = needed - sum(floors[index] for index in columns)
-    if lacking <= 0:
-        return
-    room = {index: max(minimums[index] - floors[index], 0) for index in columns}
-    total = sum(room.values())
-    if total > 0:
-        for index in columns:
-            share = min(room[index], lacking * room[index] // total)
-            floors[index] += share
-        lacking = needed - sum(floors[index] for index in columns)
-    if lacking > 0:
-        _widen(floors, offset, span, needed)
+    widest = [max(minimum, maximum) for minimum, maximum in zip(minimums, maximums, strict=True)]
+    return minimums, widest, floors, [(offset, span, cell_floor) for offset, span, _cell_min, _cell_max, cell_floor in spanning]
 
 
 def _widen(widths: list[int], offset: int, span: int, needed: int) -> None:
@@ -190,23 +181,25 @@ def _stated_emu(stated: Sequence[ColumnWidth | None] | None, columns: int, table
     return widths
 
 
-def _cap(minimums: list[int], width: int, floors: list[int]) -> list[int]:
+def _cap(minimums: list[int], width: int, floors: list[int], spans: list[tuple[list[int], int]]) -> list[int]:
     """Lower the widest of `minimums` to one level until they fit `width`, the narrow ones left whole.
 
     A picture wider than the table would otherwise take a share of the others' narrowest, and the
     text beside it would break inside its words. It gives up what the table lacks instead, though a
-    column goes no lower than its floor: its longest word, or its pictures at an inch. Where even
-    the floors do not fit, as beside stated widths filling the table, the columns keep them and are
-    scaled down with the others, as a picture always was.
+    column goes no lower than its floor: its longest word, or its pictures at an inch. A cell
+    spanning columns, given as the positions it covers and the floor it needs, gets what it lacks
+    on top of the level. The level is the highest at which all of that fits. Where even the floors
+    do not fit, as beside stated widths filling the table, the columns keep them and are scaled
+    down with the others, as a picture always was.
     """
     if sum(minimums) <= width:
         return minimums
-    if sum(floors) >= width:
-        return floors
 
     def fitted(level: int) -> list[int]:
-        return [max(floor, min(minimum, level)) for floor, minimum in zip(floors, minimums, strict=True)]
+        return _raise_for_spans([max(floor, min(minimum, level)) for floor, minimum in zip(floors, minimums, strict=True)], spans)
 
+    if sum(fitted(0)) >= width:
+        return fitted(0)
     low, high = 0, max(minimums)
     while low < high:
         level = (low + high + 1) // 2
@@ -215,6 +208,20 @@ def _cap(minimums: list[int], width: int, floors: list[int]) -> list[int]:
         else:
             high = level - 1
     return fitted(low)
+
+
+def _raise_for_spans(widths: list[int], spans: list[tuple[list[int], int]]) -> list[int]:
+    """Raise `widths` by the least in all until each spanning cell has the width it needs.
+
+    The cells are taken by their last column, and what one lacks goes to that column, which the
+    cells after it are the likeliest to share: for spans of adjacent columns this adds the least.
+    """
+    raised = list(widths)
+    for positions, needed in sorted(spans, key=lambda cell: max(cell[0])):
+        lacking = needed - sum(raised[position] for position in positions)
+        if lacking > 0:
+            raised[max(positions)] += lacking
+    return raised
 
 
 def _scale(widths: list[int], width: int) -> list[int]:
@@ -232,8 +239,10 @@ def _content_extent(container: Any, font_sizes: _FontSizes, cell_margins: Callab
             block_min, block_max, block_floor = _paragraph_extent(child, font_sizes)
         elif child.tag == f"{_W}tbl":
             # A nested table is as narrow and as wide as its columns together.
-            nested_min, nested_max, nested_floor = column_extents(child, _column_count(child), cell_margins, font_sizes)
-            block_min, block_max, block_floor = sum(nested_min), sum(nested_max), sum(nested_floor)
+            nested_min, nested_max, nested_floor, nested_spans = column_extents(child, _column_count(child), cell_margins, font_sizes)
+            spans_of_columns = [(list(range(offset, offset + span)), needed) for offset, span, needed in nested_spans]
+            block_min, block_max = sum(nested_min), sum(nested_max)
+            block_floor = sum(_raise_for_spans(nested_floor, spans_of_columns))
         elif child.tag in (f"{_W}sdt", f"{_W}sdtContent", f"{_W}customXml"):
             block_min, block_max, block_floor = _content_extent(child.find(f"{_W}sdtContent") if child.tag == f"{_W}sdt" else child, font_sizes, cell_margins)
         else:
