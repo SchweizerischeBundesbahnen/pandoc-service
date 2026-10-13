@@ -1369,7 +1369,13 @@ local function cell_blocks_to_ooxml(blocks, jc_val, props)
   if #blocks == 0 then return "<w:p/>" end
   local paras = {}
   for _, block in ipairs(blocks) do
-    paras[#paras + 1] = block_to_ooxml(block, jc_val, nil, props)
+    local ooxml = block_to_ooxml(block, jc_val, nil, props)
+    -- Two tables with nothing between them are one table to Word: a paragraph keeps them apart
+    local previous = paras[#paras]
+    if previous and previous:sub(-8) == "</w:tbl>" and ooxml:sub(1, 7) == "<w:tbl>" then
+      paras[#paras + 1] = "<w:p/>"
+    end
+    paras[#paras + 1] = ooxml
   end
   local out = table.concat(paras)
   if out == "" then return "<w:p/>" end

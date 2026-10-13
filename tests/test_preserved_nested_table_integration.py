@@ -45,3 +45,14 @@ def test_a_table_nested_in_a_styled_table_stays_a_table(test_parameters: TestPar
     assert [[_text(tc) for tc in tr.findall(f"{W}tc")] for tr in nested.findall(f"{W}tr")] == [["Status", "Approved"], ["Owner", "Admin"]]
     assert list(cell)[-1].tag == f"{W}p", "a cell ends with a paragraph"
     Document(io.BytesIO(docx))
+
+
+def test_two_tables_nested_in_one_cell_stay_two_tables(test_parameters: TestParameters):
+    html = '<table><tr><td style="background-color: #eeeeee">Outer</td><td><table><tr><td>First</td></tr></table><table><tr><td>Second</td></tr></table></td></tr></table>'
+
+    docx = _convert(test_parameters, html)
+
+    cell = _body(docx).find(f"{W}tbl").findall(f"{W}tr")[0].findall(f"{W}tc")[1]
+    children = [child.tag for child in cell if child.tag != f"{W}tcPr"]
+    assert children == [f"{W}tbl", f"{W}p", f"{W}tbl", f"{W}p"], "a paragraph between the tables keeps them two"
+    assert [_text(table) for table in cell.findall(f"{W}tbl")] == ["First", "Second"]
