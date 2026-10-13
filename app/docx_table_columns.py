@@ -10,6 +10,7 @@ HTML states for the columns, and from what each column holds where it states non
 writes the result into the grid and into each cell, so Word lays the table out the same way.
 """
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.docx_numbers import whole_number
@@ -34,6 +35,9 @@ CAPPED_PICTURE_WIDTH_EMU = 914400
 TAB_WIDTH_EMU = 457200
 # Word's font size where neither the text nor its styles state one: 10 pt, in half-points.
 DEFAULT_FONT_SIZE_HALF_POINTS = 20
+
+# What ends a word in the text of a run: whitespace a line may break at, not a no-break space
+_WHITESPACE = re.compile(r"[^\S\u00a0\u2007\u202f]+")
 
 # The most columns a table without a grid is laid out with: the most a colspan covers in HTML.
 MAX_COLUMNS = 1000
@@ -114,8 +118,29 @@ def column_extents(tbl: Any, columns: int, cell_margins: Callable[[Any], int], f
     for offset, span, cell_min, cell_max, cell_floor in spanning:
         _widen(minimums, offset, span, cell_min)
         _widen(maximums, offset, span, cell_max)
-        _widen(floors, offset, span, cell_floor)
+        _widen_floors(floors, minimums, offset, span, cell_floor)
     return minimums, [max(minimum, maximum) for minimum, maximum in zip(minimums, maximums, strict=True)], floors
+
+
+def _widen_floors(floors: list[int], minimums: list[int], offset: int, span: int, needed: int) -> None:
+    """Raise the floors under a spanning cell by what they lack for it, where the columns' narrowest leaves room.
+
+    A floor above its column's narrowest would hold a picture beside it narrower than need be, so
+    the lack goes first to the columns whose narrowest is above their floor, in proportion to that.
+    """
+    columns = range(offset, offset + span)
+    lacking = needed - sum(floors[index] for index in columns)
+    if lacking <= 0:
+        return
+    room = {index: max(minimums[index] - floors[index], 0) for index in columns}
+    total = sum(room.values())
+    if total > 0:
+        for index in columns:
+            share = min(room[index], lacking * room[index] // total)
+            floors[index] += share
+        lacking = needed - sum(floors[index] for index in columns)
+    if lacking > 0:
+        _widen(floors, offset, span, needed)
 
 
 def _widen(widths: list[int], offset: int, span: int, needed: int) -> None:
@@ -226,25 +251,31 @@ def _paragraph_extent(p: Any, font_sizes: _FontSizes) -> tuple[int, int, int]:
     """
     paragraph_size = font_sizes.paragraph(p)
     minimum = line = longest = floor = 0
+    # The width of the word being read: formatting can split one word into several runs
+    word = 0
     for element in p.iter(f"{_W}t", f"{_W}br", f"{_W}cr", f"{_W}tab", f"{{{WP_NS}}}extent"):
         if element.tag == f"{{{WP_NS}}}extent":
             width = _int_attribute(element, "cx")
             # A browser keeps a picture of its size and wraps the text beside it
             minimum = max(minimum, width)
             floor = max(floor, min(width, CAPPED_PICTURE_WIDTH_EMU))
+            word = 0
             line += width
         elif element.tag == f"{_W}t":
             character = font_sizes.run(element.getparent(), paragraph_size) * EMU_PER_POINT * CHARACTER_WIDTH_EM / 2
             text = element.text or ""
-            word = max((round(len(word) * character) for word in text.split()), default=0)
-            minimum = max(minimum, word)
-            floor = max(floor, word)
+            for index, piece in enumerate(_WHITESPACE.split(text)):
+                # A piece after whitespace starts a word; the first one goes on with the word of the run before
+                word = (word if index == 0 else 0) + round(len(piece) * character)
+                minimum = max(minimum, word)
+                floor = max(floor, word)
             line += round(len(text) * character)
         elif element.tag == f"{_W}tab":
             line += TAB_WIDTH_EMU
+            word = 0
         else:
             longest = max(longest, line)
-            line = 0
+            line = word = 0
     return minimum, max(longest, line), floor
 
 

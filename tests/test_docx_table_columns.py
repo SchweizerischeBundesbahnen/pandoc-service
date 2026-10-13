@@ -183,6 +183,57 @@ def test_a_long_word_beside_a_picture_wider_than_the_table_stays_whole():
     assert widths[1] >= INCH
 
 
+def test_a_merged_row_widens_the_floor_of_the_column_which_has_room_for_it():
+    """A cell spanning a picture and a word raises the floor where the picture has width to give, not evenly."""
+    _, table = _table(2, rows=2)
+    table.cell(0, 0).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(6))
+    table.cell(0, 1).paragraphs[0].add_run("x" * 14)  # some 1 inch
+    table.cell(1, 0).merge(table.cell(1, 1)).paragraphs[0].add_run("y" * 58)  # some 4 inches
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, lambda _tc: 0)
+
+    assert widths is not None
+    # The word keeps its inch, and the picture gives up only the half inch the table lacks
+    assert widths[0] >= int(5.4 * INCH)
+
+
+def test_a_word_split_into_runs_by_its_formatting_is_one_word():
+    _, table = _table(2)
+    paragraph = table.cell(0, 0).paragraphs[0]
+    paragraph.add_run("x" * 29)
+    paragraph.add_run("x" * 29).bold = True  # one word of 58 characters, some 4 inches
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= 58 * 5 * 12700 + MARGINS
+
+
+def test_a_no_break_space_does_not_end_a_word():
+    _, table = _table(2)
+    table.cell(0, 0).paragraphs[0].add_run("x" * 29 + "\u00a0" + "x" * 28)  # 58 characters on one line
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] >= 58 * 5 * 12700 + MARGINS
+
+
+def test_a_space_between_runs_ends_a_word():
+    _, table = _table(2)
+    paragraph = table.cell(0, 0).paragraphs[0]
+    paragraph.add_run("x" * 29 + " ")
+    paragraph.add_run("x" * 29)
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert widths[0] < 58 * 5 * 12700
+
+
 def test_a_cell_spanning_columns_widens_them_by_what_they_lack():
     _, table = _table(2, rows=2)
     merged = table.cell(0, 0).merge(table.cell(0, 1))
