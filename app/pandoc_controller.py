@@ -735,10 +735,9 @@ def _build_pandoc_command(
             ]
         )
 
-    # A table nested in a table cell becomes a tabular, which LaTeX can set in a
-    # cell where pandoc's longtable fails. Last of the filters, so the nested table
-    # carries what the table, color and paragraph filters gave it, and after the
-    # sandbox filters, which would drop this raw TeX as they drop the document's.
+    # A table nested in a table cell is set as a tabular, which LaTeX can set in a
+    # cell where pandoc's longtable fails. Last of the filters, and after the sandbox
+    # filters, which would drop its raw TeX as they drop the document's.
     if target_format in _LATEX_TARGET_FORMATS:
         cmd.append(f"--lua-filter={FILTERS['latex_nested_tables']}")
 

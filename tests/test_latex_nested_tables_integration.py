@@ -49,3 +49,38 @@ def test_a_nested_table_with_a_caption_or_of_the_float_class_reaches_the_pdf(tes
 
     text = _text(pdf)
     assert all(word in text for word in ("Outer", "Inner caption", "Captioned", "Floating")), text
+
+
+def _png_uri() -> str:
+    import base64
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 30), (200, 0, 0)).save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def _images(pdf: bytes) -> int:
+    return sum(len(page.images) for page in PdfReader(io.BytesIO(pdf)).pages)
+
+
+def test_what_only_a_nested_table_holds_gets_its_packages(test_parameters: TestParameters):
+    """An image, struck-out text and a merged row only inside a nested table: the preamble loads their packages."""
+    html = f'<table><tr><td>Outer</td><td><table><tr><td><img src="{_png_uri()}"/></td><td><del>Struck</del></td><td rowspan="2">Merged</td></tr><tr><td>Left</td><td>Right</td></tr></table></td></tr></table>'
+
+    pdf = _post(test_parameters, "/convert/html/to/pdf", data=html.encode())
+
+    text = _text(pdf)
+    assert all(word in text for word in ("Outer", "Struck", "Merged", "Left", "Right")), text
+    assert _images(pdf) == 1
+
+
+def test_an_image_only_in_a_nested_table_of_a_docx_reaches_the_pdf(test_parameters: TestParameters):
+    html = f'<table><tr><td>Outer</td><td><table><tr><td><img src="{_png_uri()}"/></td><td>Beside</td></tr></table></td></tr></table>'
+    docx = _post(test_parameters, "/convert/html/to/docx", data=html.encode())
+
+    pdf = _post(test_parameters, "/convert/docx/to/pdf", files={"source": ("nested.docx", docx)})
+
+    assert "Beside" in _text(pdf)
+    assert _images(pdf) == 1
