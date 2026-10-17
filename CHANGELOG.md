@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.9.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.9.1...v2.9.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency playwright to v1.64.0 ([93be324](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/93be324a601aa005b240125a05a636dcf63acf7d))
+* **deps:** update dependency pre-commit to v4.7.0 ([114ade3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/114ade3199e7e4e62c8206aad602d8520ad87020))
+* **deps:** update dependency pypdf to v6.20.1 ([7c73792](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/7c73792c80f412ce162592f0d2df3fa7baf21819))
+* **deps:** update dependency tox to v4.65.2 ([b3ce3eb](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b3ce3eb0eb688e82dec2d6d470297051e3661e0a))
+* **deps:** update dependency tox to v4.65.3 ([1c9292d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/1c9292dff2ef8df77f3e07c71d9525e3f2a4f7ea))
+* **deps:** update dependency tox to v4.65.4 ([ffdbaa3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/ffdbaa325002391a499ea0826a46e9121232c6d3))
+* **deps:** update dependency tox to v4.65.5 ([d57df6c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d57df6cf976176ad9a4135611fff54262249bbaa))
+* **deps:** update dependency tox-uv to v1.37.0 ([4d6643c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4d6643c44cd146077d697513d902c412f4621e41))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.13.1 ([31f596f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/31f596f631cd6ca579611058eb5a21928c2600df))
+* **deps:** update grafana/grafana:latest docker digest to dbbc38e ([b5cdc35](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b5cdc357cf9eddaf74fa5544b96ee3994590fbdc))
+
+
+### Performance Improvements
+
+* resolve the cell margins once per table ([#287](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/287)) ([2643f5f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2643f5f15d8faf8c1b7aeeed87f852da92d75ac3))
+
 ## [2.9.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.9.0...v2.9.1) (2026-10-13)
 
 
