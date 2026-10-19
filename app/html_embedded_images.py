@@ -70,7 +70,7 @@ _NAME_PREFIX = "pandoc-service-image-"
 _PLACEHOLDER_RE = re.compile(rf"(\{{\{{IMG:[^|]*\|[^|]*\|)({_NAME_PREFIX}[0-9a-f]+-\d+\.([a-z]+))(\}}\}})".encode())
 
 # The description pandoc gives a picture of an extracted image: its src, which is the name.
-_DESCRIPTION_RE = re.compile(rf'descr="{_NAME_PREFIX}[0-9a-f]+-\d+\.[a-z]+"'.encode())
+_DESCRIPTION_RE = re.compile(rf'(<pic:cNvPr\b[^>]*?\bdescr=")({_NAME_PREFIX}[0-9a-f]+-\d+\.[a-z]+)(")'.encode())
 
 # The parts of a DOCX whose text can hold a placeholder or a picture.
 _TEXT_PART_RE = re.compile(r"word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml")
@@ -150,4 +150,4 @@ def _finish(text: bytes, directory: Path) -> bytes:
         uri = f"data:image/{subtype};base64,".encode() + base64.b64encode(path.read_bytes())
         return match.group(1) + uri + match.group(4)
 
-    return _DESCRIPTION_RE.sub(b'descr=""', _PLACEHOLDER_RE.sub(replace, text))
+    return _DESCRIPTION_RE.sub(rb"\1\3", _PLACEHOLDER_RE.sub(replace, text))

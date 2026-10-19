@@ -171,14 +171,17 @@ def test_a_picture_of_an_extracted_image_gets_an_empty_description(tmp_path: Pat
     (tmp_path / "pandoc-service-image-0123abcd-1.png").write_bytes(PNG)
     document = (
         b'<wp:docPr descr="Alt" title="" id="10" name="Picture"/><pic:cNvPr descr="pandoc-service-image-0123abcd-1.png" id="11" name="Picture"/>'
-        b'<pic:cNvPr descr="https://example.com/a.png" id="13" name="Picture"/><w:t>descr="pandoc-service-image-1.png"</w:t>'
+        b'<pic:cNvPr descr="https://example.com/a.png" id="13" name="Picture"/>'
+        b'<w:t>descr="pandoc-service-image-1.png" descr="pandoc-service-image-0123abcd-1.png"</w:t>'
     )
     header = b'<pic:cNvPr descr="pandoc-service-image-0123abcd-1.png" id="1" name="Picture"/>'
 
     result = _parts(html_embedded_images.finish_docx(_docx({"word/document.xml": document, "word/header1.xml": header}), tmp_path))
 
     assert result["word/document.xml"] == (
-        b'<wp:docPr descr="Alt" title="" id="10" name="Picture"/><pic:cNvPr descr="" id="11" name="Picture"/><pic:cNvPr descr="https://example.com/a.png" id="13" name="Picture"/><w:t>descr="pandoc-service-image-1.png"</w:t>'
+        b'<wp:docPr descr="Alt" title="" id="10" name="Picture"/><pic:cNvPr descr="" id="11" name="Picture"/>'
+        b'<pic:cNvPr descr="https://example.com/a.png" id="13" name="Picture"/>'
+        b'<w:t>descr="pandoc-service-image-1.png" descr="pandoc-service-image-0123abcd-1.png"</w:t>'
     )
     assert result["word/header1.xml"] == b'<pic:cNvPr descr="" id="1" name="Picture"/>'
 
