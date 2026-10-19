@@ -1000,7 +1000,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
 
             # Read output
             with Path(output_file.name).open("rb") as f:
-                return html_embedded_images.restore_placeholders(f.read(), Path(images_directory))
+                return html_embedded_images.finish_docx(f.read(), Path(images_directory))
         finally:
             # Clean up temporary files
             if Path(source_file.name).exists():

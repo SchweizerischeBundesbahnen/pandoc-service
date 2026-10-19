@@ -150,7 +150,7 @@ def test_a_placeholder_gets_the_data_uri_of_its_image_back(tmp_path: Path):
     footer = b"<w:t>{{IMG:||pandoc-service-image-0123abcd-1.png}}</w:t>"
     media = b"\x89PNG media"
 
-    result = _parts(html_embedded_images.restore_placeholders(_docx({"word/document.xml": document, "word/footer1.xml": footer, "word/media/a.png": media}), tmp_path))
+    result = _parts(html_embedded_images.finish_docx(_docx({"word/document.xml": document, "word/footer1.xml": footer, "word/media/a.png": media}), tmp_path))
 
     assert result["word/document.xml"] == f"<w:t>{{{{IMG:10px||{_uri('png', PNG)}}}}} and {{{{IMG:|5px|{_uri('jpeg', b'jpeg bytes')}}}}}</w:t>".encode()
     assert result["word/footer1.xml"] == f"<w:t>{{{{IMG:||{_uri('png', PNG)}}}}}</w:t>".encode()
@@ -161,20 +161,40 @@ def test_a_placeholder_naming_no_extracted_image_stays_as_it_is(tmp_path: Path):
     (tmp_path / "pandoc-service-image-0123abcd-1.png").write_bytes(PNG)
     document = b"<w:t>{{IMG:||pandoc-service-image-0123abcd-7.png}} {{IMG:||../secret.png}}</w:t>"
 
-    result = _parts(html_embedded_images.restore_placeholders(_docx({"word/document.xml": document}), tmp_path))
+    result = _parts(html_embedded_images.finish_docx(_docx({"word/document.xml": document}), tmp_path))
 
     assert result["word/document.xml"] == document
+
+
+def test_a_picture_of_an_extracted_image_gets_an_empty_description(tmp_path: Path):
+    """pandoc writes the src of a picture, the name of the image, into descr of pic:cNvPr; #289."""
+    (tmp_path / "pandoc-service-image-0123abcd-1.png").write_bytes(PNG)
+    document = (
+        b'<wp:docPr descr="Alt" title="" id="10" name="Picture"/><pic:cNvPr descr="pandoc-service-image-0123abcd-1.png" id="11" name="Picture"/>'
+        b'<pic:cNvPr descr="https://example.com/a.png" id="13" name="Picture"/>'
+        b'<w:t>descr="pandoc-service-image-1.png" descr="pandoc-service-image-0123abcd-1.png"</w:t>'
+    )
+    header = b'<pic:cNvPr descr="pandoc-service-image-0123abcd-1.png" id="1" name="Picture"/>'
+
+    result = _parts(html_embedded_images.finish_docx(_docx({"word/document.xml": document, "word/header1.xml": header}), tmp_path))
+
+    assert result["word/document.xml"] == (
+        b'<wp:docPr descr="Alt" title="" id="10" name="Picture"/><pic:cNvPr descr="" id="11" name="Picture"/>'
+        b'<pic:cNvPr descr="https://example.com/a.png" id="13" name="Picture"/>'
+        b'<w:t>descr="pandoc-service-image-1.png" descr="pandoc-service-image-0123abcd-1.png"</w:t>'
+    )
+    assert result["word/header1.xml"] == b'<pic:cNvPr descr="" id="1" name="Picture"/>'
 
 
 def test_a_document_without_placeholders_is_returned_unchanged(tmp_path: Path):
     (tmp_path / "pandoc-service-image-0123abcd-1.png").write_bytes(PNG)
     docx = _docx({"word/document.xml": b"<w:t>text</w:t>"})
 
-    assert html_embedded_images.restore_placeholders(docx, tmp_path) is docx
+    assert html_embedded_images.finish_docx(docx, tmp_path) is docx
 
 
 def test_the_output_of_a_conversion_which_extracted_nothing_is_not_read(tmp_path: Path):
-    assert html_embedded_images.restore_placeholders(b"%PDF-1.7 not a zip", tmp_path) == b"%PDF-1.7 not a zip"
+    assert html_embedded_images.finish_docx(b"%PDF-1.7 not a zip", tmp_path) == b"%PDF-1.7 not a zip"
 
 
 def test_text_is_read_as_utf_8_as_pandoc_reads_it(tmp_path: Path):

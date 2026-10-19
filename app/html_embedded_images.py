@@ -11,8 +11,12 @@ pandoc, which the DOCX writer takes them from, and reads nothing else. The direc
 filter through an environment variable, which a document cannot set.
 
 ``filters/inline_styles.lua`` writes some images into the text as ``{{IMG:...}}`` placeholders for
-:mod:`app.docx_post_process`. :func:`restore_placeholders` puts their ``data:`` URIs back from the
-files, before the directory is removed.
+:mod:`app.docx_post_process`. :func:`finish_docx` puts their ``data:`` URIs back from the files,
+before the directory is removed.
+
+The DOCX writer puts the ``src`` of every picture into ``descr`` of its ``pic:cNvPr``. The name of an
+extracted image means nothing to a reader, and its token makes each conversion differ, so
+:func:`finish_docx` empties that description.
 """
 
 from __future__ import annotations
@@ -65,7 +69,10 @@ _NAME_PREFIX = "pandoc-service-image-"
 # {{IMG:<width>|<height>|<src>}}: see image_placeholder in filters/inline_styles.lua.
 _PLACEHOLDER_RE = re.compile(rf"(\{{\{{IMG:[^|]*\|[^|]*\|)({_NAME_PREFIX}[0-9a-f]+-\d+\.([a-z]+))(\}}\}})".encode())
 
-# The parts of a DOCX whose text can hold a placeholder.
+# The description pandoc gives a picture of an extracted image: its src, which is the name.
+_DESCRIPTION_RE = re.compile(rf'(<pic:cNvPr\b[^>]*?\bdescr=")({_NAME_PREFIX}[0-9a-f]+-\d+\.[a-z]+)(")'.encode())
+
+# The parts of a DOCX whose text can hold a placeholder or a picture.
 _TEXT_PART_RE = re.compile(r"word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml")
 
 
@@ -115,8 +122,8 @@ def _extract_image(src: str | None, directory: Path, names: dict[bytes, str], to
     return names[key]
 
 
-def restore_placeholders(docx: bytes, directory: Path) -> bytes:
-    """Put the ``data:`` URI of an extracted image back into each ``{{IMG:...}}`` placeholder of `docx`.
+def finish_docx(docx: bytes, directory: Path) -> bytes:
+    """Put the ``data:`` URI of an extracted image back into each ``{{IMG:...}}`` placeholder of `docx`, and empty the description of its pictures.
 
     A conversion which extracted no image returns its output as it is, whatever its format.
     """
@@ -124,7 +131,7 @@ def restore_placeholders(docx: bytes, directory: Path) -> bytes:
         return docx
     with zipfile.ZipFile(io.BytesIO(docx)) as source:
         parts = {info.filename: source.read(info) for info in source.infolist() if _TEXT_PART_RE.fullmatch(info.filename)}
-        changed = {name: _restore(text, directory) for name, text in parts.items() if _PLACEHOLDER_RE.search(text)}
+        changed = {name: _finish(text, directory) for name, text in parts.items() if _PLACEHOLDER_RE.search(text) or _DESCRIPTION_RE.search(text)}
         if not changed:
             return docx
         out = io.BytesIO()
@@ -134,7 +141,7 @@ def restore_placeholders(docx: bytes, directory: Path) -> bytes:
     return out.getvalue()
 
 
-def _restore(text: bytes, directory: Path) -> bytes:
+def _finish(text: bytes, directory: Path) -> bytes:
     def replace(match: re.Match[bytes]) -> bytes:
         path = directory / match.group(2).decode()
         subtype = _SUBTYPES.get(match.group(3).decode())
@@ -143,4 +150,4 @@ def _restore(text: bytes, directory: Path) -> bytes:
         uri = f"data:image/{subtype};base64,".encode() + base64.b64encode(path.read_bytes())
         return match.group(1) + uri + match.group(4)
 
-    return _PLACEHOLDER_RE.sub(replace, text)
+    return _DESCRIPTION_RE.sub(rb"\1\3", _PLACEHOLDER_RE.sub(replace, text))
