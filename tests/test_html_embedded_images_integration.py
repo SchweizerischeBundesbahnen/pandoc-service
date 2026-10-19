@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 import zipfile
 
 from PIL import Image
@@ -84,3 +85,19 @@ def test_the_images_of_a_document_with_a_base_address_reach_the_docx(test_parame
     assert sorted(_media(docx)) == sorted([red, green])
     with zipfile.ZipFile(io.BytesIO(docx)) as archive:
         assert "{{IMG:" not in archive.read("word/document.xml").decode()
+
+
+def test_a_picture_carries_the_alt_text_alone_and_no_name_of_the_conversion(test_parameters: TestParameters):
+    """pandoc writes the src of a picture into descr of pic:cNvPr, a name with a random token; #289."""
+    red = _image((255, 0, 0), "PNG")
+    html = f'<p><img src="{_uri("png", red)}"/></p><p><img alt="Red" src="{_uri("png", red)}"/></p>'
+
+    documents = []
+    for _ in range(2):
+        with zipfile.ZipFile(io.BytesIO(_convert(test_parameters, html))) as archive:
+            documents.append(archive.read("word/document.xml").decode())
+
+    assert "pandoc-service-image-" not in documents[0]
+    assert re.findall(r'<wp:docPr descr="([^"]*)"', documents[0]) == ["", "Red"]
+    assert re.findall(r'<pic:cNvPr descr="([^"]*)"', documents[0]) == ["", ""]
+    assert documents[0] == documents[1]
