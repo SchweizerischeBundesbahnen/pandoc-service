@@ -11,7 +11,7 @@ import tempfile
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import anyio
@@ -1277,7 +1277,7 @@ async def convert(
             uploaded_file = form.get("source")
 
             try:
-                source = await uploaded_file.read()  # type: ignore[union-attr]
+                source = await cast("starlette.datastructures.UploadFile", uploaded_file).read()  # AttributeError below covers non-file form values
             except AttributeError:
                 pandoc_metrics.record_conversion_failure()
                 increment_conversion_failure(source_format, target_format)

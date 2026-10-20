@@ -34,7 +34,7 @@ import binascii
 import logging
 import struct
 
-from lxml import etree, html  # type: ignore[import-untyped]
+from lxml import etree, html
 
 from app.html_document import parse_document
 

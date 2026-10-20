@@ -30,8 +30,8 @@ uv run ruff format
 # Check code with ruff
 uv run ruff check
 
-# Type check with mypy
-uv run mypy .
+# Type check with ty
+uv run ty check
 ```
 
 ### Docker Development
@@ -104,11 +104,11 @@ bash tests/shell/test_pandoc_service.sh
 - **Python** required (see `.tool-versions` for exact version)
 - **uv** for dependency management (`--frozen` flag used in CI)
 - **Ruff** for linting (line length: 240, TCH rule enforces `if TYPE_CHECKING:` import guards)
-- **Mypy** for type checking (strict mode)
+- **ty** (Astral) for type checking; missing annotations are enforced by ruff `ANN` rules
 - **Pytest** with >=90% coverage requirement; SVG/Chromium tests are real-browser (`pytest-asyncio`), and `tox` provisions Chromium via `playwright install chromium` before running them
 - **Debian base image** (`debian:trixie-slim`, same as weasyprint-service) — required because Playwright has no musllinux wheel, so Alpine is not viable
 - **Pandoc** and **tectonic** binaries in container, plus Playwright's bundled **Chromium** (see Dockerfile)
-- Every `uv run` in the Dockerfile needs `--no-sync`: without it uv syncs the default groups again and puts the `dev` group (ruff, mypy, pre-commit) into the image. The container structure test asserts they are absent.
+- Every `uv run` in the Dockerfile needs `--no-sync`: without it uv syncs the default groups again and puts the `dev` group (ruff, ty, pre-commit) into the image. The container structure test asserts they are absent.
 - **`GRACEFUL_SHUTDOWN_TIMEOUT`**: seconds uvicorn waits for running requests on SIGTERM (1-300, default: 30)
 - **`MAX_CONCURRENT_PANDOC_CONVERSIONS`**: conversions allowed at the same time (1-100, default: 2). `run_pandoc_conversion` runs in a worker thread (`abandon_on_cancel=True`, so a shutdown drops the request instead of waiting), and the anyio `CapacityLimiter` of `get_conversion_limiter()` keeps the pandoc and tectonic processes bounded
 - **Logging**: `setup_logging()` (`app/pandoc_service_application.py`) owns the logging configuration of the whole process. Every uvicorn server is started with `log_config=None`, which is what keeps uvicorn from applying its own configuration, and `configure_uvicorn_logging()` routes the uvicorn loggers into the root handlers. Never give a `uvicorn.Config` a `log_level`, and never give it a logging configuration of its own: both are applied to the uvicorn loggers of the whole process, and the metrics server used to silence the main server that way. Access logs (`uvicorn.access`) propagate at DEBUG only.

@@ -6,14 +6,14 @@ import math
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import parse_xml
 from docx.oxml import parser as docx_parser
 from docx.oxml.ns import nsdecls
-from lxml import etree  # type: ignore[import-untyped]
+from lxml import etree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -999,7 +999,7 @@ def _column_widths_emu(tbl: Any) -> list[int] | None:
 def _table_styles(table: Table) -> Any:
     """The styles of the document the table belongs to, or None where they cannot be read."""
     try:
-        return table.part.document.styles.element  # type: ignore[attr-defined]
+        return cast("Any", table.part).document.styles.element
     # A table built outside a document part has no styles to read, and the default stands.
     except Exception:  # noqa: BLE001
         return None
@@ -1304,7 +1304,7 @@ def _size_for_page(extent: Any, requested: RequestedSize, image: Any, pandoc_tex
 def _numbering(doc: DocumentObject) -> Any:
     """The numbering of the document, or None where it has none."""
     try:
-        return doc.part.part_related_by(RT.NUMBERING).element  # type: ignore[attr-defined]
+        return cast("Any", doc.part.part_related_by(RT.NUMBERING)).element
     except KeyError:
         return None
 
