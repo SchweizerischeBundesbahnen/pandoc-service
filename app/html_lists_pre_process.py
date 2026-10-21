@@ -100,8 +100,8 @@ def _wrap_in_marker_li(parent: html.HtmlElement, orphan: html.HtmlElement) -> No
     """
     idx = parent.index(orphan)
     li = etree.Element("li")
-    sentinel = etree.SubElement(li, "span")
-    sentinel.set("class", SUPPRESS_MARKER_CLASS)
+    marker = etree.SubElement(li, "span")
+    marker.set("class", SUPPRESS_MARKER_CLASS)
     parent.remove(orphan)
     li.append(orphan)
     parent.insert(idx, li)
