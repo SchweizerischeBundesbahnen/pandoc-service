@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 
-from lxml import etree, html  # type: ignore[import-untyped]
+from lxml import etree, html
 
 from app.html_document import parse_document
 

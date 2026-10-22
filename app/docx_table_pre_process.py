@@ -227,8 +227,9 @@ def _row_column_count(tr: ET.Element) -> int:
         tcpr = tc.find(_TCPR_TAG)
         if tcpr is not None:
             gridspan = tcpr.find(_GRIDSPAN_TAG)
-            if gridspan is not None and _is_positive_int(gridspan.get(_VAL_ATTR)):
-                span = int(gridspan.get(_VAL_ATTR))  # type: ignore[arg-type]
+            span_value = gridspan.get(_VAL_ATTR) if gridspan is not None else None
+            if span_value is not None and _is_positive_int(span_value):
+                span = int(span_value)
         total += span
     return total
 
