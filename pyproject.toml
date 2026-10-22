@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.15,<3.16"
 dependencies = [
     "python-docx==1.2.0",
-    "fastapi==0.143.3",
+    "fastapi==0.146.0",
     "uvicorn==0.54.0",
     "python-multipart==0.0.32",
     "defusedxml==0.7.1",
@@ -26,10 +26,11 @@ dependencies = [
 dev = [
     "pre-commit==4.7.0",
     "ruff==0.17.1",
-    "mypy==2.4.0",
-    "anyio==4.15.1",  # Explicit for mypy type checking (transitive from starlette)
+    "ty==0.0.89",
+    "anyio==4.15.1",  # Explicit for ty type checking (transitive from starlette)
     "types-defusedxml==0.7.0.20260504",
     "types-psutil==7.2.2.20260906",
+    "lxml-stubs==0.5.1",
 ]
 test = [
     "tox==4.67.1",
@@ -162,26 +163,14 @@ quote-style = "double"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 
-[tool.mypy]
-explicit_package_bases = true
-disallow_untyped_defs = true
-exclude = "tests/.*"
+[tool.ty.src]
+exclude = ["tests/"]
 
-[[tool.mypy.overrides]]
-module = "docx.*"
-ignore_missing_imports = true
+[tool.ty.terminal]
+# Fail on warning-level diagnostics too, as mypy did, so the gate does not depend on the ty default.
+error-on-warning = true
 
-[[tool.mypy.overrides]]
-module = "pptx.*"
-ignore_missing_imports = true
+[tool.ty.rules]
+unused-ignore-comment = "error"  # mypy's warn_unused_ignores: a stale "# ty: ignore" fails the check
 
-[[tool.mypy.overrides]]
-module = [
-    "pydantic.*",
-    "starlette.*",
-    "uvicorn.*",
-    "fastapi.*",
-    "prometheus_client.*",
-    "prometheus_fastapi_instrumentator.*"
-]
-ignore_missing_imports = true
+# ty has no disallow_untyped_defs equivalent: missing annotations are enforced by ruff's ANN rules (select = ["ALL"]).

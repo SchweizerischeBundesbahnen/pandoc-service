@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from lxml import etree  # type: ignore[import-untyped]
+from lxml import etree
 
 from app.html_math_color_pre_process import MARKER_END, MARKER_PREFIX, MARKER_SUFFIX
 

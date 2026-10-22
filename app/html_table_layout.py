@@ -45,7 +45,7 @@ import re
 from dataclasses import dataclass
 from itertools import zip_longest
 
-from lxml import etree  # type: ignore[import-untyped]
+from lxml import etree
 
 from app.html_document import parse_document
 

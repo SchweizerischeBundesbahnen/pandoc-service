@@ -18,7 +18,7 @@ the tree is written back.
 
 from __future__ import annotations
 
-from lxml import html  # type: ignore[import-untyped]
+from lxml import html
 
 
 def parse_document(source: bytes) -> html.HtmlElement:

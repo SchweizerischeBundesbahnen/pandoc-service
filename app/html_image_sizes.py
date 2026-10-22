@@ -18,7 +18,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 
-from lxml import etree  # type: ignore[import-untyped]
+from lxml import etree
 
 from app import html_image_pre_process
 from app.html_document import parse_document
