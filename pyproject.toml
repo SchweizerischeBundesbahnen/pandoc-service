@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "python-docx==1.2.0",
-    "fastapi==0.143.3",
+    "fastapi==0.146.0",
     "uvicorn==0.54.0",
     "python-multipart==0.0.32",
     "defusedxml==0.7.1",
@@ -33,7 +33,7 @@ dev = [
     "lxml-stubs==0.5.1",
 ]
 test = [
-    "tox==4.66.0",
+    "tox==4.67.1",
     "tox-uv==1.37.0",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.2.0",
