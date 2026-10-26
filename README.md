@@ -564,7 +564,7 @@ Pandoc Service provides the following endpoints:
 
 > | HTTP code | Content-Type       | Response                                                                                                       |
 > |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
-> | `200`     | `application/json` | `{ "python": "3.14.0", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "chromium": "148.0.7778.96" }` |
+> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "chromium": "148.0.7778.96" }` |
 
 ##### Example cURL
 
