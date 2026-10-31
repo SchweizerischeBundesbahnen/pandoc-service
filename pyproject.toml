@@ -33,7 +33,7 @@ dev = [
     "lxml-stubs==0.5.1",
 ]
 test = [
-    "tox==4.67.2",
+    "tox==4.67.4",
     "tox-uv==1.37.2",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.2.0",
