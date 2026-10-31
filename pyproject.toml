@@ -37,7 +37,7 @@ test = [
     "tox-uv==1.37.2",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.2.0",
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     "pytest-asyncio==1.4.1",
     "pytest-mock==3.17.0",
     "pytest-cov==7.1.0",
