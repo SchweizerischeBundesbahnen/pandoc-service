@@ -666,3 +666,19 @@ def test_inline_svg_keeps_its_namespaces_and_gets_xlink():
 def test_inline_svg_keeps_a_namespace_of_the_html_in_a_foreign_object():
     document = _inline_svg_document('<svg><foreignObject><div xmlns="urn:own">a</div></foreignObject></svg>')
     assert '<div xmlns="urn:own">' in document
+
+
+def test_inline_svg_in_the_html_of_a_foreign_object_is_svg_again():
+    document = _inline_svg_document('<svg><foreignObject><div><svg viewBox="0 0 10 10"><clipPath/></svg></div></foreignObject></svg>')
+    inner = det.fromstring(document).find(".//{http://www.w3.org/1999/xhtml}div/{http://www.w3.org/2000/svg}svg")
+    assert inner is not None
+    assert inner.get("viewBox") == "0 0 10 10"
+    assert inner.find("{http://www.w3.org/2000/svg}clipPath") is not None
+
+
+def test_inline_svg_nested_deep_keeps_its_case():
+    # Deeper than the recursion limit of Python: the walk keeps its own stack
+    depth = 3000
+    document = _inline_svg_document('<svg viewBox="0 0 1 1">' + "<g>" * depth + "<clipPath/>" + "</g>" * depth + "</svg>")
+    assert 'viewBox="0 0 1 1"' in document
+    assert "<clipPath>" in document or "<clipPath/>" in document or "<clipPath></clipPath>" in document

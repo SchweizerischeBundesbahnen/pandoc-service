@@ -241,17 +241,31 @@ class SvgProcessor:
         return str(svg)
 
     @classmethod
-    def _restore_svg_case(cls, node: Tag) -> None:
-        """Give the elements and attributes of node and its children their SVG case, up to the HTML of a foreignObject."""
-        node.name = cls.SVG_ELEMENTS.get(node.name, node.name)
-        node.attrs = {cls.SVG_ATTRIBUTES.get(name, name): value for name, value in node.attrs.items()}
-        if node.name == "foreignObject":
-            # Its HTML is in the XHTML namespace: in an SVG document a bare <div> would be an unknown SVG element
-            for child in node.find_all(name=True, recursive=False):
-                child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
-            return
-        for child in node.find_all(name=True, recursive=False):
-            cls._restore_svg_case(child)
+    def _restore_svg_case(cls, root: Tag) -> None:
+        """
+        Give the elements and attributes of root and its children their SVG case.
+
+        The HTML of a foreignObject keeps its names and gets the XHTML namespace; an <svg> inside that HTML is
+        SVG again, with its namespace. The walk keeps its own stack: an SVG nested deep must not reach the
+        recursion limit of Python, which would leave every SVG of the document unprocessed.
+        """
+        stack: list[tuple[Tag, bool]] = [(root, True)]
+        while stack:
+            node, in_svg = stack.pop()
+            if not in_svg and node.name == "svg":
+                in_svg = True
+                node.attrs.setdefault("xmlns", cls.SVG_NAMESPACE)
+            if in_svg:
+                node.name = cls.SVG_ELEMENTS.get(node.name, node.name)
+                node.attrs = {cls.SVG_ATTRIBUTES.get(name, name): value for name, value in node.attrs.items()}
+            children = node.find_all(name=True, recursive=False)
+            if in_svg and node.name == "foreignObject":
+                # Its HTML is in the XHTML namespace: in an SVG document a bare <div> would be an unknown SVG element
+                for child in children:
+                    child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
+                stack.extend((child, False) for child in children)
+            else:
+                stack.extend((child, in_svg) for child in children)
 
     async def replace_img_base64(self, parsed_html: BeautifulSoup) -> BeautifulSoup:
         """

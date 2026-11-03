@@ -906,7 +906,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
 
     if keeps_svg:
         # The SVG stays, but an inline one becomes a data URL: pandoc lowercases its names as HTML, which breaks it
-        return _inline_svgs_as_images(source, html_str) if "<svg" in lowered else source
+        return await _kept_svgs(source, html_str)
 
     if uses_weasysvg():
         rasterizer: SvgRasterizer = svg_renderer.for_target(get_conversion_limiter(), target_format or "")
@@ -927,6 +927,14 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
     if svg_layers is not None and isinstance(rasterizer, svg_renderer.WeasysvgRasterizer):
         svg_layers.update(rasterizer.svg_layers)
     return result.encode("utf-8") if is_bytes else result
+
+
+async def _kept_svgs(source: str | bytes, html_str: str) -> str | bytes:
+    """source for a target that keeps the SVG: each inline SVG as an image of a data URL."""
+    if "<svg" not in html_str.lower():
+        return source
+    # A whole document parsed and written again: off the event loop, as the other scans of the document
+    return await to_thread.run_sync(_inline_svgs_as_images, source, html_str, abandon_on_cancel=True, limiter=get_conversion_limiter())
 
 
 def _inline_svgs_as_images(source: str | bytes, html_str: str) -> str | bytes:
