@@ -668,9 +668,11 @@ def test_inline_svg_keeps_a_namespace_of_the_html_in_a_foreign_object():
     assert '<div xmlns="urn:own">' in document
 
 
-def test_inline_svg_in_the_html_of_a_foreign_object_is_svg_again():
-    document = _inline_svg_document('<svg><foreignObject><div><svg viewBox="0 0 10 10"><clipPath/></svg></div></foreignObject></svg>')
-    inner = det.fromstring(document).find(".//{http://www.w3.org/1999/xhtml}div/{http://www.w3.org/2000/svg}svg")
+@pytest.mark.parametrize(("html", "path"), [("<div>{}</div>", ".//{{http://www.w3.org/1999/xhtml}}div/{{http://www.w3.org/2000/svg}}svg"), ("{}", ".//{{http://www.w3.org/2000/svg}}foreignObject/{{http://www.w3.org/2000/svg}}svg")])
+def test_inline_svg_in_the_html_of_a_foreign_object_is_svg_again(html, path):
+    inner_svg = '<svg viewBox="0 0 10 10"><clipPath/></svg>'
+    document = _inline_svg_document(f"<svg><foreignObject>{html.format(inner_svg)}</foreignObject></svg>")
+    inner = det.fromstring(document).find(path.format())
     assert inner is not None
     assert inner.get("viewBox") == "0 0 10 10"
     assert inner.find("{http://www.w3.org/2000/svg}clipPath") is not None

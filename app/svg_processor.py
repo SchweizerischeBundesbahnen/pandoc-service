@@ -262,7 +262,9 @@ class SvgProcessor:
             if in_svg and node.name == "foreignObject":
                 # Its HTML is in the XHTML namespace: in an SVG document a bare <div> would be an unknown SVG element
                 for child in children:
-                    child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
+                    # An <svg> right in it is SVG: it takes its own namespace when it is walked
+                    if child.name != "svg":
+                        child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
                 stack.extend((child, False) for child in children)
             else:
                 stack.extend((child, in_svg) for child in children)
