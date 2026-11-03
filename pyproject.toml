@@ -12,7 +12,7 @@ dependencies = [
     "python-docx==1.2.0",
     "fastapi==0.162.0",
     "uvicorn==0.54.0",
-    "python-multipart==0.0.32",
+    "python-multipart==0.0.33",
     "defusedxml==0.7.1",
     "asgiref==3.13.0",
     "beautifulsoup4==4.15.0",
