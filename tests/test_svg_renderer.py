@@ -118,3 +118,26 @@ async def test_rasterizer_counts_a_failure():
     with patch.object(svg_renderer, "render", side_effect=ValueError("broken")), patch.object(svg_renderer, "increment_svg_conversion_failure") as failure, pytest.raises(ValueError, match="broken"):
         await rasterizer.convert_svg_to_png(DIAGRAM, 40, 20)
     failure.assert_called_once_with()
+
+
+def test_render_refuses_a_bitmap_past_the_limits_of_weasysvg():
+    with pytest.raises(convert.ConvertError, match="too large"):
+        svg_renderer.render(DIAGRAM.encode(), 40, 20, convert.MAX_PNG_SIDE / 20, layer=False)
+    # A tall SVG drawn into a wide box: the side that needs more sets the bitmap
+    tall = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="2000"><rect width="10" height="2000"/></svg>'
+    with pytest.raises(convert.ConvertError, match="too large"):
+        svg_renderer.render(tall.encode(), 2000, 10, 1.0, layer=False)
+
+
+def test_render_holds_the_pdfium_lock():
+    seen = []
+    original = svg_renderer.pdfium.PdfDocument
+
+    def document(pdf):
+        seen.append(svg_renderer._PDFIUM_LOCK.locked())
+        return original(pdf)
+
+    with patch.object(svg_renderer.pdfium, "PdfDocument", side_effect=document):
+        svg_renderer.render(DIAGRAM.encode(), 40, 20, 1.0, layer=False)
+    assert seen == [True]
+    assert not svg_renderer._PDFIUM_LOCK.locked()

@@ -21,6 +21,7 @@ import importlib.metadata
 import io
 import logging
 import os
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -48,8 +49,8 @@ _SVG_KEPT_TARGETS = frozenset(("pdf", "latex", "html", "epub"))
 # The targets that get the flat SVG on top of the PNG
 _SVG_LAYER_TARGETS = frozenset(("docx",))
 
-# A CSS px in PDF points
-_PT_PER_PX = 72 / 96
+# PDFium is not thread-safe, not even across documents: one render at a time in the process
+_PDFIUM_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -116,17 +117,26 @@ def render(svg: bytes, width: int, height: int, scale: float, *, layer: bool) ->
     Returns:
         The PNG, and the flat SVG or None.
     """
-    # The root carries width and height in px: the page is that size
-    document = pdfium.PdfDocument(convert.to_pdf(svg))
-    page = document[0]
-    bitmap = page.render(scale=scale / _PT_PER_PX, fill_color=(255, 255, 255, 0))
-    try:
-        image = bitmap.to_pil()
-    finally:
-        bitmap.close()
-        page.close()
-        document.close()
     target = (max(1, round(width * scale)), max(1, round(height * scale)))
+    pdf = convert.to_pdf(svg)
+    with _PDFIUM_LOCK:
+        document = pdfium.PdfDocument(pdf)
+        page = document[0]
+        try:
+            # Drawn at the target size along the side that needs more, then brought to the target
+            zoom = max(target[0] / page.get_width(), target[1] / page.get_height())
+            drawn = (round(page.get_width() * zoom), round(page.get_height() * zoom))
+            # The limits of weasysvg-convert: a bitmap past them would take the memory of the service
+            if max(drawn) > convert.MAX_PNG_SIDE or drawn[0] * drawn[1] > convert.MAX_PNG_PIXELS:
+                raise convert.ConvertError(f"a PNG of {drawn[0]} x {drawn[1]} px is too large")
+            bitmap = page.render(scale=zoom, fill_color=(255, 255, 255, 0))
+            try:
+                image = bitmap.to_pil()
+            finally:
+                bitmap.close()
+        finally:
+            page.close()
+            document.close()
     if image.size != target:
         image = image.resize(target)
     out = io.BytesIO()

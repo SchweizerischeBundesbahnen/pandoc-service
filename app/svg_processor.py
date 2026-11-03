@@ -33,7 +33,8 @@ if TYPE_CHECKING:  # used only for type hints
 class SvgRasterizer(Protocol):
     """What draws an SVG as a PNG: ChromiumManager, or the WeasysvgRasterizer of app/svg_renderer.py."""
 
-    async def convert_svg_to_png(self, svg_content: str, width: int, height: int, device_scale_factor: float | None = None) -> bytes: ...
+    async def convert_svg_to_png(self, svg_content: str, width: int, height: int, device_scale_factor: float | None = None) -> bytes:
+        """Draw svg_content as a PNG of width x height px times the device scale factor."""
 
 
 class SvgProcessor:
