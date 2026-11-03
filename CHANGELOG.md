@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.11.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.10.1...v2.11.0) (2026-11-03)
+
+
+### Features
+
+* draw SVG with weasysvg by default ([#304](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/304)) ([d48ad86](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d48ad86b2d7a67ecd154d449fbf77f2df16f2289)), closes [#298](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/298)
+
+## [2.10.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.10.0...v2.10.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* keep the SVG case of an inline SVG ([#303](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/303)) ([b6a84fe](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b6a84fe3100d1aa5a9647f11ae57e8d40d064c9e)), closes [#302](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/302)
+
 ## [2.10.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.9.2...v2.10.0) (2026-11-03)
 
 

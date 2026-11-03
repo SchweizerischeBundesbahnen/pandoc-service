@@ -50,19 +50,21 @@ The service will be accessible on port 9082, and Prometheus metrics on port 9182
 
 The REQUEST_BODY_LIMIT_MB environment variable sets the maximum allowed size (in megabytes) for uploaded files or request bodies processed by the Pandoc service. The default is 500 MB.
 
-### SVG to PNG conversion
+### SVG conversion
 
-For HTML sources, the service rasterizes embedded SVGs to PNG before handing the
-HTML to pandoc. This is done with a persistent headless Chromium browser (via
-Playwright), the same approach used by `weasyprint-service`. It exists because
-renderers with weak SVG support — notably Microsoft Word, which does not support
-draw.io's `<switch>` / `<foreignObject>` mechanism — would otherwise show the
-"Text is not SVG - cannot display" fallback instead of the diagram. Rendering the
-SVG to PNG with Chromium (which fully supports `foreignObject`) sidesteps that.
+For HTML sources, the service prepares embedded SVGs before handing the HTML to
+pandoc. Microsoft Word does not draw draw.io's `<switch>` / `<foreignObject>`
+mechanism and would otherwise show the "Text is not SVG - cannot display" fallback
+instead of the diagram.
 
-This runs only for `source_format == "html"`. It is **best effort**: if Chromium
-is disabled or fails to start, conversions still run and SVGs are simply passed
-through unrasterized — the service never fails because of it.
+By default [weasysvg](https://github.com/grigoriev/weasysvg) draws the SVG and keeps
+it vector where the target allows it (see the table below). `SVG_RENDERER=chromium`
+rasterizes every SVG to PNG with a persistent headless Chromium browser (via
+Playwright) instead, as earlier releases did.
+
+This runs only for `source_format == "html"`. It is **best effort**: if the drawing
+fails, conversions still run and SVGs are passed through unchanged. The service
+never fails because of it.
 
 **Image density (scale factor).** The rasterization density is controlled by a
 device scale factor (1.0 = 96 dpi). It can be set per request with the
@@ -104,13 +106,14 @@ starts no browser, and the SVG stays vector where the target allows it:
 | other targets | The PNG drawn by weasysvg. |
 
 The scale factor sets the density of the PNG only. The image takes the default from
-the `SVG_RENDERER` build argument; `chromium` stays the default for now.
+the `SVG_RENDERER` build argument, `weasysvg`. `SVG_RENDERER=chromium` draws every SVG
+as a PNG through Chromium, as before; it goes away in a later release.
 
 **Configuration (environment variables):**
 
 | Variable | Default | Range | Purpose |
 |---|---|---|---|
-| `SVG_RENDERER` | `chromium` | `chromium`, `weasysvg` | Who draws the SVG of an HTML source. |
+| `SVG_RENDERER` | `weasysvg` | `weasysvg`, `chromium` | Who draws the SVG of an HTML source. |
 | `ENABLE_SVG_CONVERSION` | `true` | - | Master switch for SVG rasterization. |
 | `DEVICE_SCALE_FACTOR` | `1.0` | 1.0-10.0 | Rasterization density (overridden per request by `scale_factor`). |
 | `MAX_CONCURRENT_CONVERSIONS` | `10` | 1-100 | Max concurrent SVG→PNG conversions. |

@@ -96,3 +96,23 @@ def test_postprocess_attaches_the_svg_layers_to_a_docx():
         response = pandoc_controller.postprocess_and_build_response(b"docx", "docx", "a.docx", svg_layers=layers)
     attach.assert_called_once_with(b"processed", layers)
     assert response.body == b"layered"
+
+
+INLINE = '<html><body><svg width="40" height="20" viewBox="0 0 40 20"><switch><foreignObject requiredFeatures="x"><div>Label</div></foreignObject></switch></svg></body></html>'
+
+
+@pytest.mark.asyncio
+async def test_preprocess_gives_pandoc_an_inline_svg_as_a_data_url(weasysvg_mode):
+    with patch.object(svg_renderer, "render") as render:
+        result = await pandoc_controller.preprocess_html_svgs(INLINE.encode(), None, "pdf")
+    render.assert_not_called()
+    src = result.decode().split('src="data:image/svg+xml;base64,', 1)[1].split('"', 1)[0]
+    svg = base64.b64decode(src).decode()
+    assert 'viewBox="0 0 40 20"' in svg
+    assert "<foreignObject" in svg
+
+
+@pytest.mark.asyncio
+async def test_preprocess_passes_an_inline_svg_through_when_it_cannot_parse(weasysvg_mode):
+    with patch.object(pandoc_controller.SvgProcessor, "replace_inline_svgs_with_img", side_effect=RuntimeError("broken")):
+        assert await pandoc_controller.preprocess_html_svgs(INLINE, None, "pdf") == INLINE

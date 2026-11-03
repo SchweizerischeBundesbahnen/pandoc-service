@@ -1,9 +1,9 @@
 """
 Selection of the SVG renderer, and the renderer that draws SVG with weasysvg.
 
-SVG_RENDERER picks who draws the SVG of an HTML source. ``chromium`` (default) rasterizes it to PNG
-through the browser. ``weasysvg`` draws it with WeasyPrint and the weasysvg plugin, and the service
-starts no browser:
+SVG_RENDERER picks who draws the SVG of an HTML source. ``weasysvg`` (default) draws it with WeasyPrint
+and the weasysvg plugin, and the service starts no browser. ``chromium`` rasterizes it to PNG through
+the browser, as before:
 
 - For a DOCX, the PNG goes into the document as before, and :mod:`app.docx_svg_layers` adds the SVG
   flattened by weasysvg on top of it. Word from 2016 shows the vector, an older Word the PNG.
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 CHROMIUM = "chromium"
 WEASYSVG = "weasysvg"
 SVG_RENDERERS = (CHROMIUM, WEASYSVG)
-DEFAULT_SVG_RENDERER = CHROMIUM
+DEFAULT_SVG_RENDERER = WEASYSVG
 
 # The directory that holds rsvg-convert, a link to weasysvg-convert. pandoc gets it in PATH in the weasysvg
 # mode only: in the chromium mode pandoc finds no rsvg-convert, as before.
@@ -60,8 +60,8 @@ def get_svg_renderer() -> str:
     Read the SVG renderer from the SVG_RENDERER variable.
 
     Returns:
-        ``chromium`` or ``weasysvg``. The value is case-insensitive and may carry whitespace. An unset or
-        empty value is ``chromium``; an unknown one too, with a warning.
+        ``weasysvg`` or ``chromium``. The value is case-insensitive and may carry whitespace. An unset or
+        empty value is ``weasysvg``; an unknown one too, with a warning.
     """
     value = os.environ.get("SVG_RENDERER", "").strip().lower()
     if not value:

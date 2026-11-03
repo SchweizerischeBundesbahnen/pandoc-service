@@ -69,7 +69,7 @@ bash tests/shell/test_pandoc_service.sh
 - **app/schema.py**: Pydantic models for API responses
 - **app/svg_processor.py**: Finds SVGs in incoming HTML and rasterizes them to PNG (port of weasyprint-service's `SvgProcessor`)
 - **app/chromium_manager.py**: Persistent headless Chromium (Playwright) used for SVG→PNG, with metrics, retries and a health-monitor loop (port of weasyprint-service's `ChromiumManager`)
-- **app/svg_renderer.py**: `SVG_RENDERER` (`chromium` default, `weasysvg`). In the weasysvg mode no browser starts: pdf, latex, html and epub keep the SVG (pandoc finds `rsvg-convert`, a link to `weasysvg-convert`, in `/opt/weasysvg/bin`), other targets get a PNG drawn by weasysvg
+- **app/svg_renderer.py**: `SVG_RENDERER` (`weasysvg` default, `chromium`). In the weasysvg mode no browser starts: pdf, latex, html and epub keep the SVG (pandoc finds `rsvg-convert`, a link to `weasysvg-convert`, in `/opt/weasysvg/bin`), other targets get a PNG drawn by weasysvg
 - **app/docx_svg_layers.py**: Adds the flat SVG of each weasysvg PNG to its DOCX picture (`asvg:svgBlip`), after `docx_post_process`. pandoc makes no PNG fallback under `--sandbox`, so the service writes both
 - **app/constants.py**: Small env-var helpers (`get_bool_env`)
 - **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG/Chromium metrics)
@@ -107,7 +107,7 @@ bash tests/shell/test_pandoc_service.sh
 - **uv** for dependency management (`--frozen` flag used in CI)
 - **Ruff** for linting (line length: 240, TCH rule enforces `if TYPE_CHECKING:` import guards)
 - **ty** (Astral) for type checking; missing annotations are enforced by ruff `ANN` rules
-- **Pytest** with >=90% coverage requirement; SVG/Chromium tests are real-browser (`pytest-asyncio`), and `tox` provisions Chromium via `playwright install chromium` before running them
+- **Pytest** with >=90% coverage requirement; `tests/conftest.py` sets `SVG_RENDERER=chromium` for the in-process tests unless set; SVG/Chromium tests are real-browser (`pytest-asyncio`), and `tox` provisions Chromium via `playwright install chromium` before running them
 - **Debian base image** (`debian:trixie-slim`, same as weasyprint-service) — required because Playwright has no musllinux wheel, so Alpine is not viable
 - **Pandoc** and **tectonic** binaries in container, plus Playwright's bundled **Chromium** (see Dockerfile)
 - Every `uv run` in the Dockerfile needs `--no-sync`: without it uv syncs the default groups again and puts the `dev` group (ruff, ty, pre-commit) into the image. The container structure test asserts they are absent.
