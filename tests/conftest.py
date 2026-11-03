@@ -102,6 +102,27 @@ def pandoc_container():
             logger.error(f"Error in container cleanup: {e}")
 
 
+# The container of the weasysvg mode listens here, beside the one of the chromium mode
+WEASYSVG_PORT = 9083
+
+
+@pytest.fixture(scope="session")
+def weasysvg_parameters(pandoc_container):
+    """The image of pandoc_container, run with SVG_RENDERER=weasysvg."""
+    import docker
+
+    client = docker.from_env()
+    container = client.containers.run(image=TEST_IMAGE_FULL, detach=True, name=f"{TEST_CONTAINER_NAME}-weasysvg", ports={"9082": WEASYSVG_PORT}, environment={"SVG_RENDERER": "weasysvg"}, init=True)
+    base_url = f"http://localhost:{WEASYSVG_PORT}"
+    request_session = requests.Session()
+    try:
+        wait_for_container_ready(container, base_url=base_url)
+        yield TestParameters(base_url, False, request_session, container)
+    finally:
+        request_session.close()
+        container.remove(force=True)
+
+
 @pytest.fixture(scope="session")
 def test_parameters(pandoc_container):
     """Test parameters and request session for container-based tests."""
