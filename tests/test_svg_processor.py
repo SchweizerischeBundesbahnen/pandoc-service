@@ -573,3 +573,12 @@ def test_inline_svg_nested_deep_keeps_its_case():
     document = _inline_svg_document('<svg viewBox="0 0 1 1">' + "<g>" * depth + "<clipPath/>" + "</g>" * depth + "</svg>")
     assert 'viewBox="0 0 1 1"' in document
     assert "<clipPath>" in document or "<clipPath/>" in document or "<clipPath></clipPath>" in document
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, 1.0), ("2.5", 2.5), ("10", 10.0), ("0.5", 1.0), ("11", 1.0), ("x", 1.0)])
+def test_device_scale_factor_of_the_environment(value, expected):
+    environment = {} if value is None else {"DEVICE_SCALE_FACTOR": value}
+    with patch.dict(os.environ, environment, clear=True):
+        assert SvgProcessor().device_scale_factor == expected
+    # A factor of the request is taken as it is
+    assert SvgProcessor(device_scale_factor=3.125).device_scale_factor == 3.125

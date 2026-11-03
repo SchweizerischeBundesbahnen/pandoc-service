@@ -160,6 +160,9 @@ class SvgProcessor:
     }
     NON_SVG_CONTENT_TYPES = ("image/jpeg", "image/png", "image/gif")
     VIEWBOX_PARTS_COUNT = 4  # min-x, min-y, width, height
+    DEFAULT_SCALE_FACTOR = 1.0
+    MIN_SCALE_FACTOR = 1.0
+    MAX_SCALE_FACTOR = 10.0
     DATA_PREFIX = "data:"
     SVG_NS = "http://www.w3.org/2000/svg"  # NOSONAR
 
@@ -178,8 +181,17 @@ class SvgProcessor:
             logger: Optional logger; if None, a module-level logger is used.
         """
         self.rasterizer = rasterizer
-        self.device_scale_factor = self._parse_float(os.environ.get("DEVICE_SCALE_FACTOR"), 1.0) if device_scale_factor is None else float(device_scale_factor)
         self.log = logger or logging.getLogger(__name__)
+        self.device_scale_factor = self._default_scale_factor() if device_scale_factor is None else float(device_scale_factor)
+
+    def _default_scale_factor(self) -> float:
+        """DEVICE_SCALE_FACTOR, 1.0 to 10.0; anything else is 1.0, with a warning."""
+        value = os.environ.get("DEVICE_SCALE_FACTOR")
+        factor = self._parse_float(value, self.DEFAULT_SCALE_FACTOR)
+        if not self.MIN_SCALE_FACTOR <= factor <= self.MAX_SCALE_FACTOR:
+            self.log.warning("DEVICE_SCALE_FACTOR=%s is outside %.1f-%.1f, using default: %.1f", value, self.MIN_SCALE_FACTOR, self.MAX_SCALE_FACTOR, self.DEFAULT_SCALE_FACTOR)
+            return self.DEFAULT_SCALE_FACTOR
+        return factor
 
     # ---------------- Public API ----------------
 
