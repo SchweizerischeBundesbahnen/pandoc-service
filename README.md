@@ -92,10 +92,25 @@ the writer of every target reads. Rasterization alone is capped, at 10000 px a s
 and 50 megapixels counted after the scale factor: beyond that the PNG is made at the
 size of the SVG, and the image is still drawn at the size the document gives.
 
+**Vector SVG with weasysvg.** `SVG_RENDERER=weasysvg` draws the SVG with
+[weasysvg](https://github.com/grigoriev/weasysvg) instead of Chromium. The service then
+starts no browser, and the SVG stays vector where the target allows it:
+
+| Target | What the document gets |
+|---|---|
+| `docx` | The PNG drawn by weasysvg, and on top of it the flat SVG of `weasysvg-convert -f svg`, as Word saves an SVG. Word 2016 and later draws the vector, an older Word the PNG. The flat SVG holds only paths, clips, gradients and opacities, which Word draws. |
+| `pdf`, `latex` | The SVG as it is. pandoc converts it with `rsvg-convert`, which is `weasysvg-convert` under that name: the PDF gets the SVG as vector, with its text. |
+| `html`, `epub` | The SVG as it is, which a browser draws. |
+| other targets | The PNG drawn by weasysvg. |
+
+The scale factor sets the density of the PNG only. The image takes the default from
+the `SVG_RENDERER` build argument; `chromium` stays the default for now.
+
 **Configuration (environment variables):**
 
 | Variable | Default | Range | Purpose |
 |---|---|---|---|
+| `SVG_RENDERER` | `chromium` | `chromium`, `weasysvg` | Who draws the SVG of an HTML source. |
 | `ENABLE_SVG_CONVERSION` | `true` | - | Master switch for SVG rasterization. |
 | `DEVICE_SCALE_FACTOR` | `1.0` | 1.0-10.0 | Rasterization density (overridden per request by `scale_factor`). |
 | `MAX_CONCURRENT_CONVERSIONS` | `10` | 1-100 | Max concurrent SVG→PNG conversions. |
@@ -120,7 +135,9 @@ docker run --init --detach \
 The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
 `stopped`) for visibility; because SVG rasterization is best effort, this status
 is informational and does not by itself mark the service unhealthy. The Chromium
-version is reported by the `/version` endpoint.
+version is reported by the `/version` endpoint. Both endpoints report `svgRenderer`,
+and `/version` reports the `weasysvg` version in the weasysvg mode, where `chromium`
+is `disabled`.
 
 ### Inline CSS in HTML to DOCX
 
@@ -564,7 +581,7 @@ Pandoc Service provides the following endpoints:
 
 > | HTTP code | Content-Type       | Response                                                                                                       |
 > |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
-> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "chromium": "148.0.7778.96" }` |
+> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "chromium": "148.0.7778.96", "svgRenderer": "chromium", "weasysvg": null }` |
 
 ##### Example cURL
 

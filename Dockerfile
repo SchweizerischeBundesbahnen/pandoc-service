@@ -21,6 +21,8 @@ ENV ARCH=${TARGETARCH:-amd64}
 #   to rasterize embedded SVGs to PNG so renderers without full SVG support get a
 #   usable image instead of a fallback warning)
 # - procps provides pgrep, used for psutil-based Chromium process monitoring
+# - poppler-utils provides pdftocairo, which weasysvg-convert flattens SVG for Word with
+#   (SVG_RENDERER=weasysvg); libharfbuzz-subset0 lets WeasyPrint subset fonts fast
 # - curl / ca-certificates to fetch the pandoc and tectonic binaries
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -39,6 +41,7 @@ RUN apt-get update && \
     libcups2 \
     libdrm2 \
     libgbm1 \
+    libharfbuzz-subset0 \
     libnspr4 \
     libnss3 \
     libpango-1.0-0 \
@@ -48,6 +51,7 @@ RUN apt-get update && \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    poppler-utils \
     procps && \
     apt-get clean autoclean && \
     apt-get --yes autoremove && \
@@ -134,6 +138,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # set PYTHONPATH to the working dir.
 ENV PATH="${WORKING_DIR}/.venv/bin:$PATH" \
     PYTHONPATH=${WORKING_DIR}
+
+# rsvg-convert is weasysvg-convert, in a directory of its own. pandoc gets it in PATH with SVG_RENDERER=weasysvg
+# only (app/svg_renderer.py), so the chromium mode keeps pandoc as it was.
+RUN mkdir -p /opt/weasysvg/bin && \
+    ln -s "${WORKING_DIR}/.venv/bin/weasysvg-convert" /opt/weasysvg/bin/rsvg-convert
+
+# Who draws the SVG of an HTML source by default: chromium (PNG through the browser) or weasysvg (vector)
+ARG SVG_RENDERER=chromium
+ENV SVG_RENDERER=${SVG_RENDERER}
 
 RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
     echo "${BUILD_TIMESTAMP}" > "${WORKING_DIR}/.build_timestamp"

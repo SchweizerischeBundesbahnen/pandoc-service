@@ -201,19 +201,19 @@ def cleanup_docker_resources():
     _verify_images(client)
 
 
-def wait_for_container_ready(container: Container, max_wait_time: int = 60) -> None:
+def wait_for_container_ready(container: Container, max_wait_time: int = 60, base_url: str = "http://localhost:9082") -> None:
     """
     Wait for container to become ready by checking the /version endpoint.
 
     Args:
         container: Docker container to wait for
         max_wait_time: Maximum time to wait in seconds (default: 60)
+        base_url: The address of the service in the container
 
     Raises:
         TimeoutError: If container does not become ready within max_wait_time
     """
     start_time = time.time()
-    base_url = "http://localhost:9082"
 
     while time.time() - start_time < max_wait_time:
         try:

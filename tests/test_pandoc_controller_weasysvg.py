@@ -1,0 +1,98 @@
+"""The controller with SVG_RENDERER=weasysvg: no browser, the SVG kept or drawn by weasysvg."""
+
+import base64
+import hashlib
+import os
+from unittest.mock import MagicMock, patch
+
+import pytest
+from starlette.testclient import TestClient
+
+from app import pandoc_controller, svg_renderer
+
+SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>'
+SOURCE = f'<html><body><img src="data:image/svg+xml;base64,{base64.b64encode(SVG.encode()).decode()}"></body></html>'
+
+
+@pytest.fixture
+def weasysvg_mode():
+    with patch.object(pandoc_controller, "SVG_RENDERER", svg_renderer.WEASYSVG), patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}):
+        yield
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["pdf", "latex", "html", "epub"])
+async def test_preprocess_keeps_the_svg_for_a_target_that_draws_it(weasysvg_mode, target):
+    assert await pandoc_controller.preprocess_html_svgs(SOURCE, None, target) == SOURCE
+
+
+@pytest.mark.asyncio
+async def test_preprocess_draws_the_png_and_keeps_its_flat_svg_for_docx(weasysvg_mode):
+    layers: dict[bytes, bytes] = {}
+    png = b"\x89PNG drawn by weasysvg"
+    with patch.object(svg_renderer, "render", return_value=(png, b"<svg flat/>")), patch.object(pandoc_controller, "get_chromium_manager") as chromium:
+        result = await pandoc_controller.preprocess_html_svgs(SOURCE.encode(), None, "docx", layers)
+    chromium.assert_not_called()
+    assert isinstance(result, bytes)
+    assert base64.b64encode(png) in result
+    assert layers == {hashlib.sha256(png).digest(): b"<svg flat/>"}
+
+
+@pytest.mark.asyncio
+async def test_preprocess_draws_the_png_alone_for_pptx(weasysvg_mode):
+    with patch.object(svg_renderer, "render", return_value=(b"\x89PNG", None)) as render:
+        result = await pandoc_controller.preprocess_html_svgs(SOURCE, 2.0, "pptx")
+    assert "data:image/png;base64," in result
+    assert render.call_args.kwargs == {"layer": False}
+
+
+@pytest.mark.asyncio
+async def test_preprocess_passes_the_html_through_when_drawing_fails(weasysvg_mode):
+    layers: dict[bytes, bytes] = {}
+    with patch.object(pandoc_controller, "SvgProcessor", side_effect=RuntimeError("broken")):
+        assert await pandoc_controller.preprocess_html_svgs(SOURCE, None, "docx", layers) == SOURCE
+    assert layers == {}
+
+
+@pytest.mark.asyncio
+async def test_start_and_stop_leave_chromium_alone(weasysvg_mode):
+    with patch.object(pandoc_controller, "get_chromium_manager") as chromium:
+        await pandoc_controller._start_chromium()
+        await pandoc_controller._stop_chromium()
+    chromium.assert_not_called()
+
+
+def test_version_and_health_name_the_renderer(weasysvg_mode):
+    with patch.object(pandoc_controller, "get_chromium_manager") as chromium, patch("app.pandoc_controller.get_pandoc_version", return_value="3.1.9"):
+        result = pandoc_controller.version()
+        response = TestClient(pandoc_controller.app).get("/health").json()
+    chromium.assert_not_called()
+    assert result.chromium is None
+    assert result.svgRenderer == "weasysvg"
+    assert result.weasysvg == svg_renderer.get_weasysvg_version()
+    assert response["svgRenderer"] == "weasysvg"
+    assert response["chromium"] == "disabled"
+
+
+def test_version_in_chromium_mode_has_no_weasysvg():
+    with patch.object(pandoc_controller, "SVG_RENDERER", svg_renderer.CHROMIUM), patch.object(pandoc_controller, "get_chromium_manager") as chromium:
+        chromium.return_value.get_version.return_value = "148"
+        result = pandoc_controller.version()
+    assert result.svgRenderer == "chromium"
+    assert result.weasysvg is None
+    assert result.chromium == "148"
+
+
+def test_pandoc_finds_rsvg_convert_in_weasysvg_mode(weasysvg_mode):
+    with patch.object(pandoc_controller, "_run_pandoc") as run, patch("pathlib.Path.open", MagicMock()), patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.unlink"):
+        pandoc_controller.run_pandoc_conversion("# Title", "markdown", "pdf")
+    environment = run.call_args.args[1]
+    assert environment["PATH"].startswith(svg_renderer.RSVG_CONVERT_DIRECTORY)
+
+
+def test_postprocess_attaches_the_svg_layers_to_a_docx():
+    layers = {b"key": b"<svg/>"}
+    with patch.object(pandoc_controller.docx_post_process, "process", return_value=b"processed"), patch.object(pandoc_controller.docx_svg_layers, "attach", return_value=b"layered") as attach:
+        response = pandoc_controller.postprocess_and_build_response(b"docx", "docx", "a.docx", svg_layers=layers)
+    attach.assert_called_once_with(b"processed", layers)
+    assert response.body == b"layered"
