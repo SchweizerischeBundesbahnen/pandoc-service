@@ -1032,6 +1032,20 @@ def test_document_ending_on_a_table_and_a_page_break_has_no_empty_last_page(test
     assert body.find(f"{{{W_NS}}}p/{{{W_NS}}}pPr/{{{W_NS}}}sectPr") is None, "the trailing section break survived"
 
 
+def test_document_ending_on_highlighted_spaces_keeps_them(test_parameters: TestParameters):
+    """Shaded spaces paint a visible area, so the paragraph holding them is no empty page."""
+    html = '<p>text</p><p><span style="background-color:#ffff00">&nbsp;&nbsp;&nbsp;</span></p>'
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    body = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml")).find(f"{{{W_NS}}}body")
+    last = body.findall(f"{{{W_NS}}}p")[-1]
+    assert "".join(t.text or "" for t in last.iter(f"{{{W_NS}}}t")).strip() == "", "the last paragraph is not the shaded spaces"
+    shading = last.find(f".//{{{W_NS}}}r/{{{W_NS}}}rPr/{{{W_NS}}}shd")
+    assert shading is not None, "the shaded spaces were dropped"
+    assert shading.get(f"{{{W_NS}}}fill").upper() == "FFFF00"
+
+
 def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
     """The HTML gives the columns no width, so the column of the image is not held to half the table."""
     image = f'<img src="{_png_data_uri(3000, 300)}">'

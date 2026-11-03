@@ -3388,6 +3388,66 @@ def test_paragraph_after_a_table_keeps_its_properties():
     assert [etree.QName(child).localname for child in last] == ["pPr"]
 
 
+def _spaces_p(run_properties: str, content: str = '<w:t xml:space="preserve">\u00a0\u00a0\u00a0</w:t>') -> str:
+    return f"<w:p><w:r><w:rPr>{run_properties}</w:rPr>{content}</w:r></w:p>"
+
+
+@pytest.mark.parametrize(
+    "run_properties",
+    [
+        pytest.param('<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/>', id="shading"),
+        pytest.param('<w:shd w:val="pct20" w:color="000000" w:fill="auto"/>', id="pattern-shading"),
+        pytest.param('<w:highlight w:val="yellow"/>', id="highlight"),
+        pytest.param('<w:u w:val="single"/>', id="underline"),
+        pytest.param("<w:strike/>", id="strike"),
+        pytest.param('<w:dstrike w:val="true"/>', id="double-strike"),
+        pytest.param('<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/>', id="border"),
+    ],
+)
+def test_trailing_spaces_with_visible_run_properties_are_kept(run_properties: str):
+    """Shaded or lined spaces show on the page, so they are content."""
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("text") + _spaces_p(run_properties))
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["text", "\u00a0\u00a0\u00a0"]
+
+
+def test_trailing_highlighted_tab_is_kept():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("text") + _spaces_p('<w:highlight w:val="yellow"/>', "<w:tab/>"))
+
+    _drop_trailing_empty_pages(doc)
+
+    assert len(_body_texts(doc)) == 2
+
+
+@pytest.mark.parametrize(
+    ("run_properties", "content"),
+    [
+        pytest.param('<w:shd w:val="clear" w:color="auto" w:fill="auto"/>', None, id="shading-without-fill"),
+        pytest.param('<w:shd w:val="nil" w:fill="FFFF00"/>', None, id="shading-nil"),
+        pytest.param('<w:highlight w:val="none"/>', None, id="highlight-none"),
+        pytest.param('<w:u w:val="none"/>', None, id="underline-none"),
+        pytest.param('<w:strike w:val="0"/>', None, id="strike-off"),
+        pytest.param('<w:b/><w:color w:val="FF0000"/>', None, id="bold-colored-spaces"),
+        pytest.param('<w:highlight w:val="yellow"/>', "<w:br/>", id="highlighted-line-break"),
+    ],
+)
+def test_trailing_spaces_with_nothing_visible_are_dropped(run_properties: str, content: str | None):
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    paragraph = _spaces_p(run_properties) if content is None else _spaces_p(run_properties, content)
+    doc = _document_with_body(_TEXT_P.format("text") + paragraph)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["text"]
+
+
 def test_process_drops_trailing_empty_page():
     import io
 

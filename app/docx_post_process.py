@@ -682,6 +682,14 @@ def _take_page_size(own_size: Any, page_size: Any) -> None:
 _BLANK_RUN_CHILDREN = frozenset({"rPr", "br", "cr", "tab", "lastRenderedPageBreak"})
 # Characters a paragraph can hold and still show nothing: Polarion leaves zero-width spaces behind.
 _INVISIBLE_CHARACTERS = str.maketrans("", "", "\u200b\u200c\u200d\u2060\ufeff")
+# Run properties that show on spaces too, with the w:val values that turn each one off.
+_SHOWN_ON_SPACES = {
+    "highlight": frozenset({"none"}),
+    "u": frozenset({"none"}),
+    "strike": frozenset({"0", "false", "off"}),
+    "dstrike": frozenset({"0", "false", "off"}),
+    "bdr": frozenset({"nil", "none"}),
+}
 # Body-level range ends: nothing to see, and dropping the paragraphs around them keeps them valid.
 _BODY_RANGE_ENDS = frozenset({"bookmarkEnd", "commentRangeEnd", "moveFromRangeEnd", "moveToRangeEnd", "permEnd", "proofErr"})
 # CT_SectPr children in schema order. Unknown children go last.
@@ -778,13 +786,43 @@ def _is_blank_paragraph(p: Any) -> bool:
 
 
 def _is_blank_run(run: Any) -> bool:
+    """True when the run shows nothing. Spaces and tabs count as content when shading or a line shows on them."""
+    has_spaces = False
     for item in run:
         name = _w_local_name(item)
-        if name in _BLANK_RUN_CHILDREN or not isinstance(item.tag, str):
+        if name == "tab":
+            has_spaces = True
+        elif name in _BLANK_RUN_CHILDREN or not isinstance(item.tag, str):
             continue
-        if name != "t" or (item.text or "").translate(_INVISIBLE_CHARACTERS).strip():
+        elif name != "t":
             return False
-    return True
+        else:
+            text = (item.text or "").translate(_INVISIBLE_CHARACTERS)
+            if text.strip():
+                return False
+            has_spaces = has_spaces or bool(text)
+    return not (has_spaces and _shows_on_spaces(run.find(f"{{{SCHEMA}}}rPr")))
+
+
+def _shows_on_spaces(r_pr: Any) -> bool:
+    """Whether the run properties paint something on spaces: shading, highlighting, a border, underline or strike-through."""
+    if r_pr is None:
+        return False
+    for child in r_pr:
+        name = _w_local_name(child)
+        if name == "shd" and _shading_shows(child):
+            return True
+        if name in _SHOWN_ON_SPACES and child.get(f"{{{SCHEMA}}}val") not in _SHOWN_ON_SPACES[name]:
+            return True
+    return False
+
+
+def _shading_shows(shd: Any) -> bool:
+    """A shading shows when it fills with a color or a pattern. "clear" with an "auto" fill paints nothing."""
+    pattern = shd.get(f"{{{SCHEMA}}}val")
+    if pattern == "nil":
+        return False
+    return pattern != "clear" or shd.get(f"{{{SCHEMA}}}fill") not in (None, "auto")
 
 
 def _fold_section(body_sect_pr: Any, own_sect_pr: Any) -> None:
