@@ -92,7 +92,7 @@ def get_graceful_shutdown_timeout() -> int:
         return timeout
 
 
-# The memory of the container left to the service, Chromium and tectonic, which take some 0.6 GB
+# The memory of the container left to the service, weasysvg and tectonic, which take some 0.6 GB
 # beside a large conversion, and the least share of the memory the pandoc processes get together
 _NON_PANDOC_MEMORY = 1024 * 1024 * 1024
 _MIN_PANDOC_MEMORY_SHARE = 0.5

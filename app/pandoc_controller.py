@@ -43,7 +43,6 @@ from . import (
     pptx_post_process,
     svg_renderer,
 )
-from .chromium_manager import get_chromium_manager
 from .constants import API_VERSION, PANDOC_HEAP_EXHAUSTED_EXIT_CODE, get_graceful_shutdown_timeout, get_max_concurrent_pandoc_conversions, get_pandoc_max_heap
 from .metrics_server import MetricsServer, get_metrics_port, is_metrics_server_enabled
 from .pandoc_metrics import get_pandoc_metrics
@@ -57,8 +56,8 @@ from .prometheus_metrics import (
     observe_response_body_size,
     observe_subprocess_duration,
 )
-from .svg_processor import SvgProcessor, SvgRasterizer
-from .svg_renderer import WEASYSVG, configure_svg_renderer, get_weasysvg_version
+from .svg_processor import SvgProcessor
+from .svg_renderer import configure_svg_renderer, get_weasysvg_version
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -192,45 +191,8 @@ DEFAULT_CONVERSION_OPTIONS = ["--track-changes=all", f"--lua-filter={FILTERS['pa
 
 logger = logging.getLogger(__name__)
 
-# SVG_RENDERER picks who draws the SVG of an HTML source: chromium (default) or weasysvg.
 # weasysvg patches WeasyPrint for the process, so it is installed here, once. See app/svg_renderer.py.
 SVG_RENDERER = configure_svg_renderer()
-
-
-def uses_weasysvg() -> bool:
-    """Tell whether weasysvg draws the SVG. Then the service starts no browser."""
-    return SVG_RENDERER == WEASYSVG
-
-
-async def _start_chromium() -> None:
-    """Start the persistent Chromium browser used to rasterize embedded SVGs.
-
-    Best effort: if it fails to start, conversions still run (SVGs just pass
-    through unrasterized) so a missing browser never takes the service down.
-    """
-    if not is_svg_conversion_enabled():
-        return
-    if uses_weasysvg():
-        logger.info("SVG renderer is weasysvg %s: SVG stays vector, Chromium is not started", get_weasysvg_version())
-        return
-    chromium_manager = get_chromium_manager()
-    try:
-        await chromium_manager.start()
-        logger.info("Chromium started for SVG conversion (version: %s)", chromium_manager.get_version())
-    except Exception as e:
-        logger.exception("Failed to start Chromium for SVG conversion; SVG rasterization disabled: %s", e)
-
-
-async def _stop_chromium() -> None:
-    """Stop the persistent Chromium browser if it is running."""
-    if not is_svg_conversion_enabled() or uses_weasysvg():
-        return
-    chromium_manager = get_chromium_manager()
-    if chromium_manager.is_running():
-        try:
-            await chromium_manager.stop()
-        except Exception as e:
-            logger.exception("Error stopping Chromium: %s", e)
 
 
 @contextlib.asynccontextmanager
@@ -291,12 +253,9 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:
     app_instance.state.pandoc_max_heap = get_pandoc_max_heap()
     logger.info("pandoc heap limited to %s", app_instance.state.pandoc_max_heap or "nothing")
 
-    # Start the persistent Chromium browser used to rasterize embedded SVGs.
-    await _start_chromium()
+    logger.info("SVG renderer is weasysvg %s", get_weasysvg_version())
 
     yield  # Application runs here
-
-    await _stop_chromium()
 
     # Stop metrics server
     if metrics_server:
@@ -473,9 +432,8 @@ def version() -> VersionSchema:
         pandoc=get_pandoc_version(),
         pandocService=os.environ.get("PANDOC_SERVICE_VERSION"),
         timestamp=os.environ.get("PANDOC_SERVICE_BUILD_TIMESTAMP"),
-        chromium=None if uses_weasysvg() else get_chromium_manager().get_version(),
         svgRenderer=SVG_RENDERER,
-        weasysvg=get_weasysvg_version() if uses_weasysvg() else None,
+        weasysvg=get_weasysvg_version(),
     )
 
 
@@ -503,14 +461,11 @@ def health() -> JSONResponse:
     logger.debug("Health check endpoint called")
 
     # Basic health check - service is running
-    # Note: "chromium" is informational only (values never match the unhealthy
-    # trip words below) because SVG rasterization is a best-effort enhancement.
     health_status = {
         "status": "healthy",
         "pandoc": "available" if get_pandoc_version() else "unavailable",
         "tectonic": get_tectonic_availability(),
         "filesystem": get_temp_directory_writability(),
-        "chromium": get_chromium_health(),
         "svgRenderer": SVG_RENDERER,
     }
 
@@ -844,15 +799,8 @@ def is_sandbox_enabled() -> bool:
 
 
 def is_svg_conversion_enabled() -> bool:
-    """Whether HTML SVG-to-PNG rasterization via headless Chromium is enabled (default on)."""
+    """Whether the SVG of an HTML source is drawn with weasysvg (default on)."""
     return os.environ.get("ENABLE_SVG_CONVERSION", "true").strip().lower() not in {"false", "0", "no"}
-
-
-def get_chromium_health() -> str:
-    """Report Chromium status for the health endpoint (informational, never gates health)."""
-    if not is_svg_conversion_enabled() or uses_weasysvg():
-        return "disabled"
-    return "available" if get_chromium_manager().health_check() else "stopped"
 
 
 async def extract_table_layouts(source: str | bytes) -> list[html_table_layout.TableLayout]:
@@ -871,7 +819,7 @@ async def extract_image_sizes(source: str | bytes) -> dict[str, list[html_image_
 
 
 async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None = None, target_format: str | None = None, svg_layers: dict[bytes, bytes] | None = None) -> str | bytes:
-    """Rasterize SVGs embedded in HTML to PNG before pandoc runs.
+    """Draw the SVGs embedded in HTML with weasysvg before pandoc runs.
 
     Word's built-in SVG engine does not support draw.io's
     ``<switch>`` + ``foreignObject`` mechanism, so a raw SVG embedded in the
@@ -879,22 +827,22 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
     diagram. Rendering the SVG to a PNG here (mirroring the weasyprint-service
     fix) sidesteps that.
 
-    Chromium draws the PNG, or weasysvg in the weasysvg mode (SVG_RENDERER). In that
-    mode a pdf, latex, html or epub target keeps the SVG, which pandoc or a browser
-    draws as vector, and a docx target gets the flat SVG of each PNG in `svg_layers`,
-    by the SHA-256 of the PNG, for app.docx_svg_layers. See app/svg_renderer.py.
+    weasysvg draws the PNG. A pdf, latex, html or epub target keeps the SVG, which
+    pandoc or a browser draws as vector, and a docx target gets the flat SVG of each
+    PNG in `svg_layers`, by the SHA-256 of the PNG, for app.docx_svg_layers. See
+    app/svg_renderer.py.
 
     ``scale_factor`` is the device scale factor controlling rasterization
     density (image density). When None, SvgProcessor falls back to the
     DEVICE_SCALE_FACTOR env var (default 1.0). This mirrors weasyprint-service.
 
-    Returns the source unchanged when SVG conversion is disabled, the browser is
-    unavailable, the input contains no SVG, or processing fails (best effort:
-    a missing rasterizer must never break a conversion).
+    Returns the source unchanged when SVG conversion is disabled, the input contains
+    no SVG, or processing fails (best effort: a failed drawing must never break a
+    conversion).
     """
     if not is_svg_conversion_enabled():
         return source
-    keeps_svg = uses_weasysvg() and target_format is not None and svg_renderer.keeps_svg(target_format)
+    keeps_svg = target_format is not None and svg_renderer.keeps_svg(target_format)
 
     is_bytes = isinstance(source, bytes)
     html_str = source.decode("utf-8", errors="replace") if isinstance(source, bytes) else source
@@ -908,23 +856,17 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
         # The SVG stays, but an inline one becomes a data URL: pandoc lowercases its names as HTML, which breaks it
         return await _kept_svgs(source, html_str)
 
-    if uses_weasysvg():
-        rasterizer: SvgRasterizer = svg_renderer.for_target(get_conversion_limiter(), target_format or "")
-    else:
-        rasterizer = get_chromium_manager()
-        if not rasterizer.is_running():
-            logger.warning("SVG conversion requested but Chromium is not running; passing HTML through unchanged")
-            return source
+    rasterizer = svg_renderer.for_target(get_conversion_limiter(), target_format or "")
 
     try:
         soup = BeautifulSoup(html_str, "html.parser")
-        processor = SvgProcessor(chromium_manager=rasterizer, device_scale_factor=scale_factor)
+        processor = SvgProcessor(rasterizer=rasterizer, device_scale_factor=scale_factor)
         processed = await processor.process_svg(soup)
         result = str(processed)
     except Exception as e:
         logger.exception("SVG preprocessing failed; passing HTML through unchanged: %s", e)
         return source
-    if svg_layers is not None and isinstance(rasterizer, svg_renderer.WeasysvgRasterizer):
+    if svg_layers is not None:
         svg_layers.update(rasterizer.svg_layers)
     return result.encode("utf-8") if is_bytes else result
 
@@ -1052,9 +994,8 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
             subprocess_start_time = time.time()
             # Only the html -> docx command loads filters/html_embedded_images.lua, which reads the directory from it
             environment = {**os.environ, html_embedded_images.DIRECTORY_VARIABLE: images_directory} if html_to_docx else None
-            # In the weasysvg mode pandoc finds rsvg-convert, which is weasysvg-convert
-            if uses_weasysvg():
-                environment = svg_renderer.pandoc_environment(environment)
+            # pandoc finds rsvg-convert, which is weasysvg-convert
+            environment = svg_renderer.pandoc_environment(environment)
             _run_pandoc(cmd, environment)
             subprocess_duration = time.time() - subprocess_start_time
             observe_subprocess_duration(subprocess_duration)
@@ -1460,8 +1401,7 @@ def start_server(port: int) -> None:
         port: The port number to listen on
     """
     # uvicorn installs its own SIGTERM and SIGINT handlers. Both stop the server
-    # gracefully and run the lifespan shutdown, which closes the Chromium browser and
-    # the metrics server. log_config=None keeps uvicorn from applying its own logging
+    # gracefully and run the lifespan shutdown, which closes the metrics server. log_config=None keeps uvicorn from applying its own logging
     # configuration, which would take its messages out of the log file. See
     # configure_uvicorn_logging.
     uvicorn.run(

@@ -18,7 +18,7 @@ from one format into another.
 
 - Simple REST API to access [Pandoc](https://pandoc.org/)
 - Direct subprocess calls to the pandoc binary (no Python module dependency)
-- SVG-to-PNG rasterization of embedded diagrams via headless Chromium, so SVGs (e.g. draw.io / mxgraph) render correctly in targets with weak SVG support such as Word
+- Embedded SVG diagrams drawn with weasysvg, vector where the target allows it, so SVGs (e.g. draw.io / mxgraph) render correctly in targets with weak SVG support such as Word
 - Prometheus metrics endpoint on dedicated port (9182) for monitoring and Grafana integration
 - Compatible with amd64 and arm64 architectures
 - Easily deployable via Docker
@@ -57,10 +57,8 @@ pandoc. Microsoft Word does not draw draw.io's `<switch>` / `<foreignObject>`
 mechanism and would otherwise show the "Text is not SVG - cannot display" fallback
 instead of the diagram.
 
-By default [weasysvg](https://github.com/grigoriev/weasysvg) draws the SVG and keeps
-it vector where the target allows it (see the table below). `SVG_RENDERER=chromium`
-rasterizes every SVG to PNG with a persistent headless Chromium browser (via
-Playwright) instead, as earlier releases did.
+[weasysvg](https://github.com/grigoriev/weasysvg) draws the SVG and keeps it vector
+where the target allows it (see the table below). The service runs no browser.
 
 This runs only for `source_format == "html"`. It is **best effort**: if the drawing
 fails, conversions still run and SVGs are passed through unchanged. The service
@@ -94,9 +92,7 @@ the writer of every target reads. Rasterization alone is capped, at 10000 px a s
 and 50 megapixels counted after the scale factor: beyond that the PNG is made at the
 size of the SVG, and the image is still drawn at the size the document gives.
 
-**Vector SVG with weasysvg.** `SVG_RENDERER=weasysvg` draws the SVG with
-[weasysvg](https://github.com/grigoriev/weasysvg) instead of Chromium. The service then
-starts no browser, and the SVG stays vector where the target allows it:
+**Vector SVG.** The SVG stays vector where the target allows it:
 
 | Target | What the document gets |
 |---|---|
@@ -105,23 +101,19 @@ starts no browser, and the SVG stays vector where the target allows it:
 | `html`, `epub` | The SVG as it is, which a browser draws. |
 | other targets | The PNG drawn by weasysvg. |
 
-The scale factor sets the density of the PNG only. The image takes the default from
-the `SVG_RENDERER` build argument, `weasysvg`. `SVG_RENDERER=chromium` draws every SVG
-as a PNG through Chromium, as before; it goes away in a later release.
+The scale factor sets the density of the PNG only. Earlier releases drew every SVG
+as a PNG through Chromium and chose with `SVG_RENDERER`; any other value than
+`weasysvg` is now logged as no longer supported and ignored.
 
 **Configuration (environment variables):**
 
 | Variable | Default | Range | Purpose |
 |---|---|---|---|
-| `SVG_RENDERER` | `weasysvg` | `weasysvg`, `chromium` | Who draws the SVG of an HTML source. |
-| `ENABLE_SVG_CONVERSION` | `true` | - | Master switch for SVG rasterization. |
+| `ENABLE_SVG_CONVERSION` | `true` | - | Master switch for the SVG preprocessing. |
 | `DEVICE_SCALE_FACTOR` | `1.0` | 1.0-10.0 | Rasterization density (overridden per request by `scale_factor`). |
-| `MAX_CONCURRENT_CONVERSIONS` | `10` | 1-100 | Max concurrent SVG→PNG conversions. |
-| `CHROMIUM_CONVERSION_TIMEOUT` | `30` | 5-300 | Per-conversion timeout (seconds). |
-| `CHROMIUM_MAX_CONVERSION_RETRIES` | `2` | 1-10 | Retry attempts (browser is restarted between attempts). |
-| `CHROMIUM_RESTART_AFTER_N_CONVERSIONS` | `0` | 0-10000 | Restart Chromium after N conversions (0 = disabled). |
-| `CHROMIUM_HEALTH_CHECK_ENABLED` | `true` | - | Background health-monitor loop (auto-restarts on degradation). |
-| `CHROMIUM_HEALTH_CHECK_INTERVAL` | `30` | 10-300 | Health-check interval (seconds). |
+
+The SVG drawings run under the conversion limit of `MAX_CONCURRENT_PANDOC_CONVERSIONS`.
+`MAX_CONCURRENT_CONVERSIONS` and the `CHROMIUM_*` variables of earlier releases have no effect.
 
 Out-of-range or invalid values fall back to the default with a warning logged.
 
@@ -131,16 +123,11 @@ docker run --init --detach \
   --publish 9182:9182 \
   --name pandoc-service \
   --env DEVICE_SCALE_FACTOR=2.0 \
-  --env MAX_CONCURRENT_CONVERSIONS=20 \
   ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
 
-The `/health` endpoint reports a `chromium` status (`available` / `disabled` /
-`stopped`) for visibility; because SVG rasterization is best effort, this status
-is informational and does not by itself mark the service unhealthy. The Chromium
-version is reported by the `/version` endpoint. Both endpoints report `svgRenderer`,
-and `/version` reports the `weasysvg` version in the weasysvg mode, where `chromium`
-is `disabled`.
+The `/health` and `/version` endpoints report `svgRenderer`, always `weasysvg`, and
+`/version` reports the `weasysvg` version.
 
 ### Inline CSS in HTML to DOCX
 
@@ -359,20 +346,10 @@ The service exposes Prometheus-compatible metrics for comprehensive monitoring a
 - `active_conversions` - Current active conversion count
 - `pandoc_info` - Service and pandoc version information
 
-**SVG / Chromium Metrics (SVG-to-PNG rasterization):**
+**SVG Metrics (the PNG weasysvg draws):**
 - `svg_conversions_total` - Total successful SVG→PNG conversions
 - `svg_conversion_failures_total` - Total failed SVG→PNG conversions
 - `svg_conversion_duration_seconds` - SVG→PNG conversion time histogram
-- `svg_conversion_error_rate_percent` - SVG conversion error rate as percentage
-- `avg_svg_conversion_time_seconds` - Average SVG→PNG conversion time
-- `chromium_restarts_total` - Chromium browser restart count
-- `chromium_consecutive_failures` - Current consecutive health-check failure streak
-- `chromium_cpu_percent` - Current Chromium CPU usage
-- `chromium_memory_bytes` - Current Chromium memory usage (bytes)
-- `chromium_uptime_seconds` - Chromium browser uptime
-- `chromium_queue_size` - Requests waiting for a conversion slot
-- `chromium_active_conversions` - In-flight SVG conversions
-- `chromium_info` - Chromium browser version information
 
 **HTTP Metrics (via prometheus-fastapi-instrumentator):**
 - `http_request_duration_seconds` - HTTP request duration histogram
@@ -496,7 +473,7 @@ The service shuts down on SIGTERM, the signal `docker stop` and Kubernetes send.
 
 1. Stops accepting new requests.
 2. Waits for the running conversions to finish.
-3. Closes the Chromium browser and the metrics server.
+3. Closes the metrics server.
 4. Exits with code 143 (128 + SIGTERM), the normal result of a stop by signal.
 
 The wait for running conversions is bounded by the `GRACEFUL_SHUTDOWN_TIMEOUT` environment variable:
@@ -515,9 +492,9 @@ The conversion runs in a worker thread, so SIGTERM is acted on the moment it arr
 
 `MAX_CONCURRENT_PANDOC_CONVERSIONS` bounds how many conversions run at the same time (1 - 100, default: 2). Each one holds a worker thread and a pandoc process, and a PDF target adds a tectonic run on top, so raise the limit together with the CPU and the memory of the container.
 
-`PANDOC_MAX_HEAP` bounds the heap of each pandoc process, in the form of `+RTS -M`: `2g`, `512m`, or `0` for no limit. A conversion beyond it stops with `413 Request Entity Too Large` instead of growing until the kernel kills it, or kills another process of the container. The limit holds the Haskell heap of pandoc, where a conversion keeps its document, but not what the Lua filters and the C libraries of pandoc allocate, so it is no hard bound on the memory of the container. Unset, the memory limit of the container less 1 GB for the service, Chromium and tectonic, and at least half of it, is shared between the conversions `MAX_CONCURRENT_PANDOC_CONVERSIONS` allows. The 1 GB also leaves room for what the filters allocate outside the heap. With two conversions, `--memory 8g` gives each pandoc 3584 MB and `--memory 2g` 512 MB. A container without a memory limit gets no heap limit. The limit is read from the cgroup of the container, which is where Docker and Kubernetes put the memory limit of a container. A limit set only on a parent, such as a pod-level limit, is hidden from the container, so state `PANDOC_MAX_HEAP` there. The log names the limit at startup.
+`PANDOC_MAX_HEAP` bounds the heap of each pandoc process, in the form of `+RTS -M`: `2g`, `512m`, or `0` for no limit. A conversion beyond it stops with `413 Request Entity Too Large` instead of growing until the kernel kills it, or kills another process of the container. The limit holds the Haskell heap of pandoc, where a conversion keeps its document, but not what the Lua filters and the C libraries of pandoc allocate, so it is no hard bound on the memory of the container. Unset, the memory limit of the container less 1 GB for the service, weasysvg and tectonic, and at least half of it, is shared between the conversions `MAX_CONCURRENT_PANDOC_CONVERSIONS` allows. The 1 GB also leaves room for what the filters allocate outside the heap. With two conversions, `--memory 8g` gives each pandoc 3584 MB and `--memory 2g` 512 MB. A container without a memory limit gets no heap limit. The limit is read from the cgroup of the container, which is where Docker and Kubernetes put the memory limit of a container. A limit set only on a parent, such as a pod-level limit, is hidden from the container, so state `PANDOC_MAX_HEAP` there. The log names the limit at startup.
 
-Keep the stop grace period of the orchestrator above `GRACEFUL_SHUTDOWN_TIMEOUT` (`docker stop --time`, or `terminationGracePeriodSeconds` in Kubernetes). A shorter one ends in SIGKILL, which leaves the Chromium browser unclosed.
+Keep the stop grace period of the orchestrator above `GRACEFUL_SHUTDOWN_TIMEOUT` (`docker stop --time`, or `terminationGracePeriodSeconds` in Kubernetes). A shorter one ends in SIGKILL, which ends the running conversions.
 
 The log line `Service shutdown complete` marks a shutdown which ran to the end.
 
@@ -584,7 +561,7 @@ Pandoc Service provides the following endpoints:
 
 > | HTTP code | Content-Type       | Response                                                                                                       |
 > |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
-> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "chromium": "148.0.7778.96", "svgRenderer": "chromium", "weasysvg": null }` |
+> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "svgRenderer": "weasysvg", "weasysvg": "0.5.0" }` |
 
 ##### Example cURL
 

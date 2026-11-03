@@ -1,16 +1,14 @@
 """
-Selection of the SVG renderer, and the renderer that draws SVG with weasysvg.
+The renderer that draws the SVG of an HTML source with weasysvg, as vector where the target allows it.
 
-SVG_RENDERER picks who draws the SVG of an HTML source. ``weasysvg`` (default) draws it with WeasyPrint
-and the weasysvg plugin, and the service starts no browser. ``chromium`` rasterizes it to PNG through
-the browser, as before:
-
-- For a DOCX, the PNG goes into the document as before, and :mod:`app.docx_svg_layers` adds the SVG
-  flattened by weasysvg on top of it. Word from 2016 shows the vector, an older Word the PNG.
+- For a DOCX, the PNG goes into the document, sized as before, and :mod:`app.docx_svg_layers` adds the
+  SVG flattened by weasysvg on top of it. Word from 2016 shows the vector, an older Word the PNG.
 - For a PDF or LaTeX target, the SVG stays as it is. pandoc converts it with ``rsvg-convert``, which
   is ``weasysvg-convert`` under that name: the PDF gets the SVG as vector.
 - For HTML and EPUB, the SVG stays as it is: a browser draws it.
-- For any other target, the PNG alone, as Chromium made it.
+- For any other target, the PNG alone.
+
+Chromium drew the PNG before; ``SVG_RENDERER`` chose between the two. Only weasysvg is left.
 """
 
 from __future__ import annotations
@@ -35,13 +33,9 @@ from app.prometheus_metrics import increment_svg_conversion_failure, increment_s
 if TYPE_CHECKING:
     import anyio
 
-CHROMIUM = "chromium"
 WEASYSVG = "weasysvg"
-SVG_RENDERERS = (CHROMIUM, WEASYSVG)
-DEFAULT_SVG_RENDERER = WEASYSVG
 
-# The directory that holds rsvg-convert, a link to weasysvg-convert. pandoc gets it in PATH in the weasysvg
-# mode only: in the chromium mode pandoc finds no rsvg-convert, as before.
+# The directory that holds rsvg-convert, a link to weasysvg-convert, which pandoc gets first in PATH
 RSVG_CONVERT_DIRECTORY = "/opt/weasysvg/bin"
 
 # The targets pandoc converts an SVG for itself, through rsvg-convert, or a browser draws
@@ -55,36 +49,20 @@ _PDFIUM_LOCK = threading.Lock()
 logger = logging.getLogger(__name__)
 
 
-def get_svg_renderer() -> str:
-    """
-    Read the SVG renderer from the SVG_RENDERER variable.
-
-    Returns:
-        ``weasysvg`` or ``chromium``. The value is case-insensitive and may carry whitespace. An unset or
-        empty value is ``weasysvg``; an unknown one too, with a warning.
-    """
-    value = os.environ.get("SVG_RENDERER", "").strip().lower()
-    if not value:
-        return DEFAULT_SVG_RENDERER
-    if value not in SVG_RENDERERS:
-        logger.warning("Invalid SVG_RENDERER value '%s', using default: %s", value, DEFAULT_SVG_RENDERER)
-        return DEFAULT_SVG_RENDERER
-    return value
-
-
 def configure_svg_renderer() -> str:
     """
-    Select the SVG renderer and prepare it.
+    Install weasysvg, which patches WeasyPrint for the whole process.
 
-    weasysvg patches WeasyPrint for the whole process, so it is installed only when it is selected.
+    SVG_RENDERER chose Chromium before. Any other value than weasysvg is reported and ignored.
 
     Returns:
-        The selected renderer.
+        ``weasysvg``.
     """
-    renderer = get_svg_renderer()
-    if renderer == WEASYSVG:
-        weasysvg.install()
-    return renderer
+    value = os.environ.get("SVG_RENDERER", "").strip().lower()
+    if value and value != WEASYSVG:
+        logger.warning("SVG_RENDERER=%s is no longer supported; weasysvg draws SVG", value)
+    weasysvg.install()
+    return WEASYSVG
 
 
 def get_weasysvg_version() -> str | None:
@@ -96,12 +74,12 @@ def get_weasysvg_version() -> str | None:
 
 
 def keeps_svg(target_format: str) -> bool:
-    """Whether the weasysvg mode leaves the SVG of a document as it is for this target."""
+    """Whether the SVG of a document stays as it is for this target."""
     return target_format in _SVG_KEPT_TARGETS
 
 
 def pandoc_environment(environment: dict[str, str] | None) -> dict[str, str]:
-    """The environment of pandoc in the weasysvg mode: rsvg-convert first in PATH."""
+    """The environment of pandoc: rsvg-convert, which is weasysvg-convert, first in PATH."""
     base = dict(os.environ) if environment is None else dict(environment)
     base["PATH"] = os.pathsep.join(filter(None, (RSVG_CONVERT_DIRECTORY, base.get("PATH"))))
     return base
@@ -109,7 +87,7 @@ def pandoc_environment(environment: dict[str, str] | None) -> dict[str, str]:
 
 def render(svg: bytes, width: int, height: int, scale: float, *, layer: bool) -> tuple[bytes, bytes | None]:
     """
-    Draw an SVG as a PNG of width x height px times scale, on a transparent background, as Chromium does.
+    Draw an SVG as a PNG of width x height px times scale, on a transparent background.
 
     With layer, also flatten it into the SVG Word draws: see weasysvg-convert -f svg. A failing flattening
     leaves the PNG alone.
@@ -153,10 +131,9 @@ def render(svg: bytes, width: int, height: int, scale: float, *, layer: bool) ->
 
 class WeasysvgRasterizer:
     """
-    Draws SVG with weasysvg for SvgProcessor, in place of ChromiumManager.
+    Draws SVG with weasysvg for SvgProcessor.
 
-    SvgProcessor calls convert_svg_to_png as it calls it on ChromiumManager. One instance serves one
-    request: it keeps the flat SVG of each PNG it made, by the SHA-256 of the PNG, for
+    SvgProcessor calls convert_svg_to_png for each SVG it rasterizes. One instance serves one request: it keeps the flat SVG of each PNG it made, by the SHA-256 of the PNG, for
     :mod:`app.docx_svg_layers`.
     """
 

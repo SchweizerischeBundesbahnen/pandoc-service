@@ -3,7 +3,7 @@ SVG processing utilities.
 
 Features:
 - Convert SVG <svg> to <img src="data:image/svg+xml;base64,...">
-- Replace base64 SVG <img> with base64 PNG using Chromium via CDP (Chrome DevTools Protocol)
+- Replace base64 SVG <img> with base64 PNG drawn by weasysvg (app/svg_renderer.py)
 - Handle SVG dimensions, including vw/vh/% via viewBox
 
 This is a port of the SvgProcessor from weasyprint-service, kept deliberately
@@ -31,7 +31,7 @@ if TYPE_CHECKING:  # used only for type hints
 
 
 class SvgRasterizer(Protocol):
-    """What draws an SVG as a PNG: ChromiumManager, or the WeasysvgRasterizer of app/svg_renderer.py."""
+    """What draws an SVG as a PNG: the WeasysvgRasterizer of app/svg_renderer.py."""
 
     async def convert_svg_to_png(self, svg_content: str, width: int, height: int, device_scale_factor: float | None = None) -> bytes:
         """Draw svg_content as a PNG of width x height px times the device scale factor."""
@@ -39,7 +39,7 @@ class SvgRasterizer(Protocol):
 
 class SvgProcessor:
     """
-    Class for processing SVG images in HTML and converting them to PNG via CDP.
+    Class for processing SVG images in HTML and converting them to PNG.
     """
 
     # MIME/constants
@@ -165,19 +165,19 @@ class SvgProcessor:
 
     def __init__(
         self,
-        chromium_manager: SvgRasterizer | None = None,
+        rasterizer: SvgRasterizer | None = None,
         device_scale_factor: float | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         """
-        Initialize SvgProcessor with CDP-based conversion.
+        Initialize SvgProcessor.
 
         Args:
-            chromium_manager: What draws the PNG: ChromiumManager, or WeasysvgRasterizer in the weasysvg mode.
+            rasterizer: What draws the PNG: a WeasysvgRasterizer.
             device_scale_factor: Device scale factor for rendering. If None, reads DEVICE_SCALE_FACTOR (default 1.0).
             logger: Optional logger; if None, a module-level logger is used.
         """
-        self.chromium_manager = chromium_manager
+        self.rasterizer = rasterizer
         self.device_scale_factor = self._parse_float(os.environ.get("DEVICE_SCALE_FACTOR"), 1.0) if device_scale_factor is None else float(device_scale_factor)
         self.log = logger or logging.getLogger(__name__)
 
@@ -187,7 +187,7 @@ class SvgProcessor:
         """
         Process <svg> and <img src="data:..."> in the HTML.
         - Replace only top-level <svg> with <img data:image/svg+xml;base64,...>
-        - Convert base64 SVG images inside <img> to base64 PNG via CDP
+        - Convert base64 SVG images inside <img> to base64 PNG
         """
         self.log.info("Starting SVG processing in HTML")
         parsed_html = self.replace_inline_svgs_with_img(input_html)
@@ -271,7 +271,7 @@ class SvgProcessor:
 
     async def replace_img_base64(self, parsed_html: BeautifulSoup) -> BeautifulSoup:
         """
-        Replace base64 SVG images with PNG equivalents in HTML <img> tags via CDP.
+        Replace base64 SVG images with PNG equivalents in HTML <img> tags.
         """
         img_nodes = parsed_html.find_all("img")
         self.log.debug("Found %d img tags to check for SVG data URLs", len(img_nodes))
@@ -542,7 +542,7 @@ class SvgProcessor:
 
     async def replace_svg_with_png(self, svg: Element, render_size: tuple[int, int] | None = None) -> tuple[str, str | bytes]:
         """
-        Convert SVG Element to PNG bytes using CDP.
+        Convert SVG Element to PNG bytes with the rasterizer.
         Returns tuple of (mime, content). If conversion fails, returns original SVG.
 
         `render_size` is the size the document draws the image at, where it gives one: the PNG is rasterized
@@ -562,18 +562,17 @@ class SvgProcessor:
 
         svg_content = self.svg_to_string(updated_svg)
 
-        # Convert via CDP
-        if self.chromium_manager:
+        if self.rasterizer:
             try:
-                png_bytes = await self.chromium_manager.convert_svg_to_png(svg_content, width, height, self.device_scale_factor)
-                self.log.debug("SVG converted via CDP successfully")
+                png_bytes = await self.rasterizer.convert_svg_to_png(svg_content, width, height, self.device_scale_factor)
+                self.log.debug("SVG converted to PNG successfully")
             except Exception as e:  # noqa: BLE001
-                self.log.error("CDP conversion failed: %s", e)
+                self.log.error("SVG to PNG conversion failed: %s", e)
                 return self.without_changes(svg)
             else:
                 return self.IMAGE_PNG, png_bytes
         else:
-            self.log.error("No ChromiumManager available, returning original SVG")
+            self.log.error("No rasterizer available, returning original SVG")
             return self.without_changes(svg)
 
     def ensure_mandatory_attributes(self, svg: Element) -> Element:

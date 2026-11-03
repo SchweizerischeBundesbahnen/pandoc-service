@@ -2,8 +2,6 @@
 FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv-source
 
 # Use debian:trixie-slim as base (same base as weasyprint-service).
-# A glibc base is required because Playwright publishes no musllinux wheel, so the
-# Chromium used to rasterize embedded SVGs comes from Playwright's bundled browser.
 FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 LABEL maintainer="SBB Polarion Team <polarion-opensource@sbb.ch>"
 
@@ -17,12 +15,9 @@ ARG TARGETARCH
 ENV ARCH=${TARGETARCH:-amd64}
 
 # Install system dependencies:
-# - Chromium runtime libraries + fonts (for Playwright's bundled Chromium, used
-#   to rasterize embedded SVGs to PNG so renderers without full SVG support get a
-#   usable image instead of a fallback warning)
-# - procps provides pgrep, used for psutil-based Chromium process monitoring
-# - poppler-utils provides pdftocairo, which weasysvg-convert flattens SVG for Word with
-#   (SVG_RENDERER=weasysvg); libharfbuzz-subset0 lets WeasyPrint subset fonts fast
+# - Pango and fonts, which WeasyPrint draws the SVG of a document with (weasysvg)
+# - poppler-utils provides pdftocairo, which weasysvg-convert flattens SVG for Word with;
+#   libharfbuzz-subset0 lets WeasyPrint subset fonts fast
 # - curl / ca-certificates to fetch the pandoc and tectonic binaries
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -35,24 +30,10 @@ RUN apt-get update && \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     fonts-noto-color-emoji \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdrm2 \
-    libgbm1 \
     libharfbuzz-subset0 \
-    libnspr4 \
-    libnss3 \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    poppler-utils \
-    procps && \
+    poppler-utils && \
     apt-get clean autoclean && \
     apt-get --yes autoremove && \
     rm -rf /var/lib/apt/lists/*
@@ -125,28 +106,18 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python
 RUN PYTHON_VERSION=$(awk '/^python / {print $2}' .tool-versions) && \
     uv python install "${PYTHON_VERSION}"
 
-# Install dependencies and Playwright's bundled Chromium (+ its OS deps).
-# PLAYWRIGHT_BROWSERS_PATH keeps the browser in a fixed, predictable location.
-# Playwright runs with --no-sync: a plain "uv run" syncs the default groups
-# again and would put the dev group (ruff, ty, pre-commit) into the image.
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+# Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev && \
-    uv run --no-sync playwright install chromium --with-deps
+    uv sync --frozen --no-dev
 
 # Put the venv on PATH (so python/pandoc tooling resolves without activation) and
 # set PYTHONPATH to the working dir.
 ENV PATH="${WORKING_DIR}/.venv/bin:$PATH" \
     PYTHONPATH=${WORKING_DIR}
 
-# rsvg-convert is weasysvg-convert, in a directory of its own. pandoc gets it in PATH with SVG_RENDERER=weasysvg
-# only (app/svg_renderer.py), so the chromium mode keeps pandoc as it was.
+# rsvg-convert is weasysvg-convert, in a directory of its own, which pandoc gets first in PATH (app/svg_renderer.py)
 RUN mkdir -p /opt/weasysvg/bin && \
     ln -s "${WORKING_DIR}/.venv/bin/weasysvg-convert" /opt/weasysvg/bin/rsvg-convert
-
-# Who draws the SVG of an HTML source by default: weasysvg (vector) or chromium (PNG through the browser)
-ARG SVG_RENDERER=weasysvg
-ENV SVG_RENDERER=${SVG_RENDERER}
 
 RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
     echo "${BUILD_TIMESTAMP}" > "${WORKING_DIR}/.build_timestamp"
