@@ -34,6 +34,15 @@ attribute is deliberately ``data-text-align`` (not ``data-align``) because
 ``align`` *is* a reserved HTML attribute and pandoc would keep it prefixed,
 breaking the symmetry with ``indent-twips``.
 
+Nested indents
+--------------
+CSS adds the ``margin-left`` of nested blocks, so a 40px div inside a 40px div
+starts 80px from the edge. DOCX paragraphs do not nest. ``data-indent-twips``
+therefore holds the element's own margin plus the margins of all its
+ancestors. The sum stops at a ``<td>``/``<th>``, because DOCX does not indent
+a table inside an indented block. An element with only ``text-align`` takes
+the inherited indent too.
+
 Indent unit conversion
 ----------------------
 1 twip = 1/1440 inch. CSS reference DPI is 96, so 1 px = 1/96 inch = 15 twips.
@@ -83,6 +92,9 @@ ALIGN_ATTR = "data-text-align"
 # given up to keep the heading itself, which is the same trade the filter makes
 # for a paragraph whose content it cannot reproduce.
 _HEADING_CLASS_RE = re.compile(r"^heading-\d+$")
+
+# The ancestor walk of _inherited_margin_left_twips stops at these tags.
+_CELL_TAGS = frozenset({"td", "th"})
 
 # CSS unit -> twips conversion factor. 1 twip = 1/1440 inch.
 _UNIT_TO_TWIPS: dict[str, float] = {
@@ -165,10 +177,11 @@ def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
         style = element.get("style")
         if not style:
             continue
-        twips = _extract_margin_left_twips(style)
+        own_twips = _extract_margin_left_twips(style)
         align = _extract_text_align(style)
-        if twips is None and align is None:
+        if own_twips is None and align is None:
             continue
+        twips = ((own_twips or 0) + _inherited_margin_left_twips(element)) or None
         if element.tag == "div":
             if _is_heading_div(element):
                 continue
@@ -180,6 +193,24 @@ def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
             _wrap_paragraph(parent, element, twips, align)
         rewrote = True
     return rewrote
+
+
+def _inherited_margin_left_twips(element: html.HtmlElement) -> int:
+    """The sum of the ``margin-left`` of every ancestor of ``element``, in twips.
+
+    CSS adds the left margins of nested blocks. DOCX has no nesting, so each
+    marked paragraph carries the total. The walk stops at a table cell: a
+    table inside an indented block is not indented in DOCX, so its cell text
+    must not take the indent either.
+    """
+    total = 0
+    for ancestor in element.iterancestors():
+        if ancestor.tag in _CELL_TAGS:
+            break
+        style = ancestor.get("style")
+        if style:
+            total += _extract_margin_left_twips(style) or 0
+    return total
 
 
 def _is_heading_div(div: html.HtmlElement) -> bool:
