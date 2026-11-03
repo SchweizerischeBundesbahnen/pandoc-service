@@ -12,7 +12,7 @@ dependencies = [
     "python-docx==1.2.0",
     "fastapi==0.162.0",
     "uvicorn==0.54.0",
-    "python-multipart==0.0.32",
+    "python-multipart==0.0.33",
     "defusedxml==0.7.1",
     "asgiref==3.13.0",
     "beautifulsoup4==4.15.0",
@@ -35,7 +35,7 @@ dev = [
 ]
 test = [
     "tox==4.67.5",
-    "tox-uv==1.37.2",
+    "tox-uv==1.37.3",
     # for debug source code for pytest --> see tox.ini section [testenv]
     "docker==7.2.0",
     "pytest==9.2.0",
