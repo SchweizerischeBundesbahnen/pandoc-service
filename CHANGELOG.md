@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.10.0...v2.10.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* keep the SVG case of an inline SVG ([#303](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/303)) ([b6a84fe](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b6a84fe3100d1aa5a9647f11ae57e8d40d064c9e)), closes [#302](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/302)
+
 ## [2.10.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.9.2...v2.10.0) (2026-11-03)
 
 
