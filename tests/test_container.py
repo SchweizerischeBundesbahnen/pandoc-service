@@ -378,7 +378,10 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     assert version_info["python"], "Python version should not be empty"
     assert version_info["pandoc"], "Pandoc version should not be empty"
     assert version_info["pandocService"], "Pandoc service version should not be empty"
-    assert version_info["chromium"], "Chromium version should not be empty"
+    # weasysvg draws the SVG by default: no browser runs
+    assert version_info["svgRenderer"] == "weasysvg"
+    assert version_info["weasysvg"], "weasysvg version should not be empty"
+    assert version_info["chromium"] is None
 
 
 def __tall_png_data_uri(width: int, height: int) -> str:

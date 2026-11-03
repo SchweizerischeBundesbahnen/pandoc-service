@@ -2,6 +2,10 @@
 
 import logging
 import os
+
+# The controller reads SVG_RENDERER once, on import. Its tests draw with Chromium unless they patch the mode;
+# the weasysvg mode has tests of its own (test_pandoc_controller_weasysvg.py). Set before app is imported.
+os.environ.setdefault("SVG_RENDERER", "chromium")
 import subprocess
 from unittest.mock import patch
 
