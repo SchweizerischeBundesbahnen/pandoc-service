@@ -174,25 +174,31 @@ def _wrap_formatted_paragraphs(root: html.HtmlElement) -> bool:
     # run over a tree that changes under it. Collecting the divs before any
     # wrapping also keeps the wrappers this pass creates out of the div list.
     for element in root.findall(".//p") + root.findall(".//div"):
-        style = element.get("style")
-        if not style:
-            continue
-        own_twips = _extract_margin_left_twips(style)
-        align = _extract_text_align(style)
-        if own_twips is None and align is None:
-            continue
-        twips = ((own_twips or 0) + _inherited_margin_left_twips(element)) or None
-        if element.tag == "div":
-            if _is_heading_div(element):
-                continue
-            _set_para_markers(element, twips, align)
-        else:
-            parent = element.getparent()
-            if parent is None:
-                continue
-            _wrap_paragraph(parent, element, twips, align)
-        rewrote = True
+        if _format_element(element):
+            rewrote = True
     return rewrote
+
+
+def _format_element(element: html.HtmlElement) -> bool:
+    """Mark a styled ``<div>`` or wrap a styled ``<p>``. True when the tree changed."""
+    style = element.get("style")
+    if not style:
+        return False
+    own_twips = _extract_margin_left_twips(style)
+    align = _extract_text_align(style)
+    if own_twips is None and align is None:
+        return False
+    twips = ((own_twips or 0) + _inherited_margin_left_twips(element)) or None
+    if element.tag == "div":
+        if _is_heading_div(element):
+            return False
+        _set_para_markers(element, twips, align)
+        return True
+    parent = element.getparent()
+    if parent is None:
+        return False
+    _wrap_paragraph(parent, element, twips, align)
+    return True
 
 
 def _inherited_margin_left_twips(element: html.HtmlElement) -> int:
