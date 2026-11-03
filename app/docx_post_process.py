@@ -793,9 +793,7 @@ def _fold_section(body_sect_pr: Any, own_sect_pr: Any) -> None:
     kept = [child for child in body_sect_pr if _w_local_name(child) not in own_names]
     merged = kept + list(own_sect_pr)
     merged.sort(key=_sect_pr_position)
-    for child in list(body_sect_pr):
-        body_sect_pr.remove(child)
-    body_sect_pr.extend(merged)
+    body_sect_pr[:] = merged
     own_sect_pr.getparent().remove(own_sect_pr)
 
 
