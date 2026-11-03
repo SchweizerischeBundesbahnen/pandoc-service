@@ -78,13 +78,16 @@ def test_break_between_lines_is_kept(test_parameters: TestParameters):
 
 
 def test_empty_line_is_kept(test_parameters: TestParameters):
-    """<p><br/></p> is how Polarion writes an empty line."""
-    assert _paragraphs(test_parameters, "<p>text</p><p><br/></p>") == [("text", 0), ("", 1)]
+    """<p><br/></p> is how Polarion writes an empty line.
+
+    Text follows it: the post-processor drops blank paragraphs that end the document.
+    """
+    assert _paragraphs(test_parameters, "<p>text</p><p><br/></p><p>end</p>") == [("text", 0), ("", 1), ("end", 0)]
 
 
 def test_break_after_closed_paragraph_is_kept(test_parameters: TestParameters):
     """A <br/> after </p> is an empty line of its own, not the end of the paragraph's line."""
-    assert _paragraphs(test_parameters, "<p>some paragraph</p><br/>") == [("some paragraph", 0), ("", 1)]
+    assert _paragraphs(test_parameters, "<p>some paragraph</p><br/><p>end</p>") == [("some paragraph", 0), ("", 1), ("end", 0)]
 
 
 def test_break_after_closed_paragraph_before_list_is_kept(test_parameters: TestParameters):

@@ -987,6 +987,23 @@ def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameter
     assert height * 10 == pytest.approx(width, abs=10), "the aspect ratio was not kept"
 
 
+@pytest.mark.parametrize("query", ["", "&orientation=portrait"])
+def test_document_ending_on_a_page_break_has_no_empty_last_page(test_parameters: TestParameters, query: str):
+    """A Polarion document that ends with \\newpage, \\pageLandscape and an empty paragraph ends on its landscape page."""
+    html = "<p>Portrait</p><p>\\newpage</p><p>\\pagePortrait</p><p>Landscape</p><p><br/></p><p>\\newpage</p><p>\\pageLandscape</p><p><br/></p>"
+
+    docx_bytes = _convert_with_template(test_parameters, html, _a4_template(test_parameters), query)
+
+    body = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml")).find(f"{{{W_NS}}}body")
+    last_block = [child for child in body if child.tag != f"{{{W_NS}}}sectPr"][-1]
+    assert "".join(t.text or "" for t in last_block.iter(f"{{{W_NS}}}t")) == "Landscape"
+    # Two sections: the portrait page, then the landscape one, which is now the body's own
+    assert len(body.findall(f"{{{W_NS}}}p/{{{W_NS}}}pPr/{{{W_NS}}}sectPr")) == 1
+    page_size = body.find(f"{{{W_NS}}}sectPr/{{{W_NS}}}pgSz")
+    assert page_size.get(f"{{{W_NS}}}orient") == "landscape"
+    assert body.find(f"{{{W_NS}}}sectPr/{{{W_NS}}}pgMar").get(f"{{{W_NS}}}left") == "1134"
+
+
 def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
     """The HTML gives the columns no width, so the column of the image is not held to half the table."""
     image = f'<img src="{_png_data_uri(3000, 300)}">'

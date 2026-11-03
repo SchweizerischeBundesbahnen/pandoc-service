@@ -115,6 +115,8 @@ def process(
     _replace_first_paragraph_styles(doc)
     _complete_section_geometry(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
+    # After the orientation, so a folded section keeps the orientation its break states.
+    _drop_trailing_empty_pages(doc)
     # Before the tables, so an image in a cell is brought back to its column.
     _replace_image_placeholders(doc, text_width)
     _state_inline_distances(doc)
@@ -674,6 +676,119 @@ def _take_page_size(own_size: Any, page_size: Any) -> None:
         width, height = height, width
     own_size.set(f"{{{SCHEMA}}}w", str(width))
     own_size.set(f"{{{SCHEMA}}}h", str(height))
+
+
+# Children of a run that put nothing on the page but line, page and column breaks or space.
+_BLANK_RUN_CHILDREN = frozenset({"rPr", "br", "cr", "tab", "lastRenderedPageBreak"})
+# Characters a paragraph can hold and still show nothing: Polarion leaves zero-width spaces behind.
+_INVISIBLE_CHARACTERS = str.maketrans("", "", "\u200b\u200c\u200d\u2060\ufeff")
+# Body-level range ends: nothing to see, and dropping the paragraphs around them keeps them valid.
+_BODY_RANGE_ENDS = frozenset({"bookmarkEnd", "commentRangeEnd", "moveFromRangeEnd", "moveToRangeEnd", "permEnd", "proofErr"})
+# CT_SectPr children in schema order. Unknown children go last.
+_SECT_PR_ORDER = (
+    "headerReference",
+    "footerReference",
+    "footnotePr",
+    "endnotePr",
+    "type",
+    "pgSz",
+    "pgMar",
+    "paperSrc",
+    "pgBorders",
+    "lnNumType",
+    "pgNumType",
+    "cols",
+    "formProt",
+    "vAlign",
+    "noEndnote",
+    "titlePg",
+    "textDirection",
+    "bidi",
+    "rtlGutter",
+    "docGrid",
+    "printerSettings",
+    "sectPrChange",
+)
+
+
+def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
+    """Remove the blank paragraphs and section breaks that end the document on an empty page.
+
+    Polarion documents often end with an empty paragraph, a ``\\newpage`` or a ``\\pageLandscape``.
+    A section break with only blank paragraphs after it opens a page with nothing on it. The break
+    is folded into the body's sectPr, so its section becomes the last one and keeps its own page.
+    The walk stops at the first content, and the first paragraph of the body always stays.
+    """
+    body = doc.element.body
+    body_sect_pr = body.find(f"{{{SCHEMA}}}sectPr")
+    if body_sect_pr is None:
+        return
+    first_paragraph = body.find(f"{{{SCHEMA}}}p")
+    element = body_sect_pr.getprevious()
+    while element is not None:
+        previous = element.getprevious()
+        name = _w_local_name(element)
+        if name != "p":
+            if name not in _BODY_RANGE_ENDS and isinstance(element.tag, str):
+                return
+            element = previous
+            continue
+        own_sect_pr = element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
+        if own_sect_pr is not None:
+            _fold_section(body_sect_pr, own_sect_pr)
+        if element is first_paragraph or not _is_blank_paragraph(element):
+            return
+        body.remove(element)
+        element = previous
+
+
+def _w_local_name(element: Any) -> str | None:
+    """The local name of a WordprocessingML element, or None for anything else."""
+    prefix = f"{{{SCHEMA}}}"
+    if not isinstance(element.tag, str) or not element.tag.startswith(prefix):
+        return None
+    return element.tag[len(prefix) :]
+
+
+def _is_blank_paragraph(p: Any) -> bool:
+    """True when the paragraph shows nothing: no text, only breaks and space.
+
+    Anything unknown counts as content, and so does a bookmark: removing one end of it would break it.
+    """
+    for child in p:
+        name = _w_local_name(child)
+        if name in ("pPr", "proofErr") or not isinstance(child.tag, str):
+            continue
+        if name != "r" or not _is_blank_run(child):
+            return False
+    return True
+
+
+def _is_blank_run(run: Any) -> bool:
+    for item in run:
+        name = _w_local_name(item)
+        if name in _BLANK_RUN_CHILDREN or not isinstance(item.tag, str):
+            continue
+        if name != "t" or (item.text or "").translate(_INVISIBLE_CHARACTERS).strip():
+            return False
+    return True
+
+
+def _fold_section(body_sect_pr: Any, own_sect_pr: Any) -> None:
+    """Make the section a break closes the last one: its children replace the body sectPr's of the same name."""
+    own_names = {_w_local_name(child) for child in own_sect_pr}
+    kept = [child for child in body_sect_pr if _w_local_name(child) not in own_names]
+    merged = kept + list(own_sect_pr)
+    merged.sort(key=_sect_pr_position)
+    for child in list(body_sect_pr):
+        body_sect_pr.remove(child)
+    body_sect_pr.extend(merged)
+    own_sect_pr.getparent().remove(own_sect_pr)
+
+
+def _sect_pr_position(child: Any) -> int:
+    name = _w_local_name(child)
+    return _SECT_PR_ORDER.index(name) if name in _SECT_PR_ORDER else len(_SECT_PR_ORDER)
 
 
 def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = None, orientation: str | None = None) -> None:

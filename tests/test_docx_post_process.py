@@ -3161,3 +3161,162 @@ def test_a_percentage_is_not_taken_for_a_drawing_pandoc_did_not_make_of_it():
     _size_images_for_their_page(doc, sizes, pandoc_text_width)
 
     assert _extents(doc)[0][0] == 914400
+
+
+# ---- Trailing empty pages ----
+
+_TEXT_P = "<w:p><w:r><w:t>{0}</w:t></w:r></w:p>"
+_EMPTY_LINE_P = "<w:p><w:r><w:br/></w:r></w:p>"
+_PAGE_BREAK_P = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+_LANDSCAPE_BREAK_P = '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="landscape" w:w="16838" w:h="11906"/></w:sectPr></w:pPr></w:p>'
+
+
+def _body_texts(doc) -> list[str]:
+    return ["".join(t.text or "" for t in p.iter(f"{{{SCHEMA}}}t")) for p in doc.element.body.findall(f"{{{SCHEMA}}}p")]
+
+
+def _body_sect_pr_names(doc) -> list[str]:
+    return [etree.QName(child).localname for child in doc.element.body.find(f"{{{SCHEMA}}}sectPr")]
+
+
+def test_trailing_blank_paragraphs_are_dropped():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("content") + _EMPTY_LINE_P + "<w:p/>" + '<w:p><w:r><w:t xml:space="preserve"> \u200b\u200b </w:t></w:r></w:p>')
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["content"]
+
+
+def test_trailing_page_break_is_dropped():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("content") + _PAGE_BREAK_P)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_children(doc) == ["p", "sectPr"]
+
+
+def test_trailing_section_break_is_folded_into_the_last_section():
+    """The reported document: content, page break, landscape break, empty paragraph."""
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("landscape page") + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
+    margins_before = etree.tostring(doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgMar"))
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_children(doc) == ["p", "sectPr"]
+    assert len(doc.sections) == 1
+    page_size = doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgSz")
+    assert page_size.get(f"{{{SCHEMA}}}orient") == "landscape"
+    assert page_size.get(f"{{{SCHEMA}}}w") == "16838"
+    # The body keeps what the break does not state
+    assert etree.tostring(doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgMar")) == margins_before
+
+
+def test_folded_section_children_stay_in_schema_order():
+    from app.docx_post_process import _SECT_PR_ORDER, _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("content") + _LANDSCAPE_BREAK_P)
+
+    _drop_trailing_empty_pages(doc)
+
+    names = _body_sect_pr_names(doc)
+    assert names == sorted(names, key=_SECT_PR_ORDER.index)
+    assert names.count("pgSz") == 1
+
+
+def test_section_break_on_a_paragraph_with_content_is_folded_and_the_paragraph_kept():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    landscape_content = '<w:p><w:pPr><w:sectPr><w:pgSz w:orient="landscape" w:w="16838" w:h="11906"/></w:sectPr></w:pPr><w:r><w:t>last</w:t></w:r></w:p>'
+    doc = _document_with_body(_TEXT_P.format("first") + landscape_content + _EMPTY_LINE_P)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["first", "last"]
+    assert len(doc.sections) == 1
+    assert doc.sections[0]._sectPr.find(f"{{{SCHEMA}}}pgSz").get(f"{{{SCHEMA}}}orient") == "landscape"
+
+
+def test_earlier_section_breaks_are_kept():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("portrait") + _LANDSCAPE_BREAK_P + _TEXT_P.format("last page"))
+
+    _drop_trailing_empty_pages(doc)
+
+    assert len(doc.sections) == 2
+    assert _body_texts(doc) == ["portrait", "", "last page"]
+
+
+def test_blank_paragraph_between_content_is_kept():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("one") + _EMPTY_LINE_P + _TEXT_P.format("two"))
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["one", "", "two"]
+
+
+@pytest.mark.parametrize(
+    "trailing",
+    [
+        pytest.param(_TBL_XML.format("cell"), id="table"),
+        pytest.param('<w:p><w:bookmarkStart w:id="1" w:name="anchor"/><w:bookmarkEnd w:id="1"/></w:p>', id="bookmark-in-paragraph"),
+        pytest.param('<w:bookmarkStart w:id="1" w:name="anchor"/>', id="bookmark-in-body"),
+        pytest.param("<w:p><w:r><w:drawing/></w:r></w:p>", id="drawing"),
+        pytest.param('<w:p><w:fldSimple w:instr="PAGE"/></w:p>', id="field"),
+        pytest.param('<w:p><w:hyperlink w:anchor="x"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>', id="hyperlink"),
+    ],
+)
+def test_trailing_content_is_kept(trailing: str):
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("content") + trailing)
+    before = etree.tostring(doc.element.body)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert etree.tostring(doc.element.body) == before
+
+
+def test_body_range_end_is_looked_past_and_kept():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body('<w:bookmarkStart w:id="1" w:name="a"/>' + _TEXT_P.format("content") + '<w:bookmarkEnd w:id="1"/>' + _PAGE_BREAK_P)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_children(doc) == ["bookmarkStart", "p", "bookmarkEnd", "sectPr"]
+
+
+def test_all_blank_document_keeps_its_first_paragraph():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_EMPTY_LINE_P + _PAGE_BREAK_P + _EMPTY_LINE_P)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_children(doc) == ["p", "sectPr"]
+
+
+def test_process_drops_trailing_empty_page():
+    import io
+
+    from docx import Document
+
+    doc = _document_with_body(_TEXT_P.format("content") + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+
+    result = Document(io.BytesIO(docx_post_process.process(buffer.getvalue(), orientation="portrait")))
+
+    assert _body_texts(result) == ["content"]
+    assert len(result.sections) == 1
+    # The folded section keeps the orientation its break states, not the requested one
+    assert result.sections[0]._sectPr.find(f"{{{SCHEMA}}}pgSz").get(f"{{{SCHEMA}}}orient") == "landscape"
