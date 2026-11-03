@@ -195,14 +195,70 @@ def test_div_without_style_is_unchanged():
 
 
 def test_styled_p_inside_styled_div_is_not_double_marked():
-    """The <p> keeps its own wrapper; the div is marked in place, and the two
-    do not compound - the Lua filter passes a Div child through untouched."""
+    """The <p> keeps its own wrapper and the div is marked in place.
+
+    The <p> wrapper carries the sum of both margins, as CSS nests them.
+    """
     src = b'<div style="margin-left: 40px"><p style="margin-left: 80px">x</p></div>'
     out = html_paragraph_pre_process.preprocess(src).decode()
 
     assert out.count("pandoc-para") == 2
     assert 'data-indent-twips="600"' in out
-    assert 'data-indent-twips="1200"' in out
+    assert 'data-indent-twips="1800"' in out
+
+
+# --- nested indents -------------------------------------------------------
+
+
+def _indents(src: bytes) -> list[int]:
+    """Return every data-indent-twips value of the output, in document order."""
+    out = html_paragraph_pre_process.preprocess(src)
+    return [int(v) for v in re.findall(rb'data-indent-twips="(\d+)"', out)]
+
+
+def test_nested_div_adds_parent_margin():
+    src = b'<div style="margin-left: 40px"><div style="margin-left: 40px">x</div></div>'
+    assert _indents(src) == [600, 1200]
+
+
+def test_three_nested_divs_add_all_margins():
+    src = b'<div style="margin-left: 40px"><div style="margin-left: 40px"><div style="margin-left: 40px">x</div></div></div>'
+    assert _indents(src) == [600, 1200, 1800]
+
+
+def test_unstyled_ancestor_adds_nothing():
+    src = b'<div style="margin-left: 40px"><section><div style="margin-left: 40px">x</div></section></div>'
+    assert _indents(src) == [600, 1200]
+
+
+def test_ancestor_with_invalid_margin_adds_nothing():
+    src = b'<div style="margin-left: 50%"><div style="margin-left: 40px">x</div></div>'
+    assert _indents(src) == [600]
+
+
+def test_align_only_div_takes_inherited_indent():
+    src = b'<div style="margin-left: 40px"><div style="text-align: center">x</div></div>'
+    out = html_paragraph_pre_process.preprocess(src)
+    assert _indents(src) == [600, 600]
+    assert b'data-text-align="center"' in out
+
+
+def test_inherited_indent_stops_at_table_cell():
+    src = b'<div style="margin-left: 40px"><table><tr><td><div style="margin-left: 40px">x</div></td></tr></table></div>'
+    assert _indents(src) == [600, 600]
+
+
+def test_polarion_nested_indentation_matches_css():
+    """The work item body of the reported document: each line sits where a browser puts it."""
+    src = (
+        b'<div style="margin-left: 40px">Indent 0</div>'
+        b'<div style="margin-left: 40px">'
+        b'<div style="margin-left: 40px">Indent 1</div>'
+        b'<div style="margin-left: 80px">Indent 2</div>'
+        b'<div style="margin-left: 40px">Indent 1<div style="margin-left: 40px">Indent 2</div>Indent 1</div>'
+        b"</div>"
+    )
+    assert _indents(src) == [600, 600, 1200, 1800, 1200, 1800]
 
 
 def test_wrapper_div_is_not_marked_a_second_time():
