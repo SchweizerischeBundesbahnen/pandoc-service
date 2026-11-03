@@ -55,6 +55,109 @@ class SvgProcessor:
     ABSOLUTE_UNITS_IN_PX: ClassVar[dict[str, float]] = {"px": 1.0, "in": 96.0, "cm": 96 / 2.54, "mm": 96 / 25.4, "pt": 96 / 72, "pc": 16.0}
     IMAGE_PNG = "image/png"
     IMAGE_SVG = "image/svg+xml"
+    SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+    XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
+    XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
+    # The SVG names the HTML parser lowercases, from the tables of the HTML specification that adjust them
+    SVG_ELEMENTS: ClassVar[dict[str, str]] = {
+        "altglyph": "altGlyph",
+        "altglyphdef": "altGlyphDef",
+        "altglyphitem": "altGlyphItem",
+        "animatecolor": "animateColor",
+        "animatemotion": "animateMotion",
+        "animatetransform": "animateTransform",
+        "clippath": "clipPath",
+        "feblend": "feBlend",
+        "fecolormatrix": "feColorMatrix",
+        "fecomponenttransfer": "feComponentTransfer",
+        "fecomposite": "feComposite",
+        "feconvolvematrix": "feConvolveMatrix",
+        "fediffuselighting": "feDiffuseLighting",
+        "fedisplacementmap": "feDisplacementMap",
+        "fedistantlight": "feDistantLight",
+        "fedropshadow": "feDropShadow",
+        "feflood": "feFlood",
+        "fefunca": "feFuncA",
+        "fefuncb": "feFuncB",
+        "fefuncg": "feFuncG",
+        "fefuncr": "feFuncR",
+        "fegaussianblur": "feGaussianBlur",
+        "feimage": "feImage",
+        "femerge": "feMerge",
+        "femergenode": "feMergeNode",
+        "femorphology": "feMorphology",
+        "feoffset": "feOffset",
+        "fepointlight": "fePointLight",
+        "fespecularlighting": "feSpecularLighting",
+        "fespotlight": "feSpotLight",
+        "fetile": "feTile",
+        "feturbulence": "feTurbulence",
+        "foreignobject": "foreignObject",
+        "glyphref": "glyphRef",
+        "lineargradient": "linearGradient",
+        "radialgradient": "radialGradient",
+        "textpath": "textPath",
+    }
+    SVG_ATTRIBUTES: ClassVar[dict[str, str]] = {
+        "attributename": "attributeName",
+        "attributetype": "attributeType",
+        "basefrequency": "baseFrequency",
+        "baseprofile": "baseProfile",
+        "calcmode": "calcMode",
+        "clippathunits": "clipPathUnits",
+        "diffuseconstant": "diffuseConstant",
+        "edgemode": "edgeMode",
+        "filterunits": "filterUnits",
+        "glyphref": "glyphRef",
+        "gradienttransform": "gradientTransform",
+        "gradientunits": "gradientUnits",
+        "kernelmatrix": "kernelMatrix",
+        "kernelunitlength": "kernelUnitLength",
+        "keypoints": "keyPoints",
+        "keysplines": "keySplines",
+        "keytimes": "keyTimes",
+        "lengthadjust": "lengthAdjust",
+        "limitingconeangle": "limitingConeAngle",
+        "markerheight": "markerHeight",
+        "markerunits": "markerUnits",
+        "markerwidth": "markerWidth",
+        "maskcontentunits": "maskContentUnits",
+        "maskunits": "maskUnits",
+        "numoctaves": "numOctaves",
+        "pathlength": "pathLength",
+        "patterncontentunits": "patternContentUnits",
+        "patterntransform": "patternTransform",
+        "patternunits": "patternUnits",
+        "pointsatx": "pointsAtX",
+        "pointsaty": "pointsAtY",
+        "pointsatz": "pointsAtZ",
+        "preservealpha": "preserveAlpha",
+        "preserveaspectratio": "preserveAspectRatio",
+        "primitiveunits": "primitiveUnits",
+        "refx": "refX",
+        "refy": "refY",
+        "repeatcount": "repeatCount",
+        "repeatdur": "repeatDur",
+        "requiredextensions": "requiredExtensions",
+        "requiredfeatures": "requiredFeatures",
+        "specularconstant": "specularConstant",
+        "specularexponent": "specularExponent",
+        "spreadmethod": "spreadMethod",
+        "startoffset": "startOffset",
+        "stddeviation": "stdDeviation",
+        "stitchtiles": "stitchTiles",
+        "surfacescale": "surfaceScale",
+        "systemlanguage": "systemLanguage",
+        "tablevalues": "tableValues",
+        "targetx": "targetX",
+        "targety": "targetY",
+        "textlength": "textLength",
+        "viewbox": "viewBox",
+        "viewtarget": "viewTarget",
+        "xchannelselector": "xChannelSelector",
+        "ychannelselector": "yChannelSelector",
+        "zoomandpan": "zoomAndPan",
+    }
     NON_SVG_CONTENT_TYPES = ("image/jpeg", "image/png", "image/gif")
     VIEWBOX_PARTS_COUNT = 4  # min-x, min-y, width, height
     DATA_PREFIX = "data:"
@@ -101,7 +204,7 @@ class SvgProcessor:
 
         self.log.debug("Found %d top-level SVG tags to replace with img tags", len(top_level_svgs))
         for svg in top_level_svgs:
-            svg_str = str(svg)
+            svg_str = self._svg_document(svg)
             self.log.debug("Converting inline SVG to data URL, size: %d characters", len(svg_str))
             b64 = base64.b64encode(svg_str.encode("utf-8")).decode("ascii")
             img: Tag = parsed_html.new_tag("img")
@@ -120,6 +223,35 @@ class SvgProcessor:
             svg.replace_with(img)
 
         return parsed_html
+
+    @classmethod
+    def _svg_document(cls, svg: Tag) -> str:
+        """
+        An inline <svg> as a standalone SVG document.
+
+        The HTML parser lowercases every name, but SVG is XML: `viewbox` and `foreignobject` mean nothing
+        there. A draw.io diagram lost its scale and its labels. The names get the case of the HTML
+        specification back, and the root its namespaces, which HTML leaves implicit.
+        """
+        cls._restore_svg_case(svg)
+        if not svg.get("xmlns"):
+            svg.attrs["xmlns"] = cls.SVG_NAMESPACE
+        if not svg.get("xmlns:xlink") and any(name.startswith("xlink:") for node in [svg, *svg.find_all(name=True)] for name in node.attrs):
+            svg.attrs["xmlns:xlink"] = cls.XLINK_NAMESPACE
+        return str(svg)
+
+    @classmethod
+    def _restore_svg_case(cls, node: Tag) -> None:
+        """Give the elements and attributes of node and its children their SVG case, up to the HTML of a foreignObject."""
+        node.name = cls.SVG_ELEMENTS.get(node.name, node.name)
+        node.attrs = {cls.SVG_ATTRIBUTES.get(name, name): value for name, value in node.attrs.items()}
+        if node.name == "foreignObject":
+            # Its HTML is in the XHTML namespace: in an SVG document a bare <div> would be an unknown SVG element
+            for child in node.find_all(name=True, recursive=False):
+                child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
+            return
+        for child in node.find_all(name=True, recursive=False):
+            cls._restore_svg_case(child)
 
     async def replace_img_base64(self, parsed_html: BeautifulSoup) -> BeautifulSoup:
         """

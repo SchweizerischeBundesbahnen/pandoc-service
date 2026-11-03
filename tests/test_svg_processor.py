@@ -627,3 +627,42 @@ def test_get_chromium_health_states():
         assert pandoc_controller.get_chromium_health() == "available"
     with patch.dict(os.environ, {"ENABLE_SVG_CONVERSION": "true"}), patch.object(pandoc_controller, "get_chromium_manager", return_value=_mock_manager(running=False)):
         assert pandoc_controller.get_chromium_health() == "stopped"
+
+
+# ---------------- inline SVG as a standalone document ----------------
+
+
+def _inline_svg_document(html: str) -> str:
+    soup = SvgProcessor().replace_inline_svgs_with_img(BeautifulSoup(html, "html.parser"))
+    src = soup.find("img")["src"]
+    return base64.b64decode(src.split(",", 1)[1]).decode()
+
+
+def test_inline_svg_gets_its_svg_case_back():
+    # The labels of draw.io: foreignObject under a switch, and a viewBox that scales the drawing
+    document = _inline_svg_document(
+        '<p><svg width="10" height="10" viewBox="0 0 20 20"><defs><linearGradient id="g" gradientUnits="userSpaceOnUse"/><clipPath id="c"/></defs>'
+        '<switch><foreignObject requiredFeatures="x"><div style="a">Label</div></foreignObject><text>Fallback</text></switch></svg></p>'
+    )
+    root = det.fromstring(document)
+    assert root.tag == "{http://www.w3.org/2000/svg}svg"
+    assert root.get("viewBox") == "0 0 20 20"
+    assert root.find(".//{http://www.w3.org/2000/svg}linearGradient").get("gradientUnits") == "userSpaceOnUse"
+    assert root.find(".//{http://www.w3.org/2000/svg}clipPath") is not None
+    foreign = root.find(".//{http://www.w3.org/2000/svg}foreignObject")
+    assert foreign.get("requiredFeatures") == "x"
+    # The HTML in it is XHTML, its own names untouched
+    assert foreign.find("{http://www.w3.org/1999/xhtml}div").text == "Label"
+
+
+def test_inline_svg_keeps_its_namespaces_and_gets_xlink():
+    document = _inline_svg_document('<svg xmlns="http://www.w3.org/2000/svg"><use xlink:href="#a"/></svg>')
+    assert 'xmlns:xlink="http://www.w3.org/1999/xlink"' in document
+    assert document.count('xmlns="http://www.w3.org/2000/svg"') == 1
+    assert "xmlns:xlink" not in _inline_svg_document("<svg><rect/></svg>")
+    assert 'xmlns:xlink="urn:own"' in _inline_svg_document('<svg xmlns:xlink="urn:own"><use xlink:href="#a"/></svg>')
+
+
+def test_inline_svg_keeps_a_namespace_of_the_html_in_a_foreign_object():
+    document = _inline_svg_document('<svg><foreignObject><div xmlns="urn:own">a</div></foreignObject></svg>')
+    assert '<div xmlns="urn:own">' in document

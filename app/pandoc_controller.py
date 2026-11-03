@@ -894,8 +894,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
     """
     if not is_svg_conversion_enabled():
         return source
-    if uses_weasysvg() and target_format is not None and svg_renderer.keeps_svg(target_format):
-        return source
+    keeps_svg = uses_weasysvg() and target_format is not None and svg_renderer.keeps_svg(target_format)
 
     is_bytes = isinstance(source, bytes)
     html_str = source.decode("utf-8", errors="replace") if isinstance(source, bytes) else source
@@ -904,6 +903,10 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
     lowered = html_str.lower()
     if "data:image/svg+xml" not in lowered and "<svg" not in lowered:
         return source
+
+    if keeps_svg:
+        # The SVG stays, but an inline one becomes a data URL: pandoc lowercases its names as HTML, which breaks it
+        return _inline_svgs_as_images(source, html_str) if "<svg" in lowered else source
 
     if uses_weasysvg():
         rasterizer: SvgRasterizer = svg_renderer.for_target(get_conversion_limiter(), target_format or "")
@@ -924,6 +927,17 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
     if svg_layers is not None and isinstance(rasterizer, svg_renderer.WeasysvgRasterizer):
         svg_layers.update(rasterizer.svg_layers)
     return result.encode("utf-8") if is_bytes else result
+
+
+def _inline_svgs_as_images(source: str | bytes, html_str: str) -> str | bytes:
+    """source with each inline SVG as an image of a data URL, the SVG itself kept."""
+    try:
+        soup = SvgProcessor().replace_inline_svgs_with_img(BeautifulSoup(html_str, "html.parser"))
+    except Exception as e:
+        logger.exception("Inline SVG preprocessing failed; passing HTML through unchanged: %s", e)
+        return source
+    result = str(soup)
+    return result.encode("utf-8") if isinstance(source, bytes) else result
 
 
 def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_format: str, options: list[str] | None = None, preserve_table_styles: bool = False, reference_doc: str | None = None) -> bytes:
