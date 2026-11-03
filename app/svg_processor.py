@@ -19,7 +19,7 @@ import math
 import os
 import re
 import xml.etree.ElementTree as ET
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from bs4 import BeautifulSoup, Tag
 
@@ -29,7 +29,11 @@ from defusedxml import ElementTree as det  # noqa: N813
 if TYPE_CHECKING:  # used only for type hints
     from xml.etree.ElementTree import Element
 
-    from app.chromium_manager import ChromiumManager
+
+class SvgRasterizer(Protocol):
+    """What draws an SVG as a PNG: ChromiumManager, or the WeasysvgRasterizer of app/svg_renderer.py."""
+
+    async def convert_svg_to_png(self, svg_content: str, width: int, height: int, device_scale_factor: float | None = None) -> bytes: ...
 
 
 class SvgProcessor:
@@ -57,7 +61,7 @@ class SvgProcessor:
 
     def __init__(
         self,
-        chromium_manager: ChromiumManager | None = None,
+        chromium_manager: SvgRasterizer | None = None,
         device_scale_factor: float | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -65,7 +69,7 @@ class SvgProcessor:
         Initialize SvgProcessor with CDP-based conversion.
 
         Args:
-            chromium_manager: ChromiumManager instance for CDP-based conversion.
+            chromium_manager: What draws the PNG: ChromiumManager, or WeasysvgRasterizer in the weasysvg mode.
             device_scale_factor: Device scale factor for rendering. If None, reads DEVICE_SCALE_FACTOR (default 1.0).
             logger: Optional logger; if None, a module-level logger is used.
         """

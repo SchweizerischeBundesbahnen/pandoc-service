@@ -69,6 +69,8 @@ bash tests/shell/test_pandoc_service.sh
 - **app/schema.py**: Pydantic models for API responses
 - **app/svg_processor.py**: Finds SVGs in incoming HTML and rasterizes them to PNG (port of weasyprint-service's `SvgProcessor`)
 - **app/chromium_manager.py**: Persistent headless Chromium (Playwright) used for SVG→PNG, with metrics, retries and a health-monitor loop (port of weasyprint-service's `ChromiumManager`)
+- **app/svg_renderer.py**: `SVG_RENDERER` (`chromium` default, `weasysvg`). In the weasysvg mode no browser starts: pdf, latex, html and epub keep the SVG (pandoc finds `rsvg-convert`, a link to `weasysvg-convert`, in `/opt/weasysvg/bin`), other targets get a PNG drawn by weasysvg
+- **app/docx_svg_layers.py**: Adds the flat SVG of each weasysvg PNG to its DOCX picture (`asvg:svgBlip`), after `docx_post_process`. pandoc makes no PNG fallback under `--sandbox`, so the service writes both
 - **app/constants.py**: Small env-var helpers (`get_bool_env`)
 - **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG/Chromium metrics)
 

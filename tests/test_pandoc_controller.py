@@ -707,7 +707,7 @@ def test_convert_with_encoding():
 
         # Assertions
         mock_convert.assert_called_once_with("# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS, preserve_table_styles=False)
-        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html", None, None, None, None)
+        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "converted-document.html", None, None, None, None, {})
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
         assert response.content == b"<html>Test</html>"
@@ -727,7 +727,7 @@ def test_convert_with_custom_filename():
 
         # Assertions
         mock_convert.assert_called_once_with(b"# Test Content", "markdown", "html", DEFAULT_CONVERSION_OPTIONS, preserve_table_styles=False)
-        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html", None, None, None, None)
+        mock_postprocess.assert_called_once_with(b"<html>Test</html>", "html", "custom.html", None, None, None, None, {})
         assert response.status_code == 200
         assert response.headers.get("content-type") == "text/html; charset=utf-8"
         assert response.content == b"<html>Test</html>"
@@ -757,7 +757,7 @@ def test_convert_docx_with_ref_source_text():
         assert call_args[2] == "docx"  # Target format
 
         # Check that postprocess_and_build_response was called
-        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None, None, None)
+        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None, None, None, {})
 
         # Check the response
         assert response.status_code == 200
@@ -797,7 +797,7 @@ def test_convert_docx_with_ref_no_template():
         assert mock_convert.call_args.kwargs["reference_doc"] is None
 
         # Check that postprocess_and_build_response was called
-        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None, None, None)
+        mock_postprocess.assert_called_once_with(b"DOCX content", "docx", "converted-document.docx", None, None, None, None, {})
 
         # Check the response
         assert response.status_code == 200
@@ -824,7 +824,7 @@ def test_convert_docx_to_pdf_with_custom_filename():
         assert args[2] == "pdf"
         assert "--pdf-engine=tectonic" in args[3]
 
-        mock_postprocess.assert_called_once_with(b"%PDF-test", "pdf", "custom.pdf", None, None, None, None)
+        mock_postprocess.assert_called_once_with(b"%PDF-test", "pdf", "custom.pdf", None, None, None, None, {})
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
@@ -1187,7 +1187,7 @@ def test_convert_endpoint_with_custom_file_extension():
         assert response.status_code == 200
 
         # Verify the custom filename was passed to postprocess_and_build_response
-        mock_postprocess.assert_called_once_with(b"Converted content", "html", "custom_name.html", None, None, None, None)
+        mock_postprocess.assert_called_once_with(b"Converted content", "html", "custom_name.html", None, None, None, None, {})
 
 
 def test_docx_with_template_encoding():
