@@ -752,9 +752,7 @@ def _previous_block(element: Any) -> Any:
 
 def _remove_runs(p: Any) -> None:
     """Keep the paragraph and its properties, without the breaks of its runs."""
-    for child in list(p):
-        if _w_local_name(child) != "pPr":
-            p.remove(child)
+    p[:] = [child for child in p if _w_local_name(child) == "pPr"]
 
 
 def _w_local_name(element: Any) -> str | None:
