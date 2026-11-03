@@ -724,6 +724,8 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
     if body_sect_pr is None:
         return
     first_paragraph = body.find(f"{{{SCHEMA}}}p")
+    # Reads the numbering a style gives a paragraph too: an empty list item still shows its marker.
+    paragraphs = ParagraphIndents(doc.styles.element, _numbering(doc))
     element = body_sect_pr.getprevious()
     while element is not None:
         previous = element.getprevious()
@@ -736,7 +738,7 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
         own_sect_pr = element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
         if own_sect_pr is not None:
             _fold_section(body_sect_pr, own_sect_pr)
-        if element is first_paragraph or not _is_blank_paragraph(element):
+        if element is first_paragraph or paragraphs.is_numbered(element) or not _is_blank_paragraph(element):
             return
         body.remove(element)
         element = previous

@@ -1004,6 +1004,19 @@ def test_document_ending_on_a_page_break_has_no_empty_last_page(test_parameters:
     assert body.find(f"{{{W_NS}}}sectPr/{{{W_NS}}}pgMar").get(f"{{{W_NS}}}left") == "1134"
 
 
+@pytest.mark.parametrize("html", ["<ol><li>One</li><li><br/></li></ol>", "<ul><li>One</li><li><br/></li></ul><p><br/></p>"])
+def test_document_ending_on_an_empty_list_item_keeps_its_marker(test_parameters: TestParameters, html: str):
+    """An empty list item still shows its number or bullet, so it is no empty page."""
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+
+    body = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml")).find(f"{{{W_NS}}}body")
+    paragraphs = body.findall(f"{{{W_NS}}}p")
+    last = paragraphs[-1]
+    assert "".join(t.text or "" for t in last.iter(f"{{{W_NS}}}t")) == ""
+    assert last.find(f"{{{W_NS}}}pPr/{{{W_NS}}}numPr") is not None, "the empty list item was dropped"
+    assert len(paragraphs) == 2
+
+
 def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
     """The HTML gives the columns no width, so the column of the image is not held to half the table."""
     image = f'<img src="{_png_data_uri(3000, 300)}">'

@@ -3305,6 +3305,52 @@ def test_all_blank_document_keeps_its_first_paragraph():
     assert _body_children(doc) == ["p", "sectPr"]
 
 
+_EMPTY_LIST_ITEM_P = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{0}"/></w:numPr></w:pPr><w:r><w:br/></w:r></w:p>'
+
+
+def _add_list_style(doc) -> None:
+    """A paragraph style that gives its paragraphs numbering 1."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    style = parse_xml(f'<w:style {nsdecls("w")} w:type="paragraph" w:styleId="NumberedList"><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style>')
+    doc.styles.element.append(style)
+
+
+def test_trailing_empty_list_item_is_kept():
+    """An authored empty list item still shows its number or bullet."""
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("One") + _EMPTY_LIST_ITEM_P.format("1") + _EMPTY_LINE_P)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["One", ""]
+    assert doc.element.body.findall(f"{{{SCHEMA}}}p")[-1].find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}numPr") is not None
+
+
+def test_trailing_paragraph_numbered_through_its_style_is_kept():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("One") + '<w:p><w:pPr><w:pStyle w:val="NumberedList"/></w:pPr></w:p>')
+    _add_list_style(doc)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["One", ""]
+
+
+def test_trailing_paragraph_with_numbering_turned_off_is_dropped():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TEXT_P.format("One") + '<w:p><w:pPr><w:pStyle w:val="NumberedList"/><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:p>')
+    _add_list_style(doc)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_texts(doc) == ["One"]
+
+
 def test_process_drops_trailing_empty_page():
     import io
 
