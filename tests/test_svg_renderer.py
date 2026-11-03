@@ -18,12 +18,12 @@ DIAGRAM = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect 
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (None, "chromium"),
-        ("", "chromium"),
+        (None, "weasysvg"),
+        ("", "weasysvg"),
         ("weasysvg", "weasysvg"),
-        (" WeasySVG ", "weasysvg"),
+        (" ChroMium ", "chromium"),
         ("chromium", "chromium"),
-        ("rsvg", "chromium"),
+        ("rsvg", "weasysvg"),
     ],
 )
 def test_get_svg_renderer(value, expected):

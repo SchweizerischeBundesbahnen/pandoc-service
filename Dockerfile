@@ -144,8 +144,8 @@ ENV PATH="${WORKING_DIR}/.venv/bin:$PATH" \
 RUN mkdir -p /opt/weasysvg/bin && \
     ln -s "${WORKING_DIR}/.venv/bin/weasysvg-convert" /opt/weasysvg/bin/rsvg-convert
 
-# Who draws the SVG of an HTML source by default: chromium (PNG through the browser) or weasysvg (vector)
-ARG SVG_RENDERER=chromium
+# Who draws the SVG of an HTML source by default: weasysvg (vector) or chromium (PNG through the browser)
+ARG SVG_RENDERER=weasysvg
 ENV SVG_RENDERER=${SVG_RENDERER}
 
 RUN BUILD_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" && \
