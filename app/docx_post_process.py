@@ -726,15 +726,9 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
         return
     # Reads the numbering a style gives a paragraph too: an empty list item still shows its marker.
     paragraphs = ParagraphIndents(doc.styles.element, _numbering(doc))
-    element = body_sect_pr.getprevious()
-    while element is not None:
-        previous = element.getprevious()
-        name = _w_local_name(element)
-        if name != "p":
-            if name not in _BODY_RANGE_ENDS and isinstance(element.tag, str):
-                return
-            element = previous
-            continue
+    # Any block but a paragraph is content and ends the walk; range ends are looked past and kept.
+    element = _previous_block(body_sect_pr)
+    while element is not None and _w_local_name(element) == "p":
         own_sect_pr = element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
         if own_sect_pr is not None:
             _fold_section(body_sect_pr, own_sect_pr)
@@ -745,7 +739,7 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
             _remove_runs(element)
             return
         body.remove(element)
-        element = previous
+        element = block_before
 
 
 def _previous_block(element: Any) -> Any:
