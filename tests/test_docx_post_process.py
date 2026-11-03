@@ -3295,14 +3295,15 @@ def test_body_range_end_is_looked_past_and_kept():
     assert _body_children(doc) == ["bookmarkStart", "p", "bookmarkEnd", "sectPr"]
 
 
-def test_all_blank_document_keeps_its_first_paragraph():
+def test_all_blank_document_keeps_one_paragraph_without_its_breaks():
     from app.docx_post_process import _drop_trailing_empty_pages
 
-    doc = _document_with_body(_EMPTY_LINE_P + _PAGE_BREAK_P + _EMPTY_LINE_P)
+    doc = _document_with_body(_PAGE_BREAK_P + _EMPTY_LINE_P + _PAGE_BREAK_P)
 
     _drop_trailing_empty_pages(doc)
 
     assert _body_children(doc) == ["p", "sectPr"]
+    assert _page_breaks(doc) == 0
 
 
 _EMPTY_LIST_ITEM_P = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{0}"/></w:numPr></w:pPr><w:r><w:br/></w:r></w:p>'
@@ -3349,6 +3350,42 @@ def test_trailing_paragraph_with_numbering_turned_off_is_dropped():
     _drop_trailing_empty_pages(doc)
 
     assert _body_texts(doc) == ["One"]
+
+
+def _page_breaks(doc) -> int:
+    return sum(1 for br in doc.element.body.iter(f"{{{SCHEMA}}}br") if br.get(f"{{{SCHEMA}}}type") == "page")
+
+
+@pytest.mark.parametrize(
+    "trailing",
+    [
+        pytest.param(_PAGE_BREAK_P, id="page-break"),
+        pytest.param(_EMPTY_LINE_P + _PAGE_BREAK_P, id="blank-then-page-break"),
+        pytest.param(_PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P, id="section-break"),
+    ],
+)
+def test_paragraph_after_a_trailing_table_stays_without_its_breaks(trailing: str):
+    """Word needs a paragraph after a table, but not the page break it holds."""
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TBL_XML.format("cell") + trailing)
+
+    _drop_trailing_empty_pages(doc)
+
+    assert _body_children(doc) == ["tbl", "p", "sectPr"]
+    assert _page_breaks(doc) == 0
+    assert len(doc.sections) == 1
+
+
+def test_paragraph_after_a_table_keeps_its_properties():
+    from app.docx_post_process import _drop_trailing_empty_pages
+
+    doc = _document_with_body(_TBL_XML.format("cell") + '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>')
+
+    _drop_trailing_empty_pages(doc)
+
+    last = doc.element.body.findall(f"{{{SCHEMA}}}p")[-1]
+    assert [etree.QName(child).localname for child in last] == ["pPr"]
 
 
 def test_process_drops_trailing_empty_page():

@@ -717,13 +717,13 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
     Polarion documents often end with an empty paragraph, a ``\\newpage`` or a ``\\pageLandscape``.
     A section break with only blank paragraphs after it opens a page with nothing on it. The break
     is folded into the body's sectPr, so its section becomes the last one and keeps its own page.
-    The walk stops at the first content, and the first paragraph of the body always stays.
+    The walk stops at the first content. A blank paragraph after a table, or with nothing before it,
+    stays without its runs: Word needs a paragraph after a table, and the body needs one.
     """
     body = doc.element.body
     body_sect_pr = body.find(f"{{{SCHEMA}}}sectPr")
     if body_sect_pr is None:
         return
-    first_paragraph = body.find(f"{{{SCHEMA}}}p")
     # Reads the numbering a style gives a paragraph too: an empty list item still shows its marker.
     paragraphs = ParagraphIndents(doc.styles.element, _numbering(doc))
     element = body_sect_pr.getprevious()
@@ -738,10 +738,29 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
         own_sect_pr = element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
         if own_sect_pr is not None:
             _fold_section(body_sect_pr, own_sect_pr)
-        if element is first_paragraph or paragraphs.is_numbered(element) or not _is_blank_paragraph(element):
+        if paragraphs.is_numbered(element) or not _is_blank_paragraph(element):
+            return
+        block_before = _previous_block(element)
+        if block_before is None or _w_local_name(block_before) != "p":
+            _remove_runs(element)
             return
         body.remove(element)
         element = previous
+
+
+def _previous_block(element: Any) -> Any:
+    """The block before the element, looking past range ends and comments, or None at the start of the body."""
+    previous = element.getprevious()
+    while previous is not None and (not isinstance(previous.tag, str) or _w_local_name(previous) in _BODY_RANGE_ENDS):
+        previous = previous.getprevious()
+    return previous
+
+
+def _remove_runs(p: Any) -> None:
+    """Keep the paragraph and its properties, without the breaks of its runs."""
+    for child in list(p):
+        if _w_local_name(child) != "pPr":
+            p.remove(child)
 
 
 def _w_local_name(element: Any) -> str | None:

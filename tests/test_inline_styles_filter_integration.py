@@ -1017,6 +1017,21 @@ def test_document_ending_on_an_empty_list_item_keeps_its_marker(test_parameters:
     assert len(paragraphs) == 2
 
 
+@pytest.mark.parametrize("trailing", ["<p>\\newpage</p>", "<p><br/></p><p>\\newpage</p>", "<p>\\newpage</p><p>\\pageLandscape</p><p><br/></p>"])
+def test_document_ending_on_a_table_and_a_page_break_has_no_empty_last_page(test_parameters: TestParameters, trailing: str):
+    """The table stays the last content; the paragraph Word needs after it keeps no page break."""
+    html = f"<table><tr><td>cell</td></tr></table>{trailing}"
+
+    docx_bytes = _convert_with_template(test_parameters, html, _a4_template(test_parameters))
+
+    body = ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml")).find(f"{{{W_NS}}}body")
+    blocks = [child.tag.rsplit("}", 1)[-1] for child in body]
+    assert blocks[-3:] == ["tbl", "p", "sectPr"], blocks
+    page_breaks = [br for br in body.iter(f"{{{W_NS}}}br") if br.get(f"{{{W_NS}}}type") == "page"]
+    assert page_breaks == [], "the page break after the table survived"
+    assert body.find(f"{{{W_NS}}}p/{{{W_NS}}}pPr/{{{W_NS}}}sectPr") is None, "the trailing section break survived"
+
+
 def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
     """The HTML gives the columns no width, so the column of the image is not held to half the table."""
     image = f'<img src="{_png_data_uri(3000, 300)}">'
