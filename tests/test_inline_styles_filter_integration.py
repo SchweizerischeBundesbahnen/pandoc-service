@@ -261,6 +261,42 @@ def test_indent_div_sets_w_ind_left_in_twips(test_parameters: TestParameters):
     assert _ind_left(_w_p_with_text(doc, "2 levels")) == "1200"
 
 
+def test_nested_styled_divs_add_their_indents(test_parameters: TestParameters):
+    """Nested <div style="margin-left"> paragraphs get the CSS sum of all margins.
+
+    The HTML carries no markers, so app/html_paragraph_pre_process.py and the
+    Lua filter run together. Text before, inside and after each nested block
+    must keep the indent of the block it is in.
+    """
+    html = (
+        "<p>Outside</p>"
+        '<div style="margin-left: 40px">'
+        "Level1 before"
+        '<div style="margin-left: 40px">'
+        "Level2 before"
+        '<div style="margin-left: 40px">Level3 inside</div>'
+        "Level2 after"
+        "</div>"
+        '<div style="margin-left: 80px">Level1 plus 80</div>'
+        "Level1 after"
+        "</div>"
+        "<p>Back outside</p>"
+    )
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc_xml = zf.read("word/document.xml")
+
+    doc = ET.fromstring(doc_xml)
+    assert _ind_left(_w_p_with_text(doc, "Outside")) is None
+    assert _ind_left(_w_p_with_text(doc, "Level1 before")) == "600"
+    assert _ind_left(_w_p_with_text(doc, "Level2 before")) == "1200"
+    assert _ind_left(_w_p_with_text(doc, "Level3 inside")) == "1800"
+    assert _ind_left(_w_p_with_text(doc, "Level2 after")) == "1200"
+    assert _ind_left(_w_p_with_text(doc, "Level1 plus 80")) == "1800"
+    assert _ind_left(_w_p_with_text(doc, "Level1 after")) == "600"
+    assert _ind_left(_w_p_with_text(doc, "Back outside")) is None
+
+
 def test_indent_preserves_inline_formatting_via_walk(test_parameters: TestParameters):
     """Nested <strong>/<em>/styled <span> inside an indented paragraph must
     still produce the right run properties. This is the key reason the Div
