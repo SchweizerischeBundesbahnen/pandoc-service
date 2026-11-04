@@ -6,6 +6,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from starlette.responses import Response
 from starlette.testclient import TestClient
 
 from app import pandoc_controller, svg_renderer
@@ -35,6 +36,35 @@ async def test_preprocess_draws_the_png_and_keeps_its_flat_svg_for_docx(weasysvg
     assert isinstance(result, bytes)
     assert base64.b64encode(png) in result
     assert layers == {hashlib.sha256(png).digest(): b"<svg flat/>"}
+
+
+@pytest.mark.asyncio
+async def test_preprocess_draws_no_flat_svg_for_a_docx_that_takes_none(weasysvg_mode):
+    # Without a place for the layers the docx gets the PNG alone: the flat SVG costs as much as the PNG
+    with patch.object(svg_renderer, "render", return_value=(b"\x89PNG", None)) as render:
+        result = await pandoc_controller.preprocess_html_svgs(SOURCE, None, "docx")
+    assert "data:image/png;base64," in result
+    assert render.call_args.kwargs == {"layer": False}
+
+
+@pytest.mark.parametrize(("query", "layers"), [("", True), ("?svg_in_docx=true", True), ("?svg_in_docx=false", False)])
+@pytest.mark.parametrize("path", ["/convert/html/to/docx", "/convert/html/to/docx-with-template"])
+def test_svg_in_docx_decides_whether_a_docx_gets_the_flat_svg(path, query, layers):
+    asked: list[bool] = []
+
+    async def preprocess(source, scale_factor, target_format, svg_layers=None):
+        asked.append(svg_layers is not None)
+        return source
+
+    with (
+        patch.object(pandoc_controller, "preprocess_html_svgs", side_effect=preprocess),
+        patch.object(pandoc_controller, "run_pandoc_conversion", return_value=b"docx"),
+        patch.object(pandoc_controller, "postprocess_and_build_response", return_value=Response(b"docx")),
+    ):
+        client = TestClient(pandoc_controller.app)
+        response = client.post(path + query, files={"source": ("source.html", SOURCE.encode())}) if "template" in path else client.post(path + query, content=SOURCE.encode())
+    assert response.status_code == 200
+    assert asked == [layers]
 
 
 @pytest.mark.asyncio
