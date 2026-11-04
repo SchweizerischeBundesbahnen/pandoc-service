@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.13.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.12.0...v2.13.0) (2026-11-04)
+
+
+### Features
+
+* report the WeasyPrint version in /version ([#311](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/311)) ([eadd9f0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/eadd9f0bb80f6c1c89dba4d5993f0f83a81aac77))
+
+
+### Bug Fixes
+
+* **deps:** update dependency anyio to v4.16.0 ([8ff8679](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/8ff8679c28311446f879468ff689d1af302c6dbd))
+
 ## [2.12.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.11.0...v2.12.0) (2026-11-04)
 
 
