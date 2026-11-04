@@ -115,7 +115,7 @@ as a PNG through Chromium and chose with `SVG_RENDERER`; any other value than
 The SVG drawings run under the conversion limit of `MAX_CONCURRENT_PANDOC_CONVERSIONS`.
 `MAX_CONCURRENT_CONVERSIONS` and the `CHROMIUM_*` variables of earlier releases have no effect.
 
-Out-of-range or invalid values fall back to the default with a warning logged.
+An out-of-range or invalid `DEVICE_SCALE_FACTOR` falls back to the default with a warning logged.
 
 ```bash
 docker run --init --detach \

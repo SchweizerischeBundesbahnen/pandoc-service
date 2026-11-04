@@ -187,7 +187,10 @@ class SvgProcessor:
     def _default_scale_factor(self) -> float:
         """DEVICE_SCALE_FACTOR, 1.0 to 10.0; anything else is 1.0, with a warning."""
         value = os.environ.get("DEVICE_SCALE_FACTOR")
-        factor = self._parse_float(value, self.DEFAULT_SCALE_FACTOR)
+        if value is None:
+            return self.DEFAULT_SCALE_FACTOR
+        # NaN fails the range check, so a value that is not a number gets the warning as well
+        factor = self._parse_float(value, math.nan)
         if not self.MIN_SCALE_FACTOR <= factor <= self.MAX_SCALE_FACTOR:
             self.log.warning("DEVICE_SCALE_FACTOR=%s is outside %.1f-%.1f, using default: %.1f", value, self.MIN_SCALE_FACTOR, self.MAX_SCALE_FACTOR, self.DEFAULT_SCALE_FACTOR)
             return self.DEFAULT_SCALE_FACTOR

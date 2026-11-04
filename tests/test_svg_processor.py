@@ -4,6 +4,7 @@ The SVG-conversion tests draw with a real WeasysvgRasterizer. The pure dimension
 """
 
 import base64
+import logging
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -576,9 +577,11 @@ def test_inline_svg_nested_deep_keeps_its_case():
 
 
 @pytest.mark.parametrize(("value", "expected"), [(None, 1.0), ("2.5", 2.5), ("10", 10.0), ("0.5", 1.0), ("11", 1.0), ("x", 1.0)])
-def test_device_scale_factor_of_the_environment(value, expected):
+def test_device_scale_factor_of_the_environment(value, expected, caplog):
     environment = {} if value is None else {"DEVICE_SCALE_FACTOR": value}
-    with patch.dict(os.environ, environment, clear=True):
+    with patch.dict(os.environ, environment, clear=True), caplog.at_level(logging.WARNING):
         assert SvgProcessor().device_scale_factor == expected
+    # A value that is not used as it is gets a warning
+    assert ("DEVICE_SCALE_FACTOR" in caplog.text) == (value in {"0.5", "11", "x"})
     # A factor of the request is taken as it is
     assert SvgProcessor(device_scale_factor=3.125).device_scale_factor == 3.125
