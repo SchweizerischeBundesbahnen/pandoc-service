@@ -1,4 +1,4 @@
-"""The service in its image with SVG_RENDERER=weasysvg: a draw.io diagram stays vector in DOCX and PDF."""
+"""The service in its image: weasysvg keeps a draw.io diagram vector in DOCX and PDF."""
 
 import base64
 import io
@@ -31,15 +31,15 @@ def convert(parameters: TestParameters, target: str) -> bytes:
     return response.content
 
 
-def test_version_names_weasysvg(weasysvg_parameters: TestParameters) -> None:
-    version = weasysvg_parameters.request_session.get(f"{weasysvg_parameters.base_url}/version").json()
+def test_version_names_weasysvg(test_parameters: TestParameters) -> None:
+    version = test_parameters.request_session.get(f"{test_parameters.base_url}/version").json()
     assert version["svgRenderer"] == "weasysvg"
     assert version["weasysvg"]
-    assert version["chromium"] is None
+    assert "chromium" not in version
 
 
-def test_docx_gets_the_png_and_its_flat_svg(weasysvg_parameters: TestParameters) -> None:
-    with zipfile.ZipFile(io.BytesIO(convert(weasysvg_parameters, "docx"))) as docx:
+def test_docx_gets_the_png_and_its_flat_svg(test_parameters: TestParameters) -> None:
+    with zipfile.ZipFile(io.BytesIO(convert(test_parameters, "docx"))) as docx:
         document = etree.fromstring(docx.read("word/document.xml"))
         rels = {rel.get("Id"): rel.get("Target") for rel in etree.fromstring(docx.read("word/_rels/document.xml.rels"))}
         svg_blips = document.findall(f".//{{{ASVG}}}svgBlip")
@@ -57,8 +57,8 @@ def test_docx_gets_the_png_and_its_flat_svg(weasysvg_parameters: TestParameters)
     assert "foreignObject" not in flat
 
 
-def test_pdf_gets_the_svg_as_vector(weasysvg_parameters: TestParameters) -> None:
-    reader = PdfReader(io.BytesIO(convert(weasysvg_parameters, "pdf")))
+def test_pdf_gets_the_svg_as_vector(test_parameters: TestParameters) -> None:
+    reader = PdfReader(io.BytesIO(convert(test_parameters, "pdf")))
     page = reader.pages[0]
     # The label is text and the page holds no picture: rsvg-convert, which is weasysvg-convert, drew the SVG
     assert "Vector label" in page.extract_text()

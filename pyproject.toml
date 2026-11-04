@@ -16,8 +16,6 @@ dependencies = [
     "defusedxml==0.7.1",
     "asgiref==3.13.0",
     "beautifulsoup4==4.15.0",
-    "playwright==1.64.1",
-    "psutil==7.2.2",
     "prometheus-client==0.26.0",
     "prometheus-fastapi-instrumentator==8.1.0",
     "weasysvg[convert]==0.5.0",
@@ -30,7 +28,6 @@ dev = [
     "ty==0.0.95",
     "anyio==4.15.1",  # Explicit for ty type checking (transitive from starlette)
     "types-defusedxml==0.7.0.20260504",
-    "types-psutil==7.2.2.20260906",
     "lxml-stubs==0.5.1",
 ]
 test = [
@@ -159,7 +156,7 @@ line-ending = "lf"
 quote-style = "double"
 
 [tool.pytest.ini_options]
-# Browser-based ChromiumManager/SvgProcessor tests are async and marked with
+# The async SvgProcessor and controller tests are marked with
 # @pytest.mark.asyncio (strict mode), mirroring weasyprint-service.
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"

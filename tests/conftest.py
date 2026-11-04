@@ -2,10 +2,6 @@
 
 import logging
 import os
-
-# The controller reads SVG_RENDERER once, on import. Its tests draw with Chromium unless they patch the mode;
-# the weasysvg mode has tests of its own (test_pandoc_controller_weasysvg.py). Set before app is imported.
-os.environ.setdefault("SVG_RENDERER", "chromium")
 import subprocess
 from unittest.mock import patch
 
@@ -22,7 +18,7 @@ from tests.test_container import (
 
 logger = logging.getLogger(__name__)
 
-# The image carries a Debian base, pandoc, tectonic and Playwright's Chromium. On a warm cache it is
+# The image carries a Debian base, pandoc, tectonic, WeasyPrint and weasysvg. On a warm cache it is
 # built in seconds; on a cold one, which every CI runner has and which a local `docker builder prune`
 # leaves behind, it has taken past five minutes and timed out, and every container test then errors
 # at setup with nothing about the build in the message. The timeout is here to stop a hung build, not
@@ -32,13 +28,9 @@ BUILD_TIMEOUT_SECONDS = 1800
 
 @pytest.fixture(autouse=True)
 def disable_metrics_server():
-    """Disable the metrics server and the lifespan Chromium startup for all tests.
+    """Disable the metrics server and the SVG preprocessing for all tests.
 
-    Disabling SVG conversion keeps the FastAPI lifespan from launching a Chromium
-    browser during TestClient-based controller tests. The browser-based
-    ChromiumManager and SvgProcessor tests construct a real ChromiumManager
-    directly (mirroring weasyprint-service), so they are unaffected by this flag;
-    health monitoring is left at its default (enabled) for those tests.
+    A test of the SVG preprocessing turns ENABLE_SVG_CONVERSION on itself.
     """
     with patch.dict(os.environ, {"METRICS_SERVER_ENABLED": "false", "ENABLE_SVG_CONVERSION": "false"}):
         yield
@@ -104,27 +96,6 @@ def pandoc_container():
         # Container cleanup is best effort.
         except Exception as e:  # noqa: BLE001
             logger.error(f"Error in container cleanup: {e}")
-
-
-# The container of the weasysvg mode listens here, beside the one of the chromium mode
-WEASYSVG_PORT = 9083
-
-
-@pytest.fixture(scope="session")
-def weasysvg_parameters(pandoc_container):
-    """The image of pandoc_container, run with SVG_RENDERER=weasysvg."""
-    import docker
-
-    client = docker.from_env()
-    container = client.containers.run(image=TEST_IMAGE_FULL, detach=True, name=f"{TEST_CONTAINER_NAME}-weasysvg", ports={"9082": WEASYSVG_PORT}, environment={"SVG_RENDERER": "weasysvg"}, init=True)
-    base_url = f"http://localhost:{WEASYSVG_PORT}"
-    request_session = requests.Session()
-    try:
-        wait_for_container_ready(container, base_url=base_url)
-        yield TestParameters(base_url, False, request_session, container)
-    finally:
-        request_session.close()
-        container.remove(force=True)
 
 
 @pytest.fixture(scope="session")

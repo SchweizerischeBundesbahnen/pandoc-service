@@ -15,31 +15,21 @@ from app import svg_renderer
 DIAGRAM = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>'
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        (None, "weasysvg"),
-        ("", "weasysvg"),
-        ("weasysvg", "weasysvg"),
-        (" ChroMium ", "chromium"),
-        ("chromium", "chromium"),
-        ("rsvg", "weasysvg"),
-    ],
-)
-def test_get_svg_renderer(value, expected):
+@pytest.mark.parametrize("value", [None, "", "weasysvg", " WeasySVG "])
+def test_configure_installs_weasysvg(value, caplog):
     environment = {} if value is None else {"SVG_RENDERER": value}
-    with patch.dict(os.environ, environment, clear=True):
-        assert svg_renderer.get_svg_renderer() == expected
+    with patch.dict(os.environ, environment, clear=True), patch.object(svg_renderer.weasysvg, "install") as install:
+        assert svg_renderer.configure_svg_renderer() == "weasysvg"
+    install.assert_called_once_with()
+    assert "no longer supported" not in caplog.text
 
 
-def test_configure_installs_weasysvg_only_when_selected():
-    with patch.object(svg_renderer.weasysvg, "install") as install:
-        with patch.dict(os.environ, {"SVG_RENDERER": "chromium"}):
-            assert svg_renderer.configure_svg_renderer() == "chromium"
-        install.assert_not_called()
-        with patch.dict(os.environ, {"SVG_RENDERER": "weasysvg"}):
-            assert svg_renderer.configure_svg_renderer() == "weasysvg"
-        install.assert_called_once_with()
+@pytest.mark.parametrize("value", ["chromium", "rsvg"])
+def test_configure_reports_a_renderer_no_longer_supported(value, caplog):
+    with patch.dict(os.environ, {"SVG_RENDERER": value}), patch.object(svg_renderer.weasysvg, "install") as install:
+        assert svg_renderer.configure_svg_renderer() == "weasysvg"
+    install.assert_called_once_with()
+    assert f"SVG_RENDERER={value} is no longer supported" in caplog.text
 
 
 def test_get_weasysvg_version():
