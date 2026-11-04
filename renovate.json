@@ -92,6 +92,22 @@
         "minor"
       ],
       "semanticCommitType": "feat"
+    },
+    {
+      "description": "A major release of weasysvg may change what a document looks like: release-please takes it as a major release",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "weasysvg"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "semanticCommitType": "feat!"
     }
   ]
 }
