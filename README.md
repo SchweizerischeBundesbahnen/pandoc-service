@@ -561,7 +561,7 @@ Pandoc Service provides the following endpoints:
 
 > | HTTP code | Content-Type       | Response                                                                                                       |
 > |-----------|--------------------|----------------------------------------------------------------------------------------------------------------|
-> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "svgRenderer": "weasysvg", "weasysvg": "0.5.0" }` |
+> | `200`     | `application/json` | `{ "python": "3.15.1", "timestamp": "2024-09-23T12:23:09Z", "pandoc": "3.6.2", "pandocService": "0.0.0", "svgRenderer": "weasysvg", "weasysvg": "0.5.0", "weasyprint": "70.0" }` |
 
 ##### Example cURL
 
