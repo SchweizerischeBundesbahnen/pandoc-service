@@ -11,7 +11,7 @@ import tempfile
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import IO, TYPE_CHECKING, cast
 from uuid import uuid4
 
 import anyio
@@ -768,6 +768,8 @@ def _heap_limit_options() -> list[str]:
 
 # The end of the stderr of pandoc a log line keeps: the error of a PDF engine comes last
 PANDOC_STDERR_LOG_LIMIT = 4000
+# A UTF-8 character takes up to four bytes
+PANDOC_STDERR_READ_LIMIT = 4 * PANDOC_STDERR_LOG_LIMIT
 
 
 def _run_pandoc(cmd: list[str], environment: dict[str, str] | None) -> None:
@@ -776,19 +778,28 @@ def _run_pandoc(cmd: list[str], environment: dict[str, str] | None) -> None:
     Its stderr goes to the log: the warnings of a conversion, and the reason of a failure, which the
     PDF engine writes there and the exit code alone does not tell.
     """
-    try:
-        completed = subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
-    except subprocess.CalledProcessError as e:
-        _log_pandoc_stderr(e.stderr, f"pandoc failed with exit code {e.returncode}", logging.ERROR)
-        if e.returncode == PANDOC_HEAP_EXHAUSTED_EXIT_CODE:
-            raise PandocHeapExhaustedError(get_pandoc_heap_limit() or "no limit") from e
-        raise
-    _log_pandoc_stderr(completed.stderr, "pandoc reported", logging.WARNING)
+    # A file, not a pipe: a conversion with many warnings keeps only the end in memory
+    with tempfile.TemporaryFile() as stderr:
+        try:
+            subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, stderr=stderr, env=environment)
+        except subprocess.CalledProcessError as e:
+            _log_pandoc_stderr(_read_end(stderr), f"pandoc failed with exit code {e.returncode}", logging.ERROR)
+            if e.returncode == PANDOC_HEAP_EXHAUSTED_EXIT_CODE:
+                raise PandocHeapExhaustedError(get_pandoc_heap_limit() or "no limit") from e
+            raise
+        _log_pandoc_stderr(_read_end(stderr), "pandoc reported", logging.WARNING)
 
 
-def _log_pandoc_stderr(stderr: object, prefix: str, level: int) -> None:
+def _read_end(file: IO[bytes]) -> bytes:
+    """The end of a file, enough bytes for the log limit in any UTF-8 text."""
+    size = file.seek(0, os.SEEK_END)
+    file.seek(max(0, size - PANDOC_STDERR_READ_LIMIT))
+    return file.read()
+
+
+def _log_pandoc_stderr(stderr: bytes, prefix: str, level: int) -> None:
     """Log the stderr of pandoc, its end where it is long; nothing where it is empty."""
-    if not isinstance(stderr, bytes) or not stderr.strip():
+    if not stderr.strip():
         return
     text = stderr.decode("utf-8", errors="replace").strip()
     if len(text) > PANDOC_STDERR_LOG_LIMIT:
