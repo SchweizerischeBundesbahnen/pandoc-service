@@ -47,6 +47,12 @@ class ParagraphIndents:
         num_id, _ = _numbering_reference([own, *self._style_chain(own)])
         return num_id not in (None, "0")
 
+    def paragraph_properties(self, p: Any) -> list[Any]:
+        """The pPr elements which state the paragraph's own look, nearest first: itself, its style chain, the document defaults."""
+        own = p.find(f"{_W}pPr")
+        sources = [own, *self._style_chain(own), self._defaults]
+        return [source for source in sources if source is not None]
+
     def _sources(self, p: Any) -> list[Any]:
         """The pPr elements that can state an indent for the paragraph, nearest first."""
         own = p.find(f"{_W}pPr")

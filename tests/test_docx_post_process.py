@@ -3340,6 +3340,70 @@ def test_what_shows_after_the_break_keeps_it(after: str):
     assert etree.tostring(_dropped(body).element.body) == before
 
 
+_STYLED_P = '<w:p><w:pPr><w:pStyle w:val="Boxed"/>{0}</w:pPr></w:p>'
+_STYLE_SHADING = '<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/>'
+_STYLE_BORDER = '<w:pBdr><w:top w:val="single" w:sz="4"/></w:pBdr>'
+
+
+def _dropped_with_style(body_xml: str, style_properties: str, based_on: str = ""):
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _drop_empty_last_page
+
+    doc = _document_with_body(body_xml)
+    if based_on:
+        doc.styles.element.append(parse_xml(f'<w:style {nsdecls("w")} w:type="paragraph" w:styleId="Base"><w:pPr>{style_properties}</w:pPr></w:style>'))
+        style_properties = ""
+    doc.styles.element.append(parse_xml(f'<w:style {nsdecls("w")} w:type="paragraph" w:styleId="Boxed">{based_on}<w:pPr>{style_properties}</w:pPr></w:style>'))
+    _drop_empty_last_page(doc)
+    return doc
+
+
+@pytest.mark.parametrize("style_properties", [_STYLE_SHADING, _STYLE_BORDER], ids=["shading", "border"])
+@pytest.mark.parametrize("based_on", ["", '<w:basedOn w:val="Base"/>'], ids=["own-style", "base-style"])
+def test_paragraph_painted_through_its_style_keeps_the_break(style_properties: str, based_on: str):
+    doc = _dropped_with_style(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _STYLED_P.format(""), style_properties, based_on)
+
+    assert _page_breaks(doc) == 1
+
+
+@pytest.mark.parametrize(
+    ("style_properties", "own_properties"),
+    [
+        pytest.param(_STYLE_SHADING, '<w:shd w:val="clear" w:color="auto" w:fill="auto"/>', id="shading"),
+        pytest.param(_STYLE_BORDER, '<w:pBdr><w:top w:val="nil"/></w:pBdr>', id="border"),
+    ],
+)
+def test_paragraph_turning_off_the_paint_of_its_style_goes_with_the_break(style_properties: str, own_properties: str):
+    doc = _dropped_with_style(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _STYLED_P.format(own_properties), style_properties)
+
+    assert _page_breaks(doc) == 0
+
+
+def test_paragraph_keeping_a_side_of_the_border_of_its_style_keeps_the_break():
+    style_border = '<w:pBdr><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/></w:pBdr>'
+    doc = _dropped_with_style(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _STYLED_P.format('<w:pBdr><w:top w:val="nil"/></w:pBdr>'), style_border)
+
+    assert _page_breaks(doc) == 1
+
+
+@pytest.mark.parametrize("page_break", [_PAGE_BREAK_P, _LANDSCAPE_BREAK_P], ids=["newpage", "landscape"])
+def test_paint_of_the_default_style_does_not_keep_the_break_itself(page_break: str):
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _drop_empty_last_page
+
+    doc = _document_with_body(_TEXT_P.format("chapter") + page_break)
+    doc.styles["Normal"].element.append(parse_xml(f"<w:pPr {nsdecls('w')}>{_STYLE_SHADING}</w:pPr>"))
+
+    _drop_empty_last_page(doc)
+
+    assert _page_breaks(doc) == 0
+    assert len(doc.sections) == 1
+
+
 def test_paragraph_numbered_through_its_style_keeps_the_break():
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls

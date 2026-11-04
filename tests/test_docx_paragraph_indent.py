@@ -3,7 +3,7 @@
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
-from app.docx_paragraph_indent import ParagraphIndents
+from app.docx_paragraph_indent import SCHEMA, ParagraphIndents
 
 W = nsdecls("w")
 
@@ -132,3 +132,16 @@ def test_numbering_zero_turns_off_the_numbering_of_the_style():
 
 def test_a_plain_paragraph_is_not_numbered():
     assert not ParagraphIndents(_styles(), _numbering()).is_numbered(_paragraph(""))
+
+
+def test_the_properties_of_a_paragraph_run_from_itself_to_the_document_defaults():
+    styles = _styles(
+        '<w:style w:type="paragraph" w:styleId="Base"><w:pPr><w:spacing w:after="1"/></w:pPr></w:style>',
+        '<w:style w:type="paragraph" w:styleId="Quote"><w:basedOn w:val="Base"/><w:pPr><w:spacing w:after="2"/></w:pPr></w:style>',
+        defaults='<w:spacing w:after="3"/>',
+    )
+    paragraph = _paragraph('<w:pStyle w:val="Quote"/><w:spacing w:after="4"/>')
+
+    properties = ParagraphIndents(styles, None).paragraph_properties(paragraph)
+
+    assert [element.find(f"{{{SCHEMA}}}spacing").get(f"{{{SCHEMA}}}after") for element in properties] == ["4", "2", "1", "3"]

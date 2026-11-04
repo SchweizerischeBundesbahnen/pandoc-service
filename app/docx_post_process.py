@@ -785,7 +785,9 @@ def _shows(element: Any, paragraphs: ParagraphIndents) -> bool:
     if name == "r":
         return _holds_spaces(element) and _shows_on_spaces(element.find(f"{{{SCHEMA}}}rPr"))
     if name == "p":
-        return paragraphs.is_numbered(element) or _is_painted(element.find(f"{{{SCHEMA}}}pPr"))
+        # A break's own paragraph takes its paint from the style, on the page above: it is no content of the page after it
+        painted = not _breaks_the_page(element) and not _closes_a_section(element) and _is_painted(paragraphs.paragraph_properties(element))
+        return paragraphs.is_numbered(element) or painted
     return name in _PAGE_CONTENT
 
 
@@ -810,15 +812,19 @@ def _shows_on_spaces(r_pr: Any) -> bool:
     return False
 
 
-def _is_painted(p_pr: Any) -> bool:
-    """Whether the paragraph properties paint the paragraph, text or not: a shading or a border."""
-    if p_pr is None:
-        return False
-    shading = p_pr.find(f"{{{SCHEMA}}}shd")
-    if shading is not None and _shading_shows(shading):
+def _is_painted(properties: list[Any]) -> bool:
+    """Whether the paragraph properties, nearest first, paint the paragraph, text or not: a shading or a border.
+
+    The nearest shading decides, and the nearest statement of each side of the border: a paragraph can turn off what its style paints.
+    """
+    shadings = [shading for p_pr in properties if (shading := p_pr.find(f"{{{SCHEMA}}}shd")) is not None]
+    if shadings and _shading_shows(shadings[0]):
         return True
-    borders = p_pr.find(f"{{{SCHEMA}}}pBdr")
-    return borders is not None and any(side.get(f"{{{SCHEMA}}}val") not in _NO_BORDER for side in borders)
+    sides: dict[str, Any] = {}
+    for p_pr in properties:
+        for side in p_pr.findall(f"{{{SCHEMA}}}pBdr/*"):
+            sides.setdefault(side.tag, side)
+    return any(side.get(f"{{{SCHEMA}}}val") not in _NO_BORDER for side in sides.values())
 
 
 def _shading_shows(shd: Any) -> bool:
