@@ -86,6 +86,7 @@ FILTERS = {
     "html_embedded_images": f"{FILTER_BASE_PATH}/html_embedded_images.lua",
     "html_trailing_line_breaks": f"{FILTER_BASE_PATH}/html_trailing_line_breaks.lua",
     "html_whitespace": f"{FILTER_BASE_PATH}/html_whitespace.lua",
+    "html_nowrap": f"{FILTER_BASE_PATH}/html_nowrap.lua",
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
@@ -115,6 +116,7 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
         f"--lua-filter={FILTERS['html_captions']}",
         f"--lua-filter={FILTERS['html_trailing_line_breaks']}",
         f"--lua-filter={FILTERS['html_whitespace']}",
+        f"--lua-filter={FILTERS['html_nowrap']}",
         f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
         "--track-changes=all",
         "--pdf-engine=tectonic",
@@ -660,6 +662,10 @@ def _build_pandoc_command(
                 # Before inline_styles, which turns styled spans into raw OOXML. See
                 # filters/html_whitespace.lua.
                 f"--lua-filter={FILTERS['html_whitespace']}",
+                # Keep the content of a white-space: nowrap element on one line, with
+                # non-breaking spaces, which Word honors. After html_whitespace, which
+                # collapses the spaces. See filters/html_nowrap.lua.
+                f"--lua-filter={FILTERS['html_nowrap']}",
                 f"--lua-filter={FILTERS['inline_styles']}",
                 # Pairs with the html_lists_pre_process pass on the source bytes: the
                 # preprocessor wraps orphan <ol>/<ul> with a sentinel <li>, and this
