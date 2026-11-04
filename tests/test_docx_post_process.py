@@ -3163,214 +3163,217 @@ def test_a_percentage_is_not_taken_for_a_drawing_pandoc_did_not_make_of_it():
     assert _extents(doc)[0][0] == 914400
 
 
-# ---- Trailing empty pages ----
+# ---- The empty last page a page break leaves ----
+#
+# The counterpart of PageBreakAtTheEndTest and the page break tests of HtmlProcessorTest in pdf-exporter:
+# the two exporters decide the same way what is empty after a break: only what shows nothing on the page.
 
 _TEXT_P = "<w:p><w:r><w:t>{0}</w:t></w:r></w:p>"
 _EMPTY_LINE_P = "<w:p><w:r><w:br/></w:r></w:p>"
 _PAGE_BREAK_P = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
 _LANDSCAPE_BREAK_P = '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="landscape" w:w="16838" w:h="11906"/></w:sectPr></w:pPr></w:p>'
+_PORTRAIT_BREAK_P = '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:orient="portrait" w:w="11906" w:h="16838"/></w:sectPr></w:pPr></w:p>'
+_EMPTY_LIST_ITEM_P = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:br/></w:r></w:p>'
+_SHADED_SPACES_P = '<w:p><w:r><w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/></w:rPr><w:t xml:space="preserve">\u00a0\u00a0</w:t></w:r></w:p>'
+_EMPTY_TABLE = _TBL_XML.format("")
+_RULE_P = '<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" style="width:0;height:1.5pt"/></w:pict></w:r></w:p>'
+
+
+def _dropped(body_xml: str):
+    from app.docx_post_process import _drop_empty_last_page
+
+    doc = _document_with_body(body_xml)
+    _drop_empty_last_page(doc)
+    return doc
 
 
 def _body_texts(doc) -> list[str]:
     return ["".join(t.text or "" for t in p.iter(f"{{{SCHEMA}}}t")) for p in doc.element.body.findall(f"{{{SCHEMA}}}p")]
 
 
-def _body_sect_pr_names(doc) -> list[str]:
-    return [etree.QName(child).localname for child in doc.element.body.find(f"{{{SCHEMA}}}sectPr")]
-
-
-def test_trailing_blank_paragraphs_are_dropped():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("content") + _EMPTY_LINE_P + "<w:p/>" + '<w:p><w:r><w:t xml:space="preserve"> \u200b\u200b </w:t></w:r></w:p>')
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["content"]
-
-
-def test_trailing_page_break_is_dropped():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("content") + _PAGE_BREAK_P)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_children(doc) == ["p", "sectPr"]
-
-
-def test_trailing_section_break_is_folded_into_the_last_section():
-    """The reported document: content, page break, landscape break, empty paragraph."""
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("landscape page") + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
-    margins_before = etree.tostring(doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgMar"))
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_children(doc) == ["p", "sectPr"]
-    assert len(doc.sections) == 1
-    page_size = doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgSz")
-    assert page_size.get(f"{{{SCHEMA}}}orient") == "landscape"
-    assert page_size.get(f"{{{SCHEMA}}}w") == "16838"
-    # The body keeps what the break does not state
-    assert etree.tostring(doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgMar")) == margins_before
-
-
-def test_folded_section_children_stay_in_schema_order():
-    from app.docx_post_process import _SECT_PR_ORDER, _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("content") + _LANDSCAPE_BREAK_P)
-
-    _drop_trailing_empty_pages(doc)
-
-    names = _body_sect_pr_names(doc)
-    assert names == sorted(names, key=_SECT_PR_ORDER.index)
-    assert names.count("pgSz") == 1
-
-
-def test_section_break_on_a_paragraph_with_content_is_folded_and_the_paragraph_kept():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    landscape_content = '<w:p><w:pPr><w:sectPr><w:pgSz w:orient="landscape" w:w="16838" w:h="11906"/></w:sectPr></w:pPr><w:r><w:t>last</w:t></w:r></w:p>'
-    doc = _document_with_body(_TEXT_P.format("first") + landscape_content + _EMPTY_LINE_P)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["first", "last"]
-    assert len(doc.sections) == 1
-    assert doc.sections[0]._sectPr.find(f"{{{SCHEMA}}}pgSz").get(f"{{{SCHEMA}}}orient") == "landscape"
-
-
-def test_earlier_section_breaks_are_kept():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("portrait") + _LANDSCAPE_BREAK_P + _TEXT_P.format("last page"))
-
-    _drop_trailing_empty_pages(doc)
-
-    assert len(doc.sections) == 2
-    assert _body_texts(doc) == ["portrait", "", "last page"]
-
-
-def test_blank_paragraph_between_content_is_kept():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("one") + _EMPTY_LINE_P + _TEXT_P.format("two"))
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["one", "", "two"]
-
-
-@pytest.mark.parametrize(
-    "trailing",
-    [
-        pytest.param(_TBL_XML.format("cell"), id="table"),
-        pytest.param('<w:p><w:bookmarkStart w:id="1" w:name="anchor"/><w:bookmarkEnd w:id="1"/></w:p>', id="bookmark-in-paragraph"),
-        pytest.param('<w:bookmarkStart w:id="1" w:name="anchor"/>', id="bookmark-in-body"),
-        pytest.param("<w:p><w:r><w:drawing/></w:r></w:p>", id="drawing"),
-        pytest.param('<w:p><w:fldSimple w:instr="PAGE"/></w:p>', id="field"),
-        pytest.param('<w:p><w:hyperlink w:anchor="x"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>', id="hyperlink"),
-    ],
-)
-def test_trailing_content_is_kept(trailing: str):
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("content") + trailing)
-    before = etree.tostring(doc.element.body)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert etree.tostring(doc.element.body) == before
-
-
-def test_body_range_end_is_looked_past_and_kept():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body('<w:bookmarkStart w:id="1" w:name="a"/>' + _TEXT_P.format("content") + '<w:bookmarkEnd w:id="1"/>' + _PAGE_BREAK_P)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_children(doc) == ["bookmarkStart", "p", "bookmarkEnd", "sectPr"]
-
-
-def test_all_blank_document_keeps_one_paragraph_without_its_breaks():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_PAGE_BREAK_P + _EMPTY_LINE_P + _PAGE_BREAK_P)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_children(doc) == ["p", "sectPr"]
-    assert _page_breaks(doc) == 0
-
-
-_EMPTY_LIST_ITEM_P = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{0}"/></w:numPr></w:pPr><w:r><w:br/></w:r></w:p>'
-
-
-def _add_list_style(doc) -> None:
-    """A paragraph style that gives its paragraphs numbering 1."""
-    from docx.oxml import parse_xml
-    from docx.oxml.ns import nsdecls
-
-    style = parse_xml(f'<w:style {nsdecls("w")} w:type="paragraph" w:styleId="NumberedList"><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style>')
-    doc.styles.element.append(style)
-
-
-def test_trailing_empty_list_item_is_kept():
-    """An authored empty list item still shows its number or bullet."""
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("One") + _EMPTY_LIST_ITEM_P.format("1") + _EMPTY_LINE_P)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["One", ""]
-    assert doc.element.body.findall(f"{{{SCHEMA}}}p")[-1].find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}numPr") is not None
-
-
-def test_trailing_paragraph_numbered_through_its_style_is_kept():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("One") + '<w:p><w:pPr><w:pStyle w:val="NumberedList"/></w:pPr></w:p>')
-    _add_list_style(doc)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["One", ""]
-
-
-def test_trailing_paragraph_with_numbering_turned_off_is_dropped():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("One") + '<w:p><w:pPr><w:pStyle w:val="NumberedList"/><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:p>')
-    _add_list_style(doc)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["One"]
-
-
 def _page_breaks(doc) -> int:
     return sum(1 for br in doc.element.body.iter(f"{{{SCHEMA}}}br") if br.get(f"{{{SCHEMA}}}type") == "page")
 
 
+def _last_page_size(doc):
+    return doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgSz")
+
+
+@pytest.mark.parametrize(
+    "page_break",
+    [
+        pytest.param(_PAGE_BREAK_P + _LANDSCAPE_BREAK_P, id="newpage-landscape"),
+        pytest.param(_PAGE_BREAK_P + _PORTRAIT_BREAK_P, id="newpage-portrait"),
+        pytest.param(_PAGE_BREAK_P, id="newpage"),
+        pytest.param(_LANDSCAPE_BREAK_P, id="landscape"),
+        pytest.param(_PORTRAIT_BREAK_P, id="portrait"),
+    ],
+)
+@pytest.mark.parametrize("after", ["", _EMPTY_LINE_P, _EMPTY_LINE_P + "<w:p/>"], ids=["nothing", "blank", "two-blanks"])
+def test_page_break_at_the_end_leaves_no_page(page_break: str, after: str):
+    doc = _dropped(_TEXT_P.format("chapter") + page_break + after)
+
+    assert _body_children(doc) == ["p", "sectPr"]
+    assert _body_texts(doc) == ["chapter"]
+    assert _page_breaks(doc) == 0
+    assert len(doc.sections) == 1
+
+
+def test_section_of_the_break_stays_the_last_one():
+    """The page above the break keeps the orientation the break states, and what the break does not state."""
+    from app.docx_post_process import _SECT_PR_ORDER
+
+    doc = _document_with_body(_TEXT_P.format("chapter"))
+    margins = etree.tostring(doc.element.body.find(f"{{{SCHEMA}}}sectPr/{{{SCHEMA}}}pgMar"))
+
+    doc = _dropped(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
+
+    assert _last_page_size(doc).get(f"{{{SCHEMA}}}orient") == "landscape"
+    assert _last_page_size(doc).get(f"{{{SCHEMA}}}w") == "16838"
+    sect_pr = doc.element.body.find(f"{{{SCHEMA}}}sectPr")
+    assert etree.tostring(sect_pr.find(f"{{{SCHEMA}}}pgMar")) == margins
+    names = [etree.QName(child).localname for child in sect_pr]
+    assert names == sorted(names, key=_SECT_PR_ORDER.index)
+    assert names.count("pgSz") == 1
+
+
+def test_blank_paragraphs_without_a_break_stay():
+    doc = _dropped(_TEXT_P.format("chapter") + _EMPTY_LINE_P + "<w:p/>")
+
+    assert _body_texts(doc) == ["chapter", "", ""]
+
+
+def test_blank_paragraph_before_the_break_stays():
+    doc = _dropped(_TEXT_P.format("chapter") + _EMPTY_LINE_P + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
+
+    assert _body_texts(doc) == ["chapter", ""]
+    assert _page_breaks(doc) == 0
+
+
+@pytest.mark.parametrize("page_break", [_PAGE_BREAK_P + _LANDSCAPE_BREAK_P, _PAGE_BREAK_P, _LANDSCAPE_BREAK_P], ids=["pair", "newpage", "landscape"])
+def test_page_break_in_the_middle_is_untouched(page_break: str):
+    body = _TEXT_P.format("one") + page_break + _TEXT_P.format("two") + _EMPTY_LINE_P
+    before = etree.tostring(_document_with_body(body).element.body)
+
+    assert etree.tostring(_dropped(body).element.body) == before
+
+
+def test_two_page_breaks_at_the_end_leave_one_page():
+    """Only the last page goes: the page left between two breaks is one the document asks for."""
+    doc = _dropped(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _PAGE_BREAK_P)
+
+    assert _body_texts(doc) == ["chapter", ""]
+    assert _page_breaks(doc) == 1
+
+
+def test_two_section_breaks_at_the_end_leave_one_section_with_a_paragraph():
+    doc = _dropped(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _PORTRAIT_BREAK_P + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P)
+
+    assert len(doc.sections) == 2
+    assert _last_page_size(doc).get(f"{{{SCHEMA}}}orient") == "landscape"
+    last = doc.element.body.findall(f"{{{SCHEMA}}}p")[-1]
+    assert last.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr") is None, "a section needs a paragraph of its own"
+    assert _page_breaks(doc) == 1
+
+
+def _run_p(run_properties: str, content: str = '<w:t xml:space="preserve">\u00a0\u00a0</w:t>') -> str:
+    return f"<w:p><w:r><w:rPr>{run_properties}</w:rPr>{content}</w:r></w:p>"
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        pytest.param('<w:p><w:r><w:t xml:space="preserve"> \u00a0\u200b\t</w:t></w:r></w:p>', id="spaces-nbsp-zero-width"),
+        pytest.param(_TEXT_P.format("\u200c"), id="zero-width-non-joiner"),
+        pytest.param('<w:p><w:bookmarkStart w:id="1" w:name="anchor"/><w:bookmarkEnd w:id="1"/></w:p>', id="bookmark"),
+        pytest.param(_run_p('<w:shd w:val="clear" w:color="auto" w:fill="auto"/>'), id="shading-without-fill"),
+        pytest.param(_run_p('<w:shd w:val="nil" w:fill="FFFF00"/>'), id="shading-nil"),
+        pytest.param(_run_p('<w:highlight w:val="none"/>'), id="highlight-none"),
+        pytest.param(_run_p('<w:u w:val="none"/>'), id="underline-none"),
+        pytest.param(_run_p('<w:strike w:val="0"/>'), id="strike-off"),
+        pytest.param(_run_p('<w:b/><w:color w:val="FF0000"/>'), id="bold-colored-spaces"),
+        pytest.param(_run_p('<w:highlight w:val="yellow"/>', "<w:br/>"), id="highlighted-line-break"),
+        pytest.param(_run_p('<w:highlight w:val="yellow"/>', '<w:t xml:space="preserve">\u200b</w:t>'), id="highlighted-zero-width"),
+        pytest.param('<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:pPr></w:p>', id="paragraph-without-fill"),
+        pytest.param('<w:p><w:pPr><w:pBdr><w:top w:val="nil"/></w:pBdr></w:pPr></w:p>', id="paragraph-border-off"),
+        pytest.param('<w:p><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:p>', id="numbering-off"),
+    ],
+)
+def test_what_shows_nothing_goes_with_the_break(after: str):
+    doc = _dropped(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + after)
+
+    assert _body_texts(doc) == ["chapter"]
+    assert len(doc.sections) == 1
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        pytest.param(_TEXT_P.format("text"), id="text"),
+        pytest.param(_TBL_XML.format("cell"), id="table-with-text"),
+        pytest.param(_EMPTY_TABLE, id="empty-table"),
+        pytest.param(_EMPTY_LIST_ITEM_P, id="empty-list-item"),
+        pytest.param(_RULE_P, id="horizontal-rule"),
+        pytest.param(_SHADED_SPACES_P, id="shaded-spaces"),
+        pytest.param(_run_p('<w:shd w:val="pct20" w:color="000000" w:fill="auto"/>'), id="pattern-shading"),
+        pytest.param(_run_p('<w:highlight w:val="yellow"/>'), id="highlight"),
+        pytest.param(_run_p('<w:highlight w:val="yellow"/>', "<w:tab/>"), id="highlighted-tab"),
+        pytest.param(_run_p('<w:u w:val="single"/>'), id="underline"),
+        pytest.param(_run_p("<w:strike/>"), id="strike"),
+        pytest.param(_run_p('<w:dstrike w:val="true"/>'), id="double-strike"),
+        pytest.param(_run_p('<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/>'), id="run-border"),
+        pytest.param('<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/></w:pPr></w:p>', id="paragraph-shading"),
+        pytest.param('<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4"/></w:pBdr></w:pPr></w:p>', id="paragraph-border"),
+        pytest.param("<w:p><w:r><w:drawing/></w:r></w:p>", id="image"),
+        pytest.param(_TEXT_P.format("{{IMG:10|10|image.png}}"), id="image-placeholder"),
+        pytest.param('<w:p><w:fldSimple w:instr="TOC"/></w:p>', id="field"),
+        pytest.param('<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r></w:p>', id="complex-field"),
+        pytest.param('<w:p><m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x</m:t></m:r></m:oMath></w:p>', id="math"),
+        pytest.param('<w:p><w:r><w:footnoteReference w:id="1"/></w:r></w:p>', id="footnote"),
+    ],
+)
+def test_what_shows_after_the_break_keeps_it(after: str):
+    """An empty table, an empty list item or shaded spaces show on the page: they are the user's, not an empty page."""
+    body = _TEXT_P.format("chapter") + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + after
+    before = etree.tostring(_document_with_body(body).element.body)
+
+    assert etree.tostring(_dropped(body).element.body) == before
+
+
+def test_paragraph_numbered_through_its_style_keeps_the_break():
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from app.docx_post_process import _drop_empty_last_page
+
+    doc = _document_with_body(_TEXT_P.format("chapter") + _PAGE_BREAK_P + '<w:p><w:pPr><w:pStyle w:val="NumberedList"/></w:pPr></w:p>')
+    doc.styles.element.append(parse_xml(f'<w:style {nsdecls("w")} w:type="paragraph" w:styleId="NumberedList"><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style>'))
+
+    _drop_empty_last_page(doc)
+
+    assert _page_breaks(doc) == 1
+    assert len(_body_texts(doc)) == 3
+
+
+def test_bookmarks_of_a_dropped_page_stay():
+    """A link can name them, and the other end of a bookmark can stand before the break."""
+    doc = _dropped('<w:bookmarkStart w:id="1" w:name="around"/>' + _TEXT_P.format("chapter") + _PAGE_BREAK_P + '<w:bookmarkEnd w:id="1"/>' + '<w:p><w:bookmarkStart w:id="2" w:name="anchor"/><w:bookmarkEnd w:id="2"/></w:p>')
+
+    assert _body_texts(doc) == ["chapter"]
+    assert [etree.QName(child).localname for child in doc.element.body] == ["bookmarkStart", "p", "bookmarkEnd", "bookmarkStart", "bookmarkEnd", "sectPr"]
+
+
 @pytest.mark.parametrize(
     "trailing",
     [
-        pytest.param(_PAGE_BREAK_P, id="page-break"),
-        pytest.param(_EMPTY_LINE_P + _PAGE_BREAK_P, id="blank-then-page-break"),
-        pytest.param(_PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P, id="section-break"),
+        pytest.param(_PAGE_BREAK_P, id="newpage"),
+        pytest.param(_PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P, id="pair"),
+        pytest.param(_LANDSCAPE_BREAK_P, id="landscape"),
     ],
 )
-def test_paragraph_after_a_trailing_table_stays_without_its_breaks(trailing: str):
-    """Word needs a paragraph after a table, but not the page break it holds."""
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TBL_XML.format("cell") + trailing)
-
-    _drop_trailing_empty_pages(doc)
+def test_paragraph_after_a_table_stays_without_its_break(trailing: str):
+    """Word needs a paragraph after a table, but not the break it holds."""
+    doc = _dropped(_TBL_XML.format("cell") + trailing)
 
     assert _body_children(doc) == ["tbl", "p", "sectPr"]
     assert _page_breaks(doc) == 0
@@ -3378,88 +3381,37 @@ def test_paragraph_after_a_trailing_table_stays_without_its_breaks(trailing: str
 
 
 def test_paragraph_after_a_table_keeps_its_properties():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TBL_XML.format("cell") + '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>')
-
-    _drop_trailing_empty_pages(doc)
+    doc = _dropped(_TBL_XML.format("cell") + '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>')
 
     last = doc.element.body.findall(f"{{{SCHEMA}}}p")[-1]
     assert [etree.QName(child).localname for child in last] == ["pPr"]
 
 
-def _spaces_p(run_properties: str, content: str = '<w:t xml:space="preserve">\u00a0\u00a0\u00a0</w:t>') -> str:
-    return f"<w:p><w:r><w:rPr>{run_properties}</w:rPr>{content}</w:r></w:p>"
+def test_document_of_a_break_alone_keeps_a_paragraph():
+    doc = _dropped(_PAGE_BREAK_P + _EMPTY_LINE_P)
+
+    assert _body_children(doc) == ["p", "sectPr"]
+    assert _page_breaks(doc) == 0
 
 
-@pytest.mark.parametrize(
-    "run_properties",
-    [
-        pytest.param('<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/>', id="shading"),
-        pytest.param('<w:shd w:val="pct20" w:color="000000" w:fill="auto"/>', id="pattern-shading"),
-        pytest.param('<w:highlight w:val="yellow"/>', id="highlight"),
-        pytest.param('<w:u w:val="single"/>', id="underline"),
-        pytest.param("<w:strike/>", id="strike"),
-        pytest.param('<w:dstrike w:val="true"/>', id="double-strike"),
-        pytest.param('<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto"/>', id="border"),
-    ],
-)
-def test_trailing_spaces_with_visible_run_properties_are_kept(run_properties: str):
-    """Shaded or lined spaces show on the page, so they are content."""
-    from app.docx_post_process import _drop_trailing_empty_pages
+def test_document_without_a_break_is_untouched():
+    body = _TEXT_P.format("one") + _TBL_XML.format("cell")
+    before = etree.tostring(_document_with_body(body).element.body)
 
-    doc = _document_with_body(_TEXT_P.format("text") + _spaces_p(run_properties))
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["text", "\u00a0\u00a0\u00a0"]
+    assert etree.tostring(_dropped(body).element.body) == before
 
 
-def test_trailing_highlighted_tab_is_kept():
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    doc = _document_with_body(_TEXT_P.format("text") + _spaces_p('<w:highlight w:val="yellow"/>', "<w:tab/>"))
-
-    _drop_trailing_empty_pages(doc)
-
-    assert len(_body_texts(doc)) == 2
-
-
-@pytest.mark.parametrize(
-    ("run_properties", "content"),
-    [
-        pytest.param('<w:shd w:val="clear" w:color="auto" w:fill="auto"/>', None, id="shading-without-fill"),
-        pytest.param('<w:shd w:val="nil" w:fill="FFFF00"/>', None, id="shading-nil"),
-        pytest.param('<w:highlight w:val="none"/>', None, id="highlight-none"),
-        pytest.param('<w:u w:val="none"/>', None, id="underline-none"),
-        pytest.param('<w:strike w:val="0"/>', None, id="strike-off"),
-        pytest.param('<w:b/><w:color w:val="FF0000"/>', None, id="bold-colored-spaces"),
-        pytest.param('<w:highlight w:val="yellow"/>', "<w:br/>", id="highlighted-line-break"),
-    ],
-)
-def test_trailing_spaces_with_nothing_visible_are_dropped(run_properties: str, content: str | None):
-    from app.docx_post_process import _drop_trailing_empty_pages
-
-    paragraph = _spaces_p(run_properties) if content is None else _spaces_p(run_properties, content)
-    doc = _document_with_body(_TEXT_P.format("text") + paragraph)
-
-    _drop_trailing_empty_pages(doc)
-
-    assert _body_texts(doc) == ["text"]
-
-
-def test_process_drops_trailing_empty_page():
+def test_process_keeps_the_orientation_the_dropped_break_states():
     import io
 
     from docx import Document
 
-    doc = _document_with_body(_TEXT_P.format("content") + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
+    doc = _document_with_body(_TEXT_P.format("chapter") + _PAGE_BREAK_P + _LANDSCAPE_BREAK_P + _EMPTY_LINE_P)
     buffer = io.BytesIO()
     doc.save(buffer)
 
     result = Document(io.BytesIO(docx_post_process.process(buffer.getvalue(), orientation="portrait")))
 
-    assert _body_texts(result) == ["content"]
+    assert _body_texts(result) == ["chapter"]
     assert len(result.sections) == 1
-    # The folded section keeps the orientation its break states, not the requested one
-    assert result.sections[0]._sectPr.find(f"{{{SCHEMA}}}pgSz").get(f"{{{SCHEMA}}}orient") == "landscape"
+    assert _last_page_size(result).get(f"{{{SCHEMA}}}orient") == "landscape"

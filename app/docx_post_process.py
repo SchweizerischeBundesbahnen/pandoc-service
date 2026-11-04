@@ -116,7 +116,7 @@ def process(
     _complete_section_geometry(doc)
     _replace_size_and_orientation(doc, paper_size, orientation)
     # After the orientation, so a folded section keeps the orientation its break states.
-    _drop_trailing_empty_pages(doc)
+    _drop_empty_last_page(doc)
     # Before the tables, so an image in a cell is brought back to its column.
     _replace_image_placeholders(doc, text_width)
     _state_inline_distances(doc)
@@ -678,10 +678,11 @@ def _take_page_size(own_size: Any, page_size: Any) -> None:
     own_size.set(f"{{{SCHEMA}}}h", str(height))
 
 
-# Children of a run that put nothing on the page but line, page and column breaks or space.
-_BLANK_RUN_CHILDREN = frozenset({"rPr", "br", "cr", "tab", "lastRenderedPageBreak"})
-# Characters a paragraph can hold and still show nothing: Polarion leaves zero-width spaces behind.
-_INVISIBLE_CHARACTERS = str.maketrans("", "", "\u200b\u200c\u200d\u2060\ufeff")
+# Characters which show nothing and which str.strip() leaves alone: Polarion leaves zero-width spaces behind.
+_INVISIBLE_CHARACTERS = dict.fromkeys((0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF))
+# What shows without any text, or gets its text after this step: a table of contents is a field until then.
+# An empty table shows its grid and w:pict is a horizontal rule, so both are the user's content.
+_PAGE_CONTENT = frozenset({"tbl", "drawing", "pict", "object", "fldChar", "fldSimple", "sym", "footnoteReference", "endnoteReference"})
 # Run properties that show on spaces too, with the w:val values that turn each one off.
 _SHOWN_ON_SPACES = {
     "highlight": frozenset({"none"}),
@@ -690,6 +691,10 @@ _SHOWN_ON_SPACES = {
     "dstrike": frozenset({"0", "false", "off"}),
     "bdr": frozenset({"nil", "none"}),
 }
+# The w:val values which turn off a side of a paragraph border.
+_NO_BORDER = frozenset({"nil", "none"})
+# The blocks a dropped page takes along. Range markers of the body stay: the other end of a range can stand before the break.
+_PAGE_BLOCKS = frozenset({"p", "tbl", "sdt"})
 # Body-level range ends: nothing to see, and dropping the paragraphs around them keeps them valid.
 _BODY_RANGE_ENDS = frozenset({"bookmarkEnd", "commentRangeEnd", "moveFromRangeEnd", "moveToRangeEnd", "permEnd", "proofErr"})
 # CT_SectPr children in schema order. Unknown children go last.
@@ -719,14 +724,17 @@ _SECT_PR_ORDER = (
 )
 
 
-def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
-    """Remove the blank paragraphs and section breaks that end the document on an empty page.
+def _drop_empty_last_page(doc: DocumentObject) -> None:
+    """Drop the page a page break at the end of the document leaves empty. Only the last page goes.
 
-    Polarion documents often end with an empty paragraph, a ``\\newpage`` or a ``\\pageLandscape``.
-    A section break with only blank paragraphs after it opens a page with nothing on it. The break
-    is folded into the body's sectPr, so its section becomes the last one and keeps its own page.
-    The walk stops at the first content. A blank paragraph after a table, or with nothing before it,
-    stays without its runs: Word needs a paragraph after a table, and the body needs one.
+    The editor sets the orientation of the page above a break, so a document which ends in landscape
+    carries a break after its last chapter. This is the counterpart of processPageBrakes in pdf-exporter
+    and decides the same way: what follows the last break is empty only when nothing of it shows on the
+    page. An empty table, an empty list item or shaded spaces show, so they are the user's and they stay.
+    Blank paragraphs with no break before them stay too.
+
+    ``\\newpage`` with the ``\\pageLandscape`` or ``\\pagePortrait`` after it is one break, as the editor
+    writes them. A section break goes into the body's sectPr: its section stays the last one, with its page.
     """
     body = doc.element.body
     body_sect_pr = body.find(f"{{{SCHEMA}}}sectPr")
@@ -734,20 +742,119 @@ def _drop_trailing_empty_pages(doc: DocumentObject) -> None:
         return
     # Reads the numbering a style gives a paragraph too: an empty list item still shows its marker.
     paragraphs = ParagraphIndents(doc.styles.element, _numbering(doc))
-    # Any block but a paragraph is content and ends the walk; range ends are looked past and kept.
-    element = _previous_block(body_sect_pr)
-    while element is not None and _w_local_name(element) == "p":
-        own_sect_pr = element.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
-        if own_sect_pr is not None:
-            _fold_section(body_sect_pr, own_sect_pr)
-        if paragraphs.is_numbered(element) or not _is_blank_paragraph(element):
-            return
-        block_before = _previous_block(element)
-        if block_before is None or _w_local_name(block_before) != "p":
-            _remove_runs(element)
-            return
-        body.remove(element)
-        element = block_before
+    last_break = _last_break_with_nothing_after(body_sect_pr, paragraphs)
+    if last_break is None:
+        return
+    first_block = last_break
+    section_break = last_break.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr")
+    if section_break is not None:
+        _fold_section(body_sect_pr, section_break)
+        first_block = _start_of_break(last_break, paragraphs)
+    blocks = [block for block in (first_block, *first_block.itersiblings()) if _w_local_name(block) in _PAGE_BLOCKS]
+    if _needs_a_paragraph_after(_previous_block(first_block)):
+        _remove_runs(last_break)
+        blocks.remove(last_break)
+    for block in blocks:
+        _keep_bookmarks(block)
+        body.remove(block)
+
+
+def _last_break_with_nothing_after(body_sect_pr: Any, paragraphs: ParagraphIndents) -> Any:
+    """The paragraph which breaks the page last, or None when content follows it or the document has no break."""
+    element = body_sect_pr.getprevious()
+    while element is not None:
+        if _holds_page_content(element, paragraphs):
+            return None
+        if _breaks_the_page(element) or _closes_a_section(element):
+            return element
+        element = element.getprevious()
+    return None
+
+
+def _holds_page_content(block: Any, paragraphs: ParagraphIndents) -> bool:
+    """Whether anything of the block shows on the page. The counterpart of JSoupUtils.isVisuallyEmpty in pdf-exporter."""
+    return any(_shows(element, paragraphs) for element in block.iter())
+
+
+def _shows(element: Any, paragraphs: ParagraphIndents) -> bool:
+    if not isinstance(element.tag, str):
+        return False
+    name = element.tag.rsplit("}", 1)[-1]
+    if name == "t":
+        return bool(_visible_characters(element).strip())
+    if name == "r":
+        return _holds_spaces(element) and _shows_on_spaces(element.find(f"{{{SCHEMA}}}rPr"))
+    if name == "p":
+        return paragraphs.is_numbered(element) or _is_painted(element.find(f"{{{SCHEMA}}}pPr"))
+    return name in _PAGE_CONTENT
+
+
+def _visible_characters(text: Any) -> str:
+    return (text.text or "").translate(_INVISIBLE_CHARACTERS)
+
+
+def _holds_spaces(run: Any) -> bool:
+    return run.find(f"{{{SCHEMA}}}tab") is not None or any(_visible_characters(text) for text in run.findall(f"{{{SCHEMA}}}t"))
+
+
+def _shows_on_spaces(r_pr: Any) -> bool:
+    """Whether the run properties paint something on spaces: shading, highlighting, a border, underline or strike-through."""
+    if r_pr is None:
+        return False
+    for child in r_pr:
+        name = _w_local_name(child)
+        if name == "shd" and _shading_shows(child):
+            return True
+        if name in _SHOWN_ON_SPACES and child.get(f"{{{SCHEMA}}}val") not in _SHOWN_ON_SPACES[name]:
+            return True
+    return False
+
+
+def _is_painted(p_pr: Any) -> bool:
+    """Whether the paragraph properties paint the paragraph, text or not: a shading or a border."""
+    if p_pr is None:
+        return False
+    shading = p_pr.find(f"{{{SCHEMA}}}shd")
+    if shading is not None and _shading_shows(shading):
+        return True
+    borders = p_pr.find(f"{{{SCHEMA}}}pBdr")
+    return borders is not None and any(side.get(f"{{{SCHEMA}}}val") not in _NO_BORDER for side in borders)
+
+
+def _shading_shows(shd: Any) -> bool:
+    """A shading shows when it fills with a color or a pattern. "clear" with an "auto" fill paints nothing."""
+    pattern = shd.get(f"{{{SCHEMA}}}val")
+    if pattern == "nil":
+        return False
+    return pattern != "clear" or shd.get(f"{{{SCHEMA}}}fill") not in (None, "auto")
+
+
+def _breaks_the_page(block: Any) -> bool:
+    return _w_local_name(block) == "p" and any(br.get(f"{{{SCHEMA}}}type") == "page" for br in block.iter(f"{{{SCHEMA}}}br"))
+
+
+def _closes_a_section(block: Any) -> bool:
+    return _w_local_name(block) == "p" and block.find(f"{{{SCHEMA}}}pPr/{{{SCHEMA}}}sectPr") is not None
+
+
+def _start_of_break(section_break: Any, paragraphs: ParagraphIndents) -> Any:
+    """Where a section break starts: at the paragraph of a ``\\newpage`` written right before it, else at itself."""
+    before = _previous_block(section_break)
+    if before is None or _closes_a_section(before) or not _breaks_the_page(before) or _holds_page_content(before, paragraphs):
+        return section_break
+    return before
+
+
+def _needs_a_paragraph_after(block: Any) -> bool:
+    """Whether the block cannot end the body: Word needs a paragraph after a table, and a section needs one of its own."""
+    return block is None or _w_local_name(block) != "p" or _closes_a_section(block)
+
+
+def _keep_bookmarks(block: Any) -> None:
+    """Move the bookmarks out of a block about to go: a link can name them, and the other end can stand elsewhere."""
+    for name in ("bookmarkStart", "bookmarkEnd"):
+        for bookmark in block.findall(f".//{{{SCHEMA}}}{name}"):
+            block.addprevious(bookmark)
 
 
 def _previous_block(element: Any) -> Any:
@@ -769,60 +876,6 @@ def _w_local_name(element: Any) -> str | None:
     if not isinstance(element.tag, str) or not element.tag.startswith(prefix):
         return None
     return element.tag[len(prefix) :]
-
-
-def _is_blank_paragraph(p: Any) -> bool:
-    """True when the paragraph shows nothing: no text, only breaks and space.
-
-    Anything unknown counts as content, and so does a bookmark: removing one end of it would break it.
-    """
-    for child in p:
-        name = _w_local_name(child)
-        if name in ("pPr", "proofErr") or not isinstance(child.tag, str):
-            continue
-        if name != "r" or not _is_blank_run(child):
-            return False
-    return True
-
-
-def _is_blank_run(run: Any) -> bool:
-    """True when the run shows nothing. Spaces and tabs count as content when shading or a line shows on them."""
-    has_spaces = False
-    for item in run:
-        name = _w_local_name(item)
-        if name == "tab":
-            has_spaces = True
-        elif name in _BLANK_RUN_CHILDREN or not isinstance(item.tag, str):
-            continue
-        elif name != "t":
-            return False
-        else:
-            text = (item.text or "").translate(_INVISIBLE_CHARACTERS)
-            if text.strip():
-                return False
-            has_spaces = has_spaces or bool(text)
-    return not (has_spaces and _shows_on_spaces(run.find(f"{{{SCHEMA}}}rPr")))
-
-
-def _shows_on_spaces(r_pr: Any) -> bool:
-    """Whether the run properties paint something on spaces: shading, highlighting, a border, underline or strike-through."""
-    if r_pr is None:
-        return False
-    for child in r_pr:
-        name = _w_local_name(child)
-        if name == "shd" and _shading_shows(child):
-            return True
-        if name in _SHOWN_ON_SPACES and child.get(f"{{{SCHEMA}}}val") not in _SHOWN_ON_SPACES[name]:
-            return True
-    return False
-
-
-def _shading_shows(shd: Any) -> bool:
-    """A shading shows when it fills with a color or a pattern. "clear" with an "auto" fill paints nothing."""
-    pattern = shd.get(f"{{{SCHEMA}}}val")
-    if pattern == "nil":
-        return False
-    return pattern != "clear" or shd.get(f"{{{SCHEMA}}}fill") not in (None, "auto")
 
 
 def _fold_section(body_sect_pr: Any, own_sect_pr: Any) -> None:
