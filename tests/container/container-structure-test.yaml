@@ -29,9 +29,13 @@ commandTests:
     command: bash
     args: [-c, test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name geometry.sty -o -name lmmonolt10-bold.otf \) | wc -l)" -eq 7]
     exitCode: 0
-  - name: Playwright Chromium is installed for SVG rasterization
+  - name: rsvg-convert is weasysvg-convert for pandoc
+    command: /opt/weasysvg/bin/rsvg-convert
+    args: [--help]
+    exitCode: 0
+  - name: No Chromium is left in the image
     command: bash
-    args: [-c, ls -d /opt/playwright/chromium-*]
+    args: [-c, test ! -e /opt/playwright]
     exitCode: 0
   - name: Tox should not be installed
     command: uv

@@ -7,7 +7,7 @@ import zipfile
 from http import HTTPStatus
 from pathlib import Path
 from typing import NamedTuple
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 from starlette.responses import Response
@@ -346,13 +346,11 @@ def test_version_endpoint():
     with (
         patch("subprocess.run") as mock_subprocess,
         patch.dict(os.environ, {"PANDOC_SERVICE_VERSION": "1.0.0", "PANDOC_SERVICE_BUILD_TIMESTAMP": "2024-03-27"}),
-        patch("app.pandoc_controller.get_chromium_manager") as mock_get_manager,
     ):
         # Mock subprocess run result
         mock_process = MagicMock()
         mock_process.stdout = "pandoc 3.1.9\nCopyright (C) 2006-2023 John MacFarlane"
         mock_subprocess.return_value = mock_process
-        mock_get_manager.return_value.get_version.return_value = "148.0.7778.96"
 
         # Simulate calling the version endpoint
         result = version()
@@ -363,7 +361,8 @@ def test_version_endpoint():
         assert result.pandoc == "3.1.9"
         assert result.pandocService == "1.0.0"
         assert result.timestamp == "2024-03-27"
-        assert result.chromium == "148.0.7778.96"
+        assert result.svgRenderer == "weasysvg"
+        assert "chromium" not in result.model_dump()
 
 
 def test_version_endpoint_with_subprocess_error():
@@ -690,7 +689,9 @@ def test_run_pandoc_conversion_with_string_input():
 
             # Verify subprocess.run was called with correct args
             expected_cmd = ["/usr/local/bin/pandoc", "-f", "markdown", "-t", "html", "-o", "output.html", "source.md", "--sandbox"]
-            mock_subprocess.assert_called_once_with(expected_cmd, check=True, shell=False, stdin=subprocess.PIPE, env=None)
+            mock_subprocess.assert_called_once_with(expected_cmd, check=True, shell=False, stdin=subprocess.PIPE, env=ANY)
+            # pandoc finds rsvg-convert, which is weasysvg-convert, first in PATH
+            assert mock_subprocess.call_args.kwargs["env"]["PATH"].startswith("/opt/weasysvg/bin")
 
 
 def test_convert_with_encoding():

@@ -94,7 +94,7 @@ def stopped_container():
 
 
 def test_sigterm_shuts_the_service_down_gracefully(stopped_container) -> None:
-    """SIGTERM runs the shutdown hooks: Chromium browser and metrics server are closed."""
+    """SIGTERM runs the shutdown hooks: the metrics server is closed."""
     container, _ = stopped_container
     logs = container.logs().decode("utf-8")
 

@@ -369,7 +369,6 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     assert "pandoc" in version_info
     assert "pandocService" in version_info
     assert "timestamp" in version_info
-    assert "chromium" in version_info
 
     # API version is an integer contract version used by docx-exporter
     assert isinstance(version_info["apiVersion"], int)
@@ -378,10 +377,10 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     assert version_info["python"], "Python version should not be empty"
     assert version_info["pandoc"], "Pandoc version should not be empty"
     assert version_info["pandocService"], "Pandoc service version should not be empty"
-    # weasysvg draws the SVG by default: no browser runs
+    # weasysvg draws the SVG: no browser runs
     assert version_info["svgRenderer"] == "weasysvg"
     assert version_info["weasysvg"], "weasysvg version should not be empty"
-    assert version_info["chromium"] is None
+    assert "chromium" not in version_info
 
 
 def __tall_png_data_uri(width: int, height: int) -> str:

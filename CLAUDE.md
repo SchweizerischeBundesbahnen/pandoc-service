@@ -68,11 +68,10 @@ bash tests/shell/test_pandoc_service.sh
 - **app/pptx_post_process.py**: PPTX slide size post-processing
 - **app/schema.py**: Pydantic models for API responses
 - **app/svg_processor.py**: Finds SVGs in incoming HTML and rasterizes them to PNG (port of weasyprint-service's `SvgProcessor`)
-- **app/chromium_manager.py**: Persistent headless Chromium (Playwright) used for SVG→PNG, with metrics, retries and a health-monitor loop (port of weasyprint-service's `ChromiumManager`)
-- **app/svg_renderer.py**: `SVG_RENDERER` (`weasysvg` default, `chromium`). In the weasysvg mode no browser starts: pdf, latex, html and epub keep the SVG (pandoc finds `rsvg-convert`, a link to `weasysvg-convert`, in `/opt/weasysvg/bin`), other targets get a PNG drawn by weasysvg
+- **app/svg_renderer.py**: weasysvg draws the SVG; no browser runs. pdf, latex, html and epub keep the SVG (pandoc finds `rsvg-convert`, a link to `weasysvg-convert`, in `/opt/weasysvg/bin`), other targets get a PNG drawn by weasysvg. `SVG_RENDERER` other than `weasysvg` is logged as no longer supported
 - **app/docx_svg_layers.py**: Adds the flat SVG of each weasysvg PNG to its DOCX picture (`asvg:svgBlip`), after `docx_post_process`. pandoc makes no PNG fallback under `--sandbox`, so the service writes both
 - **app/constants.py**: Small env-var helpers (`get_bool_env`)
-- **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG/Chromium metrics)
+- **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG metrics)
 
 ### Security Model
 - Pandoc runs with `--sandbox` by default (`PANDOC_SANDBOX`, see `is_sandbox_enabled`), so a document cannot make it read a network address or a container path. Lua filters, `--reference-doc`, tectonic and `data:` URI images are unaffected. tectonic runs outside that sandbox and reads what the TeX names, so on the pdf and latex targets `filters/strip_raw_tex.lua` drops the raw TeX of the document and the file-reading primitives inside math, and `filters/strip_document_images.lua` drops images whose address is neither a `data:` URI nor in pandoc's media bag, which covers every source format. Both run before the docx filters emit their own raw LaTeX.
@@ -86,7 +85,7 @@ bash tests/shell/test_pandoc_service.sh
 
 ### Conversion Pipeline
 1. Request validation (format, size, encoding)
-2. For HTML sources: SVG-to-PNG rasterization via headless Chromium (`preprocess_html_svgs` → `SvgProcessor` → `ChromiumManager`), so SVGs render in targets with weak SVG support (e.g. Word). Best effort: if Chromium is disabled/unavailable, the HTML passes through unchanged.
+2. For HTML sources: SVG drawn with weasysvg (`preprocess_html_svgs` → `SvgProcessor` → `WeasysvgRasterizer`), so SVGs render in targets with weak SVG support (e.g. Word). Best effort: if the drawing fails, the HTML passes through unchanged.
 3. Pandoc subprocess execution with security constraints
 4. Post-processing (especially for DOCX files)
 5. Response formatting with appropriate MIME types
@@ -95,8 +94,7 @@ bash tests/shell/test_pandoc_service.sh
 - Runs only for `source_format == "html"`, before pandoc.
 - Density is a device scale factor: per-request `scale_factor` query param (overrides `DEVICE_SCALE_FACTOR` env, default 1.0). docx-exporter sends its "Image density" setting via this param.
 - Size and density are separate. `SvgProcessor._drawn_size_px` reads the size the document states on the `<img>` style and brings it inside `max-width`/`max-height`; `_render_size_px` is that size for the rasterizer, capped; `_apply_img_dimensions` writes the drawn size back as a `width`/`height` **attribute**, which is what the writer of every target reads (`filters/inline_styles.lua` carries a style onto the attribute for docx alone, and `app/html_image_pre_process.py` skips an `<img>` that already carries one). Where the document states no size a length can be read from, the SVG's own size is the one drawn, as before; a percentage is left for the target to resolve.
-- The Chromium lifecycle is managed in the FastAPI `lifespan` (`_start_chromium`/`_stop_chromium`); a start failure is logged and swallowed.
-- Browser comes from Playwright's bundled Chromium (Debian base; `playwright install chromium`), not a system package. Tunable via `ENABLE_SVG_CONVERSION`, `MAX_CONCURRENT_CONVERSIONS`, `CHROMIUM_CONVERSION_TIMEOUT`, `CHROMIUM_MAX_CONVERSION_RETRIES`, `CHROMIUM_RESTART_AFTER_N_CONVERSIONS`, `CHROMIUM_HEALTH_CHECK_ENABLED`, `CHROMIUM_HEALTH_CHECK_INTERVAL` (see README).
+- weasysvg patches WeasyPrint once, when the controller is imported (`configure_svg_renderer`). Tunable via `ENABLE_SVG_CONVERSION` and `DEVICE_SCALE_FACTOR` (see README). PDFium draws one PNG at a time (`_PDFIUM_LOCK`).
 
 ### Supported Formats
 - **Source**: docx, epub, fb2, html, json, latex, markdown, rtf, textile
@@ -107,18 +105,18 @@ bash tests/shell/test_pandoc_service.sh
 - **uv** for dependency management (`--frozen` flag used in CI)
 - **Ruff** for linting (line length: 240, TCH rule enforces `if TYPE_CHECKING:` import guards)
 - **ty** (Astral) for type checking; missing annotations are enforced by ruff `ANN` rules
-- **Pytest** with >=90% coverage requirement; `tests/conftest.py` sets `SVG_RENDERER=chromium` for the in-process tests unless set; SVG/Chromium tests are real-browser (`pytest-asyncio`), and `tox` provisions Chromium via `playwright install chromium` before running them
-- **Debian base image** (`debian:trixie-slim`, same as weasyprint-service) — required because Playwright has no musllinux wheel, so Alpine is not viable
-- **Pandoc** and **tectonic** binaries in container, plus Playwright's bundled **Chromium** (see Dockerfile)
+- **Pytest** with >=90% coverage requirement; the SVG tests draw with a real weasysvg (`pytest-asyncio`), which needs Pango (`DYLD_LIBRARY_PATH` in `tox.ini` on macOS)
+- **Debian base image** (`debian:trixie-slim`, same as weasyprint-service)
+- **Pandoc** and **tectonic** binaries in container, plus Pango and Poppler for weasysvg (see Dockerfile)
 - Every `uv run` in the Dockerfile needs `--no-sync`: without it uv syncs the default groups again and puts the `dev` group (ruff, ty, pre-commit) into the image. The container structure test asserts they are absent.
 - **`GRACEFUL_SHUTDOWN_TIMEOUT`**: seconds uvicorn waits for running requests on SIGTERM (1-300, default: 30)
 - **`MAX_CONCURRENT_PANDOC_CONVERSIONS`**: conversions allowed at the same time (1-100, default: 2). `run_pandoc_conversion` runs in a worker thread (`abandon_on_cancel=True`, so a shutdown drops the request instead of waiting), and the anyio `CapacityLimiter` of `get_conversion_limiter()` keeps the pandoc and tectonic processes bounded
 - **Logging**: `setup_logging()` (`app/pandoc_service_application.py`) owns the logging configuration of the whole process. Every uvicorn server is started with `log_config=None`, which is what keeps uvicorn from applying its own configuration, and `configure_uvicorn_logging()` routes the uvicorn loggers into the root handlers. Never give a `uvicorn.Config` a `log_level`, and never give it a logging configuration of its own: both are applied to the uvicorn loggers of the whole process, and the metrics server used to silence the main server that way. Access logs (`uvicorn.access`) propagate at DEBUG only.
-- **Shutdown on SIGTERM**: `docker stop` sends SIGTERM, `entrypoint.sh` runs the server through `exec` so the signal reaches it, uvicorn drains the requests within `GRACEFUL_SHUTDOWN_TIMEOUT`, the lifespan closes Chromium and the metrics server, and the last log line is `Service shutdown complete`. Exit code 143 is the normal result: uvicorn re-raises the signal.
+- **Shutdown on SIGTERM**: `docker stop` sends SIGTERM, `entrypoint.sh` runs the server through `exec` so the signal reaches it, uvicorn drains the requests within `GRACEFUL_SHUTDOWN_TIMEOUT`, the lifespan closes the metrics server, and the last log line is `Service shutdown complete`. Exit code 143 is the normal result: uvicorn re-raises the signal.
 
 ## API Endpoints
-- `GET /health` - Health check (pandoc, tectonic, filesystem, and informational chromium status)
-- `GET /version` - Service version information (python, pandoc, pandocService, timestamp, chromium)
+- `GET /health` - Health check (pandoc, tectonic, filesystem, svgRenderer)
+- `GET /version` - Service version information (python, pandoc, pandocService, timestamp, svgRenderer, weasysvg)
 - `GET /docx-template` - Download default DOCX template
 - `GET /pptx-template` - Download default PPTX template
 - `POST /convert/{source_format}/to/{target_format}` - General conversion (HTML sources accept a `scale_factor` query param)

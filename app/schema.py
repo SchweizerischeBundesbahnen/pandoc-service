@@ -9,7 +9,6 @@ class VersionSchema(BaseModel):
     # This is the JSON field name clients read.
     pandocService: str | None = Field()  # noqa: N815
     timestamp: str | None = Field()
-    chromium: str | None = Field()
     # This is the JSON field name clients read.
-    svgRenderer: str | None = Field(default=None, description="Who draws the SVG of an HTML source: chromium or weasysvg")  # noqa: N815
-    weasysvg: str | None = Field(default=None, description="The weasysvg version, in the weasysvg mode")
+    svgRenderer: str | None = Field(default=None, description="Who draws the SVG of an HTML source: weasysvg")  # noqa: N815
+    weasysvg: str | None = Field(default=None, description="The weasysvg version")
