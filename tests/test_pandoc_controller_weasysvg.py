@@ -59,6 +59,7 @@ def test_version_and_health_name_the_renderer(weasysvg_mode):
         response = TestClient(pandoc_controller.app).get("/health").json()
     assert result.svgRenderer == "weasysvg"
     assert result.weasysvg == svg_renderer.get_weasysvg_version()
+    assert result.weasyprint == svg_renderer.get_weasyprint_version()
     assert response["svgRenderer"] == "weasysvg"
     assert "chromium" not in response
 

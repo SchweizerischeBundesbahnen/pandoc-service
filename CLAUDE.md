@@ -116,7 +116,7 @@ bash tests/shell/test_pandoc_service.sh
 
 ## API Endpoints
 - `GET /health` - Health check (pandoc, tectonic, filesystem, svgRenderer)
-- `GET /version` - Service version information (python, pandoc, pandocService, timestamp, svgRenderer, weasysvg)
+- `GET /version` - Service version information (python, pandoc, pandocService, timestamp, svgRenderer, weasysvg, weasyprint)
 - `GET /docx-template` - Download default DOCX template
 - `GET /pptx-template` - Download default PPTX template
 - `POST /convert/{source_format}/to/{target_format}` - General conversion (HTML sources accept a `scale_factor` query param)

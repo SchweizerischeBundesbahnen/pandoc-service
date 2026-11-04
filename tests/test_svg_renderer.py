@@ -38,6 +38,12 @@ def test_get_weasysvg_version():
         assert svg_renderer.get_weasysvg_version() is None
 
 
+def test_get_weasyprint_version():
+    assert svg_renderer.get_weasyprint_version() == importlib.metadata.version("weasyprint")
+    with patch.object(importlib.metadata, "version", side_effect=importlib.metadata.PackageNotFoundError):
+        assert svg_renderer.get_weasyprint_version() is None
+
+
 @pytest.mark.parametrize(("target", "kept"), [("pdf", True), ("latex", True), ("html", True), ("epub", True), ("docx", False), ("pptx", False), ("odt", False)])
 def test_keeps_svg(target, kept):
     assert svg_renderer.keeps_svg(target) is kept
