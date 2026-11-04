@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.11.0...v2.12.0) (2026-11-04)
+
+
+### Features
+
+* drop Chromium, weasysvg draws every SVG ([#307](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/307)) ([4c02d33](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4c02d3338a0b26c8fd7eb369b76b2a1e3f04377f))
+
 ## [2.11.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.10.1...v2.11.0) (2026-11-03)
 
 
