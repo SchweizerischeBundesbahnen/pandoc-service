@@ -25,8 +25,8 @@ ASVG = "http://schemas.microsoft.com/office/drawing/2016/SVG/main"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
-def convert(parameters: TestParameters, target: str) -> bytes:
-    response = parameters.request_session.post(f"{parameters.base_url}/convert/html/to/{target}", data=HTML.encode())
+def convert(parameters: TestParameters, target: str, query: str = "") -> bytes:
+    response = parameters.request_session.post(f"{parameters.base_url}/convert/html/to/{target}{query}", data=HTML.encode())
     assert response.status_code == 200
     return response.content
 
@@ -55,6 +55,14 @@ def test_docx_gets_the_png_and_its_flat_svg(test_parameters: TestParameters) -> 
     assert "filter=" not in flat
     assert "<mask" not in flat
     assert "foreignObject" not in flat
+
+
+def test_docx_without_the_svg_gets_the_png_alone(test_parameters: TestParameters) -> None:
+    with zipfile.ZipFile(io.BytesIO(convert(test_parameters, "docx", "?svg_in_docx=false"))) as docx:
+        document = etree.fromstring(docx.read("word/document.xml"))
+        media = [name for name in docx.namelist() if name.startswith("word/media/")]
+    assert document.findall(f".//{{{ASVG}}}svgBlip") == []
+    assert [name.rsplit(".", 1)[1] for name in media] == ["png"]
 
 
 def test_pdf_gets_the_svg_as_vector(test_parameters: TestParameters) -> None:

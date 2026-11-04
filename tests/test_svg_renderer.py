@@ -109,6 +109,15 @@ async def test_rasterizer_of_another_target_keeps_no_layer():
 
 
 @pytest.mark.asyncio
+async def test_rasterizer_of_a_docx_without_its_svg_keeps_no_layer():
+    rasterizer = svg_renderer.for_target(anyio.CapacityLimiter(1), "docx", layers=False)
+    with patch.object(svg_renderer, "render", return_value=(b"png", None)) as render:
+        assert await rasterizer.convert_svg_to_png(DIAGRAM, 40, 20) == b"png"
+    render.assert_called_once_with(DIAGRAM.encode(), 40, 20, 1.0, layer=False)
+    assert rasterizer.svg_layers == {}
+
+
+@pytest.mark.asyncio
 async def test_rasterizer_counts_a_failure():
     rasterizer = svg_renderer.for_target(anyio.CapacityLimiter(1), "docx")
     with patch.object(svg_renderer, "render", side_effect=ValueError("broken")), patch.object(svg_renderer, "increment_svg_conversion_failure") as failure, pytest.raises(ValueError, match="broken"):
