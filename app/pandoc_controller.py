@@ -766,14 +766,34 @@ def _heap_limit_options() -> list[str]:
     return ["+RTS", f"-M{limit}", "-RTS"] if limit else []
 
 
+# The end of the stderr of pandoc a log line keeps: the error of a PDF engine comes last
+PANDOC_STDERR_LOG_LIMIT = 4000
+
+
 def _run_pandoc(cmd: list[str], environment: dict[str, str] | None) -> None:
-    """Run pandoc, telling a conversion stopped at the heap limit from any other failure."""
+    """Run pandoc, telling a conversion stopped at the heap limit from any other failure.
+
+    Its stderr goes to the log: the warnings of a conversion, and the reason of a failure, which the
+    PDF engine writes there and the exit code alone does not tell.
+    """
     try:
-        subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, env=environment)
+        completed = subprocess.run(cmd, check=True, shell=False, stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
     except subprocess.CalledProcessError as e:
+        _log_pandoc_stderr(e.stderr, f"pandoc failed with exit code {e.returncode}", logging.ERROR)
         if e.returncode == PANDOC_HEAP_EXHAUSTED_EXIT_CODE:
             raise PandocHeapExhaustedError(get_pandoc_heap_limit() or "no limit") from e
         raise
+    _log_pandoc_stderr(completed.stderr, "pandoc reported", logging.WARNING)
+
+
+def _log_pandoc_stderr(stderr: object, prefix: str, level: int) -> None:
+    """Log the stderr of pandoc, its end where it is long; nothing where it is empty."""
+    if not isinstance(stderr, bytes) or not stderr.strip():
+        return
+    text = stderr.decode("utf-8", errors="replace").strip()
+    if len(text) > PANDOC_STDERR_LOG_LIMIT:
+        text = "..." + text[-PANDOC_STDERR_LOG_LIMIT:]
+    logger.log(level, "%s:\n%s", prefix, text)
 
 
 def is_sandbox_enabled() -> bool:

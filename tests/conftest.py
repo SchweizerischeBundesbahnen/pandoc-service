@@ -109,3 +109,27 @@ def test_parameters(pandoc_container):
         yield TestParameters(base_url, flush_tmp_file_enabled, request_session, pandoc_container)
     finally:
         request_session.close()
+
+
+# The lines of the log of the service a failed container test prints: the reason of a failed conversion is there
+CONTAINER_LOG_TAIL = 200
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Keep the report of each phase on the test, for the log of a failed container test."""
+    report = yield
+    setattr(item, f"report_{report.when}", report)
+    return report
+
+
+@pytest.fixture(autouse=True)
+def log_container_on_failure(request):
+    """Print the end of the log of the service when a test that uses its container fails."""
+    yield
+    report = getattr(request.node, "report_call", None)
+    if report is None or not report.failed or "test_parameters" not in request.fixturenames:
+        return
+    container = request.getfixturevalue("test_parameters").container
+    logs = container.logs(tail=CONTAINER_LOG_TAIL).decode("utf-8", errors="replace")
+    logger.error(f"Last {CONTAINER_LOG_TAIL} lines of the log of {container.name}:\n{logs}")

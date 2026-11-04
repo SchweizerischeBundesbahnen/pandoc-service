@@ -689,7 +689,7 @@ def test_run_pandoc_conversion_with_string_input():
 
             # Verify subprocess.run was called with correct args
             expected_cmd = ["/usr/local/bin/pandoc", "-f", "markdown", "-t", "html", "-o", "output.html", "source.md", "--sandbox"]
-            mock_subprocess.assert_called_once_with(expected_cmd, check=True, shell=False, stdin=subprocess.PIPE, env=ANY)
+            mock_subprocess.assert_called_once_with(expected_cmd, check=True, shell=False, stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=ANY)
             # pandoc finds rsvg-convert, which is weasysvg-convert, first in PATH
             assert mock_subprocess.call_args.kwargs["env"]["PATH"].startswith("/opt/weasysvg/bin")
 
@@ -1802,6 +1802,35 @@ def test_any_other_failure_of_pandoc_is_raised_as_it_is():
 
     with patch("subprocess.run", side_effect=subprocess.CalledProcessError(64, ["pandoc"])), pytest.raises(subprocess.CalledProcessError):
         _run_pandoc(["pandoc"], None)
+
+
+def test_a_failure_of_pandoc_logs_its_stderr(caplog):
+    from app.pandoc_controller import _run_pandoc
+
+    error = subprocess.CalledProcessError(43, ["pandoc"], stderr=b"Error producing PDF.\n! Undefined control sequence.\n")
+    with patch("subprocess.run", side_effect=error), pytest.raises(subprocess.CalledProcessError), caplog.at_level("ERROR"):
+        _run_pandoc(["pandoc"], None)
+    assert "pandoc failed with exit code 43" in caplog.text
+    assert "! Undefined control sequence." in caplog.text
+
+
+def test_the_warnings_of_pandoc_are_logged_and_a_long_stderr_keeps_its_end(caplog):
+    from app.pandoc_controller import PANDOC_STDERR_LOG_LIMIT, _run_pandoc
+
+    stderr = b"x" * (PANDOC_STDERR_LOG_LIMIT + 10) + b"[WARNING] Could not fetch resource"
+    with patch("subprocess.run", return_value=subprocess.CompletedProcess(["pandoc"], 0, stderr=stderr)), caplog.at_level("WARNING"):
+        _run_pandoc(["pandoc"], None)
+    assert "pandoc reported" in caplog.text
+    assert caplog.text.count("x") < PANDOC_STDERR_LOG_LIMIT + 10
+    assert "[WARNING] Could not fetch resource" in caplog.text
+
+
+def test_a_quiet_pandoc_logs_nothing(caplog):
+    from app.pandoc_controller import _run_pandoc
+
+    with patch("subprocess.run", return_value=subprocess.CompletedProcess(["pandoc"], 0, stderr=b"  \n")), caplog.at_level("WARNING"):
+        _run_pandoc(["pandoc"], None)
+    assert "pandoc reported" not in caplog.text
 
 
 def test_the_heap_limit_is_worked_out_once():
