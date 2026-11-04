@@ -62,6 +62,36 @@
       "matchUpdateTypes": [
         "patch"
       ]
+    },
+    {
+      "description": "weasysvg is ours and changes what the service draws: take each release at once, and review it",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "weasysvg"
+      ],
+      "minimumReleaseAge": "0 days",
+      "automerge": false
+    },
+    {
+      "description": "A minor release of weasysvg is a feature of the service: release-please takes it as a minor release",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "weasysvg"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "semanticCommitType": "feat"
     }
   ]
 }
