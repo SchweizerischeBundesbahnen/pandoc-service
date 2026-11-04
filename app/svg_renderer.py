@@ -67,8 +67,17 @@ def configure_svg_renderer() -> str:
 
 def get_weasysvg_version() -> str | None:
     """The installed weasysvg version, or None when it is missing."""
+    return _package_version("weasysvg")
+
+
+def get_weasyprint_version() -> str | None:
+    """The installed WeasyPrint version, which weasysvg draws with, or None when it is missing."""
+    return _package_version("weasyprint")
+
+
+def _package_version(name: str) -> str | None:
     try:
-        return importlib.metadata.version("weasysvg")
+        return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
         return None
 

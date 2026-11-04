@@ -57,7 +57,7 @@ from .prometheus_metrics import (
     observe_subprocess_duration,
 )
 from .svg_processor import SvgProcessor
-from .svg_renderer import configure_svg_renderer, get_weasysvg_version
+from .svg_renderer import configure_svg_renderer, get_weasyprint_version, get_weasysvg_version
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -434,6 +434,7 @@ def version() -> VersionSchema:
         timestamp=os.environ.get("PANDOC_SERVICE_BUILD_TIMESTAMP"),
         svgRenderer=SVG_RENDERER,
         weasysvg=get_weasysvg_version(),
+        weasyprint=get_weasyprint_version(),
     )
 
 

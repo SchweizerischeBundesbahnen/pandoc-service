@@ -380,6 +380,7 @@ def test_version_endpoint(test_parameters: TestParameters) -> None:
     # weasysvg draws the SVG: no browser runs
     assert version_info["svgRenderer"] == "weasysvg"
     assert version_info["weasysvg"], "weasysvg version should not be empty"
+    assert version_info["weasyprint"], "WeasyPrint version should not be empty"
     assert "chromium" not in version_info
 
 

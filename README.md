@@ -127,7 +127,7 @@ docker run --init --detach \
 ```
 
 The `/health` and `/version` endpoints report `svgRenderer`, always `weasysvg`, and
-`/version` reports the `weasysvg` version.
+`/version` reports the `weasysvg` version and the `weasyprint` version it draws with.
 
 ### Inline CSS in HTML to DOCX
 
