@@ -819,6 +819,11 @@ async def extract_image_sizes(source: str | bytes) -> dict[str, list[html_image_
     return await to_thread.run_sync(html_image_sizes.extract, source, abandon_on_cancel=True, limiter=get_conversion_limiter())
 
 
+def svg_layers_for(svg_in_docx: bool) -> dict[bytes, bytes] | None:
+    """A place for the flat SVG of each PNG of a docx; None with svg_in_docx=false, for the PNG alone, which Word draws at once."""
+    return {} if svg_in_docx else None
+
+
 async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None = None, target_format: str | None = None, svg_layers: dict[bytes, bytes] | None = None) -> str | bytes:
     """Draw the SVGs embedded in HTML with weasysvg before pandoc runs.
 
@@ -1101,10 +1106,9 @@ async def convert_docx_with_ref(
         # Rasterize any embedded SVGs to PNG so Word gets a usable image
         # instead of the draw.io "Text is not SVG - cannot display" fallback.
         # In the weasysvg mode svg_layers gets the vector of each PNG.
-        svg_layers: dict[bytes, bytes] = {}
+        svg_layers = svg_layers_for(svg_in_docx)
         if source_format == "html":
-            # svg_in_docx=false: the PNG alone, which Word draws at once
-            source = await preprocess_html_svgs(source, scale_factor, "docx", svg_layers if svg_in_docx else None)
+            source = await preprocess_html_svgs(source, scale_factor, "docx", svg_layers)
         # After the rasterization, which gives an SVG its PNG and the size it is drawn at.
         image_sizes = await extract_image_sizes(source) if source_format == "html" else None
 
@@ -1310,10 +1314,9 @@ async def convert(
         # Rasterize any embedded SVGs to PNG so renderers without full SVG
         # support (e.g. Word) get a usable image instead of a fallback warning.
         # In the weasysvg mode svg_layers gets the vector of each PNG of a docx.
-        svg_layers: dict[bytes, bytes] = {}
+        svg_layers = svg_layers_for(svg_in_docx)
         if source_format == "html":
-            # svg_in_docx=false: the PNG alone, which Word draws at once
-            source = await preprocess_html_svgs(source, scale_factor, target_format, svg_layers if svg_in_docx else None)
+            source = await preprocess_html_svgs(source, scale_factor, target_format, svg_layers)
         # After the rasterization, which gives an SVG its PNG and the size it is drawn at.
         image_sizes = await extract_image_sizes(source) if html_to_docx else None
 
