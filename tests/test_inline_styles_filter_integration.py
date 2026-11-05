@@ -108,13 +108,15 @@ def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParam
 
 
 def test_hyperlink_keeps_formatting_set_inside_the_link(test_parameters: TestParameters):
-    """A link drops only the color/background of the span around it.
+    """A link drops only the text color of the span around it.
 
     Formatting set inside the link still applies on top of the Hyperlink style:
     Polarion marks a deleted Work Item red and struck through inside its link,
-    and bold around a link draws the link bold too (docx-exporter#462).
+    and bold around a link draws the link bold too (docx-exporter#462). The
+    highlight of the span is kept as well: a browser paints it behind the link,
+    so dropping it would leave an unshaded gap.
     """
-    html = '<p><span style="color:#000000;font-weight:bold;"><a href="https://example.com/wi"><span style="color:#E74C3C;text-decoration:line-through;">EL-105</span> - Login Page</a></span></p>'
+    html = '<p><span style="color:#000000;font-weight:bold;background-color:#FFFF00;"><a href="https://example.com/wi"><span style="color:#E74C3C;text-decoration:line-through;">EL-105</span> - Login Page</a></span></p>'
 
     docx_bytes = _convert_html_to_docx(test_parameters, html)
     with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
@@ -132,6 +134,8 @@ def test_hyperlink_keeps_formatting_set_inside_the_link(test_parameters: TestPar
         style = rpr.find(f"{{{W_NS}}}rStyle")
         assert style is not None and style.get(f"{{{W_NS}}}val") == "Hyperlink", f"run {text!r} does not reference rStyle=Hyperlink"
         assert rpr.find(f"{{{W_NS}}}b") is not None, f"run {text!r} lost the bold of the surrounding span"
+        shd = rpr.find(f"{{{W_NS}}}shd")
+        assert shd is not None and shd.get(f"{{{W_NS}}}fill") == "FFFF00", f"run {text!r} lost the highlight of the surrounding span"
         colors = [c.get(f"{{{W_NS}}}val") for c in rpr.findall(f"{{{W_NS}}}color")]
         assert "000000" not in colors, f"run {text!r} inherits the surrounding span's 000000"
         if text == "EL-105":

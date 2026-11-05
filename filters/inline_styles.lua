@@ -601,24 +601,26 @@ walk = function(inlines, props, vert_align)
       result[#result + 1] = emit_run(inline.text, props, vert_align)
     elseif t == "Link" then
       -- Walk the link's content with the surrounding props so the styled
-      -- span's color/font/highlight apply to the link text too, then wrap
-      -- the walked runs back in a Link carrying the original target/title/
-      -- attr. Pandoc's DOCX writer turns that Link into <w:hyperlink> and
-      -- registers the relationship in word/_rels/document.xml.rels — we
-      -- get the relationship side-effect for free as long as we hand it a
-      -- Link node. Discarding the wrapper (the previous behaviour) kept
-      -- the visible text but dropped the click target entirely.
+      -- span's font, size, bold/italic and highlight apply to the link text
+      -- too, then wrap the walked runs back in a Link carrying the original
+      -- target/title/attr. Pandoc's DOCX writer turns that Link into
+      -- <w:hyperlink> and registers the relationship in
+      -- word/_rels/document.xml.rels — we get the relationship side-effect
+      -- for free as long as we hand it a Link node. Discarding the wrapper
+      -- (the previous behaviour) kept the visible text but dropped the click
+      -- target entirely.
       --
       -- The walked runs are raw OOXML, so the writer does not put its own
       -- Hyperlink character style on them; we have to. As in a browser, a
-      -- link does not take the text color or background of the span around
-      -- it (it has its own link color), so those inherited props are
-      -- dropped and the Hyperlink style supplies color and underline. A
-      -- color set on a span inside the link (e.g. Polarion's red for a
-      -- deleted Work Item) still applies, as do bold/italic/size/font.
+      -- link does not take the text color of the span around it (it has its
+      -- own link color), so the inherited color is dropped and the
+      -- Hyperlink style supplies color and underline. The background is
+      -- kept: a browser paints a highlighted span behind the link too, so
+      -- dropping it would leave an unshaded gap in the highlight. A color set
+      -- on a span inside the link (e.g. Polarion's red for a deleted Work
+      -- Item) still applies.
       local link_props = clone(props)
       link_props.fg = nil
-      link_props.bg = nil
       link_props.char_style = "Hyperlink"
       local walked = walk(inline.content, link_props, vert_align)
       result[#result + 1] = pandoc.Link(walked, inline.target, inline.title, inline.attr)
