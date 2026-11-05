@@ -20,11 +20,20 @@
 -- inherited, so this holds for a Div or a Span and everything inside it, up
 -- to a nested element that sets another value.
 --
+-- The space between a picture and its text is not in the HTML, so it is
+-- written in a 1 pt font. Word still does not break there, and the gap is
+-- too narrow to see.
+--
 -- Runs after html_whitespace, which collapses the spaces, and before
 -- inline_styles, which turns styled spans into raw OOXML. Only runs for HTML
 -- sources converted to DOCX (the controller gates it).
 
 local NBSP = "\u{00A0}"
+
+-- A non-breaking space in a 1 pt font (w:sz counts half-points).
+local GLUE = pandoc.RawInline("openxml",
+  '<w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>'
+  .. '<w:t xml:space="preserve">' .. NBSP .. "</w:t></w:r>")
 
 -- Inlines whose content is a list of inlines. A Note holds blocks, so it is
 -- not one of them: its text is not on the line it is anchored to.
@@ -56,7 +65,7 @@ end
 -- last on the line ("text", "image" or "space"), and `state.last_nowrap`
 -- whether it was inside a nowrap element. A picture and text next to each other
 -- get a non-breaking space between them when both are inside a nowrap
--- element. Returns the new list.
+-- element, in a 1 pt font. Returns the new list.
 local function walk_inlines(inlines, state, nowrap)
   local result = pandoc.Inlines({})
   for _, inline in ipairs(inlines) do
@@ -82,7 +91,7 @@ local function walk_inlines(inlines, state, nowrap)
     if kind ~= nil then
       local glued = (kind == "image" and state.last == "text") or (kind == "text" and state.last == "image")
       if glued and nowrap and state.last_nowrap then
-        result:insert(pandoc.Str(NBSP))
+        result:insert(GLUE:clone())
       end
       state.last = kind
       state.last_nowrap = nowrap

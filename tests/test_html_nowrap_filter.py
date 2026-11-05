@@ -9,6 +9,10 @@ only character Word does not break a line at.
 
 from __future__ import annotations
 
+import io
+import re
+import zipfile
+
 from tests.test_container import TestParameters
 from tests.test_html_whitespace_filter import _png, _texts
 
@@ -17,6 +21,12 @@ def test_status_icon_keeps_its_label(test_parameters: TestParameters):
     """Polarion's status of a work item: an icon followed by its name, which Word must not put on the next line."""
     body = f'<p>Status: <span class="polarion-JSEnumOption" style="white-space:nowrap"><img src="{_png()}" alt="">Draft</span></p>'
     assert _texts(test_parameters, body) == ["Status: [img]\u00a0Draft"]
+
+
+def test_space_between_picture_and_text_is_one_point_wide(test_parameters: TestParameters):
+    """The space is not in the HTML: a 1 pt font keeps the gap out of sight, Word still does not break there."""
+    body = f'<p><span style="white-space:nowrap"><img src="{_png()}" alt="">Draft two</span></p>'
+    assert _nbsp_runs(test_parameters, body) == [True, False]
 
 
 def test_picture_and_text_without_nowrap_stay_apart(test_parameters: TestParameters):
@@ -55,3 +65,12 @@ def test_span_setting_whitespace_back_to_normal_breaks_again(test_parameters: Te
 def test_nowrap_div_applies_to_its_paragraphs(test_parameters: TestParameters):
     body = '<div style="white-space:nowrap"><p>one two</p><div style="white-space:normal"><p>three four</p></div></div>'
     assert _texts(test_parameters, body) == ["one\u00a0two", "three four"]
+
+
+def _nbsp_runs(test_parameters: TestParameters, body: str) -> list[bool]:
+    """For each run holding a non-breaking space, in document order: whether its font is 1 pt."""
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/html/to/docx", data=f"<html><body>{body}</body></html>")
+    assert response.status_code // 100 == 2, response.text
+    document_xml = zipfile.ZipFile(io.BytesIO(response.content)).read("word/document.xml").decode()
+    runs = re.findall(r"<w:r>((?:(?!</w:r>).)*)</w:r>", document_xml, re.DOTALL)
+    return ['<w:sz w:val="2"/>' in run for run in runs if "\u00a0" in run]
