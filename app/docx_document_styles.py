@@ -101,9 +101,11 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options: list[str] = []
     font = _font(chain, styles, theme)
     if font is not None:
-        # Word kerns no text unless a style turns kerning on, which pandoc's template does not, and never
-        # shrinks a space to fit one more word on the line, as TeX does
+        # Word kerns no text unless a style turns kerning on, which pandoc's template does not, never
+        # shrinks a space to fit one more word on the line, as TeX does,
+        # nor turns a straight quote of the text into a curly one, nor sets the ligatures of TeX and the font
         options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
+        options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
     size = _half_points(chain, styles)
     if size is not None:
         # The class sets the sizes of its footnotes and the like from the nearest size it knows

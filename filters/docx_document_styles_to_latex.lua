@@ -178,7 +178,7 @@ end
 local function font_switch(style, family_macro, lines)
   local parts = { "\\normalfont" }
   if style.font then
-    lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off,Scale=1,WordSpace={1,1,0}]{%s}", family_macro, style.font)
+    lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{%s}", family_macro, style.font)
     parts[#parts + 1] = "\\" .. family_macro
   end
   if style.size then

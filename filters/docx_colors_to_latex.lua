@@ -14,7 +14,7 @@
 --   BG (shading)    -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
 --   HL (highlight)  -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
 --   SZ (font size)  -> {\fontsize{bp}{baseline}\selectfont ...}
---   FN (font)       -> {\fontspec{Family}[Kerning=Off,Scale=1,WordSpace={1,1,0}] ...}, the family as the hex of its UTF-8
+--   FN (font)       -> {\fontspec{Family}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}] ...}, the family as the hex of its UTF-8
 --
 -- Why \colorbox and not soul's \hl: soul's \hl band hugs the glyph height, so a
 -- plain-text highlight sits shorter and lower than the box we are forced to use
@@ -287,7 +287,7 @@ function filter.Span(el)
 
   -- Outermost of all: the family of the run, unkerned as Word sets it.
   if props.font then
-    open = open .. "{\\fontspec{" .. props.font .. "}[Kerning=Off,Scale=1,WordSpace={1,1,0}]"
+    open = open .. "{\\fontspec{" .. props.font .. "}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]"
     close = "}" .. close
   end
 

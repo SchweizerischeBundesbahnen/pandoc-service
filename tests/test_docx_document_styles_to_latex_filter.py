@@ -118,7 +118,7 @@ def test_a_font_the_container_lacks_keeps_latin_modern(test_parameters: TestPara
 def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=font:DejaVu Sans,size:20,line:24.4,bold:false,italic:true,color:0F4761,before:18,after:9,align:center"))
     assert "\\usepackage{titlesec}" in preamble
-    assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0}]{DejaVu Sans}" in preamble
+    assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{DejaVu Sans}" in preamble
     assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\color[HTML]{0F4761}\\filcenter}{}{0pt}{}" in preamble
     assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
 
@@ -251,3 +251,12 @@ def test_the_pdf_gives_a_section_its_own_page(test_parameters: TestParameters):
     assert sizes[1][0] > sizes[1][1] > 0, sizes
     assert sizes[0][1] > sizes[0][0], sizes
     assert "Landscape page." in reader.pages[1].extract_text()
+
+
+def test_a_straight_quote_of_the_text_stays_straight(test_parameters: TestParameters):
+    """fontspec's TeX ligatures turn " into a closing quote; Word prints the character the text holds."""
+    document = Document()
+    document.styles["Normal"].font.name = "Liberation Sans"
+    document.add_paragraph('Click "Login" to sign in.')
+    text = PdfReader(io.BytesIO(_docx_to_pdf(test_parameters, document))).pages[0].extract_text()
+    assert 'Click "Login" to sign in.' in text, text

@@ -68,7 +68,7 @@ def test_sets_pandoc_template_like_word():
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
     assert options == {
         "mainfont": "Minor Serif",
-        "mainfontoptions": "WordSpace={1,1,0}",
+        "mainfontoptions": "Ligatures={TeXOff,NoCommon}",
         "fontsize": "12pt",
         "docx-body-size": "12",
         "docx-body-baseline": "14.4",

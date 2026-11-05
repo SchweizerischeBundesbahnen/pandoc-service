@@ -296,7 +296,7 @@ def _font_style(family: str) -> str:
 
 def test_a_run_font_becomes_fontspec_as_word_sets_it(test_parameters: TestParameters):
     latex = _md_to_latex(test_parameters.container, f'[in Segoe]{{custom-style="{_font_style("Segoe UI")}"}}')
-    assert "{\\fontspec{Segoe UI}[Kerning=Off,Scale=1,WordSpace={1,1,0}]in Segoe}" in latex, latex
+    assert "{\\fontspec{Segoe UI}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]in Segoe}" in latex, latex
 
 
 def test_a_run_font_which_could_carry_latex_is_left_out(test_parameters: TestParameters):
