@@ -376,6 +376,9 @@ end
 -- annotated below for future maintainers.
 local function rpr_xml(props, vert_align)
   local parts = {}
+  if props.char_style then
+    parts[#parts + 1] = '<w:rStyle w:val="' .. escape_attr(props.char_style) .. '"/>'                  -- pos 1
+  end
   if props.font then
     local f = escape_attr(props.font)
     -- `parts[#parts + 1] = x` is the idiomatic Lua "append to array".
@@ -605,7 +608,19 @@ walk = function(inlines, props, vert_align)
       -- get the relationship side-effect for free as long as we hand it a
       -- Link node. Discarding the wrapper (the previous behaviour) kept
       -- the visible text but dropped the click target entirely.
-      local walked = walk(inline.content, props, vert_align)
+      --
+      -- The walked runs are raw OOXML, so the writer does not put its own
+      -- Hyperlink character style on them; we have to. As in a browser, a
+      -- link does not take the text color or background of the span around
+      -- it (it has its own link color), so those inherited props are
+      -- dropped and the Hyperlink style supplies color and underline. A
+      -- color set on a span inside the link (e.g. Polarion's red for a
+      -- deleted Work Item) still applies, as do bold/italic/size/font.
+      local link_props = clone(props)
+      link_props.fg = nil
+      link_props.bg = nil
+      link_props.char_style = "Hyperlink"
+      local walked = walk(inline.content, link_props, vert_align)
       result[#result + 1] = pandoc.Link(walked, inline.target, inline.title, inline.attr)
     elseif t == "Image" then
       -- Images are embedded by Pandoc's DOCX writer as <w:drawing> with a
