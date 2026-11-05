@@ -29,6 +29,7 @@ from app.schema import VersionSchema
 from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options, load_tls_options
 
 from . import (
+    docx_body_style,
     docx_latex_pre_process,
     docx_page_geometry,
     docx_post_process,
@@ -90,6 +91,7 @@ FILTERS = {
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
+    "docx_body_style_to_latex": f"{FILTER_BASE_PATH}/docx_body_style_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
@@ -718,6 +720,8 @@ def _build_pandoc_command(
                 # Strip "Table N" / "Figure N" prefix from Caption blocks so LaTeX's
                 # own \caption counter doesn't duplicate the numbering.
                 f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
+                # Sets the body paragraphs as the Body Text style of the DOCX. See app/docx_body_style.py.
+                f"--lua-filter={FILTERS['docx_body_style_to_latex']}",
             ]
         )
 
@@ -956,7 +960,8 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     apply_docx_latex_filters = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     page_geometry: list[str] | None = None
     if apply_docx_latex_filters:
-        page_geometry = docx_page_geometry.geometry_variables(source_data)
+        # The font, size and paragraph layout of the body text come along with the page
+        page_geometry = docx_page_geometry.geometry_variables(source_data) + docx_body_style.body_style_options(source_data)
         source_data = docx_latex_pre_process.preprocess(source_data)
 
     # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another

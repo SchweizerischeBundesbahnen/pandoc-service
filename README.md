@@ -154,6 +154,26 @@ a quarter of the font size above the baseline. Other keywords are not mapped, an
 An anchor (`<a id>`, or a `<span>` with an `id`) stays a bookmark in the DOCX, also inside styled text,
 so a link to it still jumps there.
 
+### DOCX to PDF
+
+A PDF of a DOCX takes these from the document, so it lays the text out closer to Word:
+
+| From the DOCX | In the PDF |
+|---|---|
+| `<w:pgSz>` and `<w:pgMar>` of the first section | the page size and margins; US Letter with 1 inch margins without them |
+| the font of the Body Text style, else Normal, else the defaults, also as a theme font | the font of the body text, when the container has it |
+| the font size of that style | the nearest of 10, 11 and 12 pt |
+| the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
+| `<w:jc>` of that style, and `<w:autoHyphenation>` | ragged right and unhyphenated, unless the style justifies and the document hyphenates |
+
+The image has no Microsoft fonts. A document in a font the container lacks, Aptos or Calibri among them,
+keeps Latin Modern. Mount the fonts into `/usr/share/fonts` to use them:
+
+```bash
+docker run --detach --publish 9082:9082 --volume /path/to/fonts:/usr/share/fonts/truetype/custom:ro \
+  ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+```
+
 ### External resources of a document
 
 A document names its own resources: an image, a stylesheet, a font. The writers which embed media

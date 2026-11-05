@@ -149,6 +149,7 @@ COPY filters/html_whitespace.lua "/usr/local/share/pandoc/filters/html_whitespac
 COPY filters/html_nowrap.lua "/usr/local/share/pandoc/filters/html_nowrap.lua"
 COPY filters/latex_nested_tables.lua "/usr/local/share/pandoc/filters/latex_nested_tables.lua"
 COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/docx_caption_labels_to_latex.lua"
+COPY filters/docx_body_style_to_latex.lua "/usr/local/share/pandoc/filters/docx_body_style_to_latex.lua"
 COPY filters/docx_empty_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_empty_paragraphs_to_latex.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
