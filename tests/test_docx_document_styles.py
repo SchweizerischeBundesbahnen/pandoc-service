@@ -94,6 +94,15 @@ def test_a_font_the_container_lacks_keeps_the_latex_font(installed: set[str]):
     assert "mainfont" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
 
 
+def test_the_equations_take_cambria_math_when_it_is_installed(installed: set[str]):
+    installed.add("Cambria Math")
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["mathfont"] == "Cambria Math"
+
+
+def test_without_cambria_math_the_equations_keep_the_latex_font():
+    assert "mathfont" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
 def test_a_name_which_is_no_installed_family_never_reaches_latex():
     body = BODY_TEXT.replace("</w:pPr>", '</w:pPr><w:rPr><w:rFonts w:ascii="}\\input{/etc/passwd"/></w:rPr>')
     assert "mainfont" not in _options(_docx(DEFAULTS + NORMAL + body))

@@ -134,7 +134,13 @@ local function body_preamble(meta, lines)
   -- Word counts in PostScript points, \fontsize in bp does the same; pt of TeX are 0.4% smaller
   local size, baseline = points(meta[SIZE]), points(meta[BASELINE])
   if size ~= nil and baseline ~= nil then
-    lines[#lines + 1] = string.format("\\renewcommand{\\normalsize}{\\fontsize{%gbp}{%gbp}\\selectfont}", size, baseline)
+    -- An equation of Word is a paragraph like any other: no space of a display of its own around it
+    lines[#lines + 1] = string.format(
+      "\\renewcommand{\\normalsize}{\\fontsize{%gbp}{%gbp}\\selectfont"
+        .. "\\abovedisplayskip=0pt\\belowdisplayskip=0pt\\abovedisplayshortskip=0pt\\belowdisplayshortskip=0pt}",
+      size,
+      baseline
+    )
     lines[#lines + 1] = "\\normalsize"
   end
   local skip = points(meta[SKIP])

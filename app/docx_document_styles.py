@@ -42,6 +42,8 @@ THEME_PART = "word/theme/theme1.xml"
 SETTINGS_PART = "word/settings.xml"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 
+# The font Word sets the equations (OMML) of every document in.
+MATH_FONT = "Cambria Math"
 # The style pandoc gives body paragraphs, then the styles it inherits from.
 BODY_STYLE = "BodyText"
 # The style pandoc gives the paragraphs of a table cell and of a tight list.
@@ -106,6 +108,8 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         # nor turns a straight quote of the text into a curly one, nor sets the ligatures of TeX and the font
         options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
         options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
+    if MATH_FONT in installed_families():
+        options += ["-V", f"mathfont={MATH_FONT}"]
     size = _half_points(chain, styles)
     if size is not None:
         # The class sets the sizes of its footnotes and the like from the nearest size it knows

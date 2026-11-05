@@ -145,8 +145,14 @@ def test_the_title_style_sets_the_title_and_a_later_title_paragraph(test_paramet
 
 def test_the_body_size_and_line_redefine_normalsize(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
-    assert "\\renewcommand{\\normalsize}{\\fontsize{12bp}{14.65bp}\\selectfont}" in preamble
+    assert "\\renewcommand{\\normalsize}{\\fontsize{12bp}{14.65bp}\\selectfont" in preamble
     assert "\\normalsize\n" in preamble
+
+
+def test_an_equation_gets_no_space_of_a_display_around_it(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
+    for skip in ("abovedisplayskip", "belowdisplayskip", "abovedisplayshortskip", "belowdisplayshortskip"):
+        assert f"\\{skip}=0pt" in preamble
 
 
 def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):
