@@ -1506,33 +1506,118 @@ def test_image_without_a_mappable_layout_is_left_alone(test_parameters: TestPara
     assert b"IMGLAYOUT" not in docx_bytes
 
 
+def _comment_texts(zf: zipfile.ZipFile) -> dict[str, str]:
+    """The text of each comment in word/comments.xml, by its w:id."""
+    assert "word/comments.xml" in zf.namelist(), "no word/comments.xml - the comments were lost"
+    comments = ET.fromstring(zf.read("word/comments.xml"))
+    return {c.get(f"{{{W_NS}}}id"): "".join(t.text or "" for t in c.iter(f"{{{W_NS}}}t")) for c in comments.iter(f"{{{W_NS}}}comment")}
+
+
+def _commented_text(paragraph: ET.Element, comment_id: str) -> str:
+    """The text between the commentRangeStart and commentRangeEnd of a comment, in document order.
+
+    Asserts that the paragraph carries the range start, the range end and the reference of the comment.
+    """
+    for tag in ("commentRangeStart", "commentRangeEnd", "commentReference"):
+        ids = [e.get(f"{{{W_NS}}}id") for e in paragraph.iter(f"{{{W_NS}}}{tag}")]
+        assert comment_id in ids, f"no {tag} for comment {comment_id} in the paragraph (found {ids})"
+    text, inside = [], False
+    for element in paragraph.iter():
+        if element.tag == f"{{{W_NS}}}commentRangeStart" and element.get(f"{{{W_NS}}}id") == comment_id:
+            inside = True
+        elif element.tag == f"{{{W_NS}}}commentRangeEnd" and element.get(f"{{{W_NS}}}id") == comment_id:
+            break
+        elif inside and element.tag == f"{{{W_NS}}}t":
+            text.append(element.text or "")
+    return "".join(text)
+
+
+def _paragraph_with(doc: ET.Element, needle: str) -> ET.Element:
+    for paragraph in doc.iter(f"{{{W_NS}}}p"):
+        if needle in "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t")):
+            return paragraph
+    raise AssertionError(f"no paragraph containing {needle!r}")
+
+
 def test_comment_inside_styled_span_is_kept(test_parameters: TestParameters):
     """Regression: a comment on text formatted after the comment was added.
 
     Polarion wraps such text, comment markers included, in a styled span
     (reported on docx-exporter). Walked as an ordinary nested span, the comment was
     lost and its text was printed into the paragraph. The markers must reach
-    pandoc's writer untouched, as they do outside a styled span.
+    pandoc's writer untouched, as they do outside a styled span, and the comment
+    must stay on the text it was made on.
     """
     html = (
-        '<p>Plain: first<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment one</span><span class="comment-end" id="0"></span> end.</p>'
-        '<p>Styled: <span style="font-weight: bold;">second<span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">Comment two</span><span class="comment-end" id="1"></span></span> end.</p>'
+        '<p>Plain: <span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment one</span>first<span class="comment-end" id="0"></span> end.</p>'
+        '<p>Styled: <span style="font-weight: bold;"><span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">Comment two</span>second<span class="comment-end" id="1"></span></span> end.</p>'
     )
 
     docx_bytes = _convert_html_to_docx(test_parameters, html)
     with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
         doc = ET.fromstring(zf.read("word/document.xml"))
-        assert "word/comments.xml" in zf.namelist(), "no word/comments.xml - the comments were lost"
-        comments = ET.fromstring(zf.read("word/comments.xml"))
+        comments = _comment_texts(zf)
 
-    comment_texts = ["".join(t.text or "" for t in c.iter(f"{{{W_NS}}}t")) for c in comments.iter(f"{{{W_NS}}}comment")]
-    assert comment_texts == ["Comment one", "Comment two"], f"unexpected comments: {comment_texts}"
+    assert sorted(comments.values()) == ["Comment one", "Comment two"], f"unexpected comments: {comments}"
+    ids = {text: comment_id for comment_id, text in comments.items()}
 
-    paragraphs = doc.findall(f".//{{{W_NS}}}body/{{{W_NS}}}p")
-    styled = next(p for p in paragraphs if "Styled:" in "".join(t.text or "" for t in p.iter(f"{{{W_NS}}}t")))
-    assert styled.find(f"{{{W_NS}}}commentRangeStart") is not None, "the comment on the styled text has no range start"
-    assert styled.find(f".//{{{W_NS}}}commentReference") is not None, "the comment on the styled text has no reference"
+    assert _commented_text(_paragraph_with(doc, "Plain:"), ids["Comment one"]) == "first"
+
+    styled = _paragraph_with(doc, "Styled:")
+    assert _commented_text(styled, ids["Comment two"]) == "second", "the comment is not on the styled text it was made on"
     styled_text = "".join(t.text or "" for t in styled.iter(f"{{{W_NS}}}t"))
     assert "Comment two" not in styled_text, f"the comment's text leaked into the paragraph: {styled_text!r}"
     bold_texts = [t.text for r in styled.iter(f"{{{W_NS}}}r") if r.find(f"{{{W_NS}}}rPr/{{{W_NS}}}b") is not None for t in r.iter(f"{{{W_NS}}}t")]
     assert "second" in bold_texts, f"the styled text lost its bold: {bold_texts}"
+
+
+def test_comment_inside_styled_span_in_formatted_paragraph_is_kept(test_parameters: TestParameters):
+    """A formatted paragraph (indent/alignment) is written as raw OOXML, where a comment has no form.
+
+    inlines_to_runs() marks the paragraph lossy, so it falls back to a plain paragraph and the
+    writer keeps the comment; its text must not end up in the paragraph.
+    """
+    html = (
+        '<div class="pandoc-para" data-indent-twips="600"><p>Indented: <span style="font-weight: bold;">'
+        '<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment four</span>fourth<span class="comment-end" id="0"></span>'
+        "</span> end.</p></div>"
+    )
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+        comments = _comment_texts(zf)
+
+    assert list(comments.values()) == ["Comment four"], f"unexpected comments: {comments}"
+    paragraph = _paragraph_with(doc, "Indented:")
+    assert _commented_text(paragraph, next(iter(comments))) == "fourth"
+    text = "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t"))
+    assert "Comment four" not in text, f"the comment's text leaked into the paragraph: {text!r}"
+
+
+def test_comment_in_styled_table_cell_does_not_print_its_text(test_parameters: TestParameters):
+    """A styled table cell (preserve_table_styles) is written as raw OOXML and keeps no comment.
+
+    The comment cannot be kept there, but its text must not be printed into the cell - neither
+    beside the text nor as the text of a link, which inlines_to_runs() walks separately.
+    """
+    html = (
+        '<table><tr><td style="background-color:#EEEEEE">'
+        '<span style="font-weight: bold;">cell<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment five</span><span class="comment-end" id="0"></span></span>'
+        ' and <a href="https://example.com/x"><span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">Comment six</span>link<span class="comment-end" id="1"></span></a>'
+        "</td></tr></table>"
+    )
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html, query="?preserve_table_styles=true")
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    cell = doc.find(f".//{{{W_NS}}}tc")
+    assert cell is not None, "no table cell in document.xml"
+    text = "".join(t.text or "" for t in cell.iter(f"{{{W_NS}}}t"))
+    assert "cell" in text, f"the cell lost its text: {text!r}"
+    assert "Comment five" not in text, f"the comment's text was printed into the cell: {text!r}"
+    hyperlink = cell.find(f".//{{{W_NS}}}hyperlink")
+    assert hyperlink is not None, "the link in the cell was lost"
+    link_text = "".join(t.text or "" for t in hyperlink.iter(f"{{{W_NS}}}t"))
+    assert link_text == "link", f"the comment's text was printed as link text: {link_text!r}"

@@ -869,6 +869,10 @@ local function inlines_to_runs(inlines, seed)
           link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
             .. image_placeholder(lr)
             .. "</w:t></w:r>"
+        elseif is_comment_marker(lr) then
+          -- As for a comment outside a link (below): no raw OOXML form, so
+          -- nothing is emitted rather than the comment's text as link text.
+          lossy = true
         else
           lossy = true
           link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
