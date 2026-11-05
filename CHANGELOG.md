@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.14.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.13.0...v2.14.0) (2026-11-05)
+
+
+### Features
+
+* keep white-space: nowrap on one line in DOCX ([#319](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/319)) ([d9031a5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d9031a580a1795c26fcff4c7b2753a23a787caa6)), closes [#318](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/318)
+* let a request leave the SVG out of a DOCX ([#316](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/316)) ([a746cef](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/a746cef8b7cb5b6a7b33cc75130aee607f214ae5))
+
+
+### Bug Fixes
+
+* apply Hyperlink style to links inside styled spans ([#321](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/321)) ([f7a76f0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f7a76f0e20da176a2d7015bd1844589c73b507f7)), closes [#320](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/320)
+* **deps:** update dependency pytest-asyncio to v1.4.1.post1 ([8540af1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/8540af1d595e016032a15f9767af9338131d5971))
+* Drop last empty page at the end of documents ([#300](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/300)) ([b8ccddb](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b8ccddb07073538ecc88a3ef2f31de6fc075c3f7))
+
 ## [2.13.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.12.0...v2.13.0) (2026-11-04)
 
 
