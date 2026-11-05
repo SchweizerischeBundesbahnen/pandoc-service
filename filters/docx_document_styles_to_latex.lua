@@ -132,6 +132,8 @@ local function body_preamble(meta, lines)
     lines[#lines + 1] = "\\normalsize"
   end
   local skip = points(meta[SKIP])
+  -- Word puts the same space after a full stop as between words
+  lines[#lines + 1] = "\\frenchspacing"
   if skip ~= nil then
     lines[#lines + 1] = string.format("\\setlength{\\parskip}{%gpt}", skip)
   end
@@ -176,7 +178,7 @@ end
 local function font_switch(style, family_macro, lines)
   local parts = { "\\normalfont" }
   if style.font then
-    lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off]{%s}", family_macro, style.font)
+    lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off,Scale=1,WordSpace={1,1,0}]{%s}", family_macro, style.font)
     parts[#parts + 1] = "\\" .. family_macro
   end
   if style.size then

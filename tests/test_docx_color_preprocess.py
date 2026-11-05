@@ -417,3 +417,49 @@ def test_preprocess_real_fixture_round_trip():
     assert "PandocColor__FG_FF0000" in style_ids
     assert "PandocColor__BG_00FF00" in style_ids
     assert "PandocColor__HL_yellow" in style_ids
+
+
+# ---- The font of a run ----
+
+import pytest
+
+from app import docx_document_styles
+
+
+@pytest.fixture
+def installed_fonts(monkeypatch: pytest.MonkeyPatch) -> set[str]:
+    families = {"Segoe UI", "Calibri"}
+    monkeypatch.setattr(docx_document_styles, "installed_families", lambda: frozenset(families))
+    return families
+
+
+def _rewrite(*runs: str) -> bytes:
+    return docx_color_pre_process.preprocess(_pack({"word/document.xml": _doc(*runs), "word/styles.xml": EMPTY_STYLES_XML}))
+
+
+def test_the_font_of_a_run_rides_in_its_style_as_hex(installed_fonts: set[str]):
+    blob = _rewrite(_run('<w:rFonts w:ascii="segoe ui" w:hAnsi="segoe ui"/>'))
+    expected = "PandocColor__FN_" + b"Segoe UI".hex().upper()
+    assert _rstyle_vals(_body(blob)) == [expected]
+    assert expected in _style_ids(_styles(blob))
+
+
+def test_a_font_the_container_lacks_is_left_out(installed_fonts: set[str]):
+    blob = _rewrite(_run('<w:rFonts w:ascii="Comic Sans"/><w:color w:val="FF0000"/>'))
+    assert _rstyle_vals(_body(blob)) == ["PandocColor__FG_FF0000"]
+
+
+def test_the_font_joins_the_colour_of_the_run(installed_fonts: set[str]):
+    blob = _rewrite(_run('<w:rFonts w:hAnsi="Calibri"/><w:color w:val="FF0000"/>'))
+    assert _rstyle_vals(_body(blob)) == ["PandocColor__FG_FF0000__FN_" + b"Calibri".hex().upper()]
+
+
+def test_a_run_of_a_style_of_its_own_keeps_it_for_a_font_alone(installed_fonts: set[str]):
+    blob = _rewrite(_run('<w:rStyle w:val="VerbatimChar"/><w:rFonts w:ascii="Calibri"/>'))
+    assert _rstyle_vals(_body(blob)) == ["VerbatimChar"]
+
+
+def test_the_installed_family_is_matched_regardless_of_case(installed_fonts: set[str]):
+    assert docx_document_styles.installed_family(" SEGOE ui ") == "Segoe UI"
+    assert docx_document_styles.installed_family("Segoe") is None
+    assert docx_document_styles.installed_family(None) is None

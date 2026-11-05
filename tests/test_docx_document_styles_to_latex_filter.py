@@ -47,6 +47,7 @@ def test_word_layout_goes_into_the_preamble(test_parameters: TestParameters):
     assert "\\AtBeginDocument{\\raggedright}" in preamble
     assert "\\hyphenpenalty=10000" in preamble
     assert "\\exhyphenpenalty" not in preamble, "Word breaks a line after a hyphen of the text"
+    assert "\\frenchspacing" in preamble, "Word puts no wider space after a full stop"
 
 
 def test_a_justified_hyphenated_style_keeps_latex_paragraphs(test_parameters: TestParameters):
@@ -117,7 +118,7 @@ def test_a_font_the_container_lacks_keeps_latin_modern(test_parameters: TestPara
 def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=font:DejaVu Sans,size:20,line:24.4,bold:false,italic:true,color:0F4761,before:18,after:9,align:center"))
     assert "\\usepackage{titlesec}" in preamble
-    assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off]{DejaVu Sans}" in preamble
+    assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0}]{DejaVu Sans}" in preamble
     assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\color[HTML]{0F4761}\\filcenter}{}{0pt}{}" in preamble
     assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
 

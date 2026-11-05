@@ -172,7 +172,7 @@ def test_font_size_emits_fontsize(test_parameters: TestParameters):
     """A PandocColor__SZ_<halfpoints> style becomes \\fontsize{pt}{...} (pt =
     half-points / 2, so 32 -> 16pt)."""
     flat = _md_to_latex(test_parameters.container, '[big]{custom-style="PandocColor__SZ_32"}\n')
-    assert "\\fontsize{16}{19.2}\\selectfont" in flat, flat
+    assert "\\fontsize{16bp}{19.2bp}\\selectfont" in flat, flat
     assert "big" in flat
 
 
@@ -288,3 +288,24 @@ def test_underline_inside_highlight_is_boxed(test_parameters: TestParameters):
     assert "\\colorbox[HTML]{CC99FF}" in flat, f"background dropped on underlined run: {flat}"
     assert "\\strut" in flat, flat
     assert "\\ul{underlined}" in flat or "\\uline{underlined}" in flat, flat
+
+
+def _font_style(family: str) -> str:
+    return "PandocColor__FN_" + family.encode().hex().upper()
+
+
+def test_a_run_font_becomes_fontspec_as_word_sets_it(test_parameters: TestParameters):
+    latex = _md_to_latex(test_parameters.container, f'[in Segoe]{{custom-style="{_font_style("Segoe UI")}"}}')
+    assert "{\\fontspec{Segoe UI}[Kerning=Off,Scale=1,WordSpace={1,1,0}]in Segoe}" in latex, latex
+
+
+def test_a_run_font_which_could_carry_latex_is_left_out(test_parameters: TestParameters):
+    latex = _md_to_latex(test_parameters.container, f'[evil]{{custom-style="{_font_style("x}" + chr(92) + "input{y")}"}}')
+    assert "fontspec" not in latex, latex
+    odd = _md_to_latex(test_parameters.container, '[odd]{custom-style="PandocColor__FN_ABC"}')
+    assert "fontspec" not in odd, odd
+
+
+def test_a_run_size_is_in_postscript_points(test_parameters: TestParameters):
+    latex = _md_to_latex(test_parameters.container, '[big]{custom-style="PandocColor__SZ_22"}')
+    assert "\\fontsize{11bp}{13.2bp}\\selectfont" in latex, latex

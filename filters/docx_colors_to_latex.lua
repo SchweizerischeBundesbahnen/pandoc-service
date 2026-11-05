@@ -13,7 +13,8 @@
 --   FG (color)      -> \textcolor[HTML]{RRGGBB}{...}
 --   BG (shading)    -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
 --   HL (highlight)  -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
---   SZ (font size)  -> {\fontsize{pt}{baseline}\selectfont ...}
+--   SZ (font size)  -> {\fontsize{bp}{baseline}\selectfont ...}
+--   FN (font)       -> {\fontspec{Family}[Kerning=Off,Scale=1,WordSpace={1,1,0}] ...}, the family as the hex of its UTF-8
 --
 -- Why \colorbox and not soul's \hl: soul's \hl band hugs the glyph height, so a
 -- plain-text highlight sits shorter and lower than the box we are forced to use
@@ -140,6 +141,19 @@ local function valid_hex(s)
   return s and #s == 6 and s:match("^%x%x%x%x%x%x$") ~= nil
 end
 
+-- The family of an FN segment: the hex of its UTF-8, as app/docx_color_pre_process.py
+-- writes it for a family the container has. Letters, digits, spaces, dots, hyphens and
+-- underscores only reach LaTeX.
+local function font_family(hex)
+  if not hex:match("^%x+$") or #hex % 2 ~= 0 then
+    return nil
+  end
+  local family = hex:gsub("%x%x", function(byte)
+    return string.char(tonumber(byte, 16))
+  end)
+  return family:match("^[%w][%w %.%-_]*$") and family or nil
+end
+
 local function parse_style(name)
   if name:sub(1, #STYLE_PREFIX) ~= STYLE_PREFIX then
     return nil
@@ -154,6 +168,8 @@ local function parse_style(name)
       props.hl = value
     elseif key == "SZ" then
       props.sz = value
+    elseif key == "FN" then
+      props.font = font_family(value)
     end
   end
   return props
@@ -169,7 +185,8 @@ local function font_size_open(half_points)
     return nil
   end
   local pt = hp / 2
-  return "{\\fontsize{" .. string.format("%g", pt) .. "}{" .. string.format("%g", pt * 1.2) .. "}\\selectfont "
+  -- bp: Word counts in PostScript points, a pt of TeX is 0.4% smaller
+  return "{\\fontsize{" .. string.format("%g", pt) .. "bp}{" .. string.format("%g", pt * 1.2) .. "bp}\\selectfont "
 end
 
 local filter = {}
@@ -262,11 +279,17 @@ function filter.Span(el)
 
   local size_open = props.sz and font_size_open(props.sz) or nil
 
-  if not props.fg and not box_bg and not size_open then
+  if not props.fg and not box_bg and not size_open and not props.font then
     return nil
   end
 
   local open, close = "", ""
+
+  -- Outermost of all: the family of the run, unkerned as Word sets it.
+  if props.font then
+    open = open .. "{\\fontspec{" .. props.font .. "}[Kerning=Off,Scale=1,WordSpace={1,1,0}]"
+    close = "}" .. close
+  end
 
   -- Outermost: font size. \fontsize ... \selectfont changes the size for the
   -- rest of the group; it wraps everything else so colour/highlight inherit it.

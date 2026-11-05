@@ -101,8 +101,9 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options: list[str] = []
     font = _font(chain, styles, theme)
     if font is not None:
-        # Word kerns no text unless a style turns kerning on, which pandoc's template does not
-        options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off"]
+        # Word kerns no text unless a style turns kerning on, which pandoc's template does not, and never
+        # shrinks a space to fit one more word on the line, as TeX does
+        options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
     size = _half_points(chain, styles)
     if size is not None:
         # The class sets the sizes of its footnotes and the like from the nearest size it knows
@@ -226,6 +227,17 @@ def installed_families() -> frozenset[str]:
         logger.warning("docx_document_styles: fc-list failed, no font of a document is used")
         return frozenset()
     return frozenset(family.strip() for line in result.stdout.splitlines() for family in line.split(",") if family.strip())
+
+
+def installed_family(name: str | None) -> str | None:
+    """The installed family of a name, matched as fontconfig matches it, regardless of case; None without one.
+
+    A run of Polarion names its font as CSS does, in lower case: "segoe ui".
+    """
+    if not name:
+        return None
+    wanted = name.strip().casefold()
+    return next((family for family in sorted(installed_families()) if family.casefold() == wanted), None)
 
 
 def _half_points(chain: list[Element], styles: Element) -> int | None:
