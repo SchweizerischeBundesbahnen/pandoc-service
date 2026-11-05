@@ -356,3 +356,14 @@ def test_a_document_without_a_hyperlink_style_leaves_links_alone():
 def test_a_document_with_a_footer_keeps_its_page_numbers():
     section = '<w:sectPr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:footerReference w:type="default" r:id="rId9"/></w:sectPr>'
     assert "docx-page-numbers" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=section))
+
+
+COMPACT = '<w:style w:type="paragraph" w:styleId="Compact"><w:basedOn w:val="BodyText"/><w:pPr><w:spacing w:before="36" w:after="36"/></w:pPr></w:style>'
+
+
+def test_a_cell_holds_the_space_before_and_after_its_compact_paragraph():
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + COMPACT))["docx-table-cell-space"] == "3.6"
+
+
+def test_a_document_without_the_compact_style_leaves_tables_alone():
+    assert "docx-table-cell-space" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))

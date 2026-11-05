@@ -44,6 +44,8 @@ A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False 
 
 # The style pandoc gives body paragraphs, then the styles it inherits from.
 BODY_STYLE = "BodyText"
+# The style pandoc gives the paragraphs of a table cell and of a tight list.
+CELL_STYLE = "Compact"
 # The styles of the title and of the headings LaTeX sets as \section to \subparagraph.
 DISPLAY_STYLES = ("Title", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5")
 # The sizes LaTeX's article class sets its text in. Word's 12 pt is the default of pandoc's template.
@@ -111,6 +113,11 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]
     options += ["-M", f"docx-body-hyphenated={'true' if _hyphenated(settings) else 'false'}"]
+    cell_chain = _style_chain(styles, CELL_STYLE, fallback=None)
+    if cell_chain:
+        # A cell holds its paragraph with the space before and after it
+        cell_space = sum(_spacing_twips(cell_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
+        options += ["-M", f"docx-table-cell-space={cell_space:g}"]
     link_chain = _style_chain(styles, "Hyperlink", fallback=None)
     link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
     if link_color is not None:

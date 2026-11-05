@@ -648,3 +648,74 @@ def test_a_table_in_the_footnotes_takes_the_line_of_the_document():
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         footnotes_tree = ET.fromstring(archive.read("word/footnotes.xml"))
     assert _first_cell_sentinel_kv(footnotes_tree)["tw"] == "0.3472"
+
+
+# ---- The lines of a styled table ----
+
+W_DECL = f'xmlns:w="{W_NS}"'
+
+
+def _styled_table(tblpr_extra: str = "", header: bool = False, cell_borders: str = "") -> str:
+    """A table of pandoc's Table style, with an optional header row and cell borders."""
+    header_row = '<w:tr><w:trPr><w:tblHeader w:val="on"/></w:trPr><w:tc><w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr>' if header else ""
+    tcpr = f"<w:tcPr>{cell_borders}</w:tcPr>" if cell_borders else ""
+    return f'<w:tbl><w:tblPr><w:tblStyle w:val="Table"/>{tblpr_extra}</w:tblPr>{header_row}<w:tr><w:tc>{tcpr}<w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+
+def _rules_of(table: str, bordered: frozenset[str] = frozenset()) -> str | None:
+    xml, _ = docx_table_pre_process.rewrite_part(f"<w:document {W_DECL}><w:body>{table}</w:body></w:document>".encode(), 9360, bordered)
+    text = "".join(t.text or "" for t in ET.fromstring(xml).iter(f"{{{W_NS}}}t"))
+    if SENTINEL_OPEN not in text:
+        return None
+    payload = text[text.index(SENTINEL_OPEN) + 1 : text.index(SENTINEL_CLOSE)]
+    return dict(item.split("=") for item in payload.split(";")).get("rl")
+
+
+def test_a_styled_table_without_header_row_draws_no_lines():
+    assert _rules_of(_styled_table()) == "none"
+
+
+def test_the_first_row_of_a_header_draws_the_line_under_it():
+    assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>', header=True)) == "head"
+
+
+def test_the_first_row_bit_of_the_look_counts_as_well():
+    assert _rules_of(_styled_table('<w:tblLook w:val="0020"/>', header=True)) == "head"
+
+
+def test_a_look_value_which_is_no_number_is_no_first_row():
+    assert _rules_of(_styled_table('<w:tblLook w:val="zz"/>', header=True)) == "none"
+
+
+def test_a_first_row_look_without_a_header_row_draws_no_line():
+    assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>')) == "none"
+
+
+def test_a_table_with_borders_keeps_the_rules_of_latex():
+    borders = '<w:tblBorders><w:top w:val="single" w:sz="4"/></w:tblBorders>'
+    assert _rules_of(_styled_table(borders)) is None
+
+
+def test_borders_of_nil_draw_nothing():
+    borders = '<w:tblBorders><w:top w:val="nil"/><w:insideH w:val="none"/></w:tblBorders>'
+    assert _rules_of(_styled_table(borders)) == "none"
+
+
+def test_a_cell_with_borders_keeps_the_rules_of_latex():
+    assert _rules_of(_styled_table(cell_borders='<w:tcBorders><w:left w:val="single"/></w:tcBorders>')) is None
+
+
+def test_a_style_with_borders_keeps_the_rules_of_latex():
+    assert _rules_of(_styled_table(), bordered=frozenset({"Table"})) is None
+
+
+def test_the_bordered_table_styles_are_read_from_the_styles():
+    styles = ET.fromstring(
+        f"<w:styles {W_DECL}>"
+        '<w:style w:type="table" w:styleId="Grid"><w:tblPr><w:tblBorders><w:insideV w:val="single"/></w:tblBorders></w:tblPr></w:style>'
+        '<w:style w:type="table" w:styleId="Table"><w:tblPr><w:tblCellMar/></w:tblPr></w:style>'
+        '<w:style w:type="paragraph" w:styleId="Normal"/>'
+        "</w:styles>"
+    )
+    assert docx_table_pre_process.bordered_table_styles(styles) == {"Grid"}
+    assert docx_table_pre_process.bordered_table_styles(None) == frozenset()

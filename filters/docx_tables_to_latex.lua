@@ -35,6 +35,15 @@ local SENTINEL_PATTERN = "^" .. OPEN .. "(.-)" .. CLOSE .. "(.*)"
 local STRIP_PATTERN = OPEN .. ".-" .. CLOSE
 
 -- Valid 6-char uppercase hex colour.
+-- The booktabs rules pandoc's writer puts around a table, as Word draws its lines:
+-- none for a table of pandoc's Table style without a header row, a thin rule under
+-- the header row with one, and LaTeX's own rules for a table with borders.
+local RULES = {
+  none = "\\def\\toprule{}\\def\\midrule{}\\def\\bottomrule{}",
+  head = "\\def\\toprule{}\\def\\bottomrule{}",
+  grid = false,
+}
+
 local function valid_hex(s)
   return s and #s == 6 and s:match("^%x%x%x%x%x%x$") ~= nil
 end
@@ -43,6 +52,7 @@ end
 --   bg=RRGGBB  cell background colour (per cell)
 --   tw=<0..1>  table width as a fraction of the line (table-level, first cell)
 --   ta=left|center|right  table horizontal alignment (table-level, first cell)
+--   rl=none|head|grid  the lines Word draws (table-level, first cell)
 local function parse_payload(payload)
   local props = {}
   for segment in payload:gmatch("[^;]+") do
@@ -60,6 +70,8 @@ local function parse_payload(payload)
       props.ha = value
     elseif key == "aw" and value == "1" then
       props.aw = true
+    elseif key == "rl" and RULES[value] ~= nil then
+      props.rl = value
     end
   end
   return props
@@ -260,6 +272,7 @@ local function process_rows(rows, layout, flags)
         if props.tw then layout.tw = props.tw end
         if props.ta then layout.ta = props.ta end
         if props.aw then layout.aw = true end
+        if props.rl then layout.rl = props.rl end
       end
     end
   end
@@ -337,6 +350,11 @@ function table_pass.Table(tbl)
   --  * the recovered horizontal alignment is applied via longtable
   --    \LTleft/\LTright glue (pandoc drops <w:jc>, defaulting to centered).
   local before, after = {}, {}
+  -- A group, so the rules come back for the next table
+  local rules = layout.rl and RULES[layout.rl]
+  if rules then
+    before[#before + 1] = "\\begingroup" .. rules
+  end
   if layout.aw then
     before[#before + 1] = "\\setlength{\\tabcolsep}{3pt}"
     after[#after + 1] = "\\setlength{\\tabcolsep}{6pt}"
@@ -347,6 +365,9 @@ function table_pass.Table(tbl)
     after[#after + 1] = RESET_GLUE
   end
 
+  if rules then
+    after[#after + 1] = "\\endgroup"
+  end
   if #before > 0 then
     return { pandoc.RawBlock("latex", table.concat(before)), tbl, pandoc.RawBlock("latex", table.concat(after)) }
   end

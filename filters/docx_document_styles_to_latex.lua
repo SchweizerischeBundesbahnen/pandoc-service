@@ -14,6 +14,8 @@
 --   docx-body-hyphenated      true when the document turns hyphenation on
 --   docx-body-size            the size of the body text, in PostScript points
 --   docx-body-baseline        the distance of its lines, from its font
+--   docx-table-cell-space     the space before and after the paragraph of a
+--                             table cell, of the Compact style
 --   docx-link-color           the colour of the Hyperlink style
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
@@ -35,6 +37,7 @@ local JUSTIFIED = "docx-body-justified"
 local HYPHENATED = "docx-body-hyphenated"
 local SIZE = "docx-body-size"
 local BASELINE = "docx-body-baseline"
+local CELL_SPACE = "docx-table-cell-space"
 local LINK_COLOR = "docx-link-color"
 local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
@@ -71,6 +74,24 @@ local function points(value)
     return nil
   end
   return number
+end
+
+-- A table as Word sets it: its paragraph skip before it, no space of LaTeX after it and
+-- around its rules, and rows a line and the space around the paragraph of the cell
+-- tall, shared above and below the text by stretching the strut of the row. The
+-- packages of tables come with a document which has one, so each length is set
+-- only where it is defined.
+local function table_preamble(meta, lines)
+  local space = points(meta[CELL_SPACE])
+  if space == nil then
+    return
+  end
+  lines[#lines + 1] = "\\ifdefined\\LTpre\\setlength{\\LTpre}{\\parskip}\\setlength{\\LTpost}{0pt}\\fi"
+  lines[#lines + 1] = "\\ifdefined\\aboverulesep\\setlength{\\aboverulesep}{0pt}\\setlength{\\belowrulesep}{0pt}\\fi"
+  local baseline = points(meta[BASELINE])
+  if baseline ~= nil and baseline > 0 then
+    lines[#lines + 1] = string.format("\\renewcommand{\\arraystretch}{%.4f}", (baseline + space) / baseline)
+  end
 end
 
 -- Links in the colour of the Hyperlink style, the pages without a number when the document has none.
@@ -230,10 +251,11 @@ local function write_preamble(meta)
   local lines = {}
   body_preamble(meta, lines)
   page_preamble(meta, lines)
+  table_preamble(meta, lines)
   headings_preamble(meta, lines)
   title_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

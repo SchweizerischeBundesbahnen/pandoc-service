@@ -165,3 +165,20 @@ def test_a_document_without_headers_has_no_page_numbers(test_parameters: TestPar
     preamble = _preamble(_latex(test_parameters.container, "docx-page-numbers=false"))
     assert "\\pagestyle{empty}" in preamble
     assert "\\let\\ps@plain\\ps@empty" in preamble
+
+
+def test_a_table_gets_the_space_and_rows_of_word(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-table-cell-space=3.6", "docx-body-baseline=14.65", "docx-body-size=12"))
+    assert "\\ifdefined\\LTpre\\setlength{\\LTpre}{\\parskip}\\setlength{\\LTpost}{0pt}\\fi" in preamble
+    assert "\\ifdefined\\aboverulesep\\setlength{\\aboverulesep}{0pt}\\setlength{\\belowrulesep}{0pt}\\fi" in preamble
+    assert "\\renewcommand{\\arraystretch}{1.2457}" in preamble
+
+
+def test_a_document_without_tables_still_compiles(test_parameters: TestParameters):
+    """The lengths of the table packages exist only with a table: each is set only where it is defined."""
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'Just text.\\n' > /tmp/test/plain.md"])
+    exit_code, output = container.exec_run(
+        ["sh", "-c", f"cd /tmp/test && {PANDOC_PATH} -f markdown -o plain.pdf --pdf-engine=tectonic --lua-filter={FILTER_PATH} -M docx-table-cell-space=3.6 -M docx-body-baseline=14.65 -M docx-body-size=12 plain.md"]
+    )
+    assert exit_code == 0, output.decode()

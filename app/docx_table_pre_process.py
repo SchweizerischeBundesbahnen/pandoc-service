@@ -466,7 +466,58 @@ def _first_own_cell(tbl: ET.Element) -> ET.Element | None:
     return None
 
 
-def _tag_table_layout(tbl: ET.Element, text_width_twips: float) -> bool:
+_BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")
+_NO_BORDER = frozenset({"nil", "none"})
+
+
+def _draws_a_border(borders: ET.Element | None) -> bool:
+    """Whether a <w:tblBorders> or <w:tcBorders> draws a line on any side."""
+    if borders is None:
+        return False
+    return any((side := borders.find(f"{{{W_NS}}}{name}")) is not None and side.get(_VAL_ATTR) not in _NO_BORDER for name in _BORDER_SIDES)
+
+
+def bordered_table_styles(styles: ET.Element | None) -> frozenset[str]:
+    """The table styles whose own table properties draw borders, as a grid does."""
+    if styles is None:
+        return frozenset()
+    found = set()
+    for style in styles.iter(f"{{{W_NS}}}style"):
+        if style.get(f"{{{W_NS}}}type") == "table" and _draws_a_border(style.find(f"{_TBLPR_TAG}/{{{W_NS}}}tblBorders")):
+            found.add(style.get(f"{{{W_NS}}}styleId") or "")
+    return frozenset(found)
+
+
+# The bit of the hexadecimal w:val of <w:tblLook> which turns the formatting of the first row on.
+_FIRST_ROW_BIT = 0x0020
+
+
+def _look_bits(value: str | None) -> int:
+    try:
+        return int(value or "0", 16)
+    except ValueError:
+        return 0
+
+
+def _rules(tbl: ET.Element, bordered_styles: frozenset[str]) -> str:
+    """The lines Word draws in a table: ``grid`` for borders of its own, of its cells or of its style,
+    ``head`` for the line under the header row of pandoc's Table style, ``none`` without one.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    style = tblpr.find(f"{{{W_NS}}}tblStyle") if tblpr is not None else None
+    if (
+        _draws_a_border(tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None)
+        or (style is not None and style.get(_VAL_ATTR) in bordered_styles)
+        or any(_draws_a_border(cell.find(f"{{{W_NS}}}tcBorders")) for cell in tbl.iter(_TCPR_TAG))
+    ):
+        return "grid"
+    look = tblpr.find(f"{{{W_NS}}}tblLook") if tblpr is not None else None
+    first_row = look is not None and (look.get(f"{{{W_NS}}}firstRow") in ("1", "true", "on") or _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0)
+    has_header = any(row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None for row in tbl.findall(f"{{{W_NS}}}tr"))
+    return "head" if first_row and has_header else "none"
+
+
+def _tag_table_layout(tbl: ET.Element, text_width_twips: float, bordered_styles: frozenset[str] = frozenset()) -> bool:
     """Tag the first cell with the table's width fraction and/or alignment.
 
     Every table with an explicit ``<w:tblW>`` is tagged, **including 100 %**:
@@ -489,6 +540,13 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float) -> bool:
             kv["aw"] = "1"
     if align is not None:
         kv["ta"] = align
+    # The lines of a styled table: LaTeX draws booktabs rules around every table, Word only the borders it
+    # has. A table with borders keeps LaTeX's rules, and one without a style is left as it is.
+    tblpr = tbl.find(_TBLPR_TAG)
+    if tblpr is not None and tblpr.find(f"{{{W_NS}}}tblStyle") is not None:
+        rules = _rules(tbl, bordered_styles)
+        if rules != "grid":
+            kv["rl"] = rules
     if not kv:
         return False
 
@@ -544,7 +602,7 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
     return changed
 
 
-def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None, bordered_styles: frozenset[str] = frozenset()) -> tuple[bytes, bool]:
     """Fix grid-column widths, tag styled table cells, carry table width/
     alignment, and neutralise caption styles in one body part.
 
@@ -569,7 +627,7 @@ def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None) -> tup
     for tbl in tree.iter(_TBL_TAG):
         if _fix_grid_col_widths(tbl):
             changed = True
-        if _tag_table_layout(tbl, width):
+        if _tag_table_layout(tbl, width, bordered_styles):
             changed = True
         if _tag_cell_properties(tbl):
             changed = True
