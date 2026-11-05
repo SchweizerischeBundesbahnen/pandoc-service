@@ -25,6 +25,10 @@
 -- Items that legitimately contain an empty <li> wrapping a nested list
 -- (e.g. authored markdown/HTML where the marker IS wanted) are unaffected,
 -- because they don't carry the sentinel Span.
+--
+-- A list item with no content at all shows its marker in a browser, but the
+-- DOCX writer emits no paragraph for it, so the marker is lost. An empty Span
+-- in the item makes the writer emit the numbered paragraph.
 
 local SUPPRESS_CLASS = "pandoc-suppress-marker"
 
@@ -48,8 +52,10 @@ end
 -- RawBlock and — crucially — does not synthesize its own marker paragraph
 -- when a list item's first block is a raw OOXML block.
 local function rewrite_items(items)
-  for _, item in ipairs(items) do
-    if #item >= 1 and is_sentinel_block(item[1]) then
+  for index, item in ipairs(items) do
+    if #item == 0 then
+      items[index] = { pandoc.Plain({ pandoc.Span({}) }) }
+    elseif is_sentinel_block(item[1]) then
       item[1] = pandoc.RawBlock("openxml", "")
     end
   end

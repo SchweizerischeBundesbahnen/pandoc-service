@@ -38,6 +38,15 @@ class ParagraphIndents:
         first_line = _first_line(sources)
         return max(left, 0) + max(right, 0) + max(first_line, 0)
 
+    def is_numbered(self, p: Any) -> bool:
+        """Whether the paragraph shows a number or bullet: it names a numbering, itself or through its style.
+
+        numId 0 is how a paragraph turns off the numbering its style gives it.
+        """
+        own = p.find(f"{_W}pPr")
+        num_id, _ = _numbering_reference([own, *self._style_chain(own)])
+        return num_id not in (None, "0")
+
     def _sources(self, p: Any) -> list[Any]:
         """The pPr elements that can state an indent for the paragraph, nearest first."""
         own = p.find(f"{_W}pPr")
