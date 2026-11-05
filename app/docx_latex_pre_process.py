@@ -19,7 +19,7 @@ running each rewrite on its own — only much lighter on memory.
 
 from __future__ import annotations
 
-from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_page_geometry, docx_paragraph_pre_process, docx_table_pre_process
+from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_page_geometry, docx_paragraph_pre_process, docx_table_pre_process, docx_toc_pre_process
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -29,12 +29,18 @@ def _rewrite_body_part(
     color_styles: dict[str, docx_color_pre_process._StyleSpec],
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec],
     text_width_twips: int,
+    toc_styles: dict[str, docx_toc_pre_process._StyleSpec],
 ) -> tuple[bytes, bool]:
     """Run the colour → paragraph → list → table rewrites over one body part,
     collecting any synthetic styles into the shared dicts.  Returns
     (new_xml, changed)."""
     changed = False
     if has_styles:
+        # First, so the other rewrites see the entries of a list of figures and not the field around them
+        rewritten, toc_used = docx_toc_pre_process.rewrite_part(xml)
+        if toc_used:
+            xml, changed = rewritten, True
+            toc_styles.update(toc_used)
         rewritten, color_used = docx_color_pre_process.rewrite_part(xml)
         if color_used:
             xml, changed = rewritten, True
@@ -83,12 +89,13 @@ def preprocess(docx_bytes: bytes) -> bytes:
     has_styles = STYLES_PART in entries
     color_styles: dict[str, docx_color_pre_process._StyleSpec] = {}
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec] = {}
+    toc_styles: dict[str, docx_toc_pre_process._StyleSpec] = {}
     changed = False
     # The line LaTeX sets the PDF at, for the tables of every part
     text_width_twips = docx_page_geometry.package_text_width_twips(entries)
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles)
         changed = changed or part_changed
 
     if not changed:
@@ -98,5 +105,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
         entries[STYLES_PART] = augment_styles(entries[STYLES_PART], color_styles, docx_color_pre_process.build_style_element)
     if para_styles:
         entries[STYLES_PART] = augment_styles(entries[STYLES_PART], para_styles, docx_paragraph_pre_process.build_style_element)
+    if toc_styles:
+        entries[STYLES_PART] = augment_styles(entries[STYLES_PART], toc_styles, docx_toc_pre_process.build_style_element)
 
     return repack(entries)

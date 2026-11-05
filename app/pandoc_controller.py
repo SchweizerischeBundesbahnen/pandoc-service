@@ -92,6 +92,7 @@ FILTERS = {
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
     "docx_document_styles_to_latex": f"{FILTER_BASE_PATH}/docx_document_styles_to_latex.lua",
+    "docx_toc_to_latex": f"{FILTER_BASE_PATH}/docx_toc_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
@@ -722,6 +723,8 @@ def _build_pandoc_command(
                 f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
                 # Sets the text in the styles of the DOCX. See app/docx_document_styles.py.
                 f"--lua-filter={FILTERS['docx_document_styles_to_latex']}",
+                # Sets the tables of contents app/docx_toc_pre_process.py marks in the DOCX.
+                f"--lua-filter={FILTERS['docx_toc_to_latex']}",
             ]
         )
 
