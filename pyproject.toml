@@ -18,7 +18,7 @@ dependencies = [
     "beautifulsoup4==4.15.0",
     "prometheus-client==0.26.0",
     "prometheus-fastapi-instrumentator==8.1.0",
-    "weasysvg[convert]==0.6.1",
+    "weasysvg[convert]==0.6.2",
 ]
 
 [dependency-groups]
