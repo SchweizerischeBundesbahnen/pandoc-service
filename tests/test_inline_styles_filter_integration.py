@@ -987,6 +987,107 @@ def test_wide_image_on_a_page_turned_to_landscape_takes_its_width(test_parameter
     assert height * 10 == pytest.approx(width, abs=10), "the aspect ratio was not kept"
 
 
+def _body(docx_bytes: bytes) -> ET.Element:
+    return ET.fromstring(zipfile.ZipFile(BytesIO(docx_bytes)).read("word/document.xml")).find(f"{{{W_NS}}}body")
+
+
+def _paragraph_texts(body: ET.Element) -> list[str]:
+    return ["".join(t.text or "" for t in p.iter(f"{{{W_NS}}}t")) for p in body.findall(f"{{{W_NS}}}p")]
+
+
+def _page_break_count(body: ET.Element) -> int:
+    return sum(1 for br in body.iter(f"{{{W_NS}}}br") if br.get(f"{{{W_NS}}}type") == "page")
+
+
+def _section_break_count(body: ET.Element) -> int:
+    return len(body.findall(f"{{{W_NS}}}p/{{{W_NS}}}pPr/{{{W_NS}}}sectPr"))
+
+
+@pytest.mark.parametrize("query", ["", "&orientation=portrait"])
+def test_page_break_at_the_end_leaves_no_page(test_parameters: TestParameters, query: str):
+    """The way a Polarion document ends in landscape. The empty line before the break is the document's own."""
+    html = "<p>Portrait</p><p>\\newpage</p><p>\\pagePortrait</p><p>Landscape</p><p><br/></p><p>\\newpage</p><p>\\pageLandscape</p><p><br/></p>"
+
+    body = _body(_convert_with_template(test_parameters, html, _a4_template(test_parameters), query))
+
+    assert _paragraph_texts(body)[-2:] == ["Landscape", ""]
+    assert _section_break_count(body) == 1
+    page_size = body.find(f"{{{W_NS}}}sectPr/{{{W_NS}}}pgSz")
+    assert page_size.get(f"{{{W_NS}}}orient") == "landscape"
+    assert body.find(f"{{{W_NS}}}sectPr/{{{W_NS}}}pgMar").get(f"{{{W_NS}}}left") == "1134"
+
+
+@pytest.mark.parametrize("after", ['<p id="polarion_5"><br/></p>', "<p>&nbsp;</p>", '<p><a id="anchor"></a></p>'], ids=["empty-paragraph", "nbsp", "anchor"])
+def test_what_shows_nothing_goes_with_the_last_page_break(test_parameters: TestParameters, after: str):
+    html = f"<p>Chapter</p><p>\\newpage</p><p>\\pageLandscape</p>{after}"
+
+    body = _body(_convert_with_template(test_parameters, html, _a4_template(test_parameters)))
+
+    assert _paragraph_texts(body) == ["Chapter"]
+    assert _section_break_count(body) == 0
+
+
+@pytest.mark.parametrize(
+    "after",
+    ["<ol><li><br/></li></ol>", "<ul><li></li></ul>", "<ol><li></li></ol>", '<p><span style="background-color:#ffff00">&nbsp;&nbsp;</span></p>', "<table><tr><td></td></tr></table>", "<hr/>"],
+    ids=["list-item-with-a-line-break", "empty-bullet", "empty-number", "shaded-spaces", "empty-table", "horizontal-rule"],
+)
+def test_what_shows_after_the_last_page_break_keeps_the_page(test_parameters: TestParameters, after: str):
+    """An empty list, an empty table or shaded spaces show on the page: they are the user's, not an empty page."""
+    html = f"<p>Chapter</p><p>\\newpage</p><p>\\pageLandscape</p>{after}"
+
+    body = _body(_convert_with_template(test_parameters, html, _a4_template(test_parameters)))
+
+    assert _section_break_count(body) == 1
+
+
+def test_two_page_breaks_at_the_end_leave_one_page(test_parameters: TestParameters):
+    html = "<p>Chapter</p><p>\\newpage</p><p>\\newpage</p>"
+
+    body = _body(_convert_with_template(test_parameters, html, _a4_template(test_parameters)))
+
+    assert _page_break_count(body) == 1
+
+
+@pytest.mark.parametrize("html", ["<ol><li>One</li><li><br/></li></ol>", "<ul><li>One</li><li><br/></li></ul>", "<ul><li>One</li><li></li></ul>"])
+def test_empty_list_item_without_a_page_break_keeps_its_marker(test_parameters: TestParameters, html: str):
+    body = _body(_convert_html_to_docx(test_parameters, html))
+
+    paragraphs = body.findall(f"{{{W_NS}}}p")
+    assert len(paragraphs) == 2
+    assert paragraphs[-1].find(f"{{{W_NS}}}pPr/{{{W_NS}}}numPr") is not None, "the empty list item was dropped"
+
+
+def test_blank_paragraphs_without_a_page_break_stay(test_parameters: TestParameters):
+    body = _body(_convert_html_to_docx(test_parameters, "<p>text</p><p><br/></p><p><br/></p>"))
+
+    assert _paragraph_texts(body) == ["text", "", ""]
+
+
+@pytest.mark.parametrize("trailing", ["<p>\\newpage</p>", "<p>\\newpage</p><p>\\pageLandscape</p><p><br/></p>"])
+def test_page_break_after_a_table_leaves_no_page(test_parameters: TestParameters, trailing: str):
+    """The table stays the last content; the paragraph Word needs after it keeps no break."""
+    html = f"<table><tr><td>cell</td></tr></table>{trailing}"
+
+    body = _body(_convert_with_template(test_parameters, html, _a4_template(test_parameters)))
+
+    blocks = [child.tag.rsplit("}", 1)[-1] for child in body]
+    assert blocks[-3:] == ["tbl", "p", "sectPr"], blocks
+    assert _page_break_count(body) == 0, "the page break after the table survived"
+    assert _section_break_count(body) == 0, "the trailing section break survived"
+
+
+def test_document_ending_on_highlighted_spaces_keeps_them(test_parameters: TestParameters):
+    """No break comes before them, so the shaded area stays."""
+    html = '<p>text</p><p><span style="background-color:#ffff00">&nbsp;&nbsp;&nbsp;</span></p>'
+
+    body = _body(_convert_html_to_docx(test_parameters, html))
+
+    shading = body.findall(f"{{{W_NS}}}p")[-1].find(f".//{{{W_NS}}}r/{{{W_NS}}}rPr/{{{W_NS}}}shd")
+    assert shading is not None, "the shaded spaces were dropped"
+    assert shading.get(f"{{{W_NS}}}fill").upper() == "FFFF00"
+
+
 def test_image_in_a_px_wide_styled_table_takes_the_room_its_neighbour_leaves(test_parameters: TestParameters):
     """The HTML gives the columns no width, so the column of the image is not held to half the table."""
     image = f'<img src="{_png_data_uri(3000, 300)}">'
