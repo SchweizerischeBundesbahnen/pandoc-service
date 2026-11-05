@@ -157,3 +157,12 @@ def test_sentinel_span_without_orphan_pattern_is_a_no_op(test_parameters: TestPa
 
     # Cleanup
     container.exec_run(["rm", "-rf", "/tmp/test"])
+
+
+def test_empty_list_item_keeps_its_marker(test_parameters: TestParameters) -> None:
+    """A browser shows the marker of <li></li>, so the DOCX needs a numbered paragraph for it."""
+    html = "<ul><li></li><li>text</li><li><ol><li></li></ol></li></ul>"
+    with zipfile.ZipFile(BytesIO(_convert_html_to_docx(test_parameters, html))) as zf:
+        doc_xml = zf.read("word/document.xml")
+
+    assert [(ilvl, text) for ilvl, _, text in _list_paragraphs(doc_xml)] == [("0", ""), ("0", "text"), ("0", ""), ("1", "")]

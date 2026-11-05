@@ -111,3 +111,24 @@ def test_a_numbering_which_names_a_missing_abstract_numbering_states_nothing():
 
 def test_an_indent_which_is_not_ascii_digits_states_none():
     assert ParagraphIndents(_styles(), None).width_taken(_paragraph('<w:ind w:left="²" w:right="300"/>')) == 300
+
+
+def test_a_list_item_is_numbered():
+    assert ParagraphIndents(_styles(), _numbering()).is_numbered(_list_item(0))
+
+
+def test_a_paragraph_is_numbered_through_its_style():
+    styles = _styles('<w:style w:type="paragraph" w:styleId="ListBullet"><w:pPr><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:style>')
+
+    assert ParagraphIndents(styles, _numbering()).is_numbered(_paragraph('<w:pStyle w:val="ListBullet"/>'))
+
+
+def test_numbering_zero_turns_off_the_numbering_of_the_style():
+    styles = _styles('<w:style w:type="paragraph" w:styleId="ListBullet"><w:pPr><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:style>')
+    paragraph = _paragraph('<w:pStyle w:val="ListBullet"/><w:numPr><w:numId w:val="0"/></w:numPr>')
+
+    assert not ParagraphIndents(styles, _numbering()).is_numbered(paragraph)
+
+
+def test_a_plain_paragraph_is_not_numbered():
+    assert not ParagraphIndents(_styles(), _numbering()).is_numbered(_paragraph(""))
