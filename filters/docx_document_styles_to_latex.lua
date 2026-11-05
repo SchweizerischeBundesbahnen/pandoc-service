@@ -108,7 +108,23 @@ local function page_preamble(meta, lines)
   end
 end
 
+-- A new page of another size and margins: the paper, the PDF page and the text area of LaTeX.
+local PAGE_GEOMETRY = table.concat({
+  "\\makeatletter",
+  "\\newcommand{\\pdcPageGeometry}[6]{\\clearpage",
+  "\\setlength{\\paperwidth}{#1bp}\\setlength{\\paperheight}{#2bp}%",
+  "\\setlength{\\pdfpagewidth}{\\paperwidth}\\setlength{\\pdfpageheight}{\\paperheight}%",
+  "\\setlength{\\textwidth}{\\dimexpr\\paperwidth-#4bp-#6bp\\relax}%",
+  "\\setlength{\\textheight}{\\dimexpr\\paperheight-#3bp-#5bp\\relax}%",
+  "\\setlength{\\oddsidemargin}{\\dimexpr#6bp-1in\\relax}\\setlength{\\evensidemargin}{\\oddsidemargin}%",
+  "\\setlength{\\topmargin}{\\dimexpr#3bp-1in-\\headheight-\\headsep\\relax}%",
+  "\\setlength{\\linewidth}{\\textwidth}\\setlength{\\columnwidth}{\\textwidth}\\hsize\\textwidth",
+  "\\global\\@colht\\textheight\\global\\@colroom\\textheight\\global\\vsize\\textheight}",
+  "\\makeatother",
+}, "\n")
+
 local function body_preamble(meta, lines)
+  lines[#lines + 1] = PAGE_GEOMETRY
   -- Word counts in PostScript points, \fontsize in bp does the same; pt of TeX are 0.4% smaller
   local size, baseline = points(meta[SIZE]), points(meta[BASELINE])
   if size ~= nil and baseline ~= nil then
@@ -237,11 +253,30 @@ local function caption_div(div)
   return blocks
 end
 
+-- A section on a new page of its own size and margins: six numbers in points.
+local function section_div(div)
+  local numbers = {}
+  for value in pandoc.utils.stringify(div):gmatch("%S+") do
+    local number = tonumber(value)
+    if number == nil or number < 0 then
+      return pandoc.RawBlock("latex", "\\clearpage")
+    end
+    numbers[#numbers + 1] = string.format("%g", number)
+  end
+  if #numbers ~= 6 then
+    return pandoc.RawBlock("latex", "\\clearpage")
+  end
+  return pandoc.RawBlock("latex", "\\pdcPageGeometry{" .. table.concat(numbers, "}{") .. "}")
+end
+
 -- A Title paragraph after the first one, in the Title style with its space around it.
 local function title_div(div)
-  -- A page break of the docx: see app/docx_page_break_pre_process.py
+  -- A page break and a section of the docx: see app/docx_page_break_pre_process.py
   if div.attributes["custom-style"] == "PandocPageBreak" then
     return pandoc.RawBlock("latex", "\\clearpage")
+  end
+  if div.attributes["custom-style"] == "PandocSection" then
+    return section_div(div)
   end
   if caption_style ~= nil and div.attributes["custom-style"] == CAPTION_DIV then
     return caption_div(div)

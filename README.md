@@ -160,7 +160,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 
 | From the DOCX | In the PDF |
 |---|---|
-| `<w:pgSz>` and `<w:pgMar>` of the first section | the page size and margins; US Letter with 1 inch margins without them |
+| `<w:pgSz>` and `<w:pgMar>` of the first section | the page size and margins of the first pages; US Letter with 1 inch margins without them |
 | the font of the Body Text style, else Normal, else the defaults, also as a theme font | the font of the body text, when the container has it |
 | the font size and line spacing of that style | the size, and the line the font sets: its ascent, descent and line gap, as Word reads them |
 | the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
@@ -170,6 +170,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, and rows as tall as Word's |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it |
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
+| `<w:pgSz>` and `<w:pgMar>` of each later section | its pages in that size and with those margins, landscape among them |
 | no header and no footer in any section | no page number, as Word prints none |
 | a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |

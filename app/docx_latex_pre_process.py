@@ -55,7 +55,7 @@ def _rewrite_body_part(
         rewritten, page_break_changed = docx_page_break_pre_process.rewrite_part(xml)
         if page_break_changed:
             xml, changed = rewritten, True
-            toc_styles.update(docx_toc_pre_process.plain_styles(docx_page_break_pre_process.PAGE_BREAK_STYLE))
+            toc_styles.update(docx_toc_pre_process.plain_styles(docx_page_break_pre_process.PAGE_BREAK_STYLE, docx_page_break_pre_process.SECTION_STYLE))
         rewritten, color_used = docx_color_pre_process.rewrite_part(xml)
         if color_used:
             xml, changed = rewritten, True
