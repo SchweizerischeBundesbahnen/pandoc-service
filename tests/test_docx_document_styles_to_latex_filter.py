@@ -150,3 +150,18 @@ def test_the_body_size_and_line_redefine_normalsize(test_parameters: TestParamet
 
 def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):
     assert "\\renewcommand{\\normalsize}" not in _preamble(_latex(test_parameters.container, "docx-body-size=12"))
+
+
+def test_the_link_colour_is_defined_for_the_template(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-link-color=156082"))
+    assert "\\definecolor{pdcLink}{HTML}{156082}" in preamble
+
+
+def test_a_link_colour_which_is_no_hex_colour_is_left_out(test_parameters: TestParameters):
+    assert "pdcLink" not in _latex(test_parameters.container, "docx-link-color=}\\evil")
+
+
+def test_a_document_without_headers_has_no_page_numbers(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-page-numbers=false"))
+    assert "\\pagestyle{empty}" in preamble
+    assert "\\let\\ps@plain\\ps@empty" in preamble

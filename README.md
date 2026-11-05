@@ -166,6 +166,8 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
 | `<w:jc>` of that style, and `<w:autoHyphenation>` | ragged right and unhyphenated, unless the style justifies and the document hyphenates |
 | the Title and Heading 1 to 5 styles | the font, size, colour, italics, alignment and space of the title and the headings |
+| the Hyperlink style, a theme colour as Word reads it | the colour of the links |
+| no header and no footer in any section | no page number, as Word prints none |
 | a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
 

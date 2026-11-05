@@ -13,7 +13,9 @@ from app.docx_document_styles import document_style_options
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 THEME = (
-    '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme>'
+    '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements>'
+    '<a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:accent1><a:srgbClr val="156082"/></a:accent1>'
+    '<a:hlink><a:srgbClr val="467886"/></a:hlink></a:clrScheme><a:fontScheme>'
     '<a:majorFont><a:latin typeface="Major Sans"/></a:majorFont><a:minorFont><a:latin typeface="Minor Serif"/></a:minorFont>'
     "</a:fontScheme></a:themeElements></a:theme>"
 )
@@ -23,10 +25,10 @@ NORMAL = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w
 BODY_TEXT = '<w:style w:type="paragraph" w:styleId="BodyText"><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="180" w:after="180"/></w:pPr></w:style>'
 
 
-def _docx(styles: str, theme: str | None = THEME, settings: str | None = None) -> bytes:
+def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>") -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as package:
-        package.writestr("word/document.xml", f"<w:document {W}><w:body/></w:document>")
+        package.writestr("word/document.xml", f"<w:document {W}><w:body>{section}</w:body></w:document>")
         package.writestr("word/styles.xml", f"<w:styles {W}>{styles}</w:styles>")
         if theme is not None:
             package.writestr("word/theme/theme1.xml", theme)
@@ -73,6 +75,7 @@ def test_sets_pandoc_template_like_word():
         "docx-body-paragraph-skip": "9",
         "docx-body-justified": "false",
         "docx-body-hyphenated": "false",
+        "docx-page-numbers": "false",
     }
 
 
@@ -317,3 +320,39 @@ def test_a_font_without_metrics_gets_the_line_of_latex(monkeypatch: pytest.Monke
 def test_the_latin_modern_body_gets_the_line_of_latex(installed: set[str]):
     installed.clear()
     assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-baseline"] == "14.4"
+
+
+HYPERLINK = '<w:style w:type="character" w:styleId="Hyperlink"><w:rPr><w:color w:val="4F81BD" w:themeColor="accent1"/></w:rPr></w:style>'
+
+
+def test_links_take_the_theme_colour_of_the_hyperlink_style_as_word_does():
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HYPERLINK))
+    assert options["docx-link-color"] == "156082"
+    assert options["colorlinks"] == "true"
+    assert {options[f"{kind}color"] for kind in ("link", "url", "file", "cite")} == {"pdcLink"}
+
+
+def test_a_theme_shade_darkens_as_word_does():
+    heading = HEADING1.replace('<w:color w:val="0f4761"/>', '<w:color w:val="000000" w:themeColor="accent1" w:themeShade="BF"/>')
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + heading))["docx-style-Heading1"])["color"] == "0F4761"
+
+
+def test_a_theme_tint_lightens():
+    heading = HEADING1.replace('<w:color w:val="0f4761"/>', '<w:color w:val="000000" w:themeColor="text1" w:themeTint="80"/>')
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + heading))["docx-style-Heading1"])["color"] == "7F7F7F"
+
+
+def test_a_theme_colour_the_theme_lacks_falls_back_to_the_value():
+    heading = HEADING1.replace('<w:color w:val="0f4761"/>', '<w:color w:val="123456" w:themeColor="accent6"/>')
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + heading))["docx-style-Heading1"])["color"] == "123456"
+
+
+def test_a_document_without_a_hyperlink_style_leaves_links_alone():
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert "docx-link-color" not in options
+    assert "colorlinks" not in options
+
+
+def test_a_document_with_a_footer_keeps_its_page_numbers():
+    section = '<w:sectPr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:footerReference w:type="default" r:id="rId9"/></w:sectPr>'
+    assert "docx-page-numbers" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=section))

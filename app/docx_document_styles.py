@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DOCUMENT_PART = "word/document.xml"
 THEME_PART = "word/theme/theme1.xml"
 SETTINGS_PART = "word/settings.xml"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
@@ -59,6 +60,23 @@ OFF_VALUES = frozenset({"false", "0", "off"})
 DEFAULT_LINE_RATIO = 1.2
 # <w:spacing w:line> of a multiple counts in 240ths of a line.
 LINE_UNITS = 240
+# The colour scheme slot of each w:themeColor, as pandoc's and Word's own templates map them.
+THEME_SLOTS = {
+    "dark1": "dk1",
+    "text1": "dk1",
+    "light1": "lt1",
+    "background1": "lt1",
+    "dark2": "dk2",
+    "text2": "dk2",
+    "light2": "lt2",
+    "background2": "lt2",
+    **{f"accent{number}": f"accent{number}" for number in range(1, 7)},
+    "hyperlink": "hlink",
+    "followedHyperlink": "folHlink",
+}
+HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
+# The colour filters/docx_document_styles_to_latex.lua defines as the colour of the Hyperlink style.
+LINK_COLOR_NAME = "pdcLink"
 
 _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
 
@@ -67,7 +85,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
-            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART) if name in package.namelist()}
+            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART) if name in package.namelist()}
     except _UNREADABLE_DOCX:
         return []
     styles = parse_xml(parts[STYLES_PART]) if STYLES_PART in parts else None
@@ -75,6 +93,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         return []
     theme = parse_xml(parts[THEME_PART]) if THEME_PART in parts else None
     settings = parse_xml(parts[SETTINGS_PART]) if SETTINGS_PART in parts else None
+    document = parse_xml(parts[DOCUMENT_PART]) if DOCUMENT_PART in parts else None
 
     chain = _style_chain(styles, BODY_STYLE)
     options: list[str] = []
@@ -92,6 +111,14 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]
     options += ["-M", f"docx-body-hyphenated={'true' if _hyphenated(settings) else 'false'}"]
+    link_chain = _style_chain(styles, "Hyperlink", fallback=None)
+    link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
+    if link_color is not None:
+        # The template sets hyperref up after the preamble of the filters, which defines pdcLink
+        options += ["-M", f"docx-link-color={link_color}", "-V", "colorlinks=true"]
+        options += [item for kind in ("link", "url", "file", "cite") for item in ("-V", f"{kind}color={LINK_COLOR_NAME}")]
+    if document is not None and not _has_header_or_footer(document):
+        options += ["-M", "docx-page-numbers=false"]
     for style_id in DISPLAY_STYLES:
         fields = _display_style(styles, theme, style_id, skip)
         if fields:
@@ -254,10 +281,9 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, skip: 
         fields["line"] = f"{_baseline(chain, styles, size / 2, font):.4g}"
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
-    color = _first(chain, styles, "rPr", "color")
-    value = color.get(_w("val"), "") if color is not None else ""
-    if HEX_COLOR.fullmatch(value):
-        fields["color"] = value.upper()
+    color = _color(_first(chain, styles, "rPr", "color"), theme)
+    if color is not None:
+        fields["color"] = color
     for side in ("before", "after"):
         fields[side] = f"{max(_spacing_twips(chain, styles, side) / TWIPS_PER_POINT, skip):g}"
     alignment = _first(chain, styles, "pPr", "jc")
@@ -304,3 +330,42 @@ def _baseline(chain: list[Element], styles: Element, size: float, font: str | No
             return max(single, line / TWIPS_PER_POINT)
         case _:
             return single * line / LINE_UNITS
+
+
+def _theme_colors(theme: Element | None) -> dict[str, str]:
+    """The colour scheme of the theme: each slot as six hex digits."""
+    if theme is None:
+        return {}
+    scheme = theme.find(f".//{{{A_NS}}}clrScheme")
+    colors: dict[str, str] = {}
+    for slot in scheme if scheme is not None else []:
+        name = slot.tag.removeprefix(f"{{{A_NS}}}")
+        rgb = slot.find(f"{{{A_NS}}}srgbClr")
+        system = slot.find(f"{{{A_NS}}}sysClr")
+        value = rgb.get("val", "") if rgb is not None else system.get("lastClr", "") if system is not None else ""
+        if HEX_COLOR.fullmatch(value):
+            colors[name] = value.upper()
+    return colors
+
+
+def _color(element: Element | None, theme: Element | None) -> str | None:
+    """The colour of a <w:color> as six hex digits: the theme colour when it names one, as Word reads it, else its value."""
+    if element is None:
+        return None
+    slot = THEME_SLOTS.get(element.get(_w("themeColor"), ""))
+    base = _theme_colors(theme).get(slot) if slot is not None else None
+    if base is None:
+        value = element.get(_w("val"), "")
+        return value.upper() if HEX_COLOR.fullmatch(value) else None
+    channels = [int(base[index : index + 2], 16) for index in (0, 2, 4)]
+    shade, tint = element.get(_w("themeShade"), ""), element.get(_w("themeTint"), "")
+    if HEX_BYTE.fullmatch(shade):
+        channels = [channel * int(shade, 16) // 255 for channel in channels]
+    if HEX_BYTE.fullmatch(tint):
+        channels = [channel + (255 - channel) * (255 - int(tint, 16)) // 255 for channel in channels]
+    return "".join(f"{channel:02X}" for channel in channels)
+
+
+def _has_header_or_footer(document: Element) -> bool:
+    """Whether a section of the document references a header or a footer, which Word prints the page number in."""
+    return any(True for tag in ("headerReference", "footerReference") for _ in document.iter(_w(tag)))

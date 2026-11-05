@@ -11,10 +11,10 @@
 --                                the marker becomes a dot leader and the
 --                                page LaTeX sets the bookmark on
 --
--- Both are set as Word sets its TOC styles: in the font of the body, without
--- a heading of their own, a line apart with 5pt after it, a leader of close
--- dots to the page number at the right margin, and each level of the table of
--- contents indented 12pt further.
+-- Both are set as Word sets its TOC styles: in the font and colour of the
+-- body, without a heading of their own, a line apart with 5pt after it, a
+-- leader of close dots to the page number at the right margin, and each level
+-- of the table of contents indented 12pt further.
 --
 -- Only runs for the LaTeX writer (gated in PandocController on
 -- docx -> pdf/latex).
@@ -27,8 +27,8 @@ local PREAMBLE = [[
 \usepackage{titletoc}
 \makeatletter
 \newcommand{\pdcTocLeader}{\leaders\hbox to 0.275em{\hss.\hss}\hfill}
-\newcommand{\pdcTableOfContents}[1]{\par\begingroup\setcounter{tocdepth}{#1}\setlength{\parskip}{0pt}\@starttoc{toc}\endgroup}
-\newcommand{\pdcTocEntryBegin}{\par\begingroup\setlength{\parskip}{0pt}}
+\newcommand{\pdcTableOfContents}[1]{\par\begingroup\hypersetup{linkcolor=black}\setcounter{tocdepth}{#1}\setlength{\parskip}{0pt}\@starttoc{toc}\endgroup}
+\newcommand{\pdcTocEntryBegin}{\par\begingroup\hypersetup{linkcolor=black}\setlength{\parskip}{0pt}}
 \newcommand{\pdcTocEntryEnd}{\par\endgroup\vspace{5pt}}
 \newcommand{\pdcTocPage}[1]{\nobreak\pdcTocLeader\nobreak\pageref{#1}}
 \makeatother

@@ -14,6 +14,9 @@
 --   docx-body-hyphenated      true when the document turns hyphenation on
 --   docx-body-size            the size of the body text, in PostScript points
 --   docx-body-baseline        the distance of its lines, from its font
+--   docx-link-color           the colour of the Hyperlink style
+--   docx-page-numbers         false when no section has a header or footer,
+--                             so Word prints no page number
 --   docx-style-<StyleId>      the Title or Heading1 to Heading5 style, as
 --                             name:value fields separated by commas: font,
 --                             size, line, bold, italic, color, before,
@@ -32,6 +35,8 @@ local JUSTIFIED = "docx-body-justified"
 local HYPHENATED = "docx-body-hyphenated"
 local SIZE = "docx-body-size"
 local BASELINE = "docx-body-baseline"
+local LINK_COLOR = "docx-link-color"
+local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
 
 -- The LaTeX command of each heading style, and a letter for the macro of its font.
@@ -66,6 +71,20 @@ local function points(value)
     return nil
   end
   return number
+end
+
+-- Links in the colour of the Hyperlink style, the pages without a number when the document has none.
+local function page_preamble(meta, lines)
+  local color = meta[LINK_COLOR] and pandoc.utils.stringify(meta[LINK_COLOR]) or ""
+  if color:match("^%x%x%x%x%x%x$") then
+    lines[#lines + 1] = "\\usepackage{xcolor}"
+    -- The service passes colorlinks and the colours of the template as pdcLink, set up after this preamble
+    lines[#lines + 1] = string.format("\\definecolor{pdcLink}{HTML}{%s}", color)
+  end
+  if meta[PAGE_NUMBERS] ~= nil and not is_true(meta[PAGE_NUMBERS]) then
+    lines[#lines + 1] = "\\makeatletter\\let\\ps@plain\\ps@empty\\makeatother"
+    lines[#lines + 1] = "\\pagestyle{empty}"
+  end
 end
 
 local function body_preamble(meta, lines)
@@ -210,10 +229,11 @@ local function write_preamble(meta)
   end
   local lines = {}
   body_preamble(meta, lines)
+  page_preamble(meta, lines)
   headings_preamble(meta, lines)
   title_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end
