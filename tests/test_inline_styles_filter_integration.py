@@ -1504,3 +1504,35 @@ def test_image_without_a_mappable_layout_is_left_alone(test_parameters: TestPara
     assert _picture_position(run) is None
     assert _picture_effect_extent(run) in ((None, None), ("0", "0"))
     assert b"IMGLAYOUT" not in docx_bytes
+
+
+def test_comment_inside_styled_span_is_kept(test_parameters: TestParameters):
+    """Regression: a comment on text formatted after the comment was added.
+
+    Polarion wraps such text, comment markers included, in a styled span
+    (reported on docx-exporter). Walked as an ordinary nested span, the comment was
+    lost and its text was printed into the paragraph. The markers must reach
+    pandoc's writer untouched, as they do outside a styled span.
+    """
+    html = (
+        '<p>Plain: first<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment one</span><span class="comment-end" id="0"></span> end.</p>'
+        '<p>Styled: <span style="font-weight: bold;">second<span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">Comment two</span><span class="comment-end" id="1"></span></span> end.</p>'
+    )
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+        assert "word/comments.xml" in zf.namelist(), "no word/comments.xml - the comments were lost"
+        comments = ET.fromstring(zf.read("word/comments.xml"))
+
+    comment_texts = ["".join(t.text or "" for t in c.iter(f"{{{W_NS}}}t")) for c in comments.iter(f"{{{W_NS}}}comment")]
+    assert comment_texts == ["Comment one", "Comment two"], f"unexpected comments: {comment_texts}"
+
+    paragraphs = doc.findall(f".//{{{W_NS}}}body/{{{W_NS}}}p")
+    styled = next(p for p in paragraphs if "Styled:" in "".join(t.text or "" for t in p.iter(f"{{{W_NS}}}t")))
+    assert styled.find(f"{{{W_NS}}}commentRangeStart") is not None, "the comment on the styled text has no range start"
+    assert styled.find(f".//{{{W_NS}}}commentReference") is not None, "the comment on the styled text has no reference"
+    styled_text = "".join(t.text or "" for t in styled.iter(f"{{{W_NS}}}t"))
+    assert "Comment two" not in styled_text, f"the comment's text leaked into the paragraph: {styled_text!r}"
+    bold_texts = [t.text for r in styled.iter(f"{{{W_NS}}}r") if r.find(f"{{{W_NS}}}rPr/{{{W_NS}}}b") is not None for t in r.iter(f"{{{W_NS}}}t")]
+    assert "second" in bold_texts, f"the styled text lost its bold: {bold_texts}"

@@ -503,6 +503,18 @@ local function with_bookmark(span, runs)
   return result
 end
 
+-- Is this inline the start or end marker of a comment? Pandoc's DOCX writer
+-- turns <span class="comment-start"> / <span class="comment-end"> into a
+-- Word comment; the content of comment-start is the comment's own text, not
+-- text of the paragraph.
+local function is_comment_marker(inline)
+  if inline.t ~= "Span" or not inline.classes then return false end
+  for _, cls in ipairs(inline.classes) do
+    if cls == "comment-start" or cls == "comment-end" then return true end
+  end
+  return false
+end
+
 -- Forward declaration: walk and walk_with_flag recurse into each other,
 -- and Lua resolves `local`s top-to-bottom, so we declare `walk` first
 -- and assign it later.
@@ -561,7 +573,16 @@ walk = function(inlines, props, vert_align)
           end
         end
       end
-      if is_caption_span then
+      if is_comment_marker(inline) then
+        -- A comment's start/end markers. Pandoc's DOCX writer turns them into
+        -- <w:commentRangeStart>/<w:commentRangeEnd>, a reference run and an
+        -- entry in word/comments.xml, so - like an Image - the node must reach
+        -- the writer untouched. Walked as an ordinary nested span, the comment
+        -- was lost and its text (the content of comment-start) was printed
+        -- into the paragraph instead. The content is the comment's own text,
+        -- so the formatting of the span around it does not apply to it.
+        result[#result + 1] = inline
+      elseif is_caption_span then
         -- Emit the SEQ field as raw OOXML so inlines_to_runs succeeds
         -- and build_para_w_p can apply paragraph alignment. The Caption
         -- style is added by contains_caption_span() in build_para_w_p,
@@ -858,6 +879,13 @@ local function inlines_to_runs(inlines, seed)
       run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
         .. escape_attr(r.target) .. '}}">'
         .. table.concat(link_runs) .. "</w:hyperlink>"
+    elseif is_comment_marker(r) then
+      -- A comment has no raw OOXML form: its text goes to word/comments.xml,
+      -- which only the writer creates. The comment cannot be kept here, but
+      -- its text must not end up in the paragraph either, so nothing is
+      -- emitted. Lossy, so a formatted paragraph gives up its indent and
+      -- alignment instead and the writer keeps the comment.
+      lossy = true
     else
       -- Nested tables, lists, footnotes, math — fall back to plain text.
       lossy = true
