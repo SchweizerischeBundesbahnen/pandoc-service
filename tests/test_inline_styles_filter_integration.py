@@ -59,9 +59,11 @@ def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParam
       1. Filter dropping the Link wrapper -> no <w:hyperlink> in document.xml,
          no Relationship entry in word/_rels/document.xml.rels (the bug we
          just fixed in filters/inline_styles.lua walk()'s Link branch).
-      2. Filter passing the Link through unchanged without re-walking its
-         content -> link works but inner runs lack the surrounding span's
-         color, defeating the walk-and-rewrap design.
+      2. Link runs emitted as raw OOXML without the Hyperlink character
+         style -> the link ignores the reference template's link formatting
+         and takes the surrounding span's color instead (docx-exporter#462).
+         As in a browser, a link does not inherit the text color of the span
+         around it.
 
     A future pandoc version that changes how RawInline children inside a
     Link node propagate into <w:hyperlink> would also surface here.
@@ -83,11 +85,15 @@ def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParam
     rid = hyperlink.get(f"{{{R_NS}}}id")
     assert rid, "hyperlink element has no r:id"
 
-    # 2. The hyperlink's runs carry the surrounding span's color. This is the
-    #    walk-and-rewrap part: a naive pass-through Link would emit default
-    #    styling, but we want the outer span's red to apply to link text.
+    # 2. Every run of the hyperlink references the Hyperlink character style,
+    #    and none takes the surrounding span's red: the link's color comes from
+    #    the reference template's Hyperlink style, as for a plain link.
+    runs = hyperlink.findall(f"{{{W_NS}}}r")
+    assert runs, "hyperlink has no runs"
+    run_styles = [r.find(f"{{{W_NS}}}rPr/{{{W_NS}}}rStyle") for r in runs]
+    assert all(s is not None and s.get(f"{{{W_NS}}}val") == "Hyperlink" for s in run_styles), f"not every hyperlink run references rStyle=Hyperlink — Link branch of walk() in filters/inline_styles.lua\nhyperlink: {ET.tostring(hyperlink)!r}"
     color_vals = [c.get(f"{{{W_NS}}}val") for c in hyperlink.findall(f".//{{{W_NS}}}color")]
-    assert "FF0000" in color_vals, f"hyperlink runs do not carry FF0000 (found colors: {color_vals}) — walk-and-rewrap regression in filters/inline_styles.lua Link branch"
+    assert "FF0000" not in color_vals, f"hyperlink runs inherit the surrounding span's FF0000 (found colors: {color_vals}), which overrides the Hyperlink style"
 
     # 3. Link text survived.
     text = "".join(t.text or "" for t in hyperlink.iter(f"{{{W_NS}}}t"))
@@ -99,6 +105,40 @@ def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParam
     assert rel.get("Target") == "https://example.com/test", f"hyperlink relationship Target mismatch: {rel.get('Target')!r}"
     assert rel.get("TargetMode") == "External", f"hyperlink relationship TargetMode mismatch: {rel.get('TargetMode')!r}"
     assert rel.get("Type", "").endswith("/hyperlink"), f"unexpected Relationship Type: {rel.get('Type')!r}"
+
+
+def test_hyperlink_keeps_formatting_set_inside_the_link(test_parameters: TestParameters):
+    """A link drops only the color/background of the span around it.
+
+    Formatting set inside the link still applies on top of the Hyperlink style:
+    Polarion marks a deleted Work Item red and struck through inside its link,
+    and bold around a link draws the link bold too (docx-exporter#462).
+    """
+    html = '<p><span style="color:#000000;font-weight:bold;"><a href="https://example.com/wi"><span style="color:#E74C3C;text-decoration:line-through;">EL-105</span> - Login Page</a></span></p>'
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    hyperlink = doc.find(f".//{{{W_NS}}}hyperlink")
+    assert hyperlink is not None, "no <w:hyperlink> in document.xml"
+
+    runs = hyperlink.findall(f"{{{W_NS}}}r")
+    assert runs, "hyperlink has no runs"
+    for run in runs:
+        text = "".join(t.text or "" for t in run.iter(f"{{{W_NS}}}t"))
+        rpr = run.find(f"{{{W_NS}}}rPr")
+        assert rpr is not None, f"run {text!r} has no rPr"
+        style = rpr.find(f"{{{W_NS}}}rStyle")
+        assert style is not None and style.get(f"{{{W_NS}}}val") == "Hyperlink", f"run {text!r} does not reference rStyle=Hyperlink"
+        assert rpr.find(f"{{{W_NS}}}b") is not None, f"run {text!r} lost the bold of the surrounding span"
+        colors = [c.get(f"{{{W_NS}}}val") for c in rpr.findall(f"{{{W_NS}}}color")]
+        assert "000000" not in colors, f"run {text!r} inherits the surrounding span's 000000"
+        if text == "EL-105":
+            assert colors == ["E74C3C"], f"the deleted Work Item lost its own color: {colors}"
+            assert rpr.find(f"{{{W_NS}}}strike") is not None, "the deleted Work Item lost its strike-through"
+        else:
+            assert not colors, f"run {text!r} carries a color although none is set inside the link: {colors}"
 
 
 def test_intersecting_text_decorations_are_additive(test_parameters: TestParameters):
