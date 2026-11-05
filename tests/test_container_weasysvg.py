@@ -2,6 +2,7 @@
 
 import base64
 import io
+import re
 import zipfile
 
 from lxml import etree
@@ -50,11 +51,12 @@ def test_docx_gets_the_png_and_its_flat_svg(test_parameters: TestParameters) -> 
         assert docx.read(f"word/{png_target}").startswith(b"\x89PNG")
         flat = docx.read(f"word/{svg_target}").decode()
         assert b'Extension="svg"' in docx.read("[Content_Types].xml")
-    # Only what Word draws: no filter, no mask, no foreignObject
+    # Only what Word draws: no foreignObject, and a filter or a mask only for the alpha of an image. weasysvg draws the
+    # blurred shadow as an image, whose alpha cairo writes as a mask over it through a filter
     assert "<svg" in flat
-    assert "filter=" not in flat
-    assert "<mask" not in flat
     assert "foreignObject" not in flat
+    assert 'filter="url(' not in re.sub(r"<mask\b.*?</mask>", "", flat, flags=re.DOTALL)
+    assert 0 < flat.count("<mask") <= flat.count("<image")
 
 
 def test_docx_without_the_svg_gets_the_png_alone(test_parameters: TestParameters) -> None:
