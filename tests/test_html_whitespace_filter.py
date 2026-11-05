@@ -87,8 +87,8 @@ def test_non_breaking_spaces_are_kept(test_parameters: TestParameters):
 
 
 def test_preformatted_span_keeps_its_leading_space(test_parameters: TestParameters):
-    """A browser keeps the spaces of white-space: pre, also at the start of a line."""
-    assert _texts(test_parameters, '<p><span style="white-space: pre"> indented</span></p>') == [" indented"]
+    """A browser keeps the spaces of white-space: pre, also at the start of a line. pre does not wrap, so the space does not break."""
+    assert _texts(test_parameters, '<p><span style="white-space: pre"> indented</span></p>') == ["\u00a0indented"]
 
 
 def test_run_across_span_boundary_in_heading_is_one_space(test_parameters: TestParameters):

@@ -1,7 +1,7 @@
 -- html_nowrap.lua
 --
--- Keep the content of an element styled white-space: nowrap on one line in
--- Word, as a browser does.
+-- Keep the content of an element styled white-space: nowrap (or pre) on one
+-- line in Word, as a browser does.
 --
 -- Pandoc's DOCX writer drops the CSS, so Word breaks a line at any space of
 -- such an element, and right before or after an inline picture. Polarion
@@ -46,19 +46,31 @@ local INLINE_CONTAINERS = {
 -- without a break only when a non-breaking space stands between them.
 local TEXT_INLINES = { Code = true, Math = true, Str = true }
 
--- true when the style of `el` sets white-space: nowrap, false when it sets
--- another value, nil when it does not say and the parent's applies.
+-- white-space values that keep a line from breaking, and values that take the
+-- parent's: nil for them, as for an element that does not set white-space.
+local NO_WRAP_VALUES = { nowrap = true, pre = true }
+local INHERITED_VALUES = { inherit = true, unset = true, revert = true, ["revert-layer"] = true }
+
+-- true when the style of `el` keeps its content on one line, false when it
+-- lets it break, nil when it does not say and the parent's applies. The last
+-- white-space declaration wins, as in a browser.
 local function nowrap_of(el)
   local attributes = el.attributes
   local style = attributes and attributes["style"]
   if not style then
     return nil
   end
-  local value = style:lower():match("white%-space%s*:%s*([%w%-]+)")
-  if value == nil then
+  local value = nil
+  for declaration in style:lower():gmatch("[^;]+") do
+    local found = declaration:match("^%s*white%-space%s*:%s*([%w%-]+)")
+    if found then
+      value = found
+    end
+  end
+  if value == nil or INHERITED_VALUES[value] then
     return nil
   end
-  return value == "nowrap"
+  return NO_WRAP_VALUES[value] == true
 end
 
 -- Walk `inlines` in reading order. `state.last` is the kind of the inline seen
@@ -81,6 +93,9 @@ local function walk_inlines(inlines, state, nowrap)
       kind = "image"
     elseif TEXT_INLINES[inline.t] then
       kind = "text"
+      if nowrap and inline.t == "Code" then
+        inline.text = inline.text:gsub(" ", NBSP)
+      end
     elseif INLINE_CONTAINERS[inline.t] then
       local inner_nowrap = nowrap_of(inline)
       if inner_nowrap == nil then

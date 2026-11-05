@@ -67,6 +67,29 @@ def test_nowrap_div_applies_to_its_paragraphs(test_parameters: TestParameters):
     assert _texts(test_parameters, body) == ["one\u00a0two", "three four"]
 
 
+def test_code_inside_nowrap_does_not_break(test_parameters: TestParameters):
+    assert _texts(test_parameters, '<p><span style="white-space:nowrap"><code>two words</code></span> free</p>') == ["two\u00a0words free"]
+
+
+def test_inherited_value_keeps_the_nowrap_of_the_parent(test_parameters: TestParameters):
+    body = '<p><span style="white-space:nowrap"><span style="white-space:inherit">two words</span> <span style="white-space:unset">three words</span></span></p>'
+    assert _texts(test_parameters, body) == ["two\u00a0words\u00a0three\u00a0words"]
+
+
+def test_pre_does_not_break(test_parameters: TestParameters):
+    assert _texts(test_parameters, '<p><span style="white-space:pre">two words</span> free</p>') == ["two\u00a0words free"]
+
+
+def test_last_declaration_wins(test_parameters: TestParameters):
+    body = '<p><span style="white-space:normal; white-space:nowrap">two words</span> <span style="white-space:nowrap;white-space:normal">three words</span></p>'
+    assert _texts(test_parameters, body) == ["two\u00a0words three words"]
+
+
+def test_initial_value_breaks_again(test_parameters: TestParameters):
+    body = '<p><span style="white-space:nowrap">two words <span style="white-space:initial">free text</span></span></p>'
+    assert _texts(test_parameters, body) == ["two\u00a0words\u00a0free text"]
+
+
 def _nbsp_runs(test_parameters: TestParameters, body: str) -> list[bool]:
     """For each run holding a non-breaking space, in document order: whether its font is 1 pt."""
     response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/html/to/docx", data=f"<html><body>{body}</body></html>")
