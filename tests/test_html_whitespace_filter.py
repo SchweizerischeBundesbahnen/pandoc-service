@@ -46,7 +46,10 @@ def _texts(test_parameters: TestParameters, body: str) -> list[str]:
 
 
 def test_polarion_linked_work_item_has_single_spaces(test_parameters: TestParameters):
-    """Polarion's indented markup: whitespace on both sides of </span>, and after the opening <span>."""
+    """Polarion's indented markup: whitespace on both sides of </span>, and after the opening <span>.
+
+    The spaces and the gap after the icon inside a nowrap span are non-breaking, see test_html_nowrap_filter.py.
+    """
     link = (
         '<span class="polarion-no-style-cleanup" style="white-space:nowrap;" title="EL-101 - User name">'
         '<a class="polarion-Hyperlink" href="#work-item-anchor-elibrary/EL-101">'
@@ -60,7 +63,7 @@ def test_polarion_linked_work_item_has_single_spaces(test_parameters: TestParame
         </span>
         : {link}
     </td></tr></table>"""
-    assert _texts(test_parameters, body) == ["implements : [img]EL-101 - User name"]
+    assert _texts(test_parameters, body) == ["implements\u00a0: [img]\u00a0EL-101 - User name"]
 
 
 def test_run_across_span_boundaries_is_one_space(test_parameters: TestParameters):
@@ -84,8 +87,8 @@ def test_non_breaking_spaces_are_kept(test_parameters: TestParameters):
 
 
 def test_preformatted_span_keeps_its_leading_space(test_parameters: TestParameters):
-    """A browser keeps the spaces of white-space: pre, also at the start of a line."""
-    assert _texts(test_parameters, '<p><span style="white-space: pre"> indented</span></p>') == [" indented"]
+    """A browser keeps the spaces of white-space: pre, also at the start of a line. pre does not wrap, so the space does not break."""
+    assert _texts(test_parameters, '<p><span style="white-space: pre"> indented</span></p>') == ["\u00a0indented"]
 
 
 def test_run_across_span_boundary_in_heading_is_one_space(test_parameters: TestParameters):
