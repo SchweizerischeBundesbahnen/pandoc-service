@@ -260,3 +260,7 @@ def test_a_straight_quote_of_the_text_stays_straight(test_parameters: TestParame
     document.add_paragraph('Click "Login" to sign in.')
     text = PdfReader(io.BytesIO(_docx_to_pdf(test_parameters, document))).pages[0].extract_text()
     assert 'Click "Login" to sign in.' in text, text
+
+
+def test_a_cell_gets_the_margin_of_the_table_style(test_parameters: TestParameters):
+    assert "\\setlength{\\tabcolsep}{5.4pt}" in _preamble(_latex(test_parameters.container, "docx-table-cell-margin=5.4", "docx-table-cell-space=3.6"))

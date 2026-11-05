@@ -168,7 +168,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | `<w:rFonts>` of a run | the font of the run, when the container has it, matched regardless of case |
 | the Title and Heading 1 to 5 styles | the font, size, colour, italics, alignment and space of the title and the headings |
 | the Hyperlink style, a theme colour as Word reads it | the colour of the links |
-| a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, and rows as tall as Word's |
+| a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it |
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
 | `<w:pgSz>` and `<w:pgMar>` of each later section | its pages in that size and with those margins, landscape among them |

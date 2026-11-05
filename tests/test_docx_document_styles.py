@@ -367,3 +367,22 @@ def test_a_cell_holds_the_space_before_and_after_its_compact_paragraph():
 
 def test_a_document_without_the_compact_style_leaves_tables_alone():
     assert "docx-table-cell-space" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
+TABLE_STYLE = (
+    '<w:style w:type="table" w:default="1" w:styleId="Table"><w:tblPr><w:tblCellMar>'
+    '<w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>'
+    "</w:tblCellMar></w:tblPr></w:style>"
+)
+
+
+def test_a_cell_has_the_margin_of_the_default_table_style():
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + TABLE_STYLE))["docx-table-cell-margin"] == "5.4"
+
+
+def test_margins_which_differ_or_are_no_twips_are_left_out():
+    uneven = TABLE_STYLE.replace('<w:right w:w="108" w:type="dxa"/>', '<w:right w:w="200" w:type="dxa"/>')
+    percent = TABLE_STYLE.replace('w:w="108" w:type="dxa"', 'w:w="5" w:type="pct"')
+    no_default = TABLE_STYLE.replace(' w:default="1"', "")
+    for style in (uneven, percent, no_default):
+        assert "docx-table-cell-margin" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + style))

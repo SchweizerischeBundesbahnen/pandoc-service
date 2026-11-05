@@ -346,7 +346,8 @@ function table_pass.Table(tbl)
   -- nothing leaks into a later table:
   --  * absolute-width (px/pt) tables get a tightened \tabcolsep — LaTeX's fixed
   --    inter-column padding otherwise leaves a small table (e.g. 50px, 3 cols)
-  --    noticeably wider than requested; the epilogue restores the 6pt default.
+  --    noticeably wider than requested; a group restores the padding of the
+  --    document after it.
   --  * the recovered horizontal alignment is applied via longtable
   --    \LTleft/\LTright glue (pandoc drops <w:jc>, defaulting to centered).
   local before, after = {}, {}
@@ -356,8 +357,9 @@ function table_pass.Table(tbl)
     before[#before + 1] = "\\begingroup" .. rules
   end
   if layout.aw then
-    before[#before + 1] = "\\setlength{\\tabcolsep}{3pt}"
-    after[#after + 1] = "\\setlength{\\tabcolsep}{6pt}"
+    -- A group: the table after this one gets the padding the document sets, not 6pt
+    before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"
+    after[#after + 1] = "\\endgroup"
   end
   local glue = layout.ta and ALIGN_GLUE[layout.ta]
   if glue then

@@ -16,6 +16,7 @@
 --   docx-body-baseline        the distance of its lines, from its font
 --   docx-table-cell-space     the space before and after the paragraph of a
 --                             table cell, of the Compact style
+--   docx-table-cell-margin    the left and right margin of a table cell
 --   docx-link-color           the colour of the Hyperlink style
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
@@ -38,6 +39,7 @@ local HYPHENATED = "docx-body-hyphenated"
 local SIZE = "docx-body-size"
 local BASELINE = "docx-body-baseline"
 local CELL_SPACE = "docx-table-cell-space"
+local CELL_MARGIN = "docx-table-cell-margin"
 local LINK_COLOR = "docx-link-color"
 local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
@@ -82,6 +84,10 @@ end
 -- packages of tables come with a document which has one, so each length is set
 -- only where it is defined.
 local function table_preamble(meta, lines)
+  local margin = points(meta[CELL_MARGIN])
+  if margin ~= nil then
+    lines[#lines + 1] = string.format("\\setlength{\\tabcolsep}{%gpt}", margin)
+  end
   local space = points(meta[CELL_SPACE])
   if space == nil then
     return
@@ -325,7 +331,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

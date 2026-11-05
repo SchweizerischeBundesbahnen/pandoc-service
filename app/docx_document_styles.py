@@ -116,6 +116,9 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]
     options += ["-M", f"docx-body-hyphenated={'true' if _hyphenated(settings) else 'false'}"]
+    cell_margin = _cell_margin(styles)
+    if cell_margin is not None:
+        options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
     cell_chain = _style_chain(styles, CELL_STYLE, fallback=None)
     if cell_chain:
         # A cell holds its paragraph with the space before and after it
@@ -390,3 +393,30 @@ def _color(element: Element | None, theme: Element | None) -> str | None:
 def _has_header_or_footer(document: Element) -> bool:
     """Whether a section of the document references a header or a footer, which Word prints the page number in."""
     return any(True for tag in ("headerReference", "footerReference") for _ in document.iter(_w(tag)))
+
+
+def _cell_margin(styles: Element) -> float | None:
+    """The left and right margin of a cell of the default table style, in points, when both are the same.
+
+    pandoc writes its tables in the Table style, which Word lays out with 5.4 pt on each side of a cell
+    where LaTeX puts \\tabcolsep, 6 pt.
+    """
+    table_styles = [style for style in styles.iter(_w("style")) if style.get(_w("type")) == "table"]
+    default = next((style for style in table_styles if style.get(_w("default")) in ("1", "true", "on")), None)
+    margins = default.find(f"{_w('tblPr')}/{_w('tblCellMar')}") if default is not None else None
+    if margins is None:
+        return None
+    sides = [margins.find(_w(side)) for side in ("left", "right")]
+    widths = {_twips_of(side) for side in sides}
+    width = widths.pop() if len(widths) == 1 else None
+    return width / TWIPS_PER_POINT if width is not None else None
+
+
+def _twips_of(element: Element | None) -> int | None:
+    """The width of a margin in twips: dxa only, the unit Word writes them in."""
+    if element is None or element.get(_w("type"), "dxa") != "dxa":
+        return None
+    try:
+        return int(element.get(_w("w"), ""))
+    except ValueError:
+        return None

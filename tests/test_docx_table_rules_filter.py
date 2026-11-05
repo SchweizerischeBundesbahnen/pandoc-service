@@ -40,3 +40,10 @@ def test_an_unknown_kind_of_lines_is_left_out(test_parameters: TestParameters):
     latex = _latex(test_parameters.container, "rl=dashed")
     assert "\\begingroup" not in latex
     assert "\\toprule" in latex
+
+
+def test_a_narrow_absolute_table_restores_the_padding_of_the_document_after_it(test_parameters: TestParameters):
+    latex = _latex(test_parameters.container, "tw=0.3000;aw=1")
+    assert "\\begingroup\\setlength{\\tabcolsep}{3pt}" in latex
+    assert "\\setlength{\\tabcolsep}{6pt}" not in latex
+    assert latex.count("\\begingroup") == latex.count("\\endgroup")
