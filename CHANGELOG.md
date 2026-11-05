@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.14.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.14.0...v2.14.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **deps:** update debian:trixie-slim docker digest to a72b443 ([5966a5f](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5966a5f9c2b7bd0efe7918666ba756bf9e679ada))
+* **deps:** update dependency weasysvg to v0.6.1 ([#323](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/323)) ([c1165d8](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c1165d87f205e20ee1f279861e1968dbef27a046))
+* **deps:** update dependency weasysvg to v0.6.2 ([#327](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/327)) ([e603e77](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e603e7759be5dcfda0c21e2d08463cea7be94a68))
+* keep comments on text inside styled spans ([#325](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/325)) ([64d7ca5](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/64d7ca5ed5212c66c43503e4fbacc01d0d695ab5)), closes [#322](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/322)
+
 ## [2.14.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.13.0...v2.14.0) (2026-11-05)
 
 
