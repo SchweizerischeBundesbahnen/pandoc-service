@@ -24,6 +24,7 @@ from . import (
     docx_image_layout_pre_process,
     docx_list_level_pre_process,
     docx_math_color_pre_process,
+    docx_page_break_pre_process,
     docx_page_geometry,
     docx_paragraph_pre_process,
     docx_table_pre_process,
@@ -51,6 +52,10 @@ def _rewrite_body_part(
         if toc_used:
             xml, changed = rewritten, True
             toc_styles.update(toc_used)
+        rewritten, page_break_changed = docx_page_break_pre_process.rewrite_part(xml)
+        if page_break_changed:
+            xml, changed = rewritten, True
+            toc_styles.update(docx_toc_pre_process.plain_styles(docx_page_break_pre_process.PAGE_BREAK_STYLE))
         rewritten, color_used = docx_color_pre_process.rewrite_part(xml)
         if color_used:
             xml, changed = rewritten, True

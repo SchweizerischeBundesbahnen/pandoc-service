@@ -239,6 +239,10 @@ end
 
 -- A Title paragraph after the first one, in the Title style with its space around it.
 local function title_div(div)
+  -- A page break of the docx: see app/docx_page_break_pre_process.py
+  if div.attributes["custom-style"] == "PandocPageBreak" then
+    return pandoc.RawBlock("latex", "\\clearpage")
+  end
   if caption_style ~= nil and div.attributes["custom-style"] == CAPTION_DIV then
     return caption_div(div)
   end

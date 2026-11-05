@@ -201,3 +201,24 @@ def test_without_a_caption_style_a_caption_stays_plain(test_parameters: TestPara
     container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf '::: {custom-style=\"PandocCaption\"}\\nTable 1 A caption\\n:::\\n' > /tmp/test/caption.md"])
     _, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex --lua-filter={FILTER_PATH} /tmp/test/caption.md"])
     assert "pdcCaptionStyle" not in output.decode()
+
+
+def test_a_page_break_becomes_clearpage(test_parameters: TestParameters):
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'one\\n\\n::: {custom-style=\"PandocPageBreak\"}\\nPandocPageBreak\\n:::\\n\\ntwo\\n' > /tmp/test/break.md"])
+    _, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex --lua-filter={FILTER_PATH} /tmp/test/break.md"])
+    latex = output.decode()
+    assert "\\clearpage" in latex
+    assert "PandocPageBreak" not in latex
+
+
+def test_the_pdf_breaks_the_page_where_the_docx_does(test_parameters: TestParameters):
+    from docx.enum.text import WD_BREAK
+
+    document = Document()
+    document.add_paragraph("First page.")
+    document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+    document.add_paragraph("Second page.")
+    reader = PdfReader(io.BytesIO(_docx_to_pdf(test_parameters, document)))
+    assert len(reader.pages) == 2
+    assert "Second page." in reader.pages[1].extract_text()

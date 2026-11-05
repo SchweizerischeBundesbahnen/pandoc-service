@@ -169,6 +169,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | the Hyperlink style, a theme colour as Word reads it | the colour of the links |
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, and rows as tall as Word's |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it |
+| a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
 | no header and no footer in any section | no page number, as Word prints none |
 | a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
