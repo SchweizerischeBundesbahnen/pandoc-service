@@ -819,6 +819,11 @@ async def extract_image_sizes(source: str | bytes) -> dict[str, list[html_image_
     return await to_thread.run_sync(html_image_sizes.extract, source, abandon_on_cancel=True, limiter=get_conversion_limiter())
 
 
+def svg_layers_for(svg_in_docx: bool) -> dict[bytes, bytes] | None:
+    """A place for the flat SVG of each PNG of a docx; None with svg_in_docx=false, for the PNG alone, which Word draws at once."""
+    return {} if svg_in_docx else None
+
+
 async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None = None, target_format: str | None = None, svg_layers: dict[bytes, bytes] | None = None) -> str | bytes:
     """Draw the SVGs embedded in HTML with weasysvg before pandoc runs.
 
@@ -830,8 +835,8 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
 
     weasysvg draws the PNG. A pdf, latex, html or epub target keeps the SVG, which
     pandoc or a browser draws as vector, and a docx target gets the flat SVG of each
-    PNG in `svg_layers`, by the SHA-256 of the PNG, for app.docx_svg_layers. See
-    app/svg_renderer.py.
+    PNG in `svg_layers`, by the SHA-256 of the PNG, for app.docx_svg_layers. Without
+    `svg_layers` no flat SVG is drawn. See app/svg_renderer.py.
 
     ``scale_factor`` is the device scale factor controlling rasterization
     density (image density). When None, SvgProcessor falls back to the
@@ -857,7 +862,7 @@ async def preprocess_html_svgs(source: str | bytes, scale_factor: float | None =
         # The SVG stays, but an inline one becomes a data URL: pandoc lowercases its names as HTML, which breaks it
         return await _kept_svgs(source, html_str)
 
-    rasterizer = svg_renderer.for_target(get_conversion_limiter(), target_format or "")
+    rasterizer = svg_renderer.for_target(get_conversion_limiter(), target_format or "", layers=svg_layers is not None)
 
     try:
         soup = BeautifulSoup(html_str, "html.parser")
@@ -1046,6 +1051,7 @@ async def convert_docx_with_ref(
     orientation: str | None = None,
     scale_factor: float | None = None,
     preserve_table_styles: bool = False,
+    svg_in_docx: bool = True,
 ) -> Response:
     temp_template_filename = None
     pandoc_metrics = get_pandoc_metrics()
@@ -1100,7 +1106,7 @@ async def convert_docx_with_ref(
         # Rasterize any embedded SVGs to PNG so Word gets a usable image
         # instead of the draw.io "Text is not SVG - cannot display" fallback.
         # In the weasysvg mode svg_layers gets the vector of each PNG.
-        svg_layers: dict[bytes, bytes] = {}
+        svg_layers = svg_layers_for(svg_in_docx)
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor, "docx", svg_layers)
         # After the rasterization, which gives an SVG its PNG and the size it is drawn at.
@@ -1267,6 +1273,7 @@ async def convert(
     orientation: str | None = None,
     scale_factor: float | None = None,
     preserve_table_styles: bool = False,
+    svg_in_docx: bool = True,
 ) -> Response:
     pandoc_metrics = get_pandoc_metrics()
     conversion_start_time = time.time()
@@ -1307,7 +1314,7 @@ async def convert(
         # Rasterize any embedded SVGs to PNG so renderers without full SVG
         # support (e.g. Word) get a usable image instead of a fallback warning.
         # In the weasysvg mode svg_layers gets the vector of each PNG of a docx.
-        svg_layers: dict[bytes, bytes] = {}
+        svg_layers = svg_layers_for(svg_in_docx)
         if source_format == "html":
             source = await preprocess_html_svgs(source, scale_factor, target_format, svg_layers)
         # After the rasterization, which gives an SVG its PNG and the size it is drawn at.

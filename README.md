@@ -96,7 +96,7 @@ size of the SVG, and the image is still drawn at the size the document gives.
 
 | Target | What the document gets |
 |---|---|
-| `docx` | The PNG drawn by weasysvg, and on top of it the flat SVG of `weasysvg-convert -f svg`, as Word saves an SVG. Word 2016 and later draws the vector, an older Word the PNG. The flat SVG holds only paths, clips, gradients and opacities, which Word draws. |
+| `docx` | The PNG drawn by weasysvg, and on top of it the flat SVG of `weasysvg-convert -f svg`, as Word saves an SVG. Word 2016 and later draws the vector, an older Word the PNG. The flat SVG holds only paths, clips, gradients and opacities, which Word draws. With `svg_in_docx=false` the document gets the PNG alone, at the density of `scale_factor`: the conversion is faster, and Word shows a large drawing at once. |
 | `pdf`, `latex` | The SVG as it is. pandoc converts it with `rsvg-convert`, which is `weasysvg-convert` under that name: the PDF gets the SVG as vector, with its text. |
 | `html`, `epub` | The SVG as it is, which a browser draws. |
 | other targets | The PNG drawn by weasysvg. |

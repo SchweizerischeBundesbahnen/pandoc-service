@@ -69,7 +69,7 @@ bash tests/shell/test_pandoc_service.sh
 - **app/schema.py**: Pydantic models for API responses
 - **app/svg_processor.py**: Finds SVGs in incoming HTML and rasterizes them to PNG (port of weasyprint-service's `SvgProcessor`)
 - **app/svg_renderer.py**: weasysvg draws the SVG; no browser runs. pdf, latex, html and epub keep the SVG (pandoc finds `rsvg-convert`, a link to `weasysvg-convert`, in `/opt/weasysvg/bin`), other targets get a PNG drawn by weasysvg. `SVG_RENDERER` other than `weasysvg` is logged as no longer supported
-- **app/docx_svg_layers.py**: Adds the flat SVG of each weasysvg PNG to its DOCX picture (`asvg:svgBlip`), after `docx_post_process`. pandoc makes no PNG fallback under `--sandbox`, so the service writes both
+- **app/docx_svg_layers.py**: Adds the flat SVG of each weasysvg PNG to its DOCX picture (`asvg:svgBlip`), after `docx_post_process`. pandoc makes no PNG fallback under `--sandbox`, so the service writes both. The query parameter `svg_in_docx=false` leaves the flat SVG out: the PNG alone
 - **app/constants.py**: Small env-var helpers (`get_bool_env`)
 - **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG metrics)
 

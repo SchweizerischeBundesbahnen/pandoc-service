@@ -170,6 +170,6 @@ class WeasysvgRasterizer:
         return png
 
 
-def for_target(limiter: anyio.CapacityLimiter, target_format: str) -> WeasysvgRasterizer:
-    """The rasterizer of one request to the given target."""
-    return WeasysvgRasterizer(limiter, layers=target_format in _SVG_LAYER_TARGETS)
+def for_target(limiter: anyio.CapacityLimiter, target_format: str, *, layers: bool = True) -> WeasysvgRasterizer:
+    """The rasterizer of one request to the given target; without layers a docx gets no flat SVG."""
+    return WeasysvgRasterizer(limiter, layers=layers and target_format in _SVG_LAYER_TARGETS)
