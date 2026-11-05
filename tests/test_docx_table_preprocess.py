@@ -499,16 +499,10 @@ def test_absolute_width_table_flagged_for_tight_padding():
     assert "aw" not in kv
 
 
-def test_word_caption_with_seq_field_keeps_style():
-    """A genuine Word caption (numbered via a SEQ field) keeps its Caption style
-    so pandoc still numbers it and lists it; only literal-numbered Polarion
-    captions are neutralised."""
-    # Polarion-style: literal number, no field -> style stripped.
+def test_every_caption_keeps_a_style_of_its_own():
+    """A Polarion caption (literal number) and a Word caption (SEQ field) both become PandocCaption,
+    so pandoc neither numbers them again nor moves them away from where Word prints them."""
     polarion = '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 My caption</w:t></w:r></w:p>'
-    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(polarion)})))
-    assert "Caption" not in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
-
-    # Word-style: SEQ field for the number -> style preserved.
     word = (
         '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>'
         "<w:r><w:t>Table </w:t></w:r>"
@@ -517,8 +511,15 @@ def test_word_caption_with_seq_field_keeps_style():
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
         "<w:r><w:t>: My caption</w:t></w:r></w:p>"
     )
-    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(word)})))
-    assert "Caption" in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
+    for caption in (polarion, word):
+        root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(caption)})))
+        assert [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")] == ["PandocCaption"]
+
+
+def test_pandoc_captions_are_left_alone():
+    caption = '<w:p><w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr><w:r><w:t>A picture</w:t></w:r></w:p>'
+    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(caption)})))
+    assert [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")] == ["ImageCaption"]
 
 
 # --- cell justification -----------------------------------------------------

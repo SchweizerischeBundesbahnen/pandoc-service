@@ -213,8 +213,35 @@ local function title_preamble(lines)
   lines[#lines + 1] = "\\makeatother"
 end
 
+-- The Caption style, which a Polarion caption keeps as PandocCaption: see app/docx_table_pre_process.py.
+local caption_style = nil
+local CAPTION_DIV = "PandocCaption"
+
+-- A caption in the font of the Caption style; the paragraph skip is the space Word puts around it.
+local function caption_preamble(lines)
+  if caption_style == nil then
+    return
+  end
+  lines[#lines + 1] = "\\usepackage{xcolor}"
+  -- The switch first: it adds the font family to the lines itself
+  local switch = font_switch(caption_style, "docxCaptionFont", lines)
+  lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionStyle}{%s}", switch)
+end
+
+local function caption_div(div)
+  local blocks = { pandoc.RawBlock("latex", "\\par\\begingroup\\pdcCaptionStyle") }
+  for _, block in ipairs(div.content) do
+    blocks[#blocks + 1] = block
+  end
+  blocks[#blocks + 1] = pandoc.RawBlock("latex", "\\par\\endgroup")
+  return blocks
+end
+
 -- A Title paragraph after the first one, in the Title style with its space around it.
 local function title_div(div)
+  if caption_style ~= nil and div.attributes["custom-style"] == CAPTION_DIV then
+    return caption_div(div)
+  end
   if title_style == nil or div.attributes["custom-style"] ~= "Title" then
     return nil
   end
@@ -241,6 +268,7 @@ end
 
 local function read_title(meta)
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"])
+  caption_style = style_fields(meta[STYLE_PREFIX .. "Caption"])
   return nil
 end
 
@@ -254,6 +282,7 @@ local function write_preamble(meta)
   table_preamble(meta, lines)
   headings_preamble(meta, lines)
   title_preamble(lines)
+  caption_preamble(lines)
   for key, _ in pairs(meta) do
     if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
@@ -265,7 +294,7 @@ local function write_preamble(meta)
   return meta
 end
 
--- The Title style is read before the Divs are set, the preamble written after.
+-- The Title and Caption styles are read before the Divs are set, the preamble written after.
 return {
   { Meta = read_title },
   { Div = title_div, Meta = write_preamble },

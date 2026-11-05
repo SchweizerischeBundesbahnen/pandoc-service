@@ -19,7 +19,16 @@ running each rewrite on its own — only much lighter on memory.
 
 from __future__ import annotations
 
-from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_page_geometry, docx_paragraph_pre_process, docx_table_pre_process, docx_toc_pre_process
+from . import (
+    docx_color_pre_process,
+    docx_image_layout_pre_process,
+    docx_list_level_pre_process,
+    docx_math_color_pre_process,
+    docx_page_geometry,
+    docx_paragraph_pre_process,
+    docx_table_pre_process,
+    docx_toc_pre_process,
+)
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack
 
 
@@ -110,5 +119,9 @@ def preprocess(docx_bytes: bytes) -> bytes:
         entries[STYLES_PART] = augment_styles(entries[STYLES_PART], para_styles, docx_paragraph_pre_process.build_style_element)
     if toc_styles:
         entries[STYLES_PART] = augment_styles(entries[STYLES_PART], toc_styles, docx_toc_pre_process.build_style_element)
+    caption = docx_table_pre_process.PLAIN_CAPTION_STYLE
+    if has_styles and any(f'w:val="{caption}"'.encode() in entries[part] for part in body_parts):
+        # pandoc keeps the name of a paragraph style only when styles.xml defines it
+        entries[STYLES_PART] = augment_styles(entries[STYLES_PART], docx_toc_pre_process.plain_styles(caption), docx_toc_pre_process.build_style_element)
 
     return repack(entries)

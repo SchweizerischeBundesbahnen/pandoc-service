@@ -52,6 +52,11 @@ class _StyleSpec:
         self.style_id = style_id
 
 
+def plain_styles(*style_ids: str) -> dict[str, _StyleSpec]:
+    """Synthetic paragraph styles which carry nothing but their name, for augment_styles."""
+    return {style_id: _StyleSpec(style_id) for style_id in style_ids}
+
+
 def build_style_element(spec: _StyleSpec) -> ET.Element:
     """The ``<w:style>`` pandoc reads the custom-style name of the paragraph from."""
     style = ET.Element(_w("style"), {_w("type"): "paragraph", _w("customStyle"): "1", _w("styleId"): spec.style_id})

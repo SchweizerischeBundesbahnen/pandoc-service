@@ -57,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 # PUA delimiters — different from list-level (\uE000/\uE001) to avoid
 # ambiguity when a list paragraph happens to sit inside a table cell.
+# The style a Polarion caption keeps instead of Caption, so pandoc does not number it again.
+PLAIN_CAPTION_STYLE = "PandocCaption"
 SENTINEL_OPEN = "\ue010"
 SENTINEL_CLOSE = "\ue011"
 
@@ -559,34 +561,19 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float, bordered_styles:
     return True
 
 
-def _has_sequence_field(para: ET.Element) -> bool:
-    """True when the paragraph numbers itself with a Word ``SEQ`` field.
-
-    A genuine Word caption carries its number as a ``SEQ`` field, so pandoc can
-    strip that label and re-number it (keeping it in a List of Tables/Figures).
-    A Polarion caption instead has the number as literal text, so there is no
-    field to find.
-    """
-    if any("SEQ" in (fld.get(_INSTR_ATTR) or "").upper() for fld in para.iter(_FLDSIMPLE_TAG)):
-        return True
-    return any(instr.text and "SEQ" in instr.text.upper() for instr in para.iter(_INSTRTEXT_TAG))
-
-
 def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
-    """Strip the ``Caption`` style from *Polarion* captions so pandoc does not
-    turn them into auto-numbered LaTeX ``\\caption`` blocks.
+    """Give every ``Caption`` paragraph the style ``PandocCaption`` so pandoc keeps it where it is.
 
-    A Polarion caption's text already contains its number as literal text
-    ("Table 1 ..."); left as a ``Caption``-styled paragraph, pandoc's DOCX
-    reader attaches it to the adjacent table and LaTeX prints
-    "Table N: Table N ..." — the counter twice. Dropping the style makes it a
-    normal paragraph that renders its text once (matching how the DOCX shows it).
-
-    A genuine Word caption is left untouched: it numbers itself with a ``SEQ``
-    field, so pandoc re-numbers it correctly and can still list it in a
-    generated List of Tables/Figures. We therefore only neutralise captions
-    that have no ``SEQ`` field (i.e. the literal-numbered Polarion ones), and
-    never pandoc's own ``TableCaption``/``ImageCaption`` styles.
+    Left as ``Caption``, pandoc's DOCX reader attaches the paragraph to the
+    adjacent table or picture: LaTeX numbers it again ("Table N: Table N ...")
+    or docx_caption_labels_to_latex moves it above the table, though Word
+    prints it below. A caption carries its number as text, literally for
+    Polarion and as the cached result of a ``SEQ`` field for Word, so it needs
+    no counter of LaTeX; and the lists of figures and tables come from the
+    entries of their fields (see app/docx_toc_pre_process.py). A style of its
+    own keeps the look of the Caption style, which
+    filters/docx_document_styles_to_latex.lua sets. pandoc's own
+    ``TableCaption``/``ImageCaption`` styles are left untouched.
 
     Returns True when any paragraph was changed.
     """
@@ -596,8 +583,8 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
         if ppr is None:
             continue
         pstyle = ppr.find(_PSTYLE_TAG)
-        if pstyle is not None and pstyle.get(_VAL_ATTR) == _CAPTION_STYLE_VAL and not _has_sequence_field(para):
-            ppr.remove(pstyle)
+        if pstyle is not None and pstyle.get(_VAL_ATTR) == _CAPTION_STYLE_VAL:
+            pstyle.set(_VAL_ATTR, PLAIN_CAPTION_STYLE)
             changed = True
     return changed
 

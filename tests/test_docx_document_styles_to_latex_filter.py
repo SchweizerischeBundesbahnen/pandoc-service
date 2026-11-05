@@ -182,3 +182,22 @@ def test_a_document_without_tables_still_compiles(test_parameters: TestParameter
         ["sh", "-c", f"cd /tmp/test && {PANDOC_PATH} -f markdown -o plain.pdf --pdf-engine=tectonic --lua-filter={FILTER_PATH} -M docx-table-cell-space=3.6 -M docx-body-baseline=14.65 -M docx-body-size=12 plain.md"]
     )
     assert exit_code == 0, output.decode()
+
+
+def test_a_caption_is_set_in_the_caption_style(test_parameters: TestParameters):
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf '::: {custom-style=\"PandocCaption\"}\\nTable 1 A caption\\n:::\\n' > /tmp/test/caption.md"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex --lua-filter={FILTER_PATH} -M 'docx-style-Caption=size:12,bold:false,italic:true,before:9,after:9,align:left' /tmp/test/caption.md"])
+    assert exit_code == 0, output.decode()
+    latex = output.decode()
+    assert "\\newcommand{\\pdcCaptionStyle}{\\normalfont\\fontsize{12bp}{14.4bp}\\selectfont\\itshape}" in latex
+    body = latex[latex.index("\\begin{document}") :]
+    assert "\\par\\begingroup\\pdcCaptionStyle" in body
+    assert "Table 1 A caption" in body
+
+
+def test_without_a_caption_style_a_caption_stays_plain(test_parameters: TestParameters):
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf '::: {custom-style=\"PandocCaption\"}\\nTable 1 A caption\\n:::\\n' > /tmp/test/caption.md"])
+    _, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex --lua-filter={FILTER_PATH} /tmp/test/caption.md"])
+    assert "pdcCaptionStyle" not in output.decode()

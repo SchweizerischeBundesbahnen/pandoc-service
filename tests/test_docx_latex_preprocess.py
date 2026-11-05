@@ -113,3 +113,20 @@ def test_single_pass_includes_table_cell_preprocessing():
 
     # Verify the sentinel is present
     assert "\ue010bg=D9EAF7\ue011".encode() in single_entries["word/document.xml"]
+
+
+def test_a_caption_gets_its_style_defined_for_pandoc():
+    """pandoc keeps the name of a paragraph style only when styles.xml defines it."""
+    import io as _io
+    import zipfile as _zipfile
+
+    from app import docx_latex_pre_process
+
+    w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    buffer = _io.BytesIO()
+    with _zipfile.ZipFile(buffer, "w") as package:
+        package.writestr("word/document.xml", f'<w:document {w}><w:body><w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 x</w:t></w:r></w:p></w:body></w:document>')
+        package.writestr("word/styles.xml", f'<w:styles {w}><w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/></w:style></w:styles>')
+    result = _zipfile.ZipFile(_io.BytesIO(docx_latex_pre_process.preprocess(buffer.getvalue())))
+    assert 'w:val="PandocCaption"' in result.read("word/document.xml").decode()
+    assert 'w:styleId="PandocCaption"' in result.read("word/styles.xml").decode()

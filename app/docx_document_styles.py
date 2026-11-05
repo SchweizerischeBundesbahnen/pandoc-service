@@ -46,8 +46,8 @@ A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False 
 BODY_STYLE = "BodyText"
 # The style pandoc gives the paragraphs of a table cell and of a tight list.
 CELL_STYLE = "Compact"
-# The styles of the title and of the headings LaTeX sets as \section to \subparagraph.
-DISPLAY_STYLES = ("Title", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5")
+# The styles of the title, of the headings LaTeX sets as \section to \subparagraph, and of captions.
+DISPLAY_STYLES = ("Title", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5", "Caption")
 # The sizes LaTeX's article class sets its text in. Word's 12 pt is the default of pandoc's template.
 LATEX_FONT_SIZES = (10, 11, 12)
 TWIPS_PER_POINT = 20
