@@ -1,13 +1,14 @@
-"""Integration tests for ``filters/docx_body_style_to_latex.lua`` and app/docx_body_style.py.
+"""Integration tests for ``filters/docx_document_styles_to_latex.lua`` and app/docx_document_styles.py.
 
 The filter tests run pandoc inside the pandoc-service container with the
-metadata app/docx_body_style.py passes, and read the preamble of the
+metadata app/docx_document_styles.py passes, and read the preamble of the
 standalone LaTeX. The end-to-end tests convert a DOCX through the service.
 """
 
 from __future__ import annotations
 
 import io
+import shlex
 
 from docx import Document
 from docx.shared import Pt
@@ -16,7 +17,7 @@ from pypdf import PdfReader
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_body_style_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx_document_styles_to_latex.lua"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 HEADER_FILTER = "/tmp/test/header.lua"
 # A filter before ours which adds header-includes, as the other docx filters do
@@ -30,7 +31,7 @@ def _latex(container, *metadata: str, other_preamble: bool = False) -> str:
     if other_preamble:
         container.exec_run(["sh", "-c", f"cat > {HEADER_FILTER} << 'EOF'\n{HEADER_SCRIPT}\nEOF"])
         filters = f"--lua-filter={HEADER_FILTER} "
-    options = " ".join(f"-M {item}" for item in metadata)
+    options = " ".join(f"-M {shlex.quote(item)}" for item in metadata)
     exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex {filters}--lua-filter={FILTER_PATH} {options} /tmp/test/in.md"])
     assert exit_code == 0, f"pandoc failed (exit {exit_code}): {output.decode()}"
     return output.decode("utf-8")
@@ -45,7 +46,7 @@ def test_word_layout_goes_into_the_preamble(test_parameters: TestParameters):
     assert "\\setlength{\\parskip}{9pt}" in preamble
     assert "\\AtBeginDocument{\\raggedright}" in preamble
     assert "\\hyphenpenalty=10000" in preamble
-    assert "\\exhyphenpenalty=10000" in preamble
+    assert "\\exhyphenpenalty" not in preamble, "Word breaks a line after a hyphen of the text"
 
 
 def test_a_justified_hyphenated_style_keeps_latex_paragraphs(test_parameters: TestParameters):
@@ -111,3 +112,41 @@ def test_a_font_the_container_lacks_keeps_latin_modern(test_parameters: TestPara
     document.add_paragraph("The body text of the document.")
     fonts = _fonts(_docx_to_pdf(test_parameters, document))
     assert any(font.startswith("LMRoman") for font in fonts), fonts
+
+
+def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=font:DejaVu Sans,size:20,line:24.4,bold:false,italic:true,color:0F4761,before:18,after:9,align:center"))
+    assert "\\usepackage{titlesec}" in preamble
+    assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off]{DejaVu Sans}" in preamble
+    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\color[HTML]{0F4761}\\filcenter}{}{0pt}{}" in preamble
+    assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
+
+
+def test_fields_which_could_carry_latex_are_left_out(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading2=font:\\evil,size:x,color:12345G,align:sideways"))
+    assert "\\evil" not in preamble
+    assert "\\color" not in preamble
+    assert "\\titleformat{\\subsection}[block]{\\normalfont\\filright}{}{0pt}{}" in preamble, "a style of no valid field keeps the plain font, left"
+
+
+def test_the_title_style_sets_the_title_and_a_later_title_paragraph(test_parameters: TestParameters):
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf -- '---\\ntitle: The Title\\n---\\n\\n::: {custom-style=\"Title\"}\\nLater Title\\n:::\\n' > /tmp/test/title.md"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex --lua-filter={FILTER_PATH} -M 'docx-style-Title=size:28,bold:false,italic:false,before:0,after:9,align:center' /tmp/test/title.md"])
+    assert exit_code == 0, output.decode()
+    latex = output.decode()
+    assert "\\newcommand{\\pdcTitleStyle}{\\centering\\normalfont\\fontsize{28bp}{33.6bp}\\selectfont}" in latex
+    assert "\\renewcommand{\\maketitle}" in latex
+    body = latex[latex.index("\\begin{document}") :]
+    assert "\\begingroup\\pdcTitleStyle" in body
+    assert "Later Title" in body
+
+
+def test_the_body_size_and_line_redefine_normalsize(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
+    assert "\\renewcommand{\\normalsize}{\\fontsize{12bp}{14.65bp}\\selectfont}" in preamble
+    assert "\\normalsize\n" in preamble
+
+
+def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):
+    assert "\\renewcommand{\\normalsize}" not in _preamble(_latex(test_parameters.container, "docx-body-size=12"))
