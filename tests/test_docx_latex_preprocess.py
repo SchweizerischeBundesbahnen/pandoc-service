@@ -130,3 +130,51 @@ def test_a_caption_gets_its_style_defined_for_pandoc():
     result = _zipfile.ZipFile(_io.BytesIO(docx_latex_pre_process.preprocess(buffer.getvalue())))
     assert 'w:val="PandocCaption"' in result.read("word/document.xml").decode()
     assert 'w:styleId="PandocCaption"' in result.read("word/styles.xml").decode()
+
+
+def test_preprocess_takes_the_color_of_the_hyperlink_style():
+    """The single-pass orchestrator hands the character style colors to the color rewrite too."""
+    styles = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="156082" w:themeColor="accent1"/></w:rPr></w:style>'
+        b"</w:styles>"
+    )
+    document = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>'
+        b'<w:hyperlink w:anchor="_a"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>link</w:t></w:r></w:hyperlink>'
+        b"</w:p></w:body></w:document>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("word/document.xml", document)
+        zf.writestr("word/styles.xml", styles)
+
+    result = docx_latex_pre_process.preprocess(buffer.getvalue())
+
+    with zipfile.ZipFile(io.BytesIO(result)) as zf:
+        assert b'w:val="PandocColor__FG_156082"' in zf.read("word/document.xml")
+        assert b'w:styleId="PandocColor__FG_156082"' in zf.read("word/styles.xml")
+
+
+def test_preprocess_keeps_translated_table_of_contents_entries_uncolored():
+    """The single-pass orchestrator hands the table of contents styles to the color rewrite too."""
+    styles = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="156082"/></w:rPr></w:style>'
+        b'<w:style w:type="paragraph" w:styleId="Verzeichnis1"><w:name w:val="toc 1"/></w:style>'
+        b"</w:styles>"
+    )
+    document = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+        b'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:hyperlink w:anchor="_a"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>entry</w:t></w:r></w:hyperlink></w:p>'
+        b"</w:body></w:document>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("word/document.xml", document)
+        zf.writestr("word/styles.xml", styles)
+
+    result = docx_latex_pre_process.preprocess(buffer.getvalue())
+
+    with zipfile.ZipFile(io.BytesIO(result)) as zf:
+        assert b"PandocColor__FG_156082" not in zf.read("word/document.xml")

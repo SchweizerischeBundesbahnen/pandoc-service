@@ -42,6 +42,8 @@ def _rewrite_body_part(
     text_width_twips: int,
     toc_styles: dict[str, docx_toc_pre_process._StyleSpec],
     bordered_styles: frozenset[str] = frozenset(),
+    style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
+    toc_style_ids: frozenset[str] = frozenset(),
 ) -> tuple[bytes, bool]:
     """Run the colour → paragraph → list → table rewrites over one body part,
     collecting any synthetic styles into the shared dicts.  Returns
@@ -61,7 +63,7 @@ def _rewrite_body_part(
         if empty_lines_changed:
             xml, changed = rewritten, True
             toc_styles.update(docx_toc_pre_process.plain_styles(docx_empty_lines_pre_process.EMPTY_LINES_STYLE))
-        rewritten, color_used = docx_color_pre_process.rewrite_part(xml)
+        rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_style_ids)
         if color_used:
             xml, changed = rewritten, True
             color_styles.update(color_used)
@@ -115,9 +117,12 @@ def preprocess(docx_bytes: bytes) -> bytes:
     text_width_twips = docx_page_geometry.package_text_width_twips(entries)
     # The table styles which draw borders, for the lines of each table
     bordered_styles = docx_table_pre_process.bordered_table_styles(parse_xml(entries[STYLES_PART]) if has_styles else None)
+    # The colors of the character styles (a link's Hyperlink style), read once for every part
+    style_colors = docx_color_pre_process.character_style_colors(entries[STYLES_PART]) if has_styles else None
+    toc_style_ids = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, bordered_styles)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, bordered_styles, style_colors, toc_style_ids)
         changed = changed or part_changed
 
     if not changed:
