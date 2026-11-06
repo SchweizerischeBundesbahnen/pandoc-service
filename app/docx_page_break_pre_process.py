@@ -163,18 +163,21 @@ def page_break_styles(styles: ET.Element | None) -> frozenset[str]:
     if styles is None:
         return frozenset()
     by_id = {style.get(f"{{{W_NS}}}styleId"): style for style in styles.iter(f"{{{W_NS}}}style")}
-
-    def breaks(style_id: str | None, seen: frozenset[str]) -> bool:
-        style = by_id.get(style_id)
-        if style is None or style_id is None or style_id in seen:
-            return False
-        own = _turned_on(style.find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
-        if own is not None:
-            return own
-        based_on = style.find(f"{{{W_NS}}}basedOn")
-        return based_on is not None and breaks(based_on.get(_VAL_ATTR), seen | {style_id})
-
-    return frozenset(style_id for style_id in by_id if style_id and breaks(style_id, frozenset()))
+    found: dict[str, bool] = {}
+    for style_id in by_id:
+        # A walk along the chain, not a recursion, which a long chain would exhaust. A loop in it breaks nothing.
+        chain: list[str] = []
+        current = style_id
+        while current is not None and current in by_id and current not in found and current not in chain:
+            own = _turned_on(by_id[current].find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
+            if own is not None:
+                found[current] = own
+                break
+            chain.append(current)
+            based_on = by_id[current].find(f"{{{W_NS}}}basedOn")
+            current = based_on.get(_VAL_ATTR) if based_on is not None else None
+        found.update(dict.fromkeys(chain, found.get(current, False) if current is not None else False))
+    return frozenset(style_id for style_id, breaks in found.items() if breaks)
 
 
 def _breaks_before(para: ET.Element, break_styles: frozenset[str]) -> bool:

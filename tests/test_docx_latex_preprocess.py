@@ -192,3 +192,12 @@ def test_the_styles_which_break_the_page_before_their_paragraphs():
         b'<w:style w:styleId="Other"/></w:styles>'
     )
     assert page_break_styles(styles) == frozenset({"Chapter", "Part"})
+
+
+def test_a_long_chain_of_styles_based_on_each_other():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    chain = "".join(f'<w:style w:styleId="S{index}"><w:basedOn w:val="S{index - 1}"/></w:style>' for index in range(1, 5000))
+    styles = parse_xml(b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:styleId="S0"><w:pPr><w:pageBreakBefore/></w:pPr></w:style>' + chain.encode() + b"</w:styles>")
+    assert len(page_break_styles(styles)) == 5000
