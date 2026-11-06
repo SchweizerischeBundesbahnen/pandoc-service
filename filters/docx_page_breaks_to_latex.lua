@@ -57,13 +57,21 @@ local BLANK_INLINES = {
   LineBreak = true,
 }
 
+-- The inlines which show on the page without holding a Str.
+local VISIBLE_INLINES = {
+  Code = true,
+  Image = true,
+  Math = true,
+  Note = true,
+}
+
 -- Whether the current page has nothing on it yet.
 local on_empty_page = true
 
 -- The page setup of the last section break, until its body block ends.
 local pending_page_setup = ""
 
--- Whether text came since the last call of expand_heading started.
+-- Whether add_heading has passed visible content of the heading.
 local heading_has_text = false
 
 local function inches(twips)
@@ -114,6 +122,12 @@ end
 local function note_text()
   on_empty_page = false
   heading_has_text = true
+end
+
+local function note_visible_inline(inline)
+  if VISIBLE_INLINES[inline.t] then
+    note_text()
+  end
 end
 
 -- The Str with each sentinel replaced by what `place` adds to the result for
@@ -178,7 +192,7 @@ local function with_breaks(block)
     on_empty_page = false
     return block
   end
-  block = block:walk({ Str = expand })
+  block = block:walk({ Str = expand, Inline = note_visible_inline })
   if holds_only_breaks(block.content) then
     block.content = without_blanks(block.content)
   end
@@ -205,6 +219,7 @@ local function add_heading(header, out)
         markers[#markers + 1] = marker
       end)
     end,
+    Inline = note_visible_inline,
   })
   on_empty_page = was_on_empty_page
   add_breaks(leading, out)

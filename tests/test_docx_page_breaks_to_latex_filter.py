@@ -163,6 +163,27 @@ def test_break_before_a_heading_on_an_empty_page_keeps_it(test_parameters: TestP
     assert flat.startswith("before \\clearpage{} \\null\\clearpage{} \\section{Title}"), flat
 
 
+def test_page_break_after_visible_non_text_of_a_heading_goes_after_it(test_parameters: TestParameters):
+    """An equation or a code span holds no Str, and it still shows."""
+    for content in ('Math InlineMath "x"', 'Code ( "" , [] , [] ) "x"', 'Span ( "" , [] , [] ) [ Math InlineMath "x" ]'):
+        native = f'[ Header 1 ( "" , [] , [] ) [ {content}, {_str(PAGE_BREAK)} ], Para [ Str "after" ] ]'
+        flat = _native_to_latex(test_parameters.container, native)
+        assert flat.startswith("\\section{"), flat
+        assert flat.endswith("\\clearpage{} after"), flat
+
+
+def test_page_break_before_an_equation_of_a_heading_goes_before_it(test_parameters: TestParameters):
+    native = f'[ Para [ Str "before" ], Header 1 ( "" , [] , [] ) [ {_str(PAGE_BREAK)}, Math InlineMath "x" ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.startswith("before \\clearpage{} \\section{"), flat
+
+
+def test_equation_after_a_break_fills_the_page(test_parameters: TestParameters):
+    """The next break has a page with content to end, so it needs no \\null."""
+    native = f'[ Para [ {_str(PAGE_BREAK)}, Math InlineMath "x" ], Para [ {_str(PAGE_BREAK)} ], Para [ Str "after" ] ]'
+    assert _native_to_latex(test_parameters.container, native).endswith("\\(x\\) \\clearpage{} after")
+
+
 def test_page_break_inside_a_span_of_a_heading_leaves_it(test_parameters: TestParameters):
     native = f'[ Header 1 ( "" , [] , [] ) [ Span ( "" , [] , [] ) [ Str "Title", {_str(PAGE_BREAK)} ] ] ]'
     flat = _native_to_latex(test_parameters.container, native)
