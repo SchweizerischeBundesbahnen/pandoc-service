@@ -191,3 +191,21 @@ def test_a_picture_alone_on_its_line_hangs_from_the_top_of_the_cell(test_paramet
     latex = " ".join(_native_latex(test_parameters.container, native).split())
     assert "Label: \\\\ \\pdcCellPicture{\\includegraphics" in latex or "\\pdcCellPicture{\\includegraphics" in latex
     assert latex.count("pdcCellPicture{") == 1, "the label stays as it is"
+
+
+def test_a_coloured_cell_merged_down_colours_the_rows_it_spans(test_parameters: TestParameters):
+    """colortbl colours a \\multirow in its first row only, and pandoc writes nothing in the rows below."""
+    color = 'RawInline (Format "latex") "\\\\cellcolor[HTML]{F4CCCC}"'
+    merged = f'Cell ("",[],[]) AlignDefault (RowSpan 2) (ColSpan 1) [Plain [{color}, Str "Category"]]'
+    native = _grid_table([merged, _cell(f'Str "{OPEN}{GRID};tw=1.0000{CLOSE}a"')], [_cell('Str "b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\cellcolor[HTML]{F4CCCC}\\multirow[t]{2}{=}{\\pdcCellRaggedright{}Category" in latex, latex
+    assert latex.count("\\cellcolor[HTML]{F4CCCC}") == 2, "the row below gets a cell of the colour"
+    assert "\\cline{2-2}" in latex, "no line inside the merged cell"
+
+
+def test_a_merged_cell_at_the_edge_of_a_table_takes_its_margin_back(test_parameters: TestParameters):
+    cell = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 2) [Plain [Str "{OPEN}{GRID};tw=1.0000{CLOSE}Title"]]'
+    native = _grid_table([cell], [_cell('Str "a"'), _cell('Str "b"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "-0\\tabcolsep\\relax}@{}|}" in latex, latex

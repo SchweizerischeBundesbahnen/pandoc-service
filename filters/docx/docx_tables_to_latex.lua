@@ -372,7 +372,7 @@ end
 local function split_row(row)
   local multi, breaks = nil, 0
   for index, cell in ipairs(row.cells) do
-    if cell.row_span ~= 1 or cell.col_span ~= 1 then return nil end
+    if cell.row_span ~= 1 or cell.col_span ~= 1 or cell.attributes[ROW_SPAN] or cell.attributes[COVERED] then return nil end
     local count = 0
     pandoc.Blocks(cell.contents):walk({ LineBreak = function() count = count + 1 end })
     if count > 0 then
@@ -407,6 +407,60 @@ local function split_row(row)
     rows[number] = pandoc.Row(cells, pandoc.Attr("", {}, { [SPLIT] = after }))
   end
   return rows
+end
+
+-- ---- A coloured cell merged down ----
+-- colortbl colours a cell of \\multirow in its first row only, and pandoc writes nothing in the rows
+-- below. A coloured cell merged down sets its own \\multirow, and the rows below get a cell of its colour.
+local ROW_SPAN = "pdc-row-span"   -- the rows a cell spans, which its \\multirow takes over
+local COVERED = "pdc-covered"     -- a cell which only carries the colour of the cell above
+
+-- The \\cellcolor among the switches at the start of a cell, and its position in the first block
+local function cell_color(cell)
+  local first = cell.contents[1]
+  for index, inline in ipairs(first and first.content or {}) do
+    if inline.t ~= "RawInline" then
+      return nil
+    elseif inline.text:match("^\\cellcolor") then
+      return inline, index
+    end
+  end
+  return nil
+end
+
+local function color_merged_cells(rows, columns)
+  local carry = {}
+  for c = 1, columns do carry[c] = nil end
+  for _, row in ipairs(rows) do
+    local cells, column, index = {}, 1, 1
+    while column <= columns do
+      local above = carry[column]
+      if above and above.left > 0 then
+        cells[#cells + 1] = pandoc.Cell({ pandoc.Plain({ above.color }) }, "AlignDefault", 1, 1, pandoc.Attr("", {}, { [COVERED] = "1" }))
+        above.left = above.left - 1
+        column = column + 1
+      else
+        local cell = row.cells[index]
+        if cell == nil then break end
+        index = index + 1
+        local color, at = cell_color(cell)
+        if cell.row_span > 1 and color and cell.col_span == 1 and #cell.contents == 1 then
+          local span = cell.row_span
+          local first = cell.contents[1]
+          first.content:remove(at)
+          first.content:insert(1, pandoc.RawInline("latex", color.text .. "\\multirow[t]{" .. span .. "}{=}{"))
+          first.content:insert(pandoc.RawInline("latex", "}"))
+          cell.attributes[ROW_SPAN] = tostring(span)
+          cell.row_span = 1
+          carry[column] = { color = color, left = span - 1 }
+        end
+        cells[#cells + 1] = cell
+        column = column + cell.col_span
+      end
+    end
+    for rest = index, #row.cells do cells[#cells + 1] = row.cells[rest] end
+    row.cells = cells
+  end
 end
 
 -- Each row of a table body a row per line where Word breaks it across pages: see split_row.
@@ -608,13 +662,17 @@ local function grid_row_lines(rows, columns)
       occupied[c] = carry[c] > 0
     end
     for _, cell in ipairs(row.cells) do
+      if cell.attributes[COVERED] then
+        goto next_cell
+      end
       while column <= columns and occupied[column] do
         column = column + 1
       end
       for c = column, math.min(column + cell.col_span - 1, columns) do
-        carry[c] = cell.row_span
+        carry[c] = tonumber(cell.attributes[ROW_SPAN]) or cell.row_span
       end
       column = column + cell.col_span
+      ::next_cell::
     end
     local runs, from = {}, nil
     for c = 1, columns + 1 do
@@ -743,6 +801,28 @@ local function word_widths(latex, absolute)
   return (latex:gsub("%(\\linewidth %- %d+\\tabcolsep%) %* \\real{([%d.]+)}", width))
 end
 
+-- A merged cell at the edge of a table drops the margin there (@{}), which the width of Word holds:
+-- its text takes that margin back.
+local function edge_widths(latex)
+  local result, position = {}, 1
+  while true do
+    local start, finish = latex:find("\\multicolumn{%d+}{", position)
+    local close = start and closing_brace(latex, finish)
+    if close == nil then
+      break
+    end
+    local spec = latex:sub(finish + 1, close - 1)
+    local _, edges = spec:gsub("@{}", "")
+    if edges > 0 then
+      spec = spec:gsub("%-2\\tabcolsep\\relax}", string.format("-%d\\tabcolsep\\relax}", 2 - edges), 1)
+    end
+    result[#result + 1] = latex:sub(position, finish) .. spec .. "}"
+    position = close + 1
+  end
+  result[#result + 1] = latex:sub(position)
+  return table.concat(result)
+end
+
 -- The table with the lines of a grid, or nil when it cannot be set so.
 local function grid_table(tbl, absolute)
   local rows = all_rows(tbl)
@@ -763,7 +843,7 @@ local function grid_table(tbl, absolute)
   if columns == nil then
     return nil
   end
-  latex = word_widths(grid_multicolumns(latex:sub(1, open) .. columns .. latex:sub(close)), absolute)
+  latex = edge_widths(word_widths(grid_multicolumns(latex:sub(1, open) .. columns .. latex:sub(close)), absolute))
   -- Word sets the text of a merged cell at its top
   latex = latex:gsub("\\multirow{", "\\multirow[t]{")
   -- Each row ends with the line under it
@@ -809,6 +889,9 @@ function table_pass.Table(tbl)
   -- A table written as LaTeX, a grid or one of simple cells, breaks a row as Word does
   local grid_lines = layout.rl == "grid" and layout.lc and layout.lw
   if tbl.attributes[NESTED] == nil and #tbl.colspecs > 0 and (grid_lines or (layout.tw and not layout.aw)) and simple_cells(all_rows(tbl)) then
+    for _, body in ipairs(tbl.bodies) do
+      color_merged_cells(body.body, #tbl.colspecs)
+    end
     split_rows(tbl)
     split_markers(all_rows(tbl))
   end
@@ -922,7 +1005,7 @@ function table_pass.Table(tbl)
     after[#after + 1] = "\\endgroup"
     return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
   end
-  local raw = simple and grid_block(split_latex(word_widths(pandoc.write(pandoc.Pandoc({ tbl }), LATEX), layout.aw)), rows)
+  local raw = simple and grid_block(split_latex(edge_widths(word_widths(pandoc.write(pandoc.Pandoc({ tbl }), LATEX), layout.aw))), rows)
   if raw then
     has_grid = true
     return { pandoc.RawBlock("latex", table.concat(before)), raw, pandoc.RawBlock("latex", table.concat(after)) }
