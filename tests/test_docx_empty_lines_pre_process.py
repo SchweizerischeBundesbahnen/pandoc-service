@@ -99,3 +99,18 @@ def test_a_line_break_in_a_link_or_a_cell_is_kept_as_well():
 def test_a_line_break_between_texts_needs_no_marker():
     source = _document("<w:p><w:r><w:t>one</w:t><w:br/><w:t>two</w:t></w:r></w:p>")
     assert rewrite_part(source) == (source, False)
+
+
+def test_a_paragraph_of_line_breaks_with_a_note_or_a_comment_keeps_them():
+    """The marker would drop the anchor of a footnote, an endnote or a comment, so such a paragraph stays as it is."""
+    for tag in ("footnoteReference", "endnoteReference", "commentReference"):
+        xml, _ = rewrite_part(_document(f'<w:p><w:r><w:{tag} w:id="1"/></w:r><w:r><w:br/></w:r></w:p>'))
+        assert EMPTY_LINES_STYLE not in xml.decode(), tag
+        assert f"w:{tag}" in xml.decode(), tag
+
+
+def test_a_line_break_inside_an_equation_is_no_break_of_the_paragraph():
+    """A w:br of an OMML run has no w:r above it: the marker of an edge break would find none."""
+    equation = "<m:oMath><m:r><w:br/><m:t>x</m:t></m:r></m:oMath>"
+    xml, _ = rewrite_part(_document(f"<w:p><w:r><w:t>text</w:t></w:r>{equation}</w:p>"))
+    assert KEEP_BREAK not in xml.decode()

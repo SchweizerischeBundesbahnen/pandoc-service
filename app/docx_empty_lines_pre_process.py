@@ -47,8 +47,15 @@ _CONTENT = frozenset(
         f"{{{W_NS}}}sectPr",
         f"{{{M_NS}}}oMath",
         f"{{{M_NS}}}oMathPara",
+        # The anchors of a note or a comment, which the marker would drop
+        f"{{{W_NS}}}footnoteReference",
+        f"{{{W_NS}}}endnoteReference",
+        f"{{{W_NS}}}commentReference",
     }
 )
+# What Word shows nothing for, though it keeps a paragraph as it is
+_HIDDEN = frozenset({f"{{{W_NS}}}numPr", f"{{{W_NS}}}sectPr", f"{{{W_NS}}}commentReference"})
+_MATH = frozenset({f"{{{M_NS}}}oMath", f"{{{M_NS}}}oMathPara"})
 _BOOKMARKS = frozenset({f"{{{W_NS}}}bookmarkStart", f"{{{W_NS}}}bookmarkEnd"})
 KEEP_BREAK = "PDCKEEPBREAK"
 
@@ -99,7 +106,7 @@ def _shows(element: ET.Element) -> bool:
     """Whether Word shows something for the element of a paragraph, other than a line break."""
     if element.tag == _w("t"):
         return bool((element.text or "").strip())
-    return element.tag in _CONTENT and element.tag not in {_w("numPr"), _w("sectPr")}
+    return element.tag in _CONTENT and element.tag not in _HIDDEN
 
 
 def _keep_run(paragraph: ET.Element, br: ET.Element, *, after: bool) -> None:
@@ -114,9 +121,18 @@ def _keep_run(paragraph: ET.Element, br: ET.Element, *, after: bool) -> None:
     parent.insert(list(parent).index(run) + (1 if after else 0), marker)
 
 
+def _outside_math(element: ET.Element) -> list[ET.Element]:
+    """The element and what it holds, but nothing inside an equation, whose line breaks are its own."""
+    found = [element]
+    if element.tag not in _MATH:
+        for child in element:
+            found += _outside_math(child)
+    return found
+
+
 def _keep_edge_breaks(paragraph: ET.Element) -> bool:
     """Mark the line breaks at the start and the end of a paragraph with text; whether it has any."""
-    elements = [element for element in paragraph.iter() if _is_break(element) or _shows(element)]
+    elements = [element for element in _outside_math(paragraph) if _is_break(element) or _shows(element)]
     shown = [index for index, element in enumerate(elements) if not _is_break(element)]
     if not shown:
         return False
