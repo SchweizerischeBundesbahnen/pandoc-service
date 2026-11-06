@@ -139,6 +139,15 @@ local function page_preamble(meta, lines)
     -- The service passes colorlinks and the colours of the template as pdcLink, set up after this preamble
     lines[#lines + 1] = string.format("\\definecolor{pdcLink}{HTML}{%s}", color)
   end
+  -- Word sets a picture taller than what a page holds at the top of a page, below the lines before it
+  -- there, and lets it run past the bottom margin: TeX gets a picture that much shorter, the rest below
+  lines[#lines + 1] = "\\newsavebox{\\pdcPictureBox}\\newlength{\\pdcPictureRoom}"
+  lines[#lines + 1] = "\\newcommand{\\pdcPagePicture}[1]{\\sbox{\\pdcPictureBox}{#1}\\setlength{\\pdcPictureRoom}{\\dimexpr\\textheight-2\\baselineskip\\relax}"
+    .. "\\ifdim\\ht\\pdcPictureBox>\\pdcPictureRoom\\raisebox{\\dimexpr\\pdcPictureRoom-\\ht\\pdcPictureBox\\relax}[\\pdcPictureRoom][0pt]{\\usebox{\\pdcPictureBox}}"
+    .. "\\else\\usebox{\\pdcPictureBox}\\fi}"
+  lines[#lines + 1] = "\\AtBeginDocument{\\ifdefined\\includegraphics\\NewCommandCopy{\\pdcIncludegraphics}{\\includegraphics}"
+    .. "\\RenewDocumentCommand{\\includegraphics}{som}{\\pdcPagePicture{\\IfBooleanTF{#1}{\\IfValueTF{#2}{\\pdcIncludegraphics*[#2]{#3}}{\\pdcIncludegraphics*{#3}}}"
+    .. "{\\IfValueTF{#2}{\\pdcIncludegraphics[#2]{#3}}{\\pdcIncludegraphics{#3}}}}}\\fi}"
   if meta[PAGE_NUMBERS] ~= nil and not is_true(meta[PAGE_NUMBERS]) then
     lines[#lines + 1] = "\\makeatletter\\let\\ps@plain\\ps@empty\\makeatother"
     lines[#lines + 1] = "\\pagestyle{empty}"

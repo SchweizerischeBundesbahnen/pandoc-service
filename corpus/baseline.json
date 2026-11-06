@@ -285,12 +285,12 @@
     "test_fit_to_page": {
      "any_page": 35,
      "lines": 35,
-     "mean_shift": 3.76,
+     "mean_shift": 3.46,
      "pages": [
       11,
-      13
+      11
      ],
-     "same_page": 29
+     "same_page": 32
     },
     "test_formatting": {
      "any_page": 4,
@@ -497,8 +497,8 @@
     "any_page": 68.6,
     "documents": 49,
     "mean_shift": 7.7,
-    "pages_as_reference": 47,
-    "same_page": 65.8
+    "pages_as_reference": 48,
+    "same_page": 65.9
    }
   },
   "word-fonts": {
@@ -786,12 +786,12 @@
     "test_fit_to_page": {
      "any_page": 35,
      "lines": 35,
-     "mean_shift": 2.48,
+     "mean_shift": 2.33,
      "pages": [
       11,
-      13
+      11
      ],
-     "same_page": 29
+     "same_page": 32
     },
     "test_formatting": {
      "any_page": 16,
@@ -998,8 +998,8 @@
     "any_page": 98.2,
     "documents": 49,
     "mean_shift": 2.97,
-    "pages_as_reference": 47,
-    "same_page": 96.3
+    "pages_as_reference": 48,
+    "same_page": 96.4
    }
   }
  }

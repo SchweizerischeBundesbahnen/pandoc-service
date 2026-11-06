@@ -612,3 +612,11 @@ def test_a_picture_alone_on_its_line_goes_down_by_the_descent(test_parameters: T
     body = " ".join(body[body.index("\\begin{document}") :].split())
     assert "Text\\\\ {\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}\\\\ After" in body
     assert body.count("raisebox") == 1, "a picture next to text stays on the baseline"
+
+
+def test_a_picture_taller_than_a_page_runs_past_the_bottom_margin(test_parameters: TestParameters):
+    """Word sets it at the top of a page below the lines before it there: TeX would leave a page empty."""
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12"))
+    assert "\\setlength{\\pdcPictureRoom}{\\dimexpr\\textheight-2\\baselineskip\\relax}" in preamble
+    assert "[\\pdcPictureRoom][0pt]" in preamble
+    assert "\\RenewDocumentCommand{\\includegraphics}{som}{\\pdcPagePicture{" in preamble
