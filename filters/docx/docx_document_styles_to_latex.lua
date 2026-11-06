@@ -624,12 +624,18 @@ local ENTRY_SPACING = { before = 0, after = 5, no_skip = true, trailing = 5 }
 -- Raw LaTeX between blocks, as the groups around a table, which keeps the paragraph before
 local TRANSPARENT = {}
 
+-- A table docx_tables_to_latex writes as LaTeX: a raw block, or a Plain of raw LaTeX and its pictures
+local function raw_table(block)
+  local first = block.t == "Plain" and block.content[1] or block
+  return first ~= nil and (first.t == "RawBlock" or first.t == "RawInline") and first.text:find("\\begin{longtable}", 1, true) ~= nil
+end
+
 local function block_spacing(block)
+  if block.t == "Table" or raw_table(block) then
+    return TABLE_SPACING
+  end
   if block.t == "Para" or block.t == "Plain" then
     return paragraph_spacing.ids.Normal
-  end
-  if block.t == "Table" or (block.t == "RawBlock" and block.text:find("\\begin{longtable}", 1, true)) then
-    return TABLE_SPACING
   end
   if block.t == "RawBlock" then
     return TRANSPARENT

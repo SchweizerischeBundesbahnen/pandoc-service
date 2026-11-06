@@ -451,7 +451,7 @@ local GRID_BLOCKS = { Plain = true, Para = true }
 local GRID_INLINES = {
   Str = true, Space = true, SoftBreak = true, LineBreak = true, Emph = true, Strong = true,
   Underline = true, Span = true, RawInline = true, Link = true, Math = true, SmallCaps = true,
-  Superscript = true, Subscript = true, Quoted = true, Code = true,
+  Superscript = true, Subscript = true, Quoted = true, Code = true, Image = true,
 }
 
 local function simple_cells(rows)
@@ -492,7 +492,34 @@ local function all_rows(tbl)
   return rows
 end
 
--- The table as LaTeX with the lines of a grid, or nil when it cannot be set so.
+-- The LaTeX of a grid as a block. A picture of it stays an Image between the raw
+-- LaTeX: pandoc writes out the file of a picture, a GIF as PNG, only for an Image it sees.
+local function grid_block(latex, rows)
+  local images = {}
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      pandoc.Div(cell.contents):walk({ Image = function(image) images[#images + 1] = image end })
+    end
+  end
+  if #images == 0 then
+    return pandoc.RawBlock("latex", latex)
+  end
+  local inlines, from = {}, 1
+  for _, image in ipairs(images) do
+    local written = pandoc.write(pandoc.Pandoc({ pandoc.Plain({ image }) }), "latex"):gsub("%s+$", "")
+    local first, last = latex:find(written, from, true)
+    if first == nil then
+      return nil
+    end
+    inlines[#inlines + 1] = pandoc.RawInline("latex", latex:sub(from, first - 1))
+    inlines[#inlines + 1] = image
+    from = last + 1
+  end
+  inlines[#inlines + 1] = pandoc.RawInline("latex", latex:sub(from))
+  return pandoc.Plain(inlines)
+end
+
+-- The table with the lines of a grid, or nil when it cannot be set so.
 local function grid_table(tbl)
   local rows = all_rows(tbl)
   if #tbl.colspecs == 0 or not simple_cells(rows) then
@@ -522,7 +549,7 @@ local function grid_table(tbl)
   if latex:find(ROW_END, 1, true) then
     return nil
   end
-  return latex
+  return grid_block(latex, rows)
 end
 
 -- ---- Pass 1: Table processing ----
@@ -651,7 +678,7 @@ function table_pass.Table(tbl)
   end
   if grid then
     after[#after + 1] = "\\endgroup"
-    return { pandoc.RawBlock("latex", table.concat(before)), pandoc.RawBlock("latex", grid), pandoc.RawBlock("latex", table.concat(after)) }
+    return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
   end
   if #before > 0 then
     return { pandoc.RawBlock("latex", table.concat(before)), tbl, pandoc.RawBlock("latex", table.concat(after)) }

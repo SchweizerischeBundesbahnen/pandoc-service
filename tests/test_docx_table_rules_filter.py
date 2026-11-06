@@ -92,11 +92,22 @@ def test_a_merged_cell_keeps_no_line_inside_it(test_parameters: TestParameters):
     assert "\\cline{2-2}" in latex
 
 
-def test_a_grid_with_a_picture_keeps_the_table_of_pandoc(test_parameters: TestParameters):
-    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Image ("",[],[]) [] ("x.png","")')])
+def test_a_grid_with_a_picture_draws_its_lines_and_keeps_the_picture(test_parameters: TestParameters):
+    """pandoc writes out the file of a picture, a GIF as PNG, only for an Image it sees: the picture stays one."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Image ("",[],[("width","0.2in")]) [] ("x.gif","")')])
     latex = _native_latex(test_parameters.container, native)
-    assert "{|" not in latex
-    assert "\\toprule" in latex
+    assert "\\begin{longtable}[]{|" in latex
+    assert "\\includegraphics[width=0.2in" in latex
+    # The document after the filter, as the writer of LaTeX gets it
+    dump = "function Pandoc(doc) io.stderr:write(pandoc.write(doc, 'native')) end"
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"cat > /tmp/test/dump.lua << 'EOF'\n{dump}\nEOF"])
+    command = f"{PANDOC_PATH} -f native -t latex --lua-filter={FILTER_PATH} --lua-filter=/tmp/test/dump.lua /tmp/test/grid.native 2>&1 >/dev/null"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    after = " ".join(output.decode().split())
+    assert '( "x.gif" , "" )' in after
+    assert "Table (" not in after
 
 
 def test_the_text_of_a_cell_without_a_style_stands_at_its_top(test_parameters: TestParameters):
