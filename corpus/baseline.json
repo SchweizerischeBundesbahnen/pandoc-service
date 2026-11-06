@@ -255,7 +255,7 @@
     "test_embedded_images_conversion": {
      "any_page": 15,
      "lines": 19,
-     "mean_shift": 1.7,
+     "mean_shift": 0.99,
      "pages": [
       3,
       3
@@ -285,7 +285,7 @@
     "test_fit_to_page": {
      "any_page": 35,
      "lines": 35,
-     "mean_shift": 3.46,
+     "mean_shift": 2.11,
      "pages": [
       11,
       11
@@ -365,7 +365,7 @@
     "test_images_and_tables_conversion": {
      "any_page": 32,
      "lines": 32,
-     "mean_shift": 11.4,
+     "mean_shift": 11.11,
      "pages": [
       5,
       5
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.6,
     "documents": 49,
-    "mean_shift": 6.46,
+    "mean_shift": 6.41,
     "pages_as_reference": 49,
     "same_page": 66.4
    }
@@ -756,7 +756,7 @@
     "test_embedded_images_conversion": {
      "any_page": 19,
      "lines": 19,
-     "mean_shift": 0.45,
+     "mean_shift": 0.12,
      "pages": [
       3,
       3
@@ -786,7 +786,7 @@
     "test_fit_to_page": {
      "any_page": 35,
      "lines": 35,
-     "mean_shift": 2.33,
+     "mean_shift": 1.78,
      "pages": [
       11,
       11
@@ -866,7 +866,7 @@
     "test_images_and_tables_conversion": {
      "any_page": 32,
      "lines": 32,
-     "mean_shift": 10.71,
+     "mean_shift": 10.49,
      "pages": [
       5,
       5
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 98.2,
     "documents": 49,
-    "mean_shift": 1.8,
+    "mean_shift": 1.77,
     "pages_as_reference": 49,
     "same_page": 96.9
    }

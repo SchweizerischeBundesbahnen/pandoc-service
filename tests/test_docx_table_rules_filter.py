@@ -182,3 +182,12 @@ def test_a_row_of_two_cells_of_line_breaks_stays_one_row(test_parameters: TestPa
     cell = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [{lines}]'
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a", LineBreak, Str "b"'), cell])
     assert "pdcSplit" not in _native_latex(test_parameters.container, native)
+
+
+def test_a_picture_alone_on_its_line_hangs_from_the_top_of_the_cell(test_parameters: TestParameters):
+    """Word sets it from the top of its line down: TeX lines cells up at the bottom of such a picture."""
+    picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "Label:", LineBreak, {picture}')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "Label: \\\\ \\pdcCellPicture{\\includegraphics" in latex or "\\pdcCellPicture{\\includegraphics" in latex
+    assert latex.count("pdcCellPicture{") == 1, "the label stays as it is"

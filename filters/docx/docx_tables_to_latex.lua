@@ -288,17 +288,18 @@ local function block_lines(block, breaks)
   return found == breaks and lines or nil
 end
 
--- A line of only a picture: Word sets the next line right below it, as in a paragraph
+-- The position of the picture of a line of only a picture, with the switches of the cell, or nil
 local function lone_picture(line)
-  local pictures = 0
-  for _, inline in ipairs(line) do
+  local picture = nil
+  for index, inline in ipairs(line) do
     if inline.t == "Image" or (inline.t == "Link" and #inline.content == 1 and inline.content[1].t == "Image") then
-      pictures = pictures + 1
-    elseif inline.t ~= "Space" and inline.t ~= "SoftBreak" then
-      return false
+      if picture then return nil end
+      picture = index
+    elseif inline.t ~= "Space" and inline.t ~= "SoftBreak" and inline.t ~= "RawInline" then
+      return nil
     end
   end
-  return pictures == 1
+  return picture
 end
 
 local function hang_down(blocks)
@@ -322,6 +323,52 @@ local function hang_down(blocks)
   return result
 end
 
+-- Word sets a picture alone on a line of a cell from the top of the line down, the next line right
+-- below it: a cell of TeX lines up with the others at the baseline of its first line, the bottom of
+-- such a picture. See CELL_PICTURE_PREAMBLE.
+local has_cell_picture = false
+local CELL_PICTURE_PREAMBLE = table.concat({
+  "\\newsavebox{\\pdcCellPictureBox}",
+  "\\newcommand{\\pdcCellPicture}[1]{\\sbox{\\pdcCellPictureBox}{#1}\\ifdim\\ht\\pdcCellPictureBox>\\ht\\strutbox"
+    .. "\\raisebox{\\dimexpr\\ht\\strutbox-\\ht\\pdcCellPictureBox\\relax}{\\usebox{\\pdcCellPictureBox}}\\else\\usebox{\\pdcCellPictureBox}\\fi}",
+}, "\n")
+
+local function hang_pictures(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      for _, block in ipairs(cell.contents) do
+        if block.t == "Plain" or block.t == "Para" then
+          local content, line = pandoc.Inlines({}), {}
+          local function flush()
+            local picture = lone_picture(line)
+            for index, inline in ipairs(line) do
+              if index == picture then
+                has_cell_picture = true
+                content:insert(pandoc.RawInline("latex", "\\pdcCellPicture{"))
+                content:insert(inline)
+                content:insert(pandoc.RawInline("latex", "}"))
+              else
+                content:insert(inline)
+              end
+            end
+            line = {}
+          end
+          for _, inline in ipairs(block.content) do
+            if inline.t == "LineBreak" then
+              flush()
+              content:insert(inline)
+            else
+              line[#line + 1] = inline
+            end
+          end
+          flush()
+          block.content = content
+        end
+      end
+    end
+  end
+end
+
 local function split_row(row)
   local multi, breaks = nil, 0
   for index, cell in ipairs(row.cells) do
@@ -337,10 +384,6 @@ local function split_row(row)
   if not lines then return nil end
   local rows = {}
   for number, line in ipairs(lines) do
-    if lone_picture(line) then
-      table.insert(line, 1, pandoc.RawInline("latex", "\\raisebox{-\\dp\\strutbox}{"))
-      line[#line + 1] = pandoc.RawInline("latex", "}")
-    end
     local cells = {}
     for index, cell in ipairs(row.cells) do
       local contents = {}
@@ -761,6 +804,8 @@ function table_pass.Table(tbl)
   end
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
+  hang_pictures(all_rows(tbl))
+
   -- A table written as LaTeX, a grid or one of simple cells, breaks a row as Word does
   local grid_lines = layout.rl == "grid" and layout.lc and layout.lw
   if tbl.attributes[NESTED] == nil and #tbl.colspecs > 0 and (grid_lines or (layout.tw and not layout.aw)) and simple_cells(all_rows(tbl)) then
@@ -920,9 +965,10 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_cellcolor or has_align or has_split) then return meta end
+  if not (has_cellcolor or has_align or has_split or has_cell_picture) then return meta end
 
   local parts = {}
+  if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
