@@ -9,7 +9,7 @@ Text style, and its title and headings in the font, size and colour of their
 styles.
 
 This module reads the body text style (Body Text, then Normal, then the
-document defaults), the Title and Heading 1 to 5 styles, the theme fonts and
+document defaults), the Title and Heading 1 to 9 styles, the theme fonts and
 the hyphenation setting, and hands them to pandoc: the font and size of the
 body as LaTeX variables, the rest as metadata which
 filters/docx_document_styles_to_latex.lua turns into LaTeX.
@@ -48,8 +48,8 @@ MATH_FONT = "Cambria Math"
 BODY_STYLE = "BodyText"
 # The style pandoc gives the paragraphs of a table cell and of a tight list.
 CELL_STYLE = "Compact"
-# The styles of the title, of the headings LaTeX sets as \section to \subparagraph, and of captions.
-DISPLAY_STYLES = ("Title", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5", "Caption")
+# The styles of the title, of the nine levels of headings, and of captions.
+DISPLAY_STYLES = ("Title", *(f"Heading{level}" for level in range(1, 10)), "Caption")
 # The sizes LaTeX's article class sets its text in. Word's 12 pt is the default of pandoc's template.
 LATEX_FONT_SIZES = (10, 11, 12)
 TWIPS_PER_POINT = 20

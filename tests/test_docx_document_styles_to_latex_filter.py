@@ -24,15 +24,18 @@ HEADER_FILTER = "/tmp/test/header.lua"
 HEADER_SCRIPT = r'function Meta(m) m["header-includes"] = pandoc.MetaList({pandoc.MetaBlocks({pandoc.RawBlock("latex", "\\newcommand{\\other}{}")})}) return m end'
 
 
-def _latex(container, *metadata: str, other_preamble: bool = False) -> str:
-    """The standalone LaTeX of a one-line document, with the metadata given."""
-    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'text\\n' > /tmp/test/in.md"])
+def _latex(container, *metadata: str, other_preamble: bool = False, native: str | None = None) -> str:
+    """The standalone LaTeX of a one-line document, or of the native document given, with the metadata given."""
+    if native is None:
+        container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'text\\n' > /tmp/test/in.md"])
+    else:
+        container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/in.md << 'EOF'\n{native}\nEOF"])
     filters = ""
     if other_preamble:
         container.exec_run(["sh", "-c", f"cat > {HEADER_FILTER} << 'EOF'\n{HEADER_SCRIPT}\nEOF"])
         filters = f"--lua-filter={HEADER_FILTER} "
     options = " ".join(f"-M {shlex.quote(item)}" for item in metadata)
-    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex {filters}--lua-filter={FILTER_PATH} {options} /tmp/test/in.md"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f {'markdown' if native is None else 'native'} -t latex {filters}--lua-filter={FILTER_PATH} {options} /tmp/test/in.md"])
     assert exit_code == 0, f"pandoc failed (exit {exit_code}): {output.decode()}"
     return output.decode("utf-8")
 
@@ -121,6 +124,31 @@ def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParame
     assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{DejaVu Sans}" in preamble
     assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\color[HTML]{0F4761}\\filcenter}{}{0pt}{}" in preamble
     assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
+
+
+DEEP_HEADINGS = '[Header 6 ("six",[],[]) [Str "Six"], Header 7 ("",[],[]) [Str "Seven"], Header 10 ("ten",[],[]) [Str "Ten"]]'
+
+
+def test_a_heading_below_level_5_gets_a_level_of_its_own(test_parameters: TestParameters):
+    latex = _latex(test_parameters.container, native=DEEP_HEADINGS)
+    preamble, body = _preamble(latex), latex[latex.index("\\begin{document}") :]
+    assert "\\titleclass{\\pdcHeadingF}{straight}[\\subparagraph]" in preamble
+    assert "\\titleclass{\\pdcHeadingI}{straight}[\\pdcHeadingH]" in preamble
+    assert "\\pdcHeadingF{Six}\\label{six}" in body
+    assert "\\pdcHeadingG{Seven}\n" in body, "no label without an identifier"
+    assert "\\pdcHeadingI{Ten}\\label{ten}" in body, "Word has nine levels"
+
+
+def test_a_deep_heading_takes_the_format_of_its_style(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading7=size:12,italic:true,color:595959,before:2,after:0", native=DEEP_HEADINGS))
+    assert "\\titleformat{\\pdcHeadingG}[block]{\\normalfont\\fontsize{12bp}{14.4bp}\\selectfont\\itshape\\color[HTML]{595959}\\filright}{}{0pt}{}" in preamble
+    assert "\\titlespacing*{\\pdcHeadingG}{0pt}{2pt}{0pt}" in preamble
+
+
+def test_a_document_without_deep_headings_gets_no_levels_of_them(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading7=size:12"))
+    assert "pdcHeading" not in preamble
+    assert "titlesec" not in preamble
 
 
 def test_fields_which_could_carry_latex_are_left_out(test_parameters: TestParameters):

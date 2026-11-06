@@ -20,7 +20,7 @@
 --   docx-link-color           the colour of the Hyperlink style
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
---   docx-style-<StyleId>      the Title or Heading1 to Heading5 style, as
+--   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
 --                             name:value fields separated by commas: font,
 --                             size, line, bold, italic, color, before,
 --                             after, align
@@ -45,13 +45,19 @@ local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
 
 -- The LaTeX command of each heading style, and a letter for the macro of its font.
+-- LaTeX has five levels of headings and Word nine: titlesec adds the four below \subparagraph.
 local HEADINGS = {
   { style = "Heading1", command = "section", letter = "A" },
   { style = "Heading2", command = "subsection", letter = "B" },
   { style = "Heading3", command = "subsubsection", letter = "C" },
   { style = "Heading4", command = "paragraph", letter = "D" },
   { style = "Heading5", command = "subparagraph", letter = "E" },
+  { style = "Heading6", command = "pdcHeadingF", letter = "F", deep = true },
+  { style = "Heading7", command = "pdcHeadingG", letter = "G", deep = true },
+  { style = "Heading8", command = "pdcHeadingH", letter = "H", deep = true },
+  { style = "Heading9", command = "pdcHeadingI", letter = "I", deep = true },
 }
+local DEEPEST = 9
 -- titlesec's filling of a line for each alignment, and the plain one for the title.
 local TITLESEC_ALIGN = { left = "\\filright", center = "\\filcenter", right = "\\filleft" }
 local PLAIN_ALIGN = { left = "\\raggedright", center = "\\centering", right = "\\raggedleft" }
@@ -208,16 +214,40 @@ local function font_switch(style, family_macro, lines)
   return table.concat(parts)
 end
 
+-- Whether the document has a heading below level 5, which pandoc writes as a plain paragraph.
+local deep_used = false
+
+-- The headings of level 6 to 9: unnumbered, in the table of contents, bold in the body size without a style.
+local function deep_levels(lines)
+  lines[#lines + 1] = "\\makeatletter"
+  for level = 6, DEEPEST do
+    local command, parent = HEADINGS[level].command, HEADINGS[level - 1].command
+    lines[#lines + 1] = string.format("\\titleclass{\\%s}{straight}[\\%s]", command, parent)
+    lines[#lines + 1] = string.format("\\newcounter{%s}\\renewcommand{\\the%s}{}", command, command)
+    lines[#lines + 1] = string.format("\\@namedef{toclevel@%s}{%d}", command, level)
+    lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{\\normalfont\\bfseries}{}{0pt}{}", command)
+    lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{0pt}{0pt}", command)
+  end
+  lines[#lines + 1] = "\\makeatother"
+end
+
 local function headings_preamble(meta, lines)
   local any = false
+  local function packages()
+    if not any then
+      lines[#lines + 1] = "\\usepackage{titlesec}"
+      lines[#lines + 1] = "\\usepackage{xcolor}"
+      any = true
+    end
+  end
+  if deep_used then
+    packages()
+    deep_levels(lines)
+  end
   for _, heading in ipairs(HEADINGS) do
     local style = style_fields(meta[STYLE_PREFIX .. heading.style])
-    if style then
-      if not any then
-        lines[#lines + 1] = "\\usepackage{titlesec}"
-        lines[#lines + 1] = "\\usepackage{xcolor}"
-        any = true
-      end
+    if style and (deep_used or not heading.deep) then
+      packages()
       local switch = font_switch(style, "docxHeadingFont" .. heading.letter, lines)
       lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
       lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%gpt}{%gpt}", heading.command, style.before, style.after)
@@ -281,6 +311,23 @@ local function section_div(div)
     return pandoc.RawBlock("latex", "\\clearpage")
   end
   return pandoc.RawBlock("latex", "\\pdcPageGeometry{" .. table.concat(numbers, "}{") .. "}")
+end
+
+-- A heading of level 6 to 9 as the command of its level; a deeper one as level 9, as in Word.
+local function deep_heading(header)
+  if header.level <= 5 or not FORMAT:match("latex") then
+    return nil
+  end
+  deep_used = true
+  local inlines = { pandoc.RawInline("latex", "\\" .. HEADINGS[math.min(header.level, DEEPEST)].command .. "{") }
+  for _, inline in ipairs(header.content) do
+    inlines[#inlines + 1] = inline
+  end
+  inlines[#inlines + 1] = pandoc.RawInline("latex", "}")
+  if header.identifier:match("^[%w_%-:.]+$") then
+    inlines[#inlines + 1] = pandoc.RawInline("latex", "\\label{" .. header.identifier .. "}")
+  end
+  return pandoc.Plain(inlines)
 end
 
 -- A Title paragraph after the first one, in the Title style with its space around it.
@@ -350,5 +397,5 @@ end
 -- The Title and Caption styles are read before the Divs are set, the preamble written after.
 return {
   { Meta = read_title },
-  { Div = title_div, Meta = write_preamble },
+  { Div = title_div, Header = deep_heading, Meta = write_preamble },
 }

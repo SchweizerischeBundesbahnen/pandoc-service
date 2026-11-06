@@ -14,7 +14,7 @@
 -- Both are set as Word sets its TOC styles: in the font and colour of the
 -- body, without a heading of their own, a line apart with 5pt after it, a
 -- leader of close dots to the page number at the right margin, and each level
--- of the table of contents indented 12pt further.
+-- of the table of contents indented 12pt further, down to the ninth.
 --
 -- Only runs for the LaTeX writer (gated in PandocController on
 -- docx -> pdf/latex).
@@ -38,6 +38,10 @@ local PREAMBLE = [[
 \titlecontents{subsubsection}[24pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
 \titlecontents{paragraph}[36pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
 \titlecontents{subparagraph}[48pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
+\titlecontents{pdcHeadingF}[60pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
+\titlecontents{pdcHeadingG}[72pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
+\titlecontents{pdcHeadingH}[84pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
+\titlecontents{pdcHeadingI}[96pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
 ]]
 
 local used = false
@@ -75,7 +79,7 @@ function Div(div)
     return entry(div)
   end
   local depth = style:sub(1, #CONTENTS) == CONTENTS and tonumber(style:sub(#CONTENTS + 1)) or nil
-  if depth ~= nil and depth >= 1 and depth <= 5 then
+  if depth ~= nil and depth >= 1 and depth <= 9 then
     return contents(math.floor(depth))
   end
   return nil

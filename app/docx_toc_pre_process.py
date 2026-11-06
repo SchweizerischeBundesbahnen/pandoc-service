@@ -32,8 +32,8 @@ STYLE_PREFIX = "PandocToc__"
 CONTENTS_STYLE = STYLE_PREFIX + "CONTENTS_"
 ENTRY_STYLE = STYLE_PREFIX + "ENTRY"
 PAGE_MARKER = "PDCPAGEREF"
-# LaTeX numbers its headings down to \subparagraph.
-MAX_DEPTH = 5
+# Word has nine levels of headings; filters/docx_document_styles_to_latex.lua gives LaTeX the same.
+MAX_DEPTH = 9
 DEFAULT_DEPTH = 3
 
 _OUTLINE = re.compile(r'\\o\s+"\s*(\d+)\s*-\s*(\d+)\s*"')

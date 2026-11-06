@@ -33,9 +33,9 @@ def _paragraph_texts(xml: bytes) -> list[str]:
 
 def test_an_empty_table_of_contents_becomes_its_marker():
     xml, used = rewrite_part(_document(_paragraph("<w:r><w:t>Before</w:t></w:r>"), _paragraph(_field(' TOC \\o "1-9" \\h \\z \\u ')), _paragraph("<w:r><w:t>After</w:t></w:r>")))
-    assert list(used) == ["PandocToc__CONTENTS_5"]
-    assert _paragraph_texts(xml) == ["Before", "PandocToc__CONTENTS_5", "After"]
-    assert '<w:pStyle w:val="PandocToc__CONTENTS_5" />' in xml.decode()
+    assert list(used) == ["PandocToc__CONTENTS_9"]
+    assert _paragraph_texts(xml) == ["Before", "PandocToc__CONTENTS_9", "After"]
+    assert '<w:pStyle w:val="PandocToc__CONTENTS_9" />' in xml.decode()
 
 
 def test_the_depth_is_the_last_level_of_the_outline():

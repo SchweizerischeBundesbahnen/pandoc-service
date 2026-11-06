@@ -36,7 +36,7 @@ def test_the_contents_marker_becomes_the_table_of_contents(test_parameters: Test
 
 
 def test_a_depth_out_of_range_is_left_as_it_is(test_parameters: TestParameters):
-    latex = _latex(test_parameters.container, '::: {custom-style="PandocToc__CONTENTS_9"}\nx\n:::\n')
+    latex = _latex(test_parameters.container, '::: {custom-style="PandocToc__CONTENTS_10"}\nx\n:::\n')
     assert "\\pdcTableOfContents" not in latex
     assert "titletoc" not in latex
 
@@ -54,10 +54,10 @@ def test_a_document_without_a_table_of_contents_is_left_as_it_is(test_parameters
     assert "titletoc" not in _latex(test_parameters.container, "Just text.\n")
 
 
-def _toc_field_paragraph(document) -> None:
+def _toc_field_paragraph(document, levels: str = "1-3") -> None:
     """A paragraph holding an empty TOC field, as pandoc and docx-exporter write it."""
     paragraph = document.add_paragraph()
-    for kind, text in (("begin", None), (None, ' TOC \\o "1-3" \\h \\z \\u '), ("separate", None), ("end", None)):
+    for kind, text in (("begin", None), (None, f' TOC \\o "{levels}" \\h \\z \\u '), ("separate", None), ("end", None)):
         run = paragraph.add_run()
         if kind is None:
             instruction = OxmlElement("w:instrText")
@@ -83,3 +83,17 @@ def test_the_pdf_holds_the_table_of_contents_of_the_docx(test_parameters: TestPa
     text = PdfReader(io.BytesIO(response.content)).pages[0].extract_text()
     for number in range(1, 4):
         assert text.count(f"Chapter number {number}") == 2, text
+
+
+def test_the_table_of_contents_holds_the_nine_levels_of_word(test_parameters: TestParameters):
+    document = Document()
+    _toc_field_paragraph(document, "1-9")
+    for level in range(1, 10):
+        document.add_heading(f"Heading of level {level}", level=level)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(response.content)).pages)
+    for level in range(1, 10):
+        assert text.count(f"Heading of level {level}") == 2, text
