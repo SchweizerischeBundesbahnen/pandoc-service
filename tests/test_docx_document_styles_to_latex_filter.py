@@ -605,7 +605,7 @@ def test_a_picture_alone_on_its_line_goes_down_by_the_descent(test_parameters: T
     native = f'[Para [Str "Text", LineBreak, {image}, LineBreak, Str "After"], Para [Str "Icon", Space, {image}]]'
     body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native=native)
     body = " ".join(body[body.index("\\begin{document}") :].split())
-    assert "Text\\\\ {\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}\\\\ After" in body
+    assert "Text\\strut{}\\\\ {\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}\\strut{}\\\\ After" in body
     assert body.count("raisebox") == 1, "a picture next to text stays on the baseline"
 
 
@@ -642,3 +642,11 @@ def test_an_equation_without_the_size_of_the_body_keeps_the_fractions_of_latex(t
     latex = _latex(test_parameters.container, native='[Para [Math DisplayMath "\\\\frac{a}{b}"]]')
     assert "pdcEquation" not in latex
     assert "\\frac{a}{b}" in latex
+
+
+def test_every_line_a_break_ends_reaches_the_descent_of_the_font(test_parameters: TestParameters):
+    """Word sets a picture on the next line below the descent of the font, whatever the letters before the break."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.64", "docx-body-ascent=11.28", "docx-body-descent=3.36")
+    native = '[Para [Str "Not", Space, Str "resized:", LineBreak, Strong [Str "bold", LineBreak], Str "end"]]'
+    body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
+    assert "resized:\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body

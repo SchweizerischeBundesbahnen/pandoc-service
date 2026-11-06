@@ -648,6 +648,18 @@ last_word = function(inlines)
   return nil
 end
 
+-- A strut before each line break of the inlines, at any depth.
+local function strut_line_breaks(inlines)
+  local result = pandoc.Inlines({})
+  for _, inline in ipairs(inlines) do
+    if inline.t == "LineBreak" then
+      result:insert(pandoc.RawInline("latex", "\\strut{}"))
+    end
+    result:insert(inline)
+  end
+  return result
+end
+
 local function set_paragraph(para)
   if not FORMAT:match("latex") then
     return nil
@@ -672,7 +684,9 @@ local function set_paragraph(para)
   if body_descent ~= nil and visible then
     lower_lone_pictures(para.content)
     -- Every line of Word reaches the ascent and the descent of its font, whatever its letters:
-    -- the first and the last line of a paragraph get the strut of its font
+    -- the first and the last line of a paragraph get the strut of its font, and every line a break
+    -- ends, which a picture on the next line would otherwise start right below its letters
+    para.content = para.content:walk({ Inlines = strut_line_breaks })
     para.content:insert(1, pandoc.RawInline("latex", "\\strut{}"))
     para.content:insert(pandoc.RawInline("latex", "\\strut{}"))
     changed = true
