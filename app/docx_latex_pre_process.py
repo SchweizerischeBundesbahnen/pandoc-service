@@ -45,12 +45,13 @@ def _rewrite_body_part(
     bordered_styles: frozenset[str] = frozenset(),
     style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
     toc_style_ids: frozenset[str] = frozenset(),
+    break_styles: frozenset[str] = frozenset(),
 ) -> tuple[bytes, bool]:
     """Run the page break → colour → paragraph → list → table rewrites over one
     body part, collecting any synthetic styles into the shared dicts.  Returns
     (new_xml, changed)."""
     # First, so a page break run sheds its properties before the colour rewrite reads them.
-    xml, changed = docx_page_break_pre_process.rewrite_part(xml)
+    xml, changed = docx_page_break_pre_process.rewrite_part(xml, break_styles)
     if has_styles:
         # First, so the other rewrites see the entries of a list of figures and not the field around them
         rewritten, toc_used = docx_toc_pre_process.rewrite_part(xml)
@@ -114,13 +115,16 @@ def preprocess(docx_bytes: bytes) -> bytes:
     # The line LaTeX sets the PDF at, for the tables of every part
     text_width_twips = docx_page_geometry.package_text_width_twips(entries)
     # The table styles which draw borders, for the lines of each table
-    bordered_styles = docx_table_pre_process.bordered_table_styles(parse_xml(entries[STYLES_PART]) if has_styles else None)
+    styles = parse_xml(entries[STYLES_PART]) if has_styles else None
+    bordered_styles = docx_table_pre_process.bordered_table_styles(styles)
+    # The paragraph styles which start a new page before their paragraphs
+    break_styles = docx_page_break_pre_process.page_break_styles(styles)
     # The colors of the character styles (a link's Hyperlink style), read once for every part
     style_colors = docx_color_pre_process.character_style_colors(entries[STYLES_PART]) if has_styles else None
     toc_style_ids = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, bordered_styles, style_colors, toc_style_ids)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, bordered_styles, style_colors, toc_style_ids, break_styles)
         changed = changed or part_changed
 
     if not changed:

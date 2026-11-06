@@ -178,3 +178,17 @@ def test_preprocess_keeps_translated_table_of_contents_entries_uncolored():
 
     with zipfile.ZipFile(io.BytesIO(result)) as zf:
         assert b"PandocColor__FG_156082" not in zf.read("word/document.xml")
+
+
+def test_the_styles_which_break_the_page_before_their_paragraphs():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    styles = parse_xml(
+        b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:styleId="Chapter"><w:pPr><w:pageBreakBefore/></w:pPr></w:style>'
+        b'<w:style w:styleId="Part"><w:basedOn w:val="Chapter"/></w:style>'
+        b'<w:style w:styleId="Plain"><w:basedOn w:val="Chapter"/><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr></w:style>'
+        b'<w:style w:styleId="Other"/></w:styles>'
+    )
+    assert page_break_styles(styles) == frozenset({"Chapter", "Part"})

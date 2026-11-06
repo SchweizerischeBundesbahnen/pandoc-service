@@ -39,6 +39,9 @@ local OPEN = "\u{E020}"
 local CLOSE = "\u{E021}"
 local SENTINEL_PATTERN = OPEN .. "([%w,]*)" .. CLOSE
 
+-- The marker of a paragraph which starts a new page before it, see app/docx_page_break_pre_process.py
+local BREAK_BEFORE = "before"
+
 -- More than Word's largest page, and small enough for a TeX dimension.
 local MAX_TWIPS = 99999
 local TWIPS_PER_INCH = 1440
@@ -113,6 +116,10 @@ local function page_setup(marker)
 end
 
 local function break_tex(marker)
+  -- A paragraph which starts a new page before it, on a page with nothing on it yet, needs none
+  if marker == BREAK_BEFORE and on_empty_page then
+    return ""
+  end
   local before = on_empty_page and "\\null" or ""
   on_empty_page = true
   local setup = page_setup(marker)

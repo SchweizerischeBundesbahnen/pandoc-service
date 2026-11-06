@@ -6,7 +6,11 @@ section. This preprocessor runs *before* pandoc and writes each break of the bod
 as a sentinel in the text::
 
     <open><close>                                  a page break
+    <open>before<close>                            a paragraph which starts a new page before it
     <open>width,height,top,right,bottom,left,start<close>  a section break
+
+``<w:pageBreakBefore/>`` in the properties of a paragraph or of its style starts a
+new page before it, but none on a page with nothing on it yet, as in Word.
 
 The numbers are twips and describe the page the break opens. ``start`` says which
 page that is: ``nextPage``, ``oddPage`` or ``evenPage``. A ``<w:sectPr>`` holds the
@@ -47,6 +51,8 @@ logger = logging.getLogger(__name__)
 SENTINEL_OPEN = "\ue020"
 SENTINEL_CLOSE = "\ue021"
 PAGE_BREAK = f"{SENTINEL_OPEN}{SENTINEL_CLOSE}"
+# A paragraph which starts a new page before it: unlike a page break, it opens none on an empty page.
+PAGE_BREAK_BEFORE = f"{SENTINEL_OPEN}before{SENTINEL_CLOSE}"
 
 _BODY_TAG = f"{{{W_NS}}}body"
 _P_TAG = f"{{{W_NS}}}p"
@@ -61,6 +67,10 @@ _SDT_TAG = f"{{{W_NS}}}sdt"
 # What a paragraph can hold and still show nothing.
 _INVISIBLE_TAGS = frozenset({_PPR_TAG, f"{{{W_NS}}}bookmarkStart", f"{{{W_NS}}}bookmarkEnd"})
 _TYPE_ATTR = f"{{{W_NS}}}type"
+_VAL_ATTR = f"{{{W_NS}}}val"
+_PAGE_BREAK_BEFORE_TAG = f"{{{W_NS}}}pageBreakBefore"
+_PSTYLE_TAG = f"{{{W_NS}}}pStyle"
+_OFF = frozenset({"false", "0", "off"})
 _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 
 
@@ -141,7 +151,50 @@ def _mark_section_end(para: ET.Element, sections: Iterator[tuple[ET.Element | No
     return True
 
 
-def _mark_body_breaks(body: ET.Element) -> bool:
+def _turned_on(element: ET.Element | None) -> bool | None:
+    """Whether an on/off property is on, None when it is not there."""
+    if element is None:
+        return None
+    return element.get(_VAL_ATTR, "true").lower() not in _OFF
+
+
+def page_break_styles(styles: ET.Element | None) -> frozenset[str]:
+    """The paragraph styles which start a new page before their paragraphs, themselves or by the style they are based on."""
+    if styles is None:
+        return frozenset()
+    by_id = {style.get(f"{{{W_NS}}}styleId"): style for style in styles.iter(f"{{{W_NS}}}style")}
+
+    def breaks(style_id: str | None, seen: frozenset[str]) -> bool:
+        style = by_id.get(style_id)
+        if style is None or style_id is None or style_id in seen:
+            return False
+        own = _turned_on(style.find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
+        if own is not None:
+            return own
+        based_on = style.find(f"{{{W_NS}}}basedOn")
+        return based_on is not None and breaks(based_on.get(_VAL_ATTR), seen | {style_id})
+
+    return frozenset(style_id for style_id in by_id if style_id and breaks(style_id, frozenset()))
+
+
+def _breaks_before(para: ET.Element, break_styles: frozenset[str]) -> bool:
+    """Whether Word starts a new page before the paragraph: its own property, else its style."""
+    own = _turned_on(para.find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
+    if own is not None:
+        return own
+    style = para.find(f"{_PPR_TAG}/{_PSTYLE_TAG}")
+    return style is not None and style.get(_VAL_ATTR) in break_styles
+
+
+def _mark_page_break_before(para: ET.Element) -> None:
+    """A page break at the start of the paragraph, after its properties."""
+    run = ET.Element(_R_TAG)
+    run.append(_sentinel_text(PAGE_BREAK_BEFORE))
+    properties = para.find(_PPR_TAG)
+    para.insert(list(para).index(properties) + 1 if properties is not None else 0, run)
+
+
+def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str] = frozenset()) -> bool:
     """Write the breaks of the paragraphs directly in the body as sentinels. Returns whether there were any."""
     sections = pairwise(docx_page_geometry.body_sections(body))
     changed = False
@@ -154,6 +207,9 @@ def _mark_body_breaks(body: ET.Element) -> bool:
             continue
         is_lone_page_break = _is_lone_page_break(block)
         changed = _mark_page_breaks(block) or changed
+        if _breaks_before(block, break_styles):
+            _mark_page_break_before(block)
+            changed = True
         if _closes_a_section(block):
             changed = _mark_section_end(block, sections, lone_page_break, replaced_breaks) or changed
         lone_page_break = block if is_lone_page_break else None
@@ -163,13 +219,16 @@ def _mark_body_breaks(body: ET.Element) -> bool:
     return changed
 
 
-def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
-    """Write the breaks of the body as sentinels. A part without a body has no page to break. Returns (new_bytes, changed)."""
+def rewrite_part(xml_bytes: bytes, break_styles: frozenset[str] = frozenset()) -> tuple[bytes, bool]:
+    """Write the breaks of the body as sentinels. A part without a body has no page to break. Returns (new_bytes, changed).
+
+    ``break_styles`` are the paragraph styles which start a new page before their paragraphs, see page_break_styles.
+    """
     tree = parse_xml(xml_bytes)
     if tree is None:
         logger.warning("Unparseable XML in DOCX part; skipping page break preprocess")
         return xml_bytes, False
     body = tree.find(_BODY_TAG)
-    if body is None or not _mark_body_breaks(body):
+    if body is None or not _mark_body_breaks(body, break_styles):
         return xml_bytes, False
     return serialize_tree(tree), True
