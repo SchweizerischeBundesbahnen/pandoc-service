@@ -349,6 +349,21 @@ local function deep_heading(header)
   return pandoc.Plain(inlines)
 end
 
+-- Word lets the full stop which ends a paragraph stand in the right margin
+-- when the line is full: a full stop of no width, which nothing follows.
+local function hanging_stop(para)
+  if not FORMAT:match("latex") then
+    return nil
+  end
+  local last = para.content[#para.content]
+  if last ~= nil and last.t == "Str" and #last.text > 1 and last.text:sub(-1) == "." then
+    para.content[#para.content] = pandoc.Str(last.text:sub(1, -2))
+    para.content:insert(pandoc.RawInline("latex", "\\rlap{.}"))
+    return para
+  end
+  return nil
+end
+
 -- A Title paragraph after the first one, in the Title style with its space around it.
 local function title_div(div)
   -- A page break and a section of the docx: see app/docx_page_break_pre_process.py
@@ -461,5 +476,5 @@ end
 return {
   { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
-  { Div = title_div, Header = deep_heading, Meta = write_preamble },
+  { Div = title_div, Header = deep_heading, Para = hanging_stop, Meta = write_preamble },
 }

@@ -168,6 +168,15 @@ def test_between_two_headings_only_their_own_spaces_count(test_parameters: TestP
     assert "\\titlespacing*{\\subsection}" not in body, "a heading before body text keeps the spacing of the preamble"
 
 
+def test_the_full_stop_which_ends_a_paragraph_hangs_in_the_margin(test_parameters: TestParameters):
+    native = '[Para [Str "One", Space, Str "end."], Para [Str "No", Space, Str "stop"], Para [Str "."]]'
+    body = _latex(test_parameters.container, native=native)
+    body = body[body.index("\\begin{document}") :]
+    assert "One end\\rlap{.}" in body
+    assert "No stop\n" in body
+    assert "\n.\n" in body, "a paragraph of a full stop alone keeps it"
+
+
 def test_fields_which_could_carry_latex_are_left_out(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading2=font:\\evil,size:x,color:12345G,align:sideways"))
     assert "\\evil" not in preamble
