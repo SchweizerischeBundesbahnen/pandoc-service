@@ -626,3 +626,11 @@ def test_a_table_goes_on_at_the_top_margin_of_the_next_page(test_parameters: Tes
     """longtable sets an empty header at the top of the next page, which TeX would move down by the ascent."""
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4"))
     assert "\\AddToHook{env/longtable/begin}{\\topskip=0pt}" in preamble
+
+
+def test_a_period_at_the_end_of_a_line_hangs_past_the_margin(test_parameters: TestParameters):
+    """Word lets the period which ends a line stand past the right margin: only the word before it has to fit."""
+    native = '[Para [Str "One.", Space, Str "Two", Space, RawInline (Format "latex") "{\\\\large ", Str "end.", RawInline (Format "latex") "}"]]'
+    body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-body-descent=3.4", native=native).split())
+    assert "One\\rlap{.}\\hskip\\dimexpr\\fontcharwd\\font`.+\\fontdimen2\\font\\relax Two" in body
+    assert "end\\rlap{.}}" in body, "the period of the paragraph hangs inside the group of its run"

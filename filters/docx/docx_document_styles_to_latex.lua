@@ -604,6 +604,44 @@ local function lower_lone_pictures(content)
   end
 end
 
+local last_word
+
+-- Word lets the period which ends a line hang past the right margin: only the word before it has to
+-- fit. A period before a space takes no width of its own, and the space after it as much more: at the
+-- end of a line the space goes, and the period stands past the margin.
+local HANGING_PERIOD = "\\rlap{.}\\hskip\\dimexpr\\fontcharwd\\font`.+\\fontdimen2\\font\\relax "
+
+local function hang_periods(inlines)
+  local changed = false
+  for index = #inlines - 1, 1, -1 do
+    local str, after = inlines[index], inlines[index + 1]
+    if str.t == "Str" and #str.text > 1 and str.text:sub(-1) == "." and (after.t == "Space" or after.t == "SoftBreak") then
+      inlines[index] = pandoc.Str(str.text:sub(1, -2))
+      inlines[index + 1] = pandoc.RawInline("latex", HANGING_PERIOD)
+      changed = true
+    end
+  end
+  return changed and inlines or nil
+end
+
+-- The list and the position of the last word of inlines, past the closing braces of raw groups and
+-- into the last element which holds inlines
+last_word = function(inlines)
+  for index = #inlines, 1, -1 do
+    local inline = inlines[index]
+    if inline.t == "Str" then
+      return inlines, index
+    elseif inline.t == "RawInline" and inline.text:match("^}+$") then
+      -- the end of a group of the run: the word is before it
+    elseif inline.content and inline.t ~= "Note" then
+      return last_word(inline.content)
+    else
+      return nil
+    end
+  end
+  return nil
+end
+
 local function set_paragraph(para)
   if not FORMAT:match("latex") then
     return nil
@@ -612,11 +650,12 @@ local function set_paragraph(para)
   if only and only.t == "Math" and only.mathtype == "DisplayMath" then
     return display_equation(only)
   end
-  local last = para.content[#para.content]
   local changed = false
-  if last ~= nil and last.t == "Str" and #last.text > 1 and last.text:sub(-1) == "." then
-    para.content[#para.content] = pandoc.Str(last.text:sub(1, -2))
-    para.content:insert(pandoc.RawInline("latex", "\\rlap{.}"))
+  local list, index = last_word(para.content)
+  local last = list and list[index]
+  if last and #last.text > 1 and last.text:sub(-1) == "." then
+    list[index] = pandoc.Str(last.text:sub(1, -2))
+    list:insert(index + 1, pandoc.RawInline("latex", "\\rlap{.}"))
     changed = true
   end
   if body_descent ~= nil and #para.content > 0 then
@@ -889,6 +928,7 @@ return {
   { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
+  { Para = function(para) return para:walk({ Inlines = hang_periods }) end, Plain = function(plain) return plain:walk({ Inlines = hang_periods }) end },
   {
     Pandoc = function(doc)
       if FORMAT:match("latex") then
