@@ -163,3 +163,22 @@ def test_a_table_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_pa
     native = outer.replace('[Plain [Str "b"]]', f"[{inner}]")
     latex = _native_latex(test_parameters.container, native)
     assert "\\real{" in latex, "pandoc writes the outer table, with the inner one in it"
+
+
+def test_a_row_of_line_breaks_becomes_a_row_per_line_which_a_page_may_break(test_parameters: TestParameters):
+    """Word breaks a row between the lines of a cell; longtable only between rows."""
+    lines = 'Plain [Str "one", LineBreak, Str "two", LineBreak, Str "three"]'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}Label"'), f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [{lines}]'])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcSplitRow" not in latex
+    assert latex.index("one") < latex.index("\\\\\\pdcSplitFirstMiddle") < latex.index("two") < latex.index("\\\\\\pdcSplitLast")
+    assert latex.index("three") < latex.index("\\\\\\pdcSplitEnd \\hline")
+    assert latex.count("\\hline") == 2, "a line above the table and under its last row of lines only"
+    assert "\\raisebox{0pt}[\\height][0pt]{\\begin{minipage}[t]{\\linewidth}" in latex, "the label runs on beside the lines"
+
+
+def test_a_row_of_two_cells_of_line_breaks_stays_one_row(test_parameters: TestParameters):
+    lines = 'Plain [Str "one", LineBreak, Str "two"]'
+    cell = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [{lines}]'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a", LineBreak, Str "b"'), cell])
+    assert "pdcSplit" not in _native_latex(test_parameters.container, native)

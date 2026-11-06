@@ -255,14 +255,167 @@ local PLAIN_CELL_SPACE = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\dp\\s
 -- of several lines stands as far above the bottom of the row as a single line.
 local COMPACT_CELL_DEPTH = "\\ifdefined\\pdcCompactCellDepth\\pdcCompactCellDepth\\fi"
 
+-- ---- A row Word breaks across pages ----
+-- Word breaks a row between the lines of a cell; longtable breaks only between rows. A row whose one
+-- cell holds a paragraph of line breaks becomes a row per line, without lines between them, each as
+-- high as a line of the body: the space of the cell stays above the first and below the last.
+local SPLIT = "pdc-split"      -- the attribute of a row: what follows it, see SPLIT_PREAMBLE
+local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at its end
+local has_split = false
+local SPLIT_PREAMBLE = table.concat({
+  "\\makeatletter",
+  "\\newsavebox{\\pdcRowStrut}",
+  "\\newcommand{\\pdcSplitStrut}[1]{\\global\\setbox\\@arstrutbox\\hbox{\\vrule height\\ht\\strutbox depth#1 width\\z@}}",
+  "\\newcommand{\\pdcSplitSave}{\\global\\setbox\\pdcRowStrut\\copy\\@arstrutbox\\vskip-\\dimexpr\\dp\\@arstrutbox-\\dp\\strutbox\\relax}",
+  "\\newcommand{\\pdcSplitFirstMiddle}{\\noalign{\\pdcSplitSave\\pdcSplitStrut{\\dp\\strutbox}}}",
+  "\\newcommand{\\pdcSplitFirstLast}{\\noalign{\\pdcSplitSave\\pdcSplitStrut{\\dp\\pdcRowStrut}}}",
+  "\\newcommand{\\pdcSplitLast}{\\noalign{\\pdcSplitStrut{\\dp\\pdcRowStrut}}}",
+  "\\newcommand{\\pdcSplitEnd}{\\noalign{\\global\\setbox\\@arstrutbox\\copy\\pdcRowStrut}}",
+  "\\makeatother",
+}, "\n")
+
+-- The lines of the top level of a block, split at its line breaks; nil when a break sits deeper.
+local function block_lines(block, breaks)
+  local lines, current, found = {}, {}, 0
+  for _, inline in ipairs(block.content) do
+    if inline.t == "LineBreak" then
+      lines[#lines + 1], current, found = current, {}, found + 1
+    else
+      current[#current + 1] = inline
+    end
+  end
+  lines[#lines + 1] = current
+  return found == breaks and lines or nil
+end
+
+-- A line of only a picture: Word sets the next line right below it, as in a paragraph
+local function lone_picture(line)
+  local pictures = 0
+  for _, inline in ipairs(line) do
+    if inline.t == "Image" or (inline.t == "Link" and #inline.content == 1 and inline.content[1].t == "Image") then
+      pictures = pictures + 1
+    elseif inline.t ~= "Space" and inline.t ~= "SoftBreak" then
+      return false
+    end
+  end
+  return pictures == 1
+end
+
+local function hang_down(blocks)
+  if #blocks == 0 then
+    return blocks
+  end
+  local open = "\\raisebox{0pt}[\\height][0pt]{\\begin{minipage}[t]{\\linewidth}"
+  local first = blocks[1]
+  local color = first.content and first.content[1]
+  local result = {}
+  if color and color.t == "RawInline" and color.text:match("^\\cellcolor") then
+    -- colortbl reads the colour of a cell at its top level
+    first.content:remove(1)
+    open = color.text .. open
+  end
+  result[1] = pandoc.RawBlock("latex", open)
+  for _, block in ipairs(blocks) do
+    result[#result + 1] = block
+  end
+  result[#result + 1] = pandoc.RawBlock("latex", "\\end{minipage}}")
+  return result
+end
+
+local function split_row(row)
+  local multi, breaks = nil, 0
+  for index, cell in ipairs(row.cells) do
+    if cell.row_span ~= 1 or cell.col_span ~= 1 then return nil end
+    local count = 0
+    pandoc.Blocks(cell.contents):walk({ LineBreak = function() count = count + 1 end })
+    if count > 0 then
+      if multi or #cell.contents ~= 1 or (cell.contents[1].t ~= "Plain" and cell.contents[1].t ~= "Para") then return nil end
+      multi, breaks = index, count
+    end
+  end
+  local lines = multi and block_lines(row.cells[multi].contents[1], breaks)
+  if not lines then return nil end
+  local rows = {}
+  for number, line in ipairs(lines) do
+    if lone_picture(line) then
+      table.insert(line, 1, pandoc.RawInline("latex", "\\raisebox{-\\dp\\strutbox}{"))
+      line[#line + 1] = pandoc.RawInline("latex", "}")
+    end
+    local cells = {}
+    for index, cell in ipairs(row.cells) do
+      local contents = {}
+      if index == multi then
+        contents = { pandoc.Plain(line) }
+      elseif number == 1 then
+        -- Its text runs on beside the rows of the other lines, as the cells of a row of Word flow apart
+        contents = hang_down(cell.contents)
+      else
+        -- The background of the cell goes on in the rows of its lines
+        local first = cell.contents[1]
+        local color = first and first.content and first.content[1]
+        if color and color.t == "RawInline" and color.text:match("^\\cellcolor") then
+          contents = { pandoc.Plain({ color }) }
+        end
+      end
+      local attr = pandoc.Attr("", {}, (index == multi and number == #lines) and {} or { [NO_END] = "1" })
+      cells[index] = pandoc.Cell(contents, cell.alignment, 1, 1, attr)
+    end
+    local after = number == #lines and "End" or number == 1 and (#lines == 2 and "FirstLast" or "FirstMiddle") or number == #lines - 1 and "Last" or "Middle"
+    rows[number] = pandoc.Row(cells, pandoc.Attr("", {}, { [SPLIT] = after }))
+  end
+  return rows
+end
+
+-- Each row of a table body a row per line where Word breaks it across pages: see split_row.
+local function split_rows(tbl)
+  for _, body in ipairs(tbl.bodies) do
+    local rows = {}
+    for _, row in ipairs(body.body) do
+      for _, part in ipairs(split_row(row) or { row }) do
+        rows[#rows + 1] = part
+      end
+    end
+    if #rows ~= #body.body then
+      has_split = true
+      body.body = rows
+    end
+  end
+end
+
+-- After the rows of the lines of a row, the strut of each: see SPLIT_PREAMBLE.
+local function split_markers(rows)
+  for _, row in ipairs(rows) do
+    local after = row.attributes[SPLIT]
+    local last = row.cells[#row.cells]
+    if after and after ~= "Middle" and last then
+      local marker = pandoc.RawInline("latex", "\\pdcSplitRow{" .. after .. "}")
+      local block = last.contents[#last.contents]
+      if block and (block.t == "Plain" or block.t == "Para") then
+        block.content:insert(marker)
+      else
+        last.contents:insert(pandoc.Plain({ marker }))
+      end
+    end
+  end
+end
+
+local function split_latex(latex)
+  return (latex:gsub("\\pdcSplitRow{(%a+)}(.-)\\\\", "%2\\\\\\pdcSplit%1\n"))
+end
+
 local function add_plain_cell_space(rows, raw)
   raw = raw or PLAIN_CELL_SPACE
   for _, row in ipairs(rows) do
     for _, cell in ipairs(row.cells) do
+      local skip = cell.attributes[NO_END] ~= nil
+      cell.attributes[NO_END] = nil
       local last = cell.contents[#cell.contents]
+      if skip then
+        last = false
+      end
       if last == nil then
         cell.contents = { pandoc.Plain({ pandoc.RawInline("latex", raw) }) }
-      elseif last.t == "Plain" or last.t == "Para" then
+      elseif last and (last.t == "Plain" or last.t == "Para") then
         last.content:insert(pandoc.RawInline("latex", raw))
       end
     end
@@ -433,7 +586,10 @@ local function grid_row_lines(rows, columns)
     for c = 1, columns do
       carry[c] = math.max(carry[c] - 1, 0)
     end
-    if #runs == 1 and runs[1][1] == 1 and runs[1][2] == columns then
+    local split = row.attributes[SPLIT]
+    if split and split ~= "End" then
+      lines[index] = ""
+    elseif #runs == 1 and runs[1][1] == 1 and runs[1][2] == columns then
       lines[index] = "\\hline"
     else
       local parts = {}
@@ -448,7 +604,7 @@ end
 
 -- What a cell of a grid may hold: the template of pandoc loads the packages of
 -- a list, a picture or a note only for one it sees, and a grid is raw LaTeX.
-local GRID_BLOCKS = { Plain = true, Para = true }
+local GRID_BLOCKS = { Plain = true, Para = true, RawBlock = true }
 local GRID_INLINES = {
   Str = true, Space = true, SoftBreak = true, LineBreak = true, Emph = true, Strong = true,
   Underline = true, Span = true, RawInline = true, Link = true, Math = true, SmallCaps = true,
@@ -459,7 +615,7 @@ local function simple_cells(rows)
   local simple = true
   local check = {
     Block = function(block)
-      if not GRID_BLOCKS[block.t] then
+      if not GRID_BLOCKS[block.t] or (block.t == "RawBlock" and block.text:find("\\begin{longtable}", 1, true)) then
         simple = false
       end
     end,
@@ -574,7 +730,7 @@ local function grid_table(tbl, absolute)
   if latex:find(ROW_END, 1, true) then
     return nil
   end
-  return grid_block(latex, rows)
+  return grid_block(split_latex(latex), rows)
 end
 
 -- ---- Pass 1: Table processing ----
@@ -604,6 +760,13 @@ function table_pass.Table(tbl)
     if process_rows(body.head, layout, flags) then modified = true end
   end
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
+
+  -- A table written as LaTeX, a grid or one of simple cells, breaks a row as Word does
+  local grid_lines = layout.rl == "grid" and layout.lc and layout.lw
+  if tbl.attributes[NESTED] == nil and #tbl.colspecs > 0 and (grid_lines or (layout.tw and not layout.aw)) and simple_cells(all_rows(tbl)) then
+    split_rows(tbl)
+    split_markers(all_rows(tbl))
+  end
 
   local cell_end = not layout.cc and PLAIN_CELL_SPACE or COMPACT_CELL_DEPTH
   do
@@ -714,7 +877,7 @@ function table_pass.Table(tbl)
     after[#after + 1] = "\\endgroup"
     return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
   end
-  local raw = simple and grid_block(word_widths(pandoc.write(pandoc.Pandoc({ tbl }), LATEX), layout.aw), rows)
+  local raw = simple and grid_block(split_latex(word_widths(pandoc.write(pandoc.Pandoc({ tbl }), LATEX), layout.aw)), rows)
   if raw then
     has_grid = true
     return { pandoc.RawBlock("latex", table.concat(before)), raw, pandoc.RawBlock("latex", table.concat(after)) }
@@ -757,9 +920,10 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_cellcolor or has_align) then return meta end
+  if not (has_cellcolor or has_align or has_split) then return meta end
 
   local parts = {}
+  if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
   local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })
