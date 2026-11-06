@@ -68,19 +68,21 @@ CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 CUSTOM_REFERENCE_PPTX = "custom-reference.pptx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
 FILTER_BASE_PATH = "/usr/local/share/pandoc/filters"
+# The filters which set the LaTeX of a DOCX, for PDF and LaTeX
+DOCX_FILTER_PATH = f"{FILTER_BASE_PATH}/docx"
 
 FILTERS = {
     "page_break": f"{FILTER_BASE_PATH}/pagebreak.lua",
     "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
-    "docx_text_decorations": f"{FILTER_BASE_PATH}/docx_text_decorations.lua",
-    "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
-    "docx_math_colors_to_latex": f"{FILTER_BASE_PATH}/docx_math_colors_to_latex.lua",
-    "docx_image_layout_to_latex": f"{FILTER_BASE_PATH}/docx_image_layout_to_latex.lua",
-    "docx_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_paragraphs_to_latex.lua",
-    "docx_lists_to_latex": f"{FILTER_BASE_PATH}/docx_lists_to_latex.lua",
-    "docx_tables_to_latex": f"{FILTER_BASE_PATH}/docx_tables_to_latex.lua",
+    "docx_text_decorations": f"{DOCX_FILTER_PATH}/docx_text_decorations.lua",
+    "docx_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_colors_to_latex.lua",
+    "docx_math_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_math_colors_to_latex.lua",
+    "docx_image_layout_to_latex": f"{DOCX_FILTER_PATH}/docx_image_layout_to_latex.lua",
+    "docx_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_paragraphs_to_latex.lua",
+    "docx_lists_to_latex": f"{DOCX_FILTER_PATH}/docx_lists_to_latex.lua",
+    "docx_tables_to_latex": f"{DOCX_FILTER_PATH}/docx_tables_to_latex.lua",
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
@@ -89,11 +91,11 @@ FILTERS = {
     "html_whitespace": f"{FILTER_BASE_PATH}/html_whitespace.lua",
     "html_nowrap": f"{FILTER_BASE_PATH}/html_nowrap.lua",
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
-    "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
-    "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
-    "docx_comments_to_latex": f"{FILTER_BASE_PATH}/docx_comments_to_latex.lua",
-    "docx_document_styles_to_latex": f"{FILTER_BASE_PATH}/docx_document_styles_to_latex.lua",
-    "docx_toc_to_latex": f"{FILTER_BASE_PATH}/docx_toc_to_latex.lua",
+    "docx_caption_labels_to_latex": f"{DOCX_FILTER_PATH}/docx_caption_labels_to_latex.lua",
+    "docx_empty_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_empty_paragraphs_to_latex.lua",
+    "docx_comments_to_latex": f"{DOCX_FILTER_PATH}/docx_comments_to_latex.lua",
+    "docx_document_styles_to_latex": f"{DOCX_FILTER_PATH}/docx_document_styles_to_latex.lua",
+    "docx_toc_to_latex": f"{DOCX_FILTER_PATH}/docx_toc_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
@@ -127,6 +129,9 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
         "--toc",
     )
 }
+# The docx filters a request may name lay in the folder of all filters before they moved to their own:
+# a request which names one there still gets it
+ALLOWED_PANDOC_OPTIONS |= {option.replace(f"{DOCX_FILTER_PATH}/", f"{FILTER_BASE_PATH}/"): option for option in list(ALLOWED_PANDOC_OPTIONS) if option.startswith(f"--lua-filter={DOCX_FILTER_PATH}/")}
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
 # tectonic, latex is the raw .tex file). The DOCX color preprocessor only

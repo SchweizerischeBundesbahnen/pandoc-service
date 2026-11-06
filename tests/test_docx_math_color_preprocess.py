@@ -4,7 +4,7 @@ These verify the *encode* half of the DOCX -> LaTeX/PDF math-color shim: given a
 whose OMML carries direct ``<w:color>`` on math runs (as ``docx_math_color_post_process``
 writes on the HTML -> DOCX path, and as Word renders), the preprocessor wraps each
 colored run's ``<m:t>`` text in ``PMCzzzRRGGBBzzz`` / ``zzzPMCENDzzz`` markers and strips
-the ``<w:color>``. ``filters/docx_math_colors_to_latex.lua`` turns those markers back into
+the ``<w:color>``. ``filters/docx/docx_math_colors_to_latex.lua`` turns those markers back into
 ``\\color`` and is exercised, with pandoc, in the integration test.
 
 Each test builds a minimal DOCX zip in memory containing a single ``word/document.xml``

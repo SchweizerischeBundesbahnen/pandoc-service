@@ -1,4 +1,4 @@
-"""Integration tests for the lines of a table in ``filters/docx_tables_to_latex.lua``.
+"""Integration tests for the lines of a table in ``filters/docx/docx_tables_to_latex.lua``.
 
 app/docx_table_pre_process.py tags the first cell of a styled table with
 ``rl=none`` or ``rl=head``; the filter sets the table without the booktabs
@@ -11,7 +11,7 @@ from __future__ import annotations
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_tables_to_latex.lua"
 OPEN, CLOSE = "", ""
 
 

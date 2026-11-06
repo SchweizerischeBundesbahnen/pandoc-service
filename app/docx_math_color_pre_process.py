@@ -17,7 +17,7 @@ text in plain-text markers::
 
 The markers are pure alphanumerics, which ``texmath`` emits contiguously into the
 TeX string (only operators get spacing), so they survive ``readOMML`` ->
-``writeTeX`` intact inside the produced ``Math`` inline. ``filters/docx_math_colors_to_latex.lua``
+``writeTeX`` intact inside the produced ``Math`` inline. ``filters/docx/docx_math_colors_to_latex.lua``
 then rewrites each marker pair in the math string into ``{\color[HTML]{RRGGBB} ...}``,
 which ``xcolor`` (already loaded by the pipeline) renders in the PDF.
 
@@ -56,7 +56,7 @@ HEX_COLOR_LENGTH = 6
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 # Marker sentinels wrapping a colored run's text. Shared, by construction, with
-# the regex in filters/docx_math_colors_to_latex.lua:
+# the regex in filters/docx/docx_math_colors_to_latex.lua:
 #     PMCzzz(%x%x%x%x%x%x)zzz(.-)zzzPMCENDzzz  ->  {\color[HTML]{%1} %2}
 # Pure alphanumerics on purpose: texmath concatenates letters/digits without
 # inserting spacing (only operators get spaced), so "PMCzzzRRGGBBzzz...zzzPMCENDzzz"

@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_toc_to_latex.lua`` and app/docx_toc_pre_process.py.
+"""Integration tests for ``filters/docx/docx_toc_to_latex.lua`` and app/docx_toc_pre_process.py.
 
 The filter tests run pandoc inside the pandoc-service container on markdown
 Divs of the synthetic styles app/docx_toc_pre_process.py writes. The
@@ -17,7 +17,7 @@ from pypdf import PdfReader
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_toc_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_toc_to_latex.lua"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 

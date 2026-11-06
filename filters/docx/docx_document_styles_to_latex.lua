@@ -111,7 +111,7 @@ local function table_preamble(meta, lines)
   local baseline = points(meta[BASELINE])
   if baseline ~= nil and baseline > 0 then
     -- A cell paragraph without a style is in Normal, at the top of its cell with the
-    -- space of Normal below it: filters/docx_tables_to_latex.lua adds it to the depth
+    -- space of Normal below it: filters/docx/docx_tables_to_latex.lua adds it to the depth
     -- of each cell, and switches a table of paragraphs of the Compact style to its rows
     local plain = points(meta[PLAIN_CELL_SPACE]) or space
     lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
@@ -445,7 +445,7 @@ local function caption_preamble(lines)
   -- The switch first: it adds the font family to the lines itself
   local switch = font_switch(caption_style, "docxCaptionFont", lines)
   lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionStyle}{%s}", switch)
-  -- The space between a table and its caption, below or above it, see filters/docx_tables_to_latex.lua
+  -- The space between a table and its caption, below or above it, see filters/docx/docx_tables_to_latex.lua
   lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionBefore}{%gpt}", caption_style.own_before)
   lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionAfter}{%gpt}", caption_style.own_after)
 end

@@ -10,7 +10,7 @@ This preprocessor rewrites every TOC field of the body, every paragraph from
 the one which begins it to the one which ends it:
 
 * a table of contents becomes one paragraph in the synthetic style
-  ``PandocToc__CONTENTS_<depth>``, which filters/docx_toc_to_latex.lua turns
+  ``PandocToc__CONTENTS_<depth>``, which filters/docx/docx_toc_to_latex.lua turns
   into LaTeX's table of contents of that depth, and the empty paragraph Word
   leaves after the entries it fills in;
 * each entry of a list of figures or tables becomes a paragraph in the style
@@ -33,7 +33,7 @@ STYLE_PREFIX = "PandocToc__"
 CONTENTS_STYLE = STYLE_PREFIX + "CONTENTS_"
 ENTRY_STYLE = STYLE_PREFIX + "ENTRY"
 PAGE_MARKER = "PDCPAGEREF"
-# Word has nine levels of headings; filters/docx_document_styles_to_latex.lua gives LaTeX the same.
+# Word has nine levels of headings; filters/docx/docx_document_styles_to_latex.lua gives LaTeX the same.
 MAX_DEPTH = 9
 DEFAULT_DEPTH = 3
 

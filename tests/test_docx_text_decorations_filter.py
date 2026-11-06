@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_text_decorations.lua``.
+"""Integration tests for ``filters/docx/docx_text_decorations.lua``.
 
 Runs the real ``pandoc`` binary inside the pandoc-service container on a
 native AST (what the docx reader produces) and checks how Underline/Strikeout
@@ -17,7 +17,7 @@ from docker.models.containers import Container
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTERS_DIR = "/usr/local/share/pandoc/filters"
+FILTERS_DIR = "/usr/local/share/pandoc/filters/docx"
 DECO = f"{FILTERS_DIR}/docx_text_decorations.lua"
 COLORS = f"{FILTERS_DIR}/docx_colors_to_latex.lua"
 

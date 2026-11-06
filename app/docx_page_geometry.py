@@ -12,7 +12,7 @@ margins, the same fallback app/docx_post_process.py sizes images by.
 Word prints a document with comments on a smaller page, with a markup area
 right of it which holds the balloons of the comments. For such a document the
 page is laid out on a larger paper, which ``\\mag`` shrinks to the size of the
-DOCX page, and filters/docx_comments_to_latex.lua draws the markup area and
+DOCX page, and filters/docx/docx_comments_to_latex.lua draws the markup area and
 the balloons where these variables place them.
 """
 

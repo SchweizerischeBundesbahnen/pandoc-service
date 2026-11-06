@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_empty_paragraphs_to_latex.lua``.
+"""Integration tests for ``filters/docx/docx_empty_paragraphs_to_latex.lua``.
 
 Word prints an empty paragraph as a blank line. The filter turns each empty
 paragraph of the document body into a ``\\strut`` paragraph, so the PDF keeps
@@ -15,7 +15,7 @@ from docx import Document
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_empty_paragraphs_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_empty_paragraphs_to_latex.lua"
 
 
 def _native_to_latex(container, native: str) -> str:

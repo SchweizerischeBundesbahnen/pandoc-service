@@ -6,7 +6,7 @@ can recover those properties for the LaTeX/PDF writer. This preprocessor
 runs *before* pandoc reads the DOCX and converts every colored run into a
 reference to a synthetic character style. With ``-f docx+styles`` pandoc
 then emits ``Span`` nodes carrying ``custom-style="PandocColor__..."``
-attributes, which ``filters/docx_colors_to_latex.lua`` translates into
+attributes, which ``filters/docx/docx_colors_to_latex.lua`` translates into
 ``\\textcolor`` / ``\\colorbox`` raw LaTeX.
 
 Style-name encoding (parseable, deterministic, segments are optional):

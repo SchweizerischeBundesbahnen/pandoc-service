@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_paragraphs_to_latex.lua``.
+"""Integration tests for ``filters/docx/docx_paragraphs_to_latex.lua``.
 
 Runs pandoc inside the pandoc-service container with the filter loaded and
 asserts the LaTeX output for a ``Div`` carrying the synthetic
@@ -13,7 +13,7 @@ from __future__ import annotations
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_paragraphs_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_paragraphs_to_latex.lua"
 
 
 def _md_to_latex(container, md: str) -> str:

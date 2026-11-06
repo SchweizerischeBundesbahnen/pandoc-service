@@ -12,7 +12,7 @@ Pandoc's DOCX reader has three table-related problems this preprocessor fixes:
    (background shading, borders, vertical alignment) before building the
    AST.  This preprocessor prepends a PUA-delimited sentinel to the first
    paragraph of each coloured cell so the companion Lua filter
-   (``filters/docx_tables_to_latex.lua``) can inject ``\\cellcolor`` into
+   (``filters/docx/docx_tables_to_latex.lua``) can inject ``\\cellcolor`` into
    the LaTeX output.
 
 3. **Dropped table width & alignment**: pandoc normalises the column widths
@@ -620,7 +620,7 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
     no counter of LaTeX; and the lists of figures and tables come from the
     entries of their fields (see app/docx_toc_pre_process.py). A style of its
     own keeps the look of the Caption style, which
-    filters/docx_document_styles_to_latex.lua sets. pandoc's own
+    filters/docx/docx_document_styles_to_latex.lua sets. pandoc's own
     ``TableCaption``/``ImageCaption`` styles are left untouched.
 
     Returns True when any paragraph was changed.

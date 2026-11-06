@@ -9,7 +9,7 @@ rewrite puts both values in front of that title:
 
     {{PICLAYOUT:<position in half-points>|<left in EMU>|<right in EMU>}}<original title>
 
-``filters/docx_image_layout_to_latex.lua`` reads the marker, restores the title
+``filters/docx/docx_image_layout_to_latex.lua`` reads the marker, restores the title
 and sets the picture in ``\\raisebox`` and ``\\hspace``. The rewrite works on the
 copy of the DOCX pandoc reads for LaTeX, never on a DOCX this service returns.
 """

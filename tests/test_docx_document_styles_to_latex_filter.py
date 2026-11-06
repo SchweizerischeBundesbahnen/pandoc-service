@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_document_styles_to_latex.lua`` and app/docx_document_styles.py.
+"""Integration tests for ``filters/docx/docx_document_styles_to_latex.lua`` and app/docx_document_styles.py.
 
 The filter tests run pandoc inside the pandoc-service container with the
 metadata app/docx_document_styles.py passes, and read the preamble of the
@@ -17,7 +17,7 @@ from pypdf import PdfReader
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_document_styles_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_document_styles_to_latex.lua"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 HEADER_FILTER = "/tmp/test/header.lua"
 # A filter before ours which adds header-includes, as the other docx filters do

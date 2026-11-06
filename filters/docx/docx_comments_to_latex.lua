@@ -192,7 +192,7 @@ function Pandoc(doc)
   local ascent = tonumber(pandoc.utils.stringify(meta[ASCENT] or ""))
   local descent = tonumber(pandoc.utils.stringify(meta[DESCENT] or ""))
   local line = tonumber(pandoc.utils.stringify(meta[BASELINE] or "")) or DEFAULT_LINE
-  -- The ascent and descent of the body stay for filters/docx_document_styles_to_latex.lua
+  -- The ascent and descent of the body stay for filters/docx/docx_document_styles_to_latex.lua
   for _, key in ipairs({ MAG, AREA, BALLOON }) do
     meta[key] = nil
   end

@@ -526,7 +526,7 @@ def test_pandoc_captions_are_left_alone():
 #
 # Pandoc's AST has no justified alignment, so a cell's <w:jc w:val="both">
 # reaches the reader as AlignLeft and "distribute" as AlignDefault. Either way
-# filters/docx_tables_to_latex.lua would flush the cell left, so the sentinel
+# filters/docx/docx_tables_to_latex.lua would flush the cell left, so the sentinel
 # carries it. The other three alignments survive on the Cell and are not tagged.
 
 

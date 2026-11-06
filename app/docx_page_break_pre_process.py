@@ -5,7 +5,7 @@ pandoc's DOCX reader drops page breaks and sections: a paragraph holding only
 paragraph with ``<w:pageBreakBefore/>`` all ran on in the PDF, and every page
 had the size and margins of the first section. This preprocessor puts a
 paragraph in a synthetic style at each of them, which
-filters/docx_document_styles_to_latex.lua turns into LaTeX:
+filters/docx/docx_document_styles_to_latex.lua turns into LaTeX:
 
 * ``PandocPageBreak``: a new page, ``\\clearpage``;
 * ``PandocSection``: a section on a new page of another size or other margins,

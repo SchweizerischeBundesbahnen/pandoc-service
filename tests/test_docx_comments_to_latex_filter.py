@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_comments_to_latex.lua``.
+"""Integration tests for ``filters/docx/docx_comments_to_latex.lua``.
 
 Word prints the comments of a document in balloons right of the text, on a
 smaller page. The filter replaces the comment spans of the reader with
@@ -16,7 +16,7 @@ from pypdf import PdfReader
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_comments_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_comments_to_latex.lua"
 MARKUP = '-M docx-comment-mag=747 -M docx-comment-area="547 134 259.4 792" -M docx-comment-balloon="572 232.8 546"'
 
 

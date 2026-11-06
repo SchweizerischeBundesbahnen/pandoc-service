@@ -12,7 +12,7 @@ This module reads the body text style (Body Text, then Normal, then the
 document defaults), the Title and Heading 1 to 9 styles, the theme fonts and
 the hyphenation setting, and hands them to pandoc: the font and size of the
 body as LaTeX variables, the rest as metadata which
-filters/docx_document_styles_to_latex.lua turns into LaTeX.
+filters/docx/docx_document_styles_to_latex.lua turns into LaTeX.
 
 A font reaches LaTeX only when the container has a family of exactly that
 name. Any other name, which a document may set to anything, keeps Latin
@@ -84,7 +84,7 @@ THEME_SLOTS = {
     "followedHyperlink": "folHlink",
 }
 HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
-# The colour filters/docx_document_styles_to_latex.lua defines as the colour of the Hyperlink style.
+# The colour filters/docx/docx_document_styles_to_latex.lua defines as the colour of the Hyperlink style.
 LINK_COLOR_NAME = "pdcLink"
 
 _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
@@ -366,7 +366,7 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, number
     """The title or a heading style as ``name:value`` fields, empty when the document lacks the style.
 
     The space before and after is the style's own: Word puts the larger of the after of one paragraph
-    and the before of the next between them, which filters/docx_document_styles_to_latex.lua works
+    and the before of the next between them, which filters/docx/docx_document_styles_to_latex.lua works
     out from the neighbours of each heading.
     """
     chain = _style_chain(styles, style_id, fallback=None)

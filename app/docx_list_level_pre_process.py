@@ -15,7 +15,7 @@ every list paragraph encoding its level::
     <ilvl>
 
 The sentinel survives into the AST as a leading ``Str`` on the list item. The
-companion Lua filter (``filters/docx_lists_to_latex.lua``) reads the level,
+companion Lua filter (``filters/docx/docx_lists_to_latex.lua``) reads the level,
 strips the sentinel, and pushes any under-nested sublist to its intended depth
 with marker-less wrapper levels. The Private-Use-Area delimiters never collide
 with real document text.

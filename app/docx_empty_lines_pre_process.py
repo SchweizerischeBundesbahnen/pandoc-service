@@ -3,7 +3,7 @@
 Word shows a paragraph without text as an empty line, and one more line for
 each line break (``<w:br/>``) in it. Polarion writes such paragraphs between
 the blocks of a document. pandoc's DOCX reader drops the line breaks at the end
-of a paragraph, so filters/docx_empty_paragraphs_to_latex.lua saw an empty
+of a paragraph, so filters/docx/docx_empty_paragraphs_to_latex.lua saw an empty
 paragraph and set one line where Word sets two or more; the pages of the PDF
 broke elsewhere.
 

@@ -12,7 +12,7 @@ style named
 
 With ``-f docx+styles`` pandoc then surfaces those references as ``Div`` nodes
 carrying ``custom-style="PandocPara__..."``, which
-``filters/docx_paragraphs_to_latex.lua`` translates into a TeX group that sets
+``filters/docx/docx_paragraphs_to_latex.lua`` translates into a TeX group that sets
 ``\\leftskip`` and the matching alignment primitive (``\\centering`` /
 ``\\raggedleft`` / ``\\raggedright``).
 

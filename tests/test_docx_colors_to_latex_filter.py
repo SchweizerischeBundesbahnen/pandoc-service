@@ -1,4 +1,4 @@
-"""End-to-end integration test for ``filters/docx_colors_to_latex.lua``.
+"""End-to-end integration test for ``filters/docx/docx_colors_to_latex.lua``.
 
 Companion to ``test_inline_styles_filter_integration.py``: runs pandoc inside
 the pandoc-service container with the Lua filter loaded and asserts that the
@@ -27,7 +27,7 @@ from app import docx_color_pre_process
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_colors_to_latex.lua"
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "tests" / "data" / "colored.docx"
 
 
