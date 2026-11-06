@@ -161,11 +161,13 @@ def _turned_on(element: ET.Element | None) -> bool | None:
 def page_break_styles(styles: ET.Element | None) -> frozenset[str | None]:
     """The paragraph styles which start a new page before their paragraphs, themselves or by the style they are based on.
 
-    None stands for the default paragraph style, which a paragraph without a style of its own has.
+    None stands for a paragraph without a style of its own: it has the default paragraph style, else the document defaults.
     """
     if styles is None:
         return frozenset()
     by_id = {style.get(f"{{{W_NS}}}styleId"): style for style in styles.iter(f"{{{W_NS}}}style")}
+    # A chain without a value of its own takes the one of the document defaults
+    fallback = bool(_turned_on(styles.find(f"{{{W_NS}}}docDefaults/{{{W_NS}}}pPrDefault/{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}")))
     found: dict[str, bool] = {}
     for style_id in by_id:
         # A walk along the chain, not a recursion, which a long chain would exhaust. A loop in it breaks nothing.
@@ -179,11 +181,11 @@ def page_break_styles(styles: ET.Element | None) -> frozenset[str | None]:
             chain.append(current)
             based_on = by_id[current].find(f"{{{W_NS}}}basedOn")
             current = based_on.get(_VAL_ATTR) if based_on is not None else None
-        found.update(dict.fromkeys(chain, found.get(current, False) if current is not None else False))
+        found.update(dict.fromkeys(chain, found.get(current, fallback) if current is not None else fallback))
     result: set[str | None] = {style_id for style_id, breaks in found.items() if breaks}
     # Of several default paragraph styles, Word takes the last one
     defaults = [style_id for style_id, style in by_id.items() if style.get(f"{{{W_NS}}}type") == "paragraph" and style.get(f"{{{W_NS}}}default") in ("1", "true", "on")]
-    if defaults and defaults[-1] in result:
+    if defaults[-1] in result if defaults else fallback:
         result.add(None)
     return frozenset(result)
 
