@@ -359,3 +359,30 @@ def test_a_break_before_a_paragraph_opens_no_page_on_an_empty_one(test_parameter
     flat = _native_to_latex(test_parameters.container, native)
     assert flat.count("\\clearpage") == 2, flat
     assert "\\null" not in flat
+
+
+def _text_top(pdf: bytes, page_index: int, text: str) -> float:
+    """Where the text ends at the top on the page, in points from the bottom."""
+    text_page = pdfium.PdfDocument(pdf)[page_index].get_textpage()
+    start = text_page.get_text_range().index(text)
+    return text_page.get_charbox(start)[3]
+
+
+def test_a_blank_paragraph_with_page_break_before_keeps_its_lines(test_parameters: TestParameters):
+    """Word starts the new page with the blank lines of the paragraph, and the text after them."""
+    pdfs = []
+    for blank in (False, True):
+        document = Document()
+        document.add_paragraph("First page.")
+        if blank:
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.page_break_before = True
+            run = paragraph.add_run()
+            run.add_break()
+            run.add_break()
+        after = document.add_paragraph("After.")
+        after.paragraph_format.page_break_before = not blank
+        pdfs.append(_pdf(test_parameters, document))
+    without, with_blank = pdfs
+    assert len(PdfReader(io.BytesIO(with_blank)).pages) == 2
+    assert _text_top(with_blank, 1, "After.") < _text_top(without, 1, "After.") - 20

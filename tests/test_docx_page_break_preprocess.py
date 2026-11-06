@@ -182,7 +182,17 @@ def test_page_break_before_a_paragraph_starts_its_text():
     para = "<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"
     xml, changed = rewrite_part(_document(TEXT_PARAGRAPH + para))
     assert changed
-    assert _paragraph_texts(xml) == ["text", f"{PAGE_BREAK_BEFORE}text"]
+    assert _paragraph_texts(xml) == ["text", PAGE_BREAK_BEFORE, "text"]
+
+
+def test_page_break_before_leaves_a_blank_paragraph_blank():
+    """The break goes into a paragraph of its own: the blank lines of the paragraph stay blank lines."""
+    para = "<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:br/><w:br/></w:r></w:p>"
+    xml, _ = rewrite_part(_document(TEXT_PARAGRAPH + para))
+    body = ET.fromstring(xml).find(f"{{{W_NS}}}body")
+    assert body is not None
+    assert _paragraph_texts(xml) == ["text", PAGE_BREAK_BEFORE, ""]
+    assert ET.tostring(body[2]) == ET.tostring(ET.fromstring(_document(para)).find(f"{{{W_NS}}}body")[0])
 
 
 def test_page_break_before_turned_off_breaks_nothing():
@@ -194,12 +204,12 @@ def test_page_break_before_turned_off_breaks_nothing():
 def test_page_break_before_from_the_style_of_the_paragraph():
     para = '<w:p><w:pPr><w:pStyle w:val="Chapter"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p>'
     xml, _ = rewrite_part(_document(TEXT_PARAGRAPH + para), frozenset({"Chapter"}))
-    assert _paragraph_texts(xml) == ["text", f"{PAGE_BREAK_BEFORE}text"]
+    assert _paragraph_texts(xml) == ["text", PAGE_BREAK_BEFORE, "text"]
 
 
 def test_page_break_before_from_the_default_paragraph_style():
     xml, _ = rewrite_part(_document(TEXT_PARAGRAPH + TEXT_PARAGRAPH), frozenset({None}))
-    assert _paragraph_texts(xml) == [f"{PAGE_BREAK_BEFORE}text", f"{PAGE_BREAK_BEFORE}text"]
+    assert _paragraph_texts(xml) == [PAGE_BREAK_BEFORE, "text", PAGE_BREAK_BEFORE, "text"]
 
 
 def test_page_break_before_a_paragraph_in_a_table_breaks_nothing():

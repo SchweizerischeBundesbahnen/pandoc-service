@@ -6,7 +6,7 @@ section. This preprocessor runs *before* pandoc and writes each break of the bod
 as a sentinel in the text::
 
     <open><close>                                  a page break
-    <open>before<close>                            a paragraph which starts a new page before it
+    <open>before<close>                            a paragraph of its own: the next one starts a new page
     <open>width,height,top,right,bottom,left,start<close>  a section break
 
 ``<w:pageBreakBefore/>`` in the properties of a paragraph or of its style starts a
@@ -197,12 +197,11 @@ def _breaks_before(para: ET.Element, break_styles: frozenset[str | None]) -> boo
     return (style.get(_VAL_ATTR) if style is not None else None) in break_styles
 
 
-def _mark_page_break_before(para: ET.Element) -> None:
-    """A page break at the start of the paragraph, after its properties."""
-    run = ET.Element(_R_TAG)
-    run.append(_sentinel_text(PAGE_BREAK_BEFORE))
-    properties = para.find(_PPR_TAG)
-    para.insert(list(para).index(properties) + 1 if properties is not None else 0, run)
+def _page_break_before() -> ET.Element:
+    """A paragraph of its own for the break: the paragraph after it keeps what it holds, blank lines among them."""
+    para = ET.Element(_P_TAG)
+    ET.SubElement(para, _R_TAG).append(_sentinel_text(PAGE_BREAK_BEFORE))
+    return para
 
 
 def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = frozenset()) -> bool:
@@ -211,6 +210,7 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = fr
     changed = False
     lone_page_break: ET.Element | None = None
     replaced_breaks: list[ET.Element] = []
+    breaks_before: list[ET.Element] = []
     for block in body:
         if block.tag != _P_TAG:
             if block.tag in (_TBL_TAG, _SDT_TAG):
@@ -219,12 +219,14 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = fr
         is_lone_page_break = _is_lone_page_break(block)
         changed = _mark_page_breaks(block) or changed
         if _breaks_before(block, break_styles):
-            _mark_page_break_before(block)
+            breaks_before.append(block)
             changed = True
         if _closes_a_section(block):
             changed = _mark_section_end(block, sections, lone_page_break, replaced_breaks) or changed
         lone_page_break = block if is_lone_page_break else None
-    # Not in the loop: removing a block while iterating the body skips the block after it.
+    # Not in the loop: adding or removing a block while iterating the body visits a block twice or skips one.
+    for para in breaks_before:
+        body.insert(list(body).index(para), _page_break_before())
     for para in replaced_breaks:
         _drop_one_page_break(body, para)
     return changed
