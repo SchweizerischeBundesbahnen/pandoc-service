@@ -9,11 +9,12 @@ the service.
 from __future__ import annotations
 
 import io
+import json
 
 import pypdfium2 as pdfium
 from docx import Document
 from docx.enum.section import WD_ORIENT, WD_SECTION
-from docx.enum.text import WD_BREAK
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.shared import Cm
 from pypdf import PageObject, PdfReader
 
@@ -82,8 +83,22 @@ def test_bookmark_next_to_a_page_break_stays(test_parameters: TestParameters):
 def test_section_break_sets_the_page(test_parameters: TestParameters):
     native = f'[ Para [ Str "before" ], Para [ {_str(LANDSCAPE)} ] ]'
     flat = _native_to_latex(test_parameters.container, native)
-    assert "\\clearpage{}\\pdfpagewidth=11.6931in\\pdfpageheight=8.2681in" in flat
+    assert "\\clearpage{} \\pdfpagewidth=11.6931in\\pdfpageheight=8.2681in" in flat
     assert "\\newgeometry{layoutwidth=11.6931in,layoutheight=8.2681in,top=1.0000in,right=1.0000in,bottom=1.0000in,left=1.0000in}" in flat
+
+
+def test_page_setup_of_a_section_break_goes_after_the_div(test_parameters: TestParameters):
+    """docx_paragraphs_to_latex wraps the Div of a formatted paragraph in a TeX group, which would undo the setup."""
+    native = f'[ Div ( "" , [] , [] ) [ Para [ {_str(f"closing{LANDSCAPE}")} ] ], Para [ Str "next" ] ]'
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test"])
+    container.exec_run(["sh", "-c", f"cat > /tmp/test/in.native << 'HEREDOC_EOF'\n{native}\nHEREDOC_EOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f native -t json --lua-filter={FILTER_PATH} /tmp/test/in.native"])
+    assert exit_code == 0, output.decode()
+    blocks = json.loads(output)["blocks"]
+    assert [block["t"] for block in blocks] == ["Div", "RawBlock", "Para"]
+    assert "\\newgeometry" not in json.dumps(blocks[0])
+    assert "\\newgeometry" in blocks[1]["c"][1]
 
 
 def test_section_break_without_room_for_text_only_breaks(test_parameters: TestParameters):
@@ -147,6 +162,23 @@ def test_landscape_section_reaches_the_pdf(test_parameters: TestParameters):
     assert not _is_landscape(pages[0])
     assert _is_landscape(pages[1])
     assert "landscape" in pages[1].extract_text()
+
+
+def test_landscape_follows_a_centered_paragraph_holding_the_section_break(test_parameters: TestParameters):
+    """Word keeps the sectPr in the last paragraph of a section, and a centered paragraph lands in a TeX group."""
+    document = Document()
+    closing = document.add_paragraph("closing")
+    closing.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    section = document.add_section(WD_SECTION.NEW_PAGE)
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    document.add_paragraph("landscape")
+    holder = closing._p.getnext()
+    closing._p.get_or_add_pPr().append(holder.pPr.sectPr)
+    document.element.body.remove(holder)
+    pages = _pages(test_parameters, document)
+    assert len(pages) == 2
+    assert _is_landscape(pages[1])
 
 
 def test_table_of_a_landscape_section_spans_its_text_width(test_parameters: TestParameters):

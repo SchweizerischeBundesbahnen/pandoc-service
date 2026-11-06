@@ -11,7 +11,9 @@
 --
 -- This filter replaces a sentinel with \clearpage where it stands. A
 -- section break then sets the page size and the margins of the next page,
--- so a landscape section comes out landscape. The sentinel is document
+-- so a landscape section comes out landscape. That setup goes after the
+-- body block holding the break: docx_paragraphs_to_latex wraps a formatted
+-- paragraph in a TeX group, which would undo it. The sentinel is document
 -- text, so its numbers are checked and only they reach the raw LaTeX.
 --
 -- LaTeX ignores \clearpage on an empty page, where Word starts one more
@@ -42,6 +44,9 @@ local BLANK_INLINES = {
 -- Whether the current page has nothing on it yet.
 local on_empty_page = true
 
+-- The page setup of the last section break, until its body block ends.
+local pending_page_setup = ""
+
 local function inches(twips)
   return string.format("%.4fin", twips / TWIPS_PER_INCH)
 end
@@ -68,8 +73,12 @@ end
 local function break_tex(numbers)
   local before = on_empty_page and "\\null" or ""
   on_empty_page = true
+  local setup = page_setup(numbers)
+  if setup ~= "" then
+    pending_page_setup = setup
+  end
   -- The braces end the command: text can follow right after the break.
-  return pandoc.RawInline("latex", before .. "\\clearpage{}" .. page_setup(numbers))
+  return pandoc.RawInline("latex", before .. "\\clearpage{}")
 end
 
 -- The Str with each sentinel replaced by its break. pandoc merges the
@@ -134,17 +143,30 @@ local function with_breaks(block)
   return block
 end
 
+local function replace_breaks_in(block)
+  if block.t == "Para" or block.t == "Plain" or block.t == "Header" then
+    return with_breaks(block)
+  end
+  if block.t == "Div" then
+    local content = {}
+    for _, inner in ipairs(block.content) do
+      content[#content + 1] = replace_breaks_in(inner)
+    end
+    block.content = content
+    return block
+  end
+  on_empty_page = false
+  return block
+end
+
 local function replace_breaks(blocks)
   local result = {}
   for _, block in ipairs(blocks) do
-    if block.t == "Para" or block.t == "Plain" or block.t == "Header" then
-      block = with_breaks(block)
-    elseif block.t == "Div" then
-      block.content = replace_breaks(block.content)
-    else
-      on_empty_page = false
+    result[#result + 1] = replace_breaks_in(block)
+    if pending_page_setup ~= "" then
+      result[#result + 1] = pandoc.RawBlock("latex", pending_page_setup)
+      pending_page_setup = ""
     end
-    result[#result + 1] = block
   end
   return result
 end
