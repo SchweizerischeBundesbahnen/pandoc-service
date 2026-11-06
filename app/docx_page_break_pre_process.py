@@ -30,6 +30,7 @@ break a page in LaTeX.
 from __future__ import annotations
 
 import logging
+from itertools import pairwise
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 
@@ -37,7 +38,7 @@ from . import docx_page_geometry
 from .docx_ooxml import W_NS, parse_xml, serialize_tree
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,36 @@ def _mark_section_break(para: ET.Element, section: ET.Element | None, start: str
     run.append(_sentinel_text(_section_sentinel(docx_page_geometry.section_page(section), start)))
 
 
+def _mark_section_end(body: ET.Element, para: ET.Element, sections: Iterator[tuple[ET.Element | None, ET.Element | None]], lone_page_break: ET.Element | None) -> bool:
+    """Mark the section break the paragraph holds, which takes the place of a lone page break before it. Returns whether it opens a page."""
+    closed, opened = next(sections)
+    start = _page_start(closed, opened)
+    if start is None:
+        return False
+    _mark_section_break(para, opened, start)
+    if lone_page_break is not None:
+        body.remove(lone_page_break)
+    return True
+
+
+def _mark_body_breaks(body: ET.Element) -> bool:
+    """Write the breaks of the paragraphs directly in the body as sentinels. Returns whether there were any."""
+    sections = pairwise(docx_page_geometry.body_sections(body))
+    changed = False
+    lone_page_break: ET.Element | None = None
+    for block in list(body):
+        if block.tag != _P_TAG:
+            if block.tag in (_TBL_TAG, _SDT_TAG):
+                lone_page_break = None
+            continue
+        is_lone_page_break = _is_lone_page_break(block)
+        changed = _mark_page_breaks(block) or changed
+        if block.find(f"{_PPR_TAG}/{_SECTPR_TAG}") is not None:
+            changed = _mark_section_end(body, block, sections, lone_page_break) or changed
+        lone_page_break = block if is_lone_page_break else None
+    return changed
+
+
 def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Write the breaks of the body as sentinels. A part without a body has no page to break. Returns (new_bytes, changed)."""
     tree = parse_xml(xml_bytes)
@@ -130,28 +161,6 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
         logger.warning("Unparseable XML in DOCX part; skipping page break preprocess")
         return xml_bytes, False
     body = tree.find(_BODY_TAG)
-    if body is None:
+    if body is None or not _mark_body_breaks(body):
         return xml_bytes, False
-
-    sections = docx_page_geometry.body_sections(body)
-    section_index = 0
-    changed = False
-    lone_page_break: ET.Element | None = None
-    for block in list(body):
-        if block.tag in (_TBL_TAG, _SDT_TAG):
-            lone_page_break = None
-        if block.tag != _P_TAG:
-            continue
-        is_lone_page_break = _is_lone_page_break(block)
-        changed = _mark_page_breaks(block) or changed
-        if block.find(f"{_PPR_TAG}/{_SECTPR_TAG}") is not None:
-            section_index += 1
-            start = _page_start(sections[section_index - 1], sections[section_index])
-            if start is not None:
-                _mark_section_break(block, sections[section_index], start)
-                if lone_page_break is not None:
-                    body.remove(lone_page_break)
-                changed = True
-        lone_page_break = block if is_lone_page_break else None
-
-    return (serialize_tree(tree), True) if changed else (xml_bytes, False)
+    return serialize_tree(tree), True
