@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.14.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.14.1...v2.14.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency coverage to v7.17.1 ([43db174](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/43db174a8a1e703e0e3a98f9320b80b1b4551ea0))
+* **deps:** update dependency tox to v4.67.7 ([3b133bb](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3b133bb2c86b6251c436330d821a35409605055f))
+* **deps:** update prom/prometheus:latest docker digest to e049876 ([2bd76c2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2bd76c223a5ed318ee4ba3f0e40733868b3e5f2a))
+* draw text in the color of its character style ([#330](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/330)) ([b8fd9cf](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b8fd9cf6e6da832bb680ebe874c1b4a0421f5821)), closes [#329](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/329)
+* Preserve DOCX page and section breaks in PDF output ([#331](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/331)) ([4908b01](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/4908b01bbf2855dc23b31532ca733858e97f570a))
+
 ## [2.14.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.14.0...v2.14.1) (2026-11-05)
 
 
