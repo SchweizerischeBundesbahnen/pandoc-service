@@ -246,6 +246,16 @@ def test_the_lines_of_a_paragraph_stay_together_after_a_heading(test_parameters:
     assert "\\let\\\\\\@normalcr" in preamble
 
 
+def test_a_page_starts_as_far_down_as_word_sets_its_first_line(test_parameters: TestParameters):
+    """The first line of a page at the ascent; the first of a document without a title its space before lower."""
+    metadata = (*SPACING, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-ascent=11.25", "docx-body-descent=3.4")
+    latex = _latex(test_parameters.container, *metadata, native='[Div ("",[],[("custom-style","Body Text")]) [Para [Str "First"]], Para [Str "Next"]]')
+    assert "\\setlength{\\topskip}{11.25bp}" in _preamble(latex)
+    body = latex[latex.index("\\begin{document}") :]
+    assert "\\rule{0pt}{20.25bp}\\strut{}First" in body
+    assert body.count("\\rule{0pt}") == 1
+
+
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
     assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble

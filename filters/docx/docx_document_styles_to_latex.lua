@@ -179,6 +179,8 @@ local function body_preamble(meta, lines)
     lines[#lines + 1] = "\\normalsize"
     if strut ~= "" then
       lines[#lines + 1] = "\\lineskip=0pt\\lineskiplimit=0pt"
+      -- Word sets the first line of a page as far down as the ascent of its font
+      lines[#lines + 1] = string.format("\\setlength{\\topskip}{%gbp}", baseline - descent)
       -- A table starts below the descent of the line before it, which TeX takes from its letters
       lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
       -- longtable leaves the depth of its last row below the line, not in \\prevdepth: the line after it
@@ -293,6 +295,7 @@ local function ascent_strut(style)
 end
 
 local body_descent = nil
+local body_ascent = nil
 local body_skip = 0
 
 -- Word sets a line below the descent of the line before it, after the space
@@ -636,7 +639,9 @@ local function gap(previous, spacing)
   return math.abs(delta) > 0.01 and pandoc.RawBlock("latex", string.format("\\vspace{%gbp}", delta)) or nil
 end
 
-local function paragraph_gaps(blocks)
+-- Word keeps the space before the first paragraph of a document at the top of
+-- its page, where TeX drops it: a document without a title starts that far down.
+local function paragraph_gaps(blocks, starts_page)
   local result, previous = {}, nil
   for _, block in ipairs(blocks) do
     local spacing = block_spacing(block)
@@ -644,6 +649,14 @@ local function paragraph_gaps(blocks)
       result[#result + 1] = block
       goto next_block
     end
+    if starts_page and spacing ~= nil and spacing.before > 0 and body_ascent ~= nil then
+      -- The first line as high as the space and the ascent: \\topskip holds no more than the ascent
+      local first = block.t == "Div" and block.content[1] or block
+      if first ~= nil and (first.t == "Para" or first.t == "Plain") then
+        first.content:insert(1, pandoc.RawInline("latex", string.format("\\rule{0pt}{%gbp}", spacing.before + body_ascent)))
+      end
+    end
+    starts_page = false
     result[#result + 1] = gap(previous, spacing)
     if spacing and block.t == "Div" and block.attributes["pdc-style"] == nil then
       -- The paragraphs of one style the reader groups into one Div: each one its gap
@@ -667,6 +680,7 @@ local function read_title(meta)
   local skip = points(meta[SKIP])
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
   body_descent = points(meta[DESCENT])
+  body_ascent = points(meta["docx-body-ascent"])
   body_skip = skip or 0
   for entry in pandoc.utils.stringify(meta[PARAGRAPH_SPACING] or ""):gmatch("[^;]+") do
     local id, name, before, after = entry:match("^(%w+):([%w ]+):([%d.]+):([%d.]+)$")
@@ -748,7 +762,7 @@ return {
   {
     Pandoc = function(doc)
       if FORMAT:match("latex") then
-        doc.blocks = paragraph_gaps(doc.blocks)
+        doc.blocks = paragraph_gaps(doc.blocks, doc.meta.title == nil)
       end
       return doc
     end,
