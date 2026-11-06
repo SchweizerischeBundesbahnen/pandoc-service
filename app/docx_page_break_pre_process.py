@@ -57,11 +57,7 @@ _T_TAG = f"{{{W_NS}}}t"
 _BR_TAG = f"{{{W_NS}}}br"
 _TBL_TAG = f"{{{W_NS}}}tbl"
 _SDT_TAG = f"{{{W_NS}}}sdt"
-_TYPE_TAG = f"{{{W_NS}}}type"
-_COLS_TAG = f"{{{W_NS}}}cols"
-_NUM_ATTR = f"{{{W_NS}}}num"
 _TYPE_ATTR = f"{{{W_NS}}}type"
-_VAL_ATTR = f"{{{W_NS}}}val"
 _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 
 
@@ -109,22 +105,6 @@ def _mark_page_breaks(para: ET.Element) -> bool:
     return changed
 
 
-def _has_columns(section: ET.Element | None) -> bool:
-    """Whether the section sets its text in more than one column."""
-    columns = section.find(_COLS_TAG) if section is not None else None
-    number = columns.get(_NUM_ATTR, "1") if columns is not None else "1"
-    return number.isdecimal() and int(number) > 1
-
-
-def _page_start(closed: ET.Element | None, opened: ET.Element | None) -> str | None:
-    """Which page the opened section starts on, or None when it opens no page. Word's default is the next page."""
-    start_element = opened.find(_TYPE_TAG) if opened is not None else None
-    start = start_element.get(_VAL_ATTR) if start_element is not None else None
-    if start == "continuous" or (start == "nextColumn" and _has_columns(closed)):
-        return None
-    return start if start in ("oddPage", "evenPage") else "nextPage"
-
-
 def _mark_section_break(para: ET.Element, section: ET.Element | None, start: str) -> None:
     run = ET.SubElement(para, _R_TAG)
     run.append(_sentinel_text(_section_sentinel(docx_page_geometry.section_page(section), start)))
@@ -133,7 +113,7 @@ def _mark_section_break(para: ET.Element, section: ET.Element | None, start: str
 def _mark_section_end(body: ET.Element, para: ET.Element, sections: Iterator[tuple[ET.Element | None, ET.Element | None]], lone_page_break: ET.Element | None) -> bool:
     """Mark the section break the paragraph holds, which takes the place of a lone page break before it. Returns whether it opens a page."""
     closed, opened = next(sections)
-    start = _page_start(closed, opened)
+    start = docx_page_geometry.page_start(closed, opened)
     if start is None:
         return False
     _mark_section_break(para, opened, start)

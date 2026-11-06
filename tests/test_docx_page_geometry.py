@@ -151,6 +151,28 @@ def test_each_table_gets_the_text_width_of_its_section():
     assert [widths[table] for table in tables] == [9906, 12838, 12838]
 
 
+def _section_of_type(start: str) -> str:
+    return LANDSCAPE.replace("<w:sectPr>", f'<w:sectPr><w:type w:val="{start}"/>')
+
+
+def test_table_after_a_continuous_section_break_keeps_the_width_latex_sets_it_at():
+    """A continuous section opens no page, so LaTeX keeps the layout of the page it stands on."""
+    document = _document(f"<w:p><w:pPr>{PORTRAIT}</w:pPr></w:p><w:tbl/>{_section_of_type('continuous')}")
+    widths = table_text_widths_twips(document)
+    assert list(widths.values()) == [9906]
+
+
+def test_table_after_next_column_keeps_the_width_of_the_columns():
+    columns = PORTRAIT.replace("</w:sectPr>", '<w:cols w:num="2"/></w:sectPr>')
+    document = _document(f"<w:p><w:pPr>{columns}</w:pPr></w:p><w:tbl/>{_section_of_type('nextColumn')}")
+    assert list(table_text_widths_twips(document).values()) == [9906]
+
+
+def test_table_after_an_odd_page_section_gets_the_new_width():
+    document = _document(f"<w:p><w:pPr>{PORTRAIT}</w:pPr></w:p><w:tbl/>{_section_of_type('oddPage')}")
+    assert list(table_text_widths_twips(document).values()) == [12838]
+
+
 def test_a_part_without_a_body_has_no_table_widths():
     part = parse_xml(f'<w:ftr xmlns:w="{W_NS}"><w:tbl/></w:ftr>'.encode())
     assert part is not None

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from .docx_ooxml import W_NS, parse_xml
@@ -45,6 +46,25 @@ def _first_section(document: Element) -> Element | None:
 def body_sections(body: Element) -> list[Element | None]:
     """The sectPr of each section in order: the ones paragraphs hold, then the body's own, which can be missing."""
     return [*body.findall(f"{{{W_NS}}}p/{{{W_NS}}}pPr/{{{W_NS}}}sectPr"), body.find(f"{{{W_NS}}}sectPr")]
+
+
+def _has_columns(section: Element | None) -> bool:
+    """Whether the section sets its text in more than one column."""
+    columns = section.find(f"{{{W_NS}}}cols") if section is not None else None
+    number = columns.get(f"{{{W_NS}}}num", "1") if columns is not None else "1"
+    return number.isdecimal() and int(number) > 1
+
+
+def page_start(closed: Element | None, opened: Element | None) -> str | None:
+    """Which page the opened section starts on, or None when it opens no page. Word's default is the next page.
+
+    The PDF changes its layout on a new page only, so without one the closed section's layout stays.
+    """
+    start_element = opened.find(f"{{{W_NS}}}type") if opened is not None else None
+    start = start_element.get(f"{{{W_NS}}}val") if start_element is not None else None
+    if start == "continuous" or (start == "nextColumn" and _has_columns(closed)):
+        return None
+    return start if start in ("oddPage", "evenPage") else "nextPage"
 
 
 def _twips(element: Element | None, attribute: str, fallback: int) -> int:
@@ -86,18 +106,24 @@ def text_width_twips(document: Element) -> int:
 
 
 def table_text_widths_twips(document: Element) -> dict[Element, int]:
-    """The width of the text of the section each table of the body stands in, nested tables included, in twips."""
+    """The text width LaTeX sets each table of the body at, nested tables included, in twips.
+
+    That is the width of the last section which opened a page.
+    """
     body = document.find(f"{{{W_NS}}}body")
     if body is None:
         return {}
     widths: dict[Element, int] = {}
-    sections = iter(body_sections(body))
-    width = _section_text_width_twips(next(sections))
+    sections = body_sections(body)
+    section_changes = pairwise(sections)
+    width = _section_text_width_twips(sections[0])
     for block in body:
         for table in block.iter(f"{{{W_NS}}}tbl"):
             widths[table] = width
-        if block.find(f"{{{W_NS}}}pPr/{{{W_NS}}}sectPr") is not None and block.tag == f"{{{W_NS}}}p":
-            width = _section_text_width_twips(next(sections))
+        if block.tag == f"{{{W_NS}}}p" and block.find(f"{{{W_NS}}}pPr/{{{W_NS}}}sectPr") is not None:
+            closed, opened = next(section_changes)
+            if page_start(closed, opened) is not None:
+                width = _section_text_width_twips(opened)
     return widths
 
 
