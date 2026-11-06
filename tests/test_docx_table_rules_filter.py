@@ -139,3 +139,11 @@ def test_a_cell_of_compact_paragraphs_ends_as_deep_as_its_row(test_parameters: T
     latex = _latex(test_parameters.container, "cc=1")
     assert latex.count("\\ifdefined\\pdcCompactCellDepth\\pdcCompactCellDepth\\fi") == 4
     assert "\\ifdefined\\pdcCompactCellBottom\\vspace{\\pdcCompactCellBottom}\\fi" in latex
+
+
+def test_a_grid_keeps_the_curly_quotes_of_its_text(test_parameters: TestParameters):
+    """The fonts of the PDF set no TeX ligatures: TeX quotes of the smart extension would print as backticks."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}“a”"'), _cell('Str "b"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "“a”" in latex
+    assert "``" not in latex

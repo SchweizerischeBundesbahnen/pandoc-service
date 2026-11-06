@@ -492,6 +492,11 @@ local function all_rows(tbl)
   return rows
 end
 
+-- The LaTeX of a table as the writer of a PDF sets its text: for the engines of Unicode it keeps a
+-- curly quote as it is, where the smart extension of the LaTeX writer makes TeX quotes of it, which
+-- the fonts without TeX ligatures print as they are
+local LATEX = "latex-smart"
+
 -- The LaTeX of a grid as a block. A picture of it stays an Image between the raw
 -- LaTeX: pandoc writes out the file of a picture, a GIF as PNG, only for an Image it sees.
 local function grid_block(latex, rows)
@@ -506,7 +511,7 @@ local function grid_block(latex, rows)
   end
   local inlines, from = {}, 1
   for _, image in ipairs(images) do
-    local written = pandoc.write(pandoc.Pandoc({ pandoc.Plain({ image }) }), "latex"):gsub("%s+$", "")
+    local written = pandoc.write(pandoc.Pandoc({ pandoc.Plain({ image }) }), LATEX):gsub("%s+$", "")
     local first, last = latex:find(written, from, true)
     if first == nil then
       return nil
@@ -532,7 +537,7 @@ local function grid_table(tbl)
       table.insert(last.contents, pandoc.Plain({ pandoc.RawInline("latex", string.format("%s{%d}", ROW_END, index)) }))
     end
   end
-  local latex = pandoc.write(pandoc.Pandoc({ tbl }), "latex")
+  local latex = pandoc.write(pandoc.Pandoc({ tbl }), LATEX)
   local _, open = latex:find("\\begin{longtable}[]{", 1, true)
   local close = open and closing_brace(latex, open)
   local columns = close and grid_columns(latex:sub(open + 1, close - 1))
