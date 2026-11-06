@@ -55,7 +55,7 @@ cells of a table row are lines of their own. The same rule reads both PDFs.
 | Any page | Word's lines which the conversion sets on any page |
 | Mean shift | the mean vertical distance of the lines on the same page, in points |
 
-A line further off than 2 points, or missing on its page, is a problem. The page marks it.
+A line further off than 2 points, or missing on its page, is a problem. The page lists them under the pages of the document.
 
 ## Run it
 

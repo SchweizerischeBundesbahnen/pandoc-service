@@ -31,9 +31,6 @@
   .sheet .top { position: absolute; inset: 0; }
   .sheet .top img { position: absolute; inset: 0; }
   .caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-  .mark { position: absolute; border: 1.5px solid var(--missing); background: color-mix(in srgb, var(--missing) 12%, transparent); }
-  .mark.shifted { border-color: var(--shifted); background: color-mix(in srgb, var(--shifted) 12%, transparent); }
-  .hide-marks .mark { display: none; }
   .empty { display: grid; place-items: center; aspect-ratio: 612 / 792; color: var(--muted); background: var(--panel); }
   ul.problems { font-size: 12px; columns: 2; padding-left: 18px; }
   a { color: inherit; }
@@ -58,7 +55,6 @@
     <label><input type="radio" name="mode" value="overlay"> overlay</label>
     <label><input type="radio" name="mode" value="swipe"> swipe</label>
     <label id="amount-label">conversion <input type="range" id="amount" min="0" max="100" value="50"></label>
-    <label><input type="checkbox" id="marks" checked> mark the lines off</label>
   </div>
   <div class="pages" id="pages"></div>
   <ul class="problems" id="problems"></ul>
@@ -97,23 +93,10 @@ for (const header of document.querySelectorAll("th")) {
   header.onclick = () => { sortDown = sortKey === header.dataset.key ? !sortDown : header.dataset.key !== "name"; sortKey = header.dataset.key; drawList(); };
 }
 
-function marks(doc, number, converted) {
-  const [width, height] = doc.sizes[number] || [612, 792];
-  return doc.problems.filter(problem => problem.line.page === number).map(problem => {
-    const line = problem.line;
-    const missing = problem.dy === null;
-    if (converted && missing) return "";
-    const x = line.x + (converted ? problem.dx : 0), y = line.y + (converted ? problem.dy : 0);
-    const style = `left:${100 * x / width}%;top:${100 * (y - 11) / height}%;width:${100 * Math.max(line.width, 8) / width}%;height:${100 * 14 / height}%`;
-    const title = missing ? "not on this page of the conversion" : `${problem.dy > 0 ? "+" : ""}${problem.dy} pt`;
-    return `<div class="mark${missing ? "" : " shifted"}" style="${style}" title="${line.text.replace(/"/g, "&quot;")}: ${title}"></div>`;
-  }).join("");
-}
-
 function sheet(doc, number, side) {
   const names = side === "converted" ? doc.converted_pages : doc.reference_pages;
   if (number >= names.length) return `<div class="sheet empty">no page ${number + 1}</div>`;
-  return `<div class="sheet"><img loading="lazy" src="${side}/${names[number]}" alt="${doc.name} page ${number + 1}, ${side}">${marks(doc, number, side === "converted")}</div>`;
+  return `<div class="sheet"><img loading="lazy" src="${side}/${names[number]}" alt="${doc.name} page ${number + 1}, ${side}"></div>`;
 }
 
 function draw(doc) {
@@ -128,14 +111,13 @@ function draw(doc) {
     } else if (number < doc.reference_pages.length && number < doc.converted_pages.length) {
       const top = mode === "overlay" ? `opacity:${amount / 100}` : `clip-path:inset(0 0 0 ${amount}%)`;
       parts.push(`<div><div class="caption">page ${number + 1}: Word under pandoc-service</div><div class="pair stacked"><div class="sheet"><img loading="lazy" src="reference/${doc.reference_pages[number]}" alt="">` +
-        `<div class="top" style="${top}"><img loading="lazy" src="converted/${doc.converted_pages[number]}" alt=""></div>${marks(doc, number, false)}</div></div></div>`);
+        `<div class="top" style="${top}"><img loading="lazy" src="converted/${doc.converted_pages[number]}" alt=""></div></div></div></div>`);
     } else {
       parts.push(`<div><div class="caption">page ${number + 1}</div><div class="pair stacked">${sheet(doc, number, number < doc.reference_pages.length ? "reference" : "converted")}</div></div>`);
     }
   }
   const pages = document.getElementById("pages");
   pages.innerHTML = parts.join("");
-  pages.classList.toggle("hide-marks", !document.getElementById("marks").checked);
 }
 
 function pick() {
