@@ -20,6 +20,10 @@
 -- An oddPage or evenPage section adds an empty page when the next page
 -- has the wrong number, as Word does.
 --
+-- A heading argument is copied to the table of contents and the page
+-- headers, so a break never stays in it. A break before the text of the
+-- heading goes before it, any other break after it.
+--
 -- LaTeX ignores \clearpage on an empty page, where Word starts one more
 -- page. A break with nothing before it on its page gets \null first.
 --
@@ -58,6 +62,9 @@ local on_empty_page = true
 
 -- The page setup of the last section break, until its body block ends.
 local pending_page_setup = ""
+
+-- Whether text came since the last call of expand_heading started.
+local heading_has_text = false
 
 local function inches(twips)
   return string.format("%.4fin", twips / TWIPS_PER_INCH)
@@ -104,12 +111,18 @@ local function break_tex(marker)
   return pandoc.RawInline("latex", before .. "\\clearpage{}")
 end
 
--- The Str with each sentinel replaced by its break. pandoc merges the
--- sentinel run with the text next to it, so it can stand anywhere in a Str.
-local function expand(str)
+local function note_text()
+  on_empty_page = false
+  heading_has_text = true
+end
+
+-- The Str with each sentinel replaced by what `place` adds to the result for
+-- its break. pandoc merges the sentinel run with the text next to it, so it
+-- can stand anywhere in a Str.
+local function split_str(str, place)
   local text = str.text
   if not text:find(OPEN, 1, true) then
-    on_empty_page = false
+    note_text()
     return nil
   end
   local result = {}
@@ -118,15 +131,21 @@ local function expand(str)
     local first, last, marker = text:find(SENTINEL_PATTERN, position)
     local before = text:sub(position, (first or 0) - 1)
     if before ~= "" then
-      on_empty_page = false
+      note_text()
       result[#result + 1] = pandoc.Str(before)
     end
     if not first then
       return result
     end
-    result[#result + 1] = break_tex(marker)
+    place(result, break_tex(marker))
     position = last + 1
   end
+end
+
+local function expand(str)
+  return split_str(str, function(result, tex)
+    result[#result + 1] = tex
+  end)
 end
 
 local function holds_only_breaks(inlines)
@@ -166,26 +185,52 @@ local function with_breaks(block)
   return block
 end
 
-local function replace_breaks_in(block)
-  if block.t == "Para" or block.t == "Plain" or block.t == "Header" then
-    return with_breaks(block)
+-- Add the heading to `out`, with its breaks before and after it.
+local function add_heading(header, out)
+  local after = {}
+  heading_has_text = false
+  header = header:walk({
+    Str = function(str)
+      return split_str(str, function(_, tex)
+        local block = pandoc.RawBlock("latex", tex.text)
+        if heading_has_text then
+          after[#after + 1] = block
+        else
+          out[#out + 1] = block
+        end
+      end)
+    end,
+  })
+  if not holds_only_breaks(header.content) then
+    out[#out + 1] = header
   end
-  if block.t == "Div" then
+  for _, block in ipairs(after) do
+    out[#out + 1] = block
+  end
+end
+
+local function add_block(block, out)
+  if block.t == "Header" then
+    add_heading(block, out)
+  elseif block.t == "Para" or block.t == "Plain" then
+    out[#out + 1] = with_breaks(block)
+  elseif block.t == "Div" then
     local content = {}
     for _, inner in ipairs(block.content) do
-      content[#content + 1] = replace_breaks_in(inner)
+      add_block(inner, content)
     end
     block.content = content
-    return block
+    out[#out + 1] = block
+  else
+    on_empty_page = false
+    out[#out + 1] = block
   end
-  on_empty_page = false
-  return block
 end
 
 local function replace_breaks(blocks)
   local result = {}
   for _, block in ipairs(blocks) do
-    result[#result + 1] = replace_breaks_in(block)
+    add_block(block, result)
     if pending_page_setup ~= "" then
       result[#result + 1] = pandoc.RawBlock("latex", pending_page_setup)
       pending_page_setup = ""

@@ -123,6 +123,45 @@ def test_section_start_stays_when_the_numbers_are_no_page(test_parameters: TestP
     assert flat == "before \\clearpage{} \\ifodd\\value{page}\\null\\clearpage\\fi"
 
 
+def test_page_break_at_the_start_of_a_heading_goes_before_it(test_parameters: TestParameters):
+    """A heading argument is copied to the table of contents, so no break stays in it."""
+    native = f'[ Para [ Str "before" ], Header 1 ( "" , [] , [] ) [ {_str(f"{PAGE_BREAK}Title")} ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.startswith("before \\clearpage{} \\section{Title}"), flat
+
+
+def test_page_break_after_the_text_of_a_heading_goes_after_it(test_parameters: TestParameters):
+    native = f'[ Header 1 ( "" , [] , [] ) [ {_str(f"Title{PAGE_BREAK}")} ], Para [ Str "after" ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.startswith("\\section{Title}"), flat
+    assert flat.endswith("\\clearpage{} after"), flat
+
+
+def test_page_break_in_the_middle_of_a_heading_goes_after_it(test_parameters: TestParameters):
+    native = f'[ Header 1 ( "" , [] , [] ) [ {_str(f"Title{PAGE_BREAK}tail")} ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.startswith("\\section{Titletail}"), flat
+    assert flat.endswith("\\clearpage{}"), flat
+
+
+def test_page_break_inside_a_span_of_a_heading_leaves_it(test_parameters: TestParameters):
+    native = f'[ Header 1 ( "" , [] , [] ) [ Span ( "" , [] , [] ) [ Str "Title", {_str(PAGE_BREAK)} ] ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.endswith("\\clearpage{}"), flat
+    assert "clearpage" not in flat.split("\\label")[0].split("}")[0], flat
+
+
+def test_heading_holding_only_a_break_goes(test_parameters: TestParameters):
+    native = f'[ Para [ Str "before" ], Header 1 ( "" , [] , [] ) [ {_str(PAGE_BREAK)} ] ]'
+    assert _native_to_latex(test_parameters.container, native) == "before \\clearpage{}"
+
+
+def test_section_break_of_a_heading_sets_the_page_after_it(test_parameters: TestParameters):
+    native = f'[ Header 1 ( "" , [] , [] ) [ {_str(f"Title{LANDSCAPE}")} ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.index("\\section{Title}") < flat.index("\\clearpage{}") < flat.index("\\pdfpagewidth"), flat
+
+
 def test_sentinel_outside_the_body_paragraphs_goes(test_parameters: TestParameters):
     native = f"[ BulletList [ [ Plain [ {_str(f'item{PAGE_BREAK}')} ] ] ] ]"
     flat = _native_to_latex(test_parameters.container, native)
@@ -213,6 +252,17 @@ def test_landscape_follows_a_centered_paragraph_holding_the_section_break(test_p
     pages = _pages(test_parameters, document)
     assert len(pages) == 2
     assert _is_landscape(pages[1])
+
+
+def test_page_break_after_a_heading_reaches_the_pdf(test_parameters: TestParameters):
+    document = Document()
+    heading = document.add_heading("Chapter", 1)
+    heading.add_run().add_break(WD_BREAK.PAGE)
+    document.add_paragraph("body")
+    pages = _pages(test_parameters, document)
+    assert len(pages) == 2
+    assert "Chapter" in pages[0].extract_text()
+    assert "body" in pages[1].extract_text()
 
 
 def test_table_of_a_landscape_section_spans_its_text_width(test_parameters: TestParameters):
