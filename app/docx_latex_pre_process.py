@@ -5,8 +5,9 @@ pandoc reads it: colour/size runs (:mod:`app.docx_color_pre_process`), paragraph
 alignment/indent (:mod:`app.docx_paragraph_pre_process`), list-level tagging
 (:mod:`app.docx_list_level_pre_process`), table-cell backgrounds
 (:mod:`app.docx_table_pre_process`), math-run colour encoding
-(:mod:`app.docx_math_color_pre_process`), and the offset and side space of inline
-pictures (:mod:`app.docx_image_layout_pre_process`). Run separately they each unzip
+(:mod:`app.docx_math_color_pre_process`), the offset and side space of inline
+pictures (:mod:`app.docx_image_layout_pre_process`), and page and section breaks
+(:mod:`app.docx_page_break_pre_process`). Run separately they each unzip
 the whole package, rewrite their body parts and re-zip — so an image-heavy document
 gets its media decompressed and recompressed for every rewrite, multiplying the peak
 memory and CPU of the step.
@@ -19,7 +20,16 @@ running each rewrite on its own — only much lighter on memory.
 
 from __future__ import annotations
 
-from . import docx_color_pre_process, docx_image_layout_pre_process, docx_list_level_pre_process, docx_math_color_pre_process, docx_page_geometry, docx_paragraph_pre_process, docx_table_pre_process
+from . import (
+    docx_color_pre_process,
+    docx_image_layout_pre_process,
+    docx_list_level_pre_process,
+    docx_math_color_pre_process,
+    docx_page_break_pre_process,
+    docx_page_geometry,
+    docx_paragraph_pre_process,
+    docx_table_pre_process,
+)
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
 
 
@@ -32,10 +42,11 @@ def _rewrite_body_part(
     style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
     toc_styles: frozenset[str] = frozenset(),
 ) -> tuple[bytes, bool]:
-    """Run the colour → paragraph → list → table rewrites over one body part,
-    collecting any synthetic styles into the shared dicts.  Returns
+    """Run the page break → colour → paragraph → list → table rewrites over one
+    body part, collecting any synthetic styles into the shared dicts.  Returns
     (new_xml, changed)."""
-    changed = False
+    # First, so a page break run sheds its properties before the colour rewrite reads them.
+    xml, changed = docx_page_break_pre_process.rewrite_part(xml)
     if has_styles:
         rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_styles)
         if color_used:
@@ -61,8 +72,8 @@ def _rewrite_body_part(
 
 
 def preprocess(docx_bytes: bytes) -> bytes:
-    """Apply the colour, paragraph, list-level, table-cell, math-colour and
-    image-layout rewrites in one unzip/re-zip.
+    """Apply the page break, colour, paragraph, list-level, table-cell,
+    math-colour and image-layout rewrites in one unzip/re-zip.
 
     Equivalent to chaining ``docx_color_pre_process.preprocess``,
     ``docx_paragraph_pre_process.preprocess``, ``docx_list_level_pre_process

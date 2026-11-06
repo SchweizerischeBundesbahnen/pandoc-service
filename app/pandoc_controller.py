@@ -90,6 +90,7 @@ FILTERS = {
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
+    "docx_page_breaks_to_latex": f"{FILTER_BASE_PATH}/docx_page_breaks_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
@@ -701,7 +702,9 @@ def _build_pandoc_command(
     if apply_docx_latex_filters:
         cmd.extend(
             [
-                # First, so the filters below see an empty line as the blank
+                # First, so that a paragraph holding only a break is no blank line below.
+                f"--lua-filter={FILTERS['docx_page_breaks_to_latex']}",
+                # Before the rest, so the filters below see an empty line as the blank
                 # paragraph it becomes and not as an empty one.
                 f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}",
                 # Must precede docx_colors_to_latex: it rewrites underline/strikeout that

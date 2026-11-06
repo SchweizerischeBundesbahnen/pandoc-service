@@ -556,20 +556,22 @@ def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None) -> tup
         return xml_bytes, False
 
     changed = False
-    # An absolute table width is a share of the line LaTeX sets the whole PDF at: the text of the
-    # first section of the document, which the caller reads once for every part, the footnotes
-    # among them. Called on its own, a part with a body reads it, and any other falls back to Letter.
+    # An absolute table width is a share of the line LaTeX sets the table at: the text of its section.
+    # Outside the body that is the text of the first section of the document, which the caller reads
+    # once for every part, the footnotes among them. Called on its own, a part with a body reads it,
+    # and any other falls back to Letter.
     if text_width_twips is not None:
         width = text_width_twips
     elif tree.find(f"{{{W_NS}}}body") is not None:
         width = docx_page_geometry.text_width_twips(tree)
     else:
         width = _REFERENCE_WIDTH_TWIPS
+    section_widths = docx_page_geometry.table_text_widths_twips(tree)
 
     for tbl in tree.iter(_TBL_TAG):
         if _fix_grid_col_widths(tbl):
             changed = True
-        if _tag_table_layout(tbl, width):
+        if _tag_table_layout(tbl, section_widths.get(tbl, width)):
             changed = True
         if _tag_cell_properties(tbl):
             changed = True
