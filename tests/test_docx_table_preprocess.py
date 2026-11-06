@@ -720,3 +720,21 @@ def test_the_bordered_table_styles_are_read_from_the_styles():
     )
     assert docx_table_pre_process.bordered_table_styles(styles) == {"Grid"}
     assert docx_table_pre_process.bordered_table_styles(None) == frozenset()
+
+
+def _first_cell_kv(table: str) -> dict[str, str]:
+    xml, _ = docx_table_pre_process.rewrite_part(f"<w:document {W_DECL}><w:body>{table}</w:body></w:document>".encode(), 9360)
+    text = "".join(t.text or "" for t in ET.fromstring(xml).iter(f"{{{W_NS}}}t"))
+    if SENTINEL_OPEN not in text:
+        return {}
+    payload = text[text.index(SENTINEL_OPEN) + 1 : text.index(SENTINEL_CLOSE)]
+    return dict(item.split("=") for item in payload.split(";"))
+
+
+def test_a_table_of_compact_paragraphs_is_marked():
+    compact = '<w:tbl><w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Compact"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    assert _first_cell_kv(compact)["cc"] == "1"
+
+
+def test_a_table_of_paragraphs_without_a_style_is_not_marked():
+    assert "cc" not in _first_cell_kv("<w:tbl><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>")

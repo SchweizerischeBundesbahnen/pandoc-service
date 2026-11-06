@@ -47,3 +47,9 @@ def test_a_narrow_absolute_table_restores_the_padding_of_the_document_after_it(t
     assert "\\begingroup\\setlength{\\tabcolsep}{3pt}" in latex
     assert "\\setlength{\\tabcolsep}{6pt}" not in latex
     assert latex.count("\\begingroup") == latex.count("\\endgroup")
+
+
+def test_a_table_of_compact_paragraphs_takes_the_rows_of_compact(test_parameters: TestParameters):
+    latex = _latex(test_parameters.container, "cc=1")
+    assert latex.startswith("\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi")
+    assert latex.count("\\begingroup") == latex.count("\\endgroup")

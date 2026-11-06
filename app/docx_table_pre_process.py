@@ -102,6 +102,8 @@ _JC_TO_ALIGN = {"left": "left", "center": "center", "right": "right", "start": "
 # ("Table 1 ..."), so if pandoc's DOCX reader turns them into a LaTeX
 # \caption it prepends its OWN "Table N:" counter, printing the number twice.
 _CAPTION_STYLE_VAL = "Caption"
+# The paragraph style pandoc's DOCX writer gives the paragraphs of a table cell.
+_COMPACT_STYLE_VAL = "Compact"
 
 # Default column width (twips) assigned when <w:gridCol> lacks a w:w
 # attribute.  The exact value is unimportant — pandoc only uses the
@@ -549,11 +551,15 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float, bordered_styles:
         rules = _rules(tbl, bordered_styles)
         if rules != "grid":
             kv["rl"] = rules
-    if not kv:
-        return False
-
     first_tc = _first_own_cell(tbl)
     if first_tc is None:
+        return False
+    # A cell paragraph of the Compact style pandoc writes: its rows take the space of Compact, others of Normal
+    own_para = _own_first_para(first_tc)
+    own_style = own_para.find(f"{_PPR_TAG}/{_PSTYLE_TAG}") if own_para is not None else None
+    if own_style is not None and own_style.get(_VAL_ATTR) == _COMPACT_STYLE_VAL:
+        kv["cc"] = "1"
+    if not kv:
         return False
 
     first_para = _find_or_create_first_para(first_tc, first_tc.find(_TCPR_TAG))

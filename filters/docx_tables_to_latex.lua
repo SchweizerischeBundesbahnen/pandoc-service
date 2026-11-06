@@ -53,6 +53,7 @@ end
 --   tw=<0..1>  table width as a fraction of the line (table-level, first cell)
 --   ta=left|center|right  table horizontal alignment (table-level, first cell)
 --   rl=none|head|grid  the lines Word draws (table-level, first cell)
+--   cc=1  the cells hold paragraphs of the Compact style (table-level, first cell)
 local function parse_payload(payload)
   local props = {}
   for segment in payload:gmatch("[^;]+") do
@@ -72,6 +73,8 @@ local function parse_payload(payload)
       props.aw = true
     elseif key == "rl" and RULES[value] ~= nil then
       props.rl = value
+    elseif key == "cc" and value == "1" then
+      props.cc = true
     end
   end
   return props
@@ -273,6 +276,7 @@ local function process_rows(rows, layout, flags)
         if props.ta then layout.ta = props.ta end
         if props.aw then layout.aw = true end
         if props.rl then layout.rl = props.rl end
+        if props.cc then layout.cc = true end
       end
     end
   end
@@ -361,6 +365,10 @@ function table_pass.Table(tbl)
     before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"
     after[#after + 1] = "\\endgroup"
   end
+  if layout.cc then
+    -- Rows as high as a paragraph of Compact, which docx_document_styles_to_latex defines
+    before[#before + 1] = "\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi"
+  end
   local glue = layout.ta and ALIGN_GLUE[layout.ta]
   if glue then
     before[#before + 1] = glue
@@ -368,6 +376,9 @@ function table_pass.Table(tbl)
   end
 
   if rules then
+    after[#after + 1] = "\\endgroup"
+  end
+  if layout.cc then
     after[#after + 1] = "\\endgroup"
   end
   if #before > 0 then

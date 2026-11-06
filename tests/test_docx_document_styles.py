@@ -78,6 +78,7 @@ def test_sets_pandoc_template_like_word():
         "docx-body-justified": "false",
         "docx-body-hyphenated": "false",
         "docx-page-numbers": "false",
+        "docx-table-plain-cell-space": "10",
     }
 
 

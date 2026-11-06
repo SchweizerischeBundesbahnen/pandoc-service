@@ -169,6 +169,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | the Title and Heading 1 to 9 styles | the font, size, colour, italics, alignment and space of the title and the headings, the title as far down the page as the ascent of its font, all nine levels of them, as Word has them; between two headings only their own space |
 | the Hyperlink style, a theme colour as Word reads it | the colour of the links |
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
+| a cell paragraph without a style | rows as tall as a paragraph of the Normal style, as Word sets them |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it |
 | an empty paragraph, and one of line breaks only | an empty line, and one more for each line break, as Word shows them |
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |

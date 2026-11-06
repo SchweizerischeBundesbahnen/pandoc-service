@@ -128,6 +128,10 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         # A cell holds its paragraph with the space before and after it
         cell_space = sum(_spacing_twips(cell_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
         options += ["-M", f"docx-table-cell-space={cell_space:g}"]
+    # A cell paragraph without a style is in Normal, with the space of Normal
+    plain_chain = _style_chain(styles, "Normal", fallback=None)
+    plain_space = sum(_spacing_twips(plain_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
+    options += ["-M", f"docx-table-plain-cell-space={plain_space:g}"]
     link_chain = _style_chain(styles, "Hyperlink", fallback=None)
     link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
     if link_color is not None:

@@ -16,6 +16,8 @@
 --   docx-body-baseline        the distance of its lines, from its font
 --   docx-table-cell-space     the space before and after the paragraph of a
 --                             table cell, of the Compact style
+--   docx-table-plain-cell-space  the same for a cell paragraph without a
+--                             style, of the Normal style
 --   docx-table-cell-margin    the left and right margin of a table cell
 --   docx-link-color           the colour of the Hyperlink style
 --   docx-page-numbers         false when no section has a header or footer,
@@ -39,6 +41,7 @@ local HYPHENATED = "docx-body-hyphenated"
 local SIZE = "docx-body-size"
 local BASELINE = "docx-body-baseline"
 local CELL_SPACE = "docx-table-cell-space"
+local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
 local LINK_COLOR = "docx-link-color"
 local PAGE_NUMBERS = "docx-page-numbers"
@@ -102,7 +105,11 @@ local function table_preamble(meta, lines)
   lines[#lines + 1] = "\\ifdefined\\aboverulesep\\setlength{\\aboverulesep}{0pt}\\setlength{\\belowrulesep}{0pt}\\fi"
   local baseline = points(meta[BASELINE])
   if baseline ~= nil and baseline > 0 then
-    lines[#lines + 1] = string.format("\\renewcommand{\\arraystretch}{%.4f}", (baseline + space) / baseline)
+    -- A cell paragraph without a style is in Normal; filters/docx_tables_to_latex.lua
+    -- switches a table of paragraphs of the Compact style to its own rows
+    local plain = points(meta[PLAIN_CELL_SPACE]) or space
+    lines[#lines + 1] = string.format("\\renewcommand{\\arraystretch}{%.4f}", (baseline + plain) / baseline)
+    lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)
   end
 end
 
@@ -477,7 +484,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end
