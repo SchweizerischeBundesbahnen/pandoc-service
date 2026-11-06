@@ -230,7 +230,8 @@ local JUSTIFY_LATEX = "\\pdcCellJustify{}"
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
-local has_grid = false       -- set when a table is written as the raw LaTeX of a grid
+local has_grid = false       -- set when a table is written as raw LaTeX
+local NESTED = "pdc-nested"   -- the attribute of a table in a cell of another
 
 -- True when a cell renders nothing, so there is nothing to align.
 --
@@ -463,7 +464,8 @@ local function simple_cells(rows)
       end
     end,
     Inline = function(inline)
-      if not GRID_INLINES[inline.t] then
+      -- A table inside, written as LaTeX already, cannot sit in the LaTeX of another
+      if not GRID_INLINES[inline.t] or (inline.t == "RawInline" and inline.text:find("\\begin{longtable}", 1, true)) then
         simple = false
       end
     end,
@@ -524,8 +526,26 @@ local function grid_block(latex, rows)
   return pandoc.Plain(inlines)
 end
 
+-- Word sets a table as wide as the line out to the cell margin on both sides, and each column of it
+-- holds the margin on both sides of its text: pandoc shares the padding of the columns out by their
+-- widths, which makes a narrow column too wide. A table of an absolute width is that wide with its
+-- margins; a column of it narrower than a twentieth of the line keeps the width pandoc gives it.
+local function word_widths(latex, absolute)
+  local function width(fraction)
+    if absolute and tonumber(fraction) >= 0.05 then
+      return string.format("\\dimexpr%s\\linewidth-2\\tabcolsep\\relax", fraction)
+    elseif absolute then
+      return nil
+    end
+    return string.format("\\dimexpr%s\\linewidth+%s\\tabcolsep+%s\\tabcolsep-2\\tabcolsep\\relax", fraction, fraction, fraction)
+  end
+  -- A merged cell spans its columns with the margins between them: the width of Word holds them already
+  latex = latex:gsub("%(\\linewidth %- %d+\\tabcolsep%) %* \\real{([%d.]+)} %+ %d+\\tabcolsep", width)
+  return (latex:gsub("%(\\linewidth %- %d+\\tabcolsep%) %* \\real{([%d.]+)}", width))
+end
+
 -- The table with the lines of a grid, or nil when it cannot be set so.
-local function grid_table(tbl)
+local function grid_table(tbl, absolute)
   local rows = all_rows(tbl)
   if #tbl.colspecs == 0 or not simple_cells(rows) then
     return nil
@@ -544,7 +564,7 @@ local function grid_table(tbl)
   if columns == nil then
     return nil
   end
-  latex = grid_multicolumns(latex:sub(1, open) .. columns .. latex:sub(close))
+  latex = word_widths(grid_multicolumns(latex:sub(1, open) .. columns .. latex:sub(close)), absolute)
   -- Word sets the text of a merged cell at its top
   latex = latex:gsub("\\multirow{", "\\multirow[t]{")
   -- Each row ends with the line under it
@@ -642,7 +662,7 @@ function table_pass.Table(tbl)
   local before, after = {}, {}
   local grid = nil
   if layout.rl == "grid" and layout.lc and layout.lw then
-    grid = grid_table(tbl)
+    grid = grid_table(tbl, layout.aw)
   end
   if grid then
     -- The lines of the cells in their colour and width, the table out to the cell margin as Word sets it
@@ -660,7 +680,12 @@ function table_pass.Table(tbl)
   if rules then
     before[#before + 1] = "\\begingroup" .. rules
   end
-  if layout.aw then
+  local rows = all_rows(tbl)
+  -- Written as LaTeX, a table gets the columns of Word; pandoc's table its own
+  local nested = tbl.attributes[NESTED] ~= nil
+  tbl.attributes[NESTED] = nil
+  local simple = not grid and not nested and not layout.aw and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
+  if layout.aw and not grid and not simple then
     -- A group: the table after this one gets the padding the document sets, not 6pt
     before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"
     after[#after + 1] = "\\endgroup"
@@ -668,6 +693,10 @@ function table_pass.Table(tbl)
   if layout.cc then
     -- Rows as high as a paragraph of Compact, which docx_document_styles_to_latex defines
     before[#before + 1] = "\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi\\ifdefined\\pdcCompactCellRaise\\addtolength{\\LTpre}{-\\pdcCompactCellRaise}\\fi"
+  end
+  if not grid and layout.tw and layout.tw > 0.999 then
+    -- A table as wide as the line starts its text at the margin, whatever its alignment
+    layout.ta = "left"
   end
   local glue = layout.ta and ALIGN_GLUE[layout.ta]
   if glue then
@@ -684,6 +713,11 @@ function table_pass.Table(tbl)
   if grid then
     after[#after + 1] = "\\endgroup"
     return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
+  end
+  local raw = simple and grid_block(word_widths(pandoc.write(pandoc.Pandoc({ tbl }), LATEX), layout.aw), rows)
+  if raw then
+    has_grid = true
+    return { pandoc.RawBlock("latex", table.concat(before)), raw, pandoc.RawBlock("latex", table.concat(after)) }
   end
   if #before > 0 then
     return { pandoc.RawBlock("latex", table.concat(before)), tbl, pandoc.RawBlock("latex", table.concat(after)) }
@@ -772,6 +806,19 @@ local CAPTION_AFTER_TABLE = "\\ifdefined\\pdcCaptionBefore\\vspace{\\dimexpr\\pd
 local CAPTION_BEFORE_TABLE = "\\ifdefined\\pdcCaptionAfter\\vspace{\\dimexpr\\pdcCaptionAfter-\\parskip\\relax}\\fi"
 
 local caption_pass = {}
+
+-- A table in a cell of another: latex_nested_tables.lua sets it, which needs the Table
+function caption_pass.Table(tbl)
+  if not FORMAT:match("latex") then return nil end
+  local inner = false
+  local mark = { Table = function(nested) nested.attributes[NESTED] = "1"; inner = true; return nested end }
+  for _, row in ipairs(all_rows(tbl)) do
+    for _, cell in ipairs(row.cells) do
+      cell.contents = pandoc.Blocks(cell.contents):walk(mark)
+    end
+  end
+  return inner and tbl or nil
+end
 
 function caption_pass.Blocks(blocks)
   if not FORMAT:match("latex") then return nil end

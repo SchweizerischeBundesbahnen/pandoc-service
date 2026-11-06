@@ -147,3 +147,19 @@ def test_a_grid_keeps_the_curly_quotes_of_its_text(test_parameters: TestParamete
     latex = _native_latex(test_parameters.container, native)
     assert "“a”" in latex
     assert "``" not in latex
+
+
+def test_a_column_takes_the_width_of_word_with_the_cell_margins_in_it(test_parameters: TestParameters):
+    """Word sets a table as wide as the line out to the margins of its cells, and a column holds them on both sides."""
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}a"'), _cell('Str "b"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "p{\\dimexpr0.5000\\linewidth+0.5000\\tabcolsep+0.5000\\tabcolsep-2\\tabcolsep\\relax}" in latex
+    assert "\\real{" not in latex
+
+
+def test_a_table_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_parameters: TestParameters):
+    inner = _grid_table([_cell(f'Str "{OPEN}tw=0.5000{CLOSE}x"'), _cell('Str "y"')])[1:-1]
+    outer = _grid_table([_cell(f'Str "{OPEN}tw=1.0000{CLOSE}a"'), _cell('Str "b"')])
+    native = outer.replace('[Plain [Str "b"]]', f"[{inner}]")
+    latex = _native_latex(test_parameters.container, native)
+    assert "\\real{" in latex, "pandoc writes the outer table, with the inner one in it"
