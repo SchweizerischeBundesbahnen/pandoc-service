@@ -425,6 +425,20 @@ def _table_of_contents_runs(tree: ET.Element, toc_styles: Collection[str]) -> se
     return runs
 
 
+def _run_style(rpr: ET.Element, style_colors: Mapping[str, StyleColors] | None) -> _StyleSpec | None:
+    """The synthetic style of a run's colours, size and font, with those of its character style; None for none."""
+    fg, bg, highlight, size, size_cs = _extract_run_colors(rpr)
+    if style_colors:
+        fg, bg, highlight = _inherit_style_colors(rpr, style_colors, fg, bg, highlight)
+    font = _extract_run_font(rpr)
+    if font and not (fg or bg or highlight or size or size_cs) and rpr.find(_RSTYLE_TAG) is not None:
+        # A run of a character style of its own, as code is, keeps it for a font alone
+        font = None
+    if not (fg or bg or highlight or size or size_cs or font):
+        return None
+    return _StyleSpec(_style_id(fg, bg, highlight, size, size_cs, font), fg, bg, highlight, size, size_cs, font)
+
+
 def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | None = None, toc_styles: Collection[str] = ()) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used).
 
@@ -449,19 +463,11 @@ def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | Non
         if rpr is None:
             # No run-properties element means no direct color formatting.
             continue
-        fg, bg, highlight, size, size_cs = _extract_run_colors(rpr)
-        if style_colors and id(run) not in toc_runs:
-            fg, bg, highlight = _inherit_style_colors(rpr, style_colors, fg, bg, highlight)
-        font = _extract_run_font(rpr)
-        if font and not (fg or bg or highlight or size or size_cs) and rpr.find(_RSTYLE_TAG) is not None:
-            # A run of a character style of its own, as code is, keeps it for a font alone
-            font = None
-        if not (fg or bg or highlight or size or size_cs or font):
+        spec = _run_style(rpr, style_colors if id(run) not in toc_runs else None)
+        if spec is None:
             continue
-
-        style_id = _style_id(fg, bg, highlight, size, size_cs, font)
-        styles_used[style_id] = _StyleSpec(style_id, fg, bg, highlight, size, size_cs, font)
-        _replace_run_color_props(rpr, style_id)
+        styles_used[spec.style_id] = spec
+        _replace_run_color_props(rpr, spec.style_id)
 
         # Skip the re-serialize roundtrip when nothing changed. ET.tostring
         # reformats namespace declarations and attribute order, so even a

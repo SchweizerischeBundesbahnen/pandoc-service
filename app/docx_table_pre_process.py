@@ -500,10 +500,10 @@ _THINNEST_LINE = 0.25
 _THICKEST_LINE = 6.0
 
 
-def _grid_lines(tbl: ET.Element) -> tuple[str, float] | None:
-    """The colour and width of the lines of a table which draws every side of its cells, else None.
+def _grid_sides(tbl: ET.Element) -> list[ET.Element] | None:
+    """The borders of every side of the first cell, its own else the table's; None when a side draws none.
 
-    The first cell stands for the table: its own borders, else the borders of the table.
+    The first cell stands for the table.
     """
     tblpr = tbl.find(_TBLPR_TAG)
     table_borders = tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None
@@ -518,16 +518,28 @@ def _grid_lines(tbl: ET.Element) -> tuple[str, float] | None:
         if side is None or side.get(_VAL_ATTR) in _NO_BORDER:
             return None
         sides.append(side)
+    return sides
+
+
+def _line_width(side: ET.Element) -> float:
+    """The width of a border in points, within what a PDF line shows."""
+    try:
+        width = int(side.get(f"{{{W_NS}}}sz") or "4") / _EIGHTHS_PER_POINT
+    except ValueError:
+        width = 4 / _EIGHTHS_PER_POINT
+    return min(max(width, _THINNEST_LINE), _THICKEST_LINE)
+
+
+def _grid_lines(tbl: ET.Element) -> tuple[str, float] | None:
+    """The colour and width of the lines of a table which draws every side of its cells, else None."""
+    sides = _grid_sides(tbl)
+    if sides is None:
+        return None
     raw_color = (sides[0].get(f"{{{W_NS}}}color") or "").upper()
     if raw_color == "FFFFFF":
         # White lines on white paper: nothing to draw
         return None
-    color = _normalize_hex(raw_color) or "000000"
-    try:
-        width = int(sides[0].get(f"{{{W_NS}}}sz") or "4") / _EIGHTHS_PER_POINT
-    except ValueError:
-        width = 4 / _EIGHTHS_PER_POINT
-    return color, min(max(width, _THINNEST_LINE), _THICKEST_LINE)
+    return _normalize_hex(raw_color) or "000000", _line_width(sides[0])
 
 
 # The bit of the hexadecimal w:val of <w:tblLook> which turns the formatting of the first row on.
