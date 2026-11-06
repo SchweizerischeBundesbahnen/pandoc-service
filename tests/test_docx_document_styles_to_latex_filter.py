@@ -177,10 +177,15 @@ WORD_HEADINGS = (
 )
 
 
-def test_a_heading_stands_below_the_descent_of_the_line_before_as_far_as_its_ascent(test_parameters: TestParameters):
-    """The space before is 18pt less what TeX adds over Word, 2.25pt; the space after gains the descent over the body, 2.25pt."""
-    preamble = _preamble(_latex(test_parameters.container, *WORD_HEADINGS))
-    assert "\\titlespacing*{\\section}{0pt}{15.75pt}{11.25pt}" in preamble
+def test_the_space_before_a_heading_depends_on_the_depth_of_the_line_before(test_parameters: TestParameters):
+    """Less by as much as the line before reaches less deep than the line of the heading's font."""
+    native = '[Para [Str "Text"], Header 1 ("one",[],[]) [Str "One"]]'
+    latex = _latex(test_parameters.container, *WORD_HEADINGS, native=native)
+    assert "\\titlespacing*{\\section}{0pt}{\\pdcBefore}{9pt}" in _preamble(latex)
+    assert "\\newcommand{\\pdcSetBefore}" in _preamble(latex)
+    body = latex[latex.index("\\begin{document}") :]
+    assert body.index("\\pdcSetBefore{18bp}{5.63bp}") < body.index("\\section")
+    assert "One\\texorpdfstring{\\strut}{}" in body
 
 
 def test_a_heading_has_a_strut_of_the_line_of_word(test_parameters: TestParameters):
@@ -192,7 +197,7 @@ def test_between_two_headings_their_struts_keep_their_lines_apart(test_parameter
     native = '[Header 1 ("one",[],[]) [Str "One"], Header 2 ("two",[],[]) [Str "Two"], Para [Str "Text"]]'
     body = _latex(test_parameters.container, *WORD_HEADINGS, native=native)
     body = body[body.index("\\begin{document}") :]
-    assert body.index("\\titlespacing*{\\section}{0pt}{15.75pt}{8pt}") < body.index("One") < body.index("\\titlespacing*{\\section}{0pt}{15.75pt}{11.25pt}")
+    assert body.index("\\titlespacing*{\\section}{0pt}{\\pdcBefore}{8pt}") < body.index("One") < body.index("\\titlespacing*{\\section}{0pt}{\\pdcBefore}{9pt}")
 
 
 SPACING = ("docx-body-paragraph-skip=9", "docx-paragraph-spacing=BodyText:Body Text:9:9;Normal:Normal:0:10")
@@ -289,18 +294,23 @@ def test_a_table_of_contents_after_the_title_takes_only_the_space_of_the_title(t
     assert "\\pdcTitleStyle\\@title\\par\\endgroup\\vspace{4pt}" in _preamble(latex)
 
 
-def test_the_next_line_starts_below_the_descent_of_the_title(test_parameters: TestParameters):
-    # Word: the descent of the title, 7.89, and the larger space, 9; TeX: a line of the body, 3.4 below the baseline, and the skip, 9
+def test_the_title_and_the_next_line_are_set_with_struts_of_word(test_parameters: TestParameters):
+    """The struts keep the lines Word's distance apart: after the title only the larger space counts, less the skip TeX adds."""
     title = "docx-style-Title=size:28,line:34.18,ascent:26.29,after:4"
-    latex = _latex(test_parameters.container, "title=Doc", title, "docx-body-paragraph-skip=9", "docx-body-descent=3.4")
-    assert "\\@title\\par\\endgroup\\vspace{4.49pt}" in _preamble(latex)
+    preamble = _preamble(_latex(test_parameters.container, "title=Doc", title, "docx-body-paragraph-skip=9", "docx-body-descent=3.4"))
+    assert "\\pdcTitleStyle\\strut\\@title\\strut\\par\\endgroup\\vspace{0pt}" in preamble
 
 
-def test_a_table_of_contents_starts_below_the_descent_of_the_title(test_parameters: TestParameters):
+def test_a_table_of_contents_after_the_title_gets_its_space_after(test_parameters: TestParameters):
     native = '[Div ("",[],[("custom-style","PandocToc__CONTENTS_3")]) [Para [Str "PandocToc__CONTENTS_3"]]]'
     title = "docx-style-Title=size:28,line:34.18,ascent:26.29,after:4"
     latex = _latex(test_parameters.container, "title=Doc", title, "docx-body-paragraph-skip=9", "docx-body-descent=3.4", native=native)
-    assert "\\@title\\par\\endgroup\\vspace{8.49pt}" in _preamble(latex)
+    assert "\\@title\\strut\\par\\endgroup\\vspace{4pt}" in _preamble(latex)
+
+
+def test_a_paragraph_starts_and_ends_with_a_strut(test_parameters: TestParameters):
+    body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native='[Para [Str "Text"]]')
+    assert "\\strut{}Text\\strut{}" in body
 
 
 def test_the_caption_style_defines_its_space_before(test_parameters: TestParameters):

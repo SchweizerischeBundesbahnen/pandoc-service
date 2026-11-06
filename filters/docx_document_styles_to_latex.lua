@@ -178,6 +178,10 @@ local function body_preamble(meta, lines)
       lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
     end
   end
+  if points(meta[DESCENT]) ~= nil then
+    -- The space before a heading, set right before it: less by as much as the line before reaches less deep
+    lines[#lines + 1] = "\\newskip\\pdcBefore\\newcommand{\\pdcSetBefore}[2]{\\par\\pdcBefore=#1\\relax\\ifdim\\prevdepth<#2\\relax\\ifdim\\prevdepth>-1000pt\\advance\\pdcBefore by \\dimexpr\\prevdepth-#2\\relax\\fi\\fi}"
+  end
   local skip = points(meta[SKIP])
   -- Word puts the same space after a full stop as between words
   lines[#lines + 1] = "\\frenchspacing"
@@ -277,17 +281,14 @@ local function ascent_strut(style)
   return style.ascent and string.format("\\rule{0pt}{%gbp}", style.ascent) or ""
 end
 
--- Word starts the next line below the bottom of the title's line, its descent
--- and line gap, after the larger of the title's space after and the next one's
--- before. TeX sets it a line of the body below, as if the title reached as far
--- down as a line of the body, and adds the paragraph skip of the body. The space
--- after the title makes up the difference. A table of contents has no skip.
 local body_descent = nil
 local body_skip = 0
+
 -- Word sets a line below the descent of the line before it, after the space
--- between them, as far down as its own ascent. TeX sets it a line of its own
--- font below the baseline before. The space before and after a heading makes
--- up the difference, with a line of the body before and after it.
+-- between them, as far down as its own ascent. Each paragraph and heading has
+-- a strut of Word's line, so TeX does the same, unless the line of the next
+-- font is deeper than the line before: then it keeps a line of that font
+-- between the baselines. The space before the next line makes up the difference.
 local function heading_rise(style, descent_before)
   if style.line == nil or style.ascent == nil or descent_before == nil then
     return 0
@@ -295,19 +296,32 @@ local function heading_rise(style, descent_before)
   return descent_before + style.ascent - style.line
 end
 
-local function heading_descent(style)
+-- The space before a heading: titlesec takes it from \pdcBefore, which the
+-- block before each heading sets from the depth of the line before it.
+local function space_before(style)
   if style.line == nil or style.ascent == nil or body_descent == nil then
-    return 0
+    return string.format("%gpt", style.before)
   end
-  return style.line - style.ascent - body_descent
+  return "\\pdcBefore"
 end
 
+local function set_before(style)
+  if style == nil or style.line == nil or style.ascent == nil or body_descent == nil then
+    return nil
+  end
+  return pandoc.RawBlock("latex", string.format("\\pdcSetBefore{%gbp}{%.4gbp}", style.before, style.line - style.ascent))
+end
+
+-- After the title Word puts the larger of its space after and the next one's
+-- before, TeX the space after the title and the paragraph skip. A table of
+-- contents has no skip.
 local function below_title(style, toc)
   local after = toc and style.own_after or style.after
   if style.line == nil or style.ascent == nil or body_descent == nil then
     return after
   end
-  return after - (toc and 0 or body_skip) + style.line - style.ascent - body_descent
+  -- The struts of the title and the next line keep their lines Word's distance apart: only the skip is TeX's
+  return toc and after or after - body_skip
 end
 
 -- The LaTeX which switches to the font, size, weight, shape and colour of a style.
@@ -384,8 +398,7 @@ local function headings_preamble(meta, lines)
       else
         lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
       end
-      local before, after = style.before + heading_rise(style, body_descent), style.after + heading_descent(style)
-      lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%.4gpt}{%.4gpt}", heading.command, before, after)
+      lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%s}{%.4gpt}", heading.command, space_before(style), style.after)
     end
   end
   if numbered then
@@ -413,7 +426,9 @@ local function title_preamble(lines)
   lines[#lines + 1] = "\\makeatletter"
   -- A table of contents right after the title: its entries have no space before them, so only the title's counts
   local after = below_title(title_style, toc_first)
-  lines[#lines + 1] = string.format("\\renewcommand{\\maketitle}{\\par\\begingroup\\pdcTitleStyle%s\\@title\\par\\endgroup\\vspace{%gpt}}", ascent_strut(title_style), after)
+  -- The strut of the title's font holds its first line as far down as Word, and its last as deep
+  local text = (title_style.line and title_style.ascent and body_descent) and "\\strut\\@title\\strut" or ascent_strut(title_style) .. "\\@title"
+  lines[#lines + 1] = string.format("\\renewcommand{\\maketitle}{\\par\\begingroup\\pdcTitleStyle%s\\par\\endgroup\\vspace{%gpt}}", text, after)
   lines[#lines + 1] = "\\makeatother"
 end
 
@@ -462,8 +477,15 @@ end
 
 -- A heading of level 6 to 9 as the command of its level; a deeper one as level 9, as in Word.
 local function deep_heading(header)
-  if header.level <= 5 or not FORMAT:match("latex") then
+  if not FORMAT:match("latex") then
     return nil
+  end
+  if body_descent ~= nil and #header.content > 0 then
+    -- The last line of a heading reaches as deep as Word's line of its font, as a paragraph's
+    header.content:insert(pandoc.RawInline("latex", "\\texorpdfstring{\\strut}{}"))
+  end
+  if header.level <= 5 then
+    return header
   end
   deep_used = true
   local inlines = { pandoc.RawInline("latex", "\\" .. HEADINGS[math.min(header.level, DEEPEST)].command .. "{") }
@@ -499,12 +521,20 @@ local function set_paragraph(para)
     return display_equation(only)
   end
   local last = para.content[#para.content]
+  local changed = false
   if last ~= nil and last.t == "Str" and #last.text > 1 and last.text:sub(-1) == "." then
     para.content[#para.content] = pandoc.Str(last.text:sub(1, -2))
     para.content:insert(pandoc.RawInline("latex", "\\rlap{.}"))
-    return para
+    changed = true
   end
-  return nil
+  if body_descent ~= nil and #para.content > 0 then
+    -- Every line of Word reaches the ascent and the descent of its font, whatever its letters:
+    -- the first and the last line of a paragraph get the strut of its font
+    para.content:insert(1, pandoc.RawInline("latex", "\\strut{}"))
+    para.content:insert(pandoc.RawInline("latex", "\\strut{}"))
+    changed = true
+  end
+  return changed and para or nil
 end
 
 -- A Title paragraph after the first one, in the Title style with its space around it.
@@ -640,17 +670,18 @@ local function heading_spacing(blocks)
     local level = heading_level(block)
     local style = level and heading_styles[level]
     local next = style and heading_styles[heading_level(blocks[index + 1])]
+    result[#result + 1] = set_before(style)
     if next then
-      local spacing = "\\titlespacing*{\\%s}{0pt}{%.4gpt}{%.4gpt}"
+      local spacing = "\\titlespacing*{\\%s}{0pt}{%s}{%.4gpt}"
       local command = HEADINGS[level].command
-      local before = style.before + heading_rise(style, body_descent)
+      local before = space_before(style)
       -- The struts of both reach Word's line: TeX keeps the descent of the first and the ascent of the
       -- next apart unless the next line of its own font is deeper than that
       local descent = style.line and style.ascent and style.line - style.ascent or body_descent
       local after = math.max(style.own_after, next.own_before) + math.min(0, heading_rise(next, descent))
       result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, after))
       result[#result + 1] = block
-      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, style.after + heading_descent(style)))
+      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, style.after))
     else
       result[#result + 1] = block
     end

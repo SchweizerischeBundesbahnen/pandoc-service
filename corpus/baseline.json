@@ -506,7 +506,7 @@
     "test_adjacent_tables_conversion": {
      "any_page": 14,
      "lines": 14,
-     "mean_shift": 1.7,
+     "mean_shift": 1.71,
      "pages": [
       1,
       1
@@ -526,7 +526,7 @@
     "test_attribute_name_alignment": {
      "any_page": 12,
      "lines": 12,
-     "mean_shift": 0.26,
+     "mean_shift": 0.24,
      "pages": [
       1,
       1
@@ -536,7 +536,7 @@
     "test_bold_titles_and_headings": {
      "any_page": 20,
      "lines": 20,
-     "mean_shift": 1.87,
+     "mean_shift": 0.44,
      "pages": [
       1,
       1
@@ -546,7 +546,7 @@
     "test_both_link_role_direction": {
      "any_page": 10,
      "lines": 10,
-     "mean_shift": 0.21,
+     "mean_shift": 0.14,
      "pages": [
       1,
       1
@@ -556,7 +556,7 @@
     "test_convert_catalog_specification": {
      "any_page": 76,
      "lines": 77,
-     "mean_shift": 7.52,
+     "mean_shift": 7.26,
      "pages": [
       3,
       3
@@ -566,7 +566,7 @@
     "test_convert_external_resources_happy_path": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 0.12,
+     "mean_shift": 0.1,
      "pages": [
       1,
       1
@@ -576,7 +576,7 @@
     "test_convert_external_resources_refused_image": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 0.12,
+     "mean_shift": 0.1,
      "pages": [
       1,
       1
@@ -586,7 +586,7 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 5.32,
+     "mean_shift": 4.85,
      "pages": [
       8,
       8
@@ -596,7 +596,7 @@
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 21,
      "lines": 21,
-     "mean_shift": 0.31,
+     "mean_shift": 0.34,
      "pages": [
       1,
       1
@@ -606,7 +606,7 @@
     "test_convert_live_doc_with_all_comments": {
      "any_page": 19,
      "lines": 19,
-     "mean_shift": 0.32,
+     "mean_shift": 0.34,
      "pages": [
       1,
       1
@@ -616,7 +616,7 @@
     "test_convert_live_doc_with_filter": {
      "any_page": 188,
      "lines": 201,
-     "mean_shift": 12.75,
+     "mean_shift": 12.4,
      "pages": [
       6,
       6
@@ -626,7 +626,7 @@
     "test_convert_live_doc_with_formulas": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 0.56,
+     "mean_shift": 0.29,
      "pages": [
       1,
       1
@@ -636,7 +636,7 @@
     "test_convert_live_doc_with_heading": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 1.05,
+     "mean_shift": 0.42,
      "pages": [
       2,
       2
@@ -646,7 +646,7 @@
     "test_convert_live_doc_with_open_and_unreferenced_comments": {
      "any_page": 17,
      "lines": 17,
-     "mean_shift": 0.29,
+     "mean_shift": 0.33,
      "pages": [
       1,
       1
@@ -656,7 +656,7 @@
     "test_convert_live_doc_with_open_comments": {
      "any_page": 16,
      "lines": 16,
-     "mean_shift": 0.3,
+     "mean_shift": 0.33,
      "pages": [
       1,
       1
@@ -666,7 +666,7 @@
     "test_convert_live_doc_with_svg_images": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 2.02,
+     "mean_shift": 2.75,
      "pages": [
       2,
       2
@@ -676,7 +676,7 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 28,
      "lines": 28,
-     "mean_shift": 3.1,
+     "mean_shift": 4.37,
      "pages": [
       2,
       2
@@ -686,7 +686,7 @@
     "test_convert_live_doc_with_wi_table": {
      "any_page": 45,
      "lines": 47,
-     "mean_shift": 7.45,
+     "mean_shift": 7.33,
      "pages": [
       2,
       2
@@ -696,7 +696,7 @@
     "test_convert_live_doc_without_comments_rendering": {
      "any_page": 7,
      "lines": 7,
-     "mean_shift": 0.21,
+     "mean_shift": 0.19,
      "pages": [
       1,
       1
@@ -706,7 +706,7 @@
     "test_convert_product_specification": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 5.32,
+     "mean_shift": 4.85,
      "pages": [
       8,
       8
@@ -716,7 +716,7 @@
     "test_convert_test_specification": {
      "any_page": 186,
      "lines": 191,
-     "mean_shift": 29.82,
+     "mean_shift": 29.71,
      "pages": [
       4,
       4
@@ -746,7 +746,7 @@
     "test_direct_link_role_direction": {
      "any_page": 9,
      "lines": 9,
-     "mean_shift": 0.21,
+     "mean_shift": 0.14,
      "pages": [
       1,
       1
@@ -756,7 +756,7 @@
     "test_embedded_images_conversion": {
      "any_page": 19,
      "lines": 19,
-     "mean_shift": 1.69,
+     "mean_shift": 1.7,
      "pages": [
       3,
       3
@@ -766,7 +766,7 @@
     "test_empty_line_before_bullets": {
      "any_page": 10,
      "lines": 10,
-     "mean_shift": 0.75,
+     "mean_shift": 0.13,
      "pages": [
       1,
       1
@@ -776,7 +776,7 @@
     "test_figure_caption_followed_by_table_conversion": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 38.48,
+     "mean_shift": 37.01,
      "pages": [
       2,
       2
@@ -786,7 +786,7 @@
     "test_fit_to_page": {
      "any_page": 34,
      "lines": 35,
-     "mean_shift": 3.57,
+     "mean_shift": 3.65,
      "pages": [
       11,
       13
@@ -796,7 +796,7 @@
     "test_formatting": {
      "any_page": 16,
      "lines": 21,
-     "mean_shift": 0.48,
+     "mean_shift": 0.39,
      "pages": [
       1,
       1
@@ -806,7 +806,7 @@
     "test_formulas_conversion": {
      "any_page": 65,
      "lines": 82,
-     "mean_shift": 31.8,
+     "mean_shift": 27.31,
      "pages": [
       4,
       4
@@ -816,7 +816,7 @@
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 6.35,
+     "mean_shift": 5.65,
      "pages": [
       2,
       2
@@ -826,7 +826,7 @@
     "test_heading_numbers_with_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 6.35,
+     "mean_shift": 5.65,
      "pages": [
       2,
       2
@@ -836,7 +836,7 @@
     "test_heading_numbers_with_template_not_numbering_headings": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 1.05,
+     "mean_shift": 0.41,
      "pages": [
       2,
       2
@@ -846,7 +846,7 @@
     "test_icons": {
      "any_page": 11,
      "lines": 11,
-     "mean_shift": 0.2,
+     "mean_shift": 0.18,
      "pages": [
       1,
       1
@@ -856,7 +856,7 @@
     "test_image_sizes_conversion": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 4.14,
+     "mean_shift": 2.52,
      "pages": [
       1,
       1
@@ -876,7 +876,7 @@
     "test_indentation": {
      "any_page": 5,
      "lines": 5,
-     "mean_shift": 0.1,
+     "mean_shift": 0.09,
      "pages": [
       1,
       1
@@ -886,7 +886,7 @@
     "test_irregular_lists": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 2.38,
+     "mean_shift": 1.0,
      "pages": [
       1,
       1
@@ -896,7 +896,7 @@
     "test_reverse_link_role_direction": {
      "any_page": 8,
      "lines": 8,
-     "mean_shift": 0.21,
+     "mean_shift": 0.14,
      "pages": [
       1,
       1
@@ -906,7 +906,7 @@
     "test_svg_pictures_png_only": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 8.41,
+     "mean_shift": 6.77,
      "pages": [
       1,
       1
@@ -916,7 +916,7 @@
     "test_svg_pictures_with_svg": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 8.41,
+     "mean_shift": 6.77,
      "pages": [
       1,
       1
@@ -926,7 +926,7 @@
     "test_table_sizes_conversion": {
      "any_page": 53,
      "lines": 55,
-     "mean_shift": 37.13,
+     "mean_shift": 37.15,
      "pages": [
       3,
       3
@@ -936,7 +936,7 @@
     "test_tables_and_figures_captions_conversion": {
      "any_page": 42,
      "lines": 42,
-     "mean_shift": 5.78,
+     "mean_shift": 5.19,
      "pages": [
       3,
       3
@@ -976,7 +976,7 @@
     "test_toc_tof_tot_without_gaps_conversion": {
      "any_page": 16,
      "lines": 17,
-     "mean_shift": 15.64,
+     "mean_shift": 15.26,
      "pages": [
       2,
       2
@@ -986,7 +986,7 @@
     "test_wi_alignment_and_indentation": {
      "any_page": 9,
      "lines": 9,
-     "mean_shift": 0.13,
+     "mean_shift": 0.12,
      "pages": [
       1,
       1
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 95.8,
     "documents": 49,
-    "mean_shift": 7.1,
+    "mean_shift": 6.73,
     "pages_as_reference": 47,
     "same_page": 92.3
    }
