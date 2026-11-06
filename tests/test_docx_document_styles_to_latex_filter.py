@@ -251,13 +251,13 @@ def test_a_table_gets_the_space_and_rows_of_word(test_parameters: TestParameters
     preamble = _preamble(_latex(test_parameters.container, "docx-table-cell-space=3.6", "docx-body-baseline=14.65", "docx-body-size=12"))
     assert "\\ifdefined\\LTpre\\setlength{\\LTpre}{\\parskip}\\setlength{\\LTpost}{0pt}\\fi" in preamble
     assert "\\ifdefined\\aboverulesep\\setlength{\\aboverulesep}{0pt}\\setlength{\\belowrulesep}{0pt}\\fi" in preamble
-    assert "\\renewcommand{\\arraystretch}{1.2457}" in preamble
+    assert "\\newcommand{\\pdcPlainCellSpace}{3.6pt}" in preamble
     assert "\\newcommand{\\pdcCompactCellStretch}{1.2457}" in preamble
 
 
 def test_a_cell_paragraph_without_a_style_takes_the_space_of_normal(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-table-cell-space=3.6", "docx-table-plain-cell-space=10", "docx-body-baseline=14.65", "docx-body-size=12"))
-    assert "\\renewcommand{\\arraystretch}{1.6826}" in preamble
+    assert "\\newcommand{\\pdcPlainCellSpace}{10pt}" in preamble
     assert "\\newcommand{\\pdcCompactCellStretch}{1.2457}" in preamble
 
 

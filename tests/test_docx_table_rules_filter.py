@@ -80,7 +80,7 @@ def test_a_grid_draws_a_line_around_every_cell(test_parameters: TestParameters):
     assert "\\begin{longtable}[]{|" in latex
     assert latex.count("|") >= 3
     assert "\\setlength{\\arrayrulewidth}{0.75pt}\\arrayrulecolor[HTML]{CCCCCC}" in latex
-    assert "b \\\\\\hline" in latex
+    assert "\\\\\\hline" in latex
     assert "pdcGridRowEnd" not in latex
     assert latex.count("\\begingroup") == latex.count("\\endgroup")
 
@@ -97,3 +97,13 @@ def test_a_grid_with_a_picture_keeps_the_table_of_pandoc(test_parameters: TestPa
     latex = _native_latex(test_parameters.container, native)
     assert "{|" not in latex
     assert "\\toprule" in latex
+
+
+def test_the_text_of_a_cell_without_a_style_stands_at_its_top(test_parameters: TestParameters):
+    """Word sets the space of Normal below the text of the cell: it goes into the depth of the cell."""
+    latex = _latex(test_parameters.container, "tw=1.0000")
+    assert latex.count("\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}") == 4
+
+
+def test_a_table_of_compact_paragraphs_gets_no_space_below_its_text(test_parameters: TestParameters):
+    assert "pdcPlainCellSpace" not in _latex(test_parameters.container, "cc=1")

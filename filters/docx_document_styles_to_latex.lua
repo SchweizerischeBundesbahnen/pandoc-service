@@ -105,10 +105,11 @@ local function table_preamble(meta, lines)
   lines[#lines + 1] = "\\ifdefined\\aboverulesep\\setlength{\\aboverulesep}{0pt}\\setlength{\\belowrulesep}{0pt}\\fi"
   local baseline = points(meta[BASELINE])
   if baseline ~= nil and baseline > 0 then
-    -- A cell paragraph without a style is in Normal; filters/docx_tables_to_latex.lua
-    -- switches a table of paragraphs of the Compact style to its own rows
+    -- A cell paragraph without a style is in Normal, at the top of its cell with the
+    -- space of Normal below it: filters/docx_tables_to_latex.lua adds it to the depth
+    -- of each cell, and switches a table of paragraphs of the Compact style to its rows
     local plain = points(meta[PLAIN_CELL_SPACE]) or space
-    lines[#lines + 1] = string.format("\\renewcommand{\\arraystretch}{%.4f}", (baseline + plain) / baseline)
+    lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
     lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)
   end
 end

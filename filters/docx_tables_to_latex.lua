@@ -245,6 +245,24 @@ local function cell_is_blank(blocks)
   return true
 end
 
+-- The space below the paragraph of a cell without a style, which
+-- docx_document_styles_to_latex defines: Word sets the text at the top of
+-- the cell and the space of the Normal style below it.
+local PLAIN_CELL_SPACE = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi"
+
+local function add_plain_cell_space(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      local last = cell.contents[#cell.contents]
+      if last == nil then
+        cell.contents = { pandoc.Plain({ pandoc.RawInline("latex", PLAIN_CELL_SPACE) }) }
+      elseif last.t == "Plain" or last.t == "Para" then
+        last.content:insert(pandoc.RawInline("latex", PLAIN_CELL_SPACE))
+      end
+    end
+  end
+end
+
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
 -- Injects cell background colour and per-cell alignment, and captures any
 -- table-level width/alignment (carried on the first cell) into `layout`.
@@ -529,6 +547,16 @@ function table_pass.Table(tbl)
     if process_rows(body.head, layout, flags) then modified = true end
   end
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
+
+  if not layout.cc then
+    add_plain_cell_space(tbl.head.rows)
+    for _, body in ipairs(tbl.bodies) do
+      add_plain_cell_space(body.head)
+      add_plain_cell_space(body.body)
+    end
+    add_plain_cell_space(tbl.foot.rows)
+    modified = true
+  end
 
   -- Only what was actually emitted: colortbl redefines internal table macros,
   -- so it is not loaded for a document that has no \cellcolor in it.
