@@ -554,14 +554,14 @@
      "same_page": 10
     },
     "test_convert_catalog_specification": {
-     "any_page": 76,
+     "any_page": 77,
      "lines": 77,
-     "mean_shift": 0.4,
+     "mean_shift": 0.39,
      "pages": [
       3,
       3
      ],
-     "same_page": 76
+     "same_page": 77
     },
     "test_convert_external_resources_happy_path": {
      "any_page": 6,
@@ -584,14 +584,14 @@
      "same_page": 6
     },
     "test_convert_live_doc_no_filter": {
-     "any_page": 256,
+     "any_page": 258,
      "lines": 270,
-     "mean_shift": 1.09,
+     "mean_shift": 1.08,
      "pages": [
       8,
       8
      ],
-     "same_page": 256
+     "same_page": 258
     },
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 21,
@@ -614,14 +614,14 @@
      "same_page": 19
     },
     "test_convert_live_doc_with_filter": {
-     "any_page": 188,
+     "any_page": 190,
      "lines": 201,
-     "mean_shift": 11.81,
+     "mean_shift": 11.69,
      "pages": [
       6,
       6
      ],
-     "same_page": 185
+     "same_page": 187
     },
     "test_convert_live_doc_with_formulas": {
      "any_page": 6,
@@ -684,14 +684,14 @@
      "same_page": 27
     },
     "test_convert_live_doc_with_wi_table": {
-     "any_page": 45,
+     "any_page": 47,
      "lines": 47,
-     "mean_shift": 3.91,
+     "mean_shift": 3.75,
      "pages": [
       2,
       2
      ],
-     "same_page": 45
+     "same_page": 47
     },
     "test_convert_live_doc_without_comments_rendering": {
      "any_page": 7,
@@ -704,24 +704,24 @@
      "same_page": 7
     },
     "test_convert_product_specification": {
-     "any_page": 256,
+     "any_page": 258,
      "lines": 270,
-     "mean_shift": 1.09,
+     "mean_shift": 1.08,
      "pages": [
       8,
       8
      ],
-     "same_page": 256
+     "same_page": 258
     },
     "test_convert_test_specification": {
-     "any_page": 186,
+     "any_page": 189,
      "lines": 191,
-     "mean_shift": 4.32,
+     "mean_shift": 4.26,
      "pages": [
       4,
       4
      ],
-     "same_page": 182
+     "same_page": 185
     },
     "test_deleted_linked_work_item": {
      "any_page": 17,
@@ -995,11 +995,11 @@
     }
    },
    "total": {
-    "any_page": 95.9,
+    "any_page": 96.5,
     "documents": 49,
-    "mean_shift": 3.12,
+    "mean_shift": 3.11,
     "pages_as_reference": 47,
-    "same_page": 93.7
+    "same_page": 94.3
    }
   }
  }

@@ -45,6 +45,7 @@ local CELL_SPACE = "docx-table-cell-space"
 local LIST_ITEM_SPACE = "docx-list-item-space"
 local PARAGRAPH_SPACING = "docx-paragraph-spacing"
 local BULLET_ASCENTS = "docx-list-bullet-ascents"
+local LIST_INDENTS = "docx-list-indents"
 local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
@@ -159,6 +160,31 @@ local PAGE_GEOMETRY = table.concat({
   "\\makeatother",
 }, "\n")
 
+local ROMAN = { "i", "ii", "iii", "iv" }
+
+-- Word indents the text of each level of a list past the level above it, and sets the label at the
+-- start of the hanging indent, aligned left: LaTeX right-aligns it against the text.
+local function list_indents(meta, lines)
+  local levels = {}
+  for left, hanging in pandoc.utils.stringify(meta[LIST_INDENTS] or ""):gmatch("([%d.]+):([%d.]+)") do
+    levels[#levels + 1] = { left = tonumber(left), hanging = tonumber(hanging) }
+  end
+  if #levels ~= #ROMAN then
+    return
+  end
+  lines[#lines + 1] = "\\makeatletter"
+  for index, level in ipairs(levels) do
+    lines[#lines + 1] = string.format("\\def\\pdcListLeft%s{%gbp}\\def\\pdcListHang%s{%gbp}", ROMAN[index], level.left, ROMAN[index], level.hanging)
+  end
+  -- Only the list of an itemize or enumerate: a quote keeps its margin, a description its labels
+  lines[#lines + 1] = "\\let\\pdcNextList\\relax\\let\\pdcList\\list\\def\\list#1#2{\\pdcList{#1}{#2\\pdcNextList\\global\\let\\pdcNextList\\relax}}"
+  lines[#lines + 1] = "\\def\\pdcWordLabel{\\ifcsname pdcListHang\\romannumeral\\@listdepth\\endcsname\\labelsep=0pt"
+    .. "\\leftmargin=\\csname pdcListLeft\\romannumeral\\@listdepth\\endcsname\\relax"
+    .. "\\labelwidth=\\csname pdcListHang\\romannumeral\\@listdepth\\endcsname\\relax\\def\\makelabel##1{##1\\hfil}\\fi}"
+  lines[#lines + 1] = "\\AddToHook{env/itemize/begin}{\\global\\let\\pdcNextList\\pdcWordLabel}\\AddToHook{env/enumerate/begin}{\\global\\let\\pdcNextList\\pdcWordLabel}"
+  lines[#lines + 1] = "\\makeatother"
+end
+
 local function body_preamble(meta, lines)
   lines[#lines + 1] = PAGE_GEOMETRY
   -- Word counts in PostScript points, \fontsize in bp does the same; pt of TeX are 0.4% smaller
@@ -224,6 +250,7 @@ local function body_preamble(meta, lines)
       lines[#lines + 1] = string.format(strut, label, label, label, ascent, label)
     end
   end
+  list_indents(meta, lines)
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
     -- \\raggedright makes \\\\ end the paragraph, so the lines of a paragraph of line breaks were
     -- paragraphs of their own, which a page broke apart: a line break of Word stays in its paragraph
@@ -794,7 +821,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

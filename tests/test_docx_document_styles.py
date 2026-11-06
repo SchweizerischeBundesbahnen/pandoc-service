@@ -489,3 +489,20 @@ def test_the_spacing_of_normal_and_the_styles_of_the_body_is_handed_over():
     spacing = _options(_docx(styles, section=body))["docx-paragraph-spacing"]
     # Normal takes its space after from the defaults; the title has spaces of its own
     assert spacing == "BodyText:BodyText:9:9;Normal:Normal:0:10"
+
+
+def _indented(*levels: tuple[int, int]) -> str:
+    """A list whose levels have the left and hanging indents given, in twips."""
+    lvls = "".join(f'<w:lvl w:ilvl="{index}"><w:numFmt w:val="decimal"/><w:pPr><w:ind w:left="{left}" w:hanging="{hanging}"/></w:pPr></w:lvl>' for index, (left, hanging) in enumerate(levels))
+    return f'<w:abstractNum w:abstractNumId="991">{lvls}</w:abstractNum><w:num w:numId="2"><w:abstractNumId w:val="991"/></w:num>'
+
+
+def test_each_level_of_a_list_is_indented_past_the_level_above_it():
+    """Word sets the label at the start of the hanging indent and the text at the left indent."""
+    numbering = _indented((720, 360), (1440, 360), (2160, 180), (2880, 360))
+    assert _options(_docx(DEFAULTS + NORMAL, section=LIST_ITEM, numbering=numbering))["docx-list-indents"] == "36:18,36:18,36:9,36:18"
+
+
+def test_a_list_with_a_level_not_past_the_one_above_gets_the_indents_of_latex():
+    numbering = _indented((720, 360), (720, 360), (2160, 360), (2880, 360))
+    assert "docx-list-indents" not in _options(_docx(DEFAULTS + NORMAL, section=LIST_ITEM, numbering=numbering))

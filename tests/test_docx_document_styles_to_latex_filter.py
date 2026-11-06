@@ -580,3 +580,17 @@ def test_a_table_after_a_tight_list_gets_only_the_space_after_compact(test_param
     body = _latex(test_parameters.container, "docx-body-paragraph-skip=9", spacing, native=native)
     body = " ".join(body[body.index("\\begin{document}") :].split())
     assert body.index("\\end{itemize}") < body.index("\\vspace{-7.2bp}") < body.index("\\begin{longtable}")
+
+
+def test_a_list_takes_the_indents_of_word_with_its_label_aligned_left(test_parameters: TestParameters):
+    """Word sets the label at the start of the hanging indent: LaTeX right-aligns it against the text."""
+    preamble = _preamble(_latex(test_parameters.container, "docx-list-indents=36:18,36:18,36:9,36:18"))
+    assert "\\def\\pdcListLefti{36bp}\\def\\pdcListHangi{18bp}" in preamble
+    assert "\\def\\pdcListLeftiii{36bp}\\def\\pdcListHangiii{9bp}" in preamble
+    assert "\\leftmargin=\\csname pdcListLeft\\romannumeral\\@listdepth\\endcsname" in preamble, "a quote keeps the margin of LaTeX"
+    assert "\\def\\makelabel##1{##1\\hfil}" in preamble
+    assert "\\AddToHook{env/itemize/begin}{\\global\\let\\pdcNextList\\pdcWordLabel}" in preamble
+
+
+def test_a_list_without_four_levels_of_indents_keeps_those_of_latex(test_parameters: TestParameters):
+    assert "pdcListLeft" not in _preamble(_latex(test_parameters.container, "docx-list-indents=36:18"))

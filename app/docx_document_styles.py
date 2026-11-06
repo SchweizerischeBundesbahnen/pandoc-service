@@ -179,6 +179,9 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         bullets = _bullet_ascents(numbering, document, size / 2)
         if any(bullets):
             options += ["-M", "docx-list-bullet-ascents=" + ",".join(f"{ascent:g}" for ascent in bullets)]
+    indents = _list_indents(numbering, document)
+    if indents:
+        options += ["-M", "docx-list-indents=" + ",".join(f"{left:g}:{hanging:g}" for left, hanging in indents)]
     skip = _paragraph_skip(chain, styles)
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]
@@ -435,6 +438,31 @@ def _bullet_ascents(numbering: Element | None, document: Element | None, size: f
         ratio = ascent_ratio(family) if family in installed_families() else None
         ascents.append(round(size * ratio, 2) if ratio is not None else 0)
     return ascents
+
+
+def _list_indents(numbering: Element | None, document: Element | None) -> list[tuple[float, float]]:
+    """The indent of each of the first four levels of the first list of the document, in points.
+
+    Each level as its left indent past the level above it and its hanging indent: Word sets the label at the
+    start of the hanging indent and the text at the left indent. Empty when a level has no indent of its own.
+    """
+    if numbering is None or document is None:
+        return []
+    num_id = next((element.get(_w("val"), "") for element in document.iter(_w("numId"))), None)
+    levels = _number_levels(numbering, num_id) if num_id is not None else {}
+    indents: list[tuple[float, float]] = []
+    outer = 0
+    for index in range(4):
+        indent = levels[str(index)].find(f"{_w('pPr')}/{_w('ind')}") if str(index) in levels else None
+        if indent is None:
+            return []
+        left = indent.get(_w("left"), indent.get(_w("start"), ""))
+        hanging = indent.get(_w("hanging"), "0")
+        if not left.isdigit() or not hanging.isdigit() or int(left) <= outer:
+            return []
+        indents.append(((int(left) - outer) / TWIPS_PER_POINT, int(hanging) / TWIPS_PER_POINT))
+        outer = int(left)
+    return indents
 
 
 def _heading_number(chain: list[Element], styles: Element, numbering: Element | None) -> dict[str, str]:
