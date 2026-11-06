@@ -568,11 +568,18 @@ local function title_div(div)
   if title_style == nil or div.attributes["custom-style"] ~= "Title" then
     return nil
   end
-  local blocks = { pandoc.RawBlock("latex", string.format("\\par\\vspace{%gpt}\\begingroup\\pdcTitleStyle", title_style.before)) }
+  -- The space between paragraphs puts the title's space around it. TeX keeps a line of the title's
+  -- font between the baselines, Word the descent of the line above and the ascent of the title.
+  local open = "\\par\\begingroup\\pdcTitleStyle"
+  if title_style.line and title_style.ascent and body_descent then
+    local descent = title_style.line - title_style.ascent
+    open = string.format("\\par\\ifdim\\prevdepth<%.4gbp\\ifdim\\prevdepth>-1000pt\\vskip\\dimexpr\\prevdepth-%.4gbp\\relax\\fi\\fi\\begingroup\\pdcTitleStyle", descent, descent)
+  end
+  local blocks = { pandoc.RawBlock("latex", open) }
   for _, block in ipairs(div.content) do
     blocks[#blocks + 1] = block
   end
-  blocks[#blocks + 1] = pandoc.RawBlock("latex", string.format("\\par\\endgroup\\vspace{%gpt}", below_title(title_style, false)))
+  blocks[#blocks + 1] = pandoc.RawBlock("latex", "\\par\\endgroup")
   return pandoc.Div(blocks, { ["pdc-style"] = "Title" })
 end
 
@@ -624,6 +631,9 @@ local function block_spacing(block)
   end
   if block.t == "Div" and block.attributes["custom-style"] == "PandocToc__ENTRY" then
     return ENTRY_SPACING
+  end
+  if block.t == "Div" and block.attributes["pdc-style"] == "Title" and title_style ~= nil then
+    return { before = title_style.own_before, after = title_style.own_after }
   end
   if block.t == "Div" then
     local id = block.attributes["pdc-style"]

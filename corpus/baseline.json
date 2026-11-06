@@ -475,7 +475,7 @@
     "test_toc_tof_tot_without_gaps_conversion": {
      "any_page": 13,
      "lines": 17,
-     "mean_shift": 24.28,
+     "mean_shift": 5.45,
      "pages": [
       2,
       2
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.1,
     "documents": 49,
-    "mean_shift": 8.07,
+    "mean_shift": 7.67,
     "pages_as_reference": 47,
     "same_page": 64.9
    }
@@ -976,7 +976,7 @@
     "test_toc_tof_tot_without_gaps_conversion": {
      "any_page": 17,
      "lines": 17,
-     "mean_shift": 15.02,
+     "mean_shift": 3.92,
      "pages": [
       2,
       2
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 95.9,
     "documents": 49,
-    "mean_shift": 3.64,
+    "mean_shift": 3.41,
     "pages_as_reference": 47,
     "same_page": 93.7
    }

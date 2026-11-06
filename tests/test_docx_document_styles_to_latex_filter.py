@@ -265,6 +265,15 @@ def test_an_entry_of_a_list_of_figures_gets_the_space_of_the_paragraph_before(te
     assert "\\vspace{-9bp}" in body, "Normal after an entry: the larger of 5 and 0, less the skip and the 5pt the entry ends with"
 
 
+def test_a_later_title_paragraph_gets_the_space_of_word(test_parameters: TestParameters):
+    """The space between paragraphs puts the title's space before it, and its line comes up by what TeX adds."""
+    title = "docx-style-Title=size:28,line:34.18,ascent:26.29,before:0,after:4"
+    native = '[Para [Str "Before"], Div ("",[],[("custom-style","Title")]) [Para [Str "Later"]], Para [Str "After"]]'
+    body = " ".join(_latex(test_parameters.container, *SPACING, title, "docx-body-descent=3.4", native=native).split())
+    assert "\\vspace{1bp} \\par\\ifdim\\prevdepth<7.89bp\\ifdim\\prevdepth>-1000pt\\vskip\\dimexpr\\prevdepth-7.89bp\\relax\\fi\\fi" in body
+    assert "\\par\\endgroup \\vspace{-5bp} \\strut{}After" in body, "the larger of 4 and 0, less the skip"
+
+
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
     assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble
