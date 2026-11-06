@@ -310,8 +310,19 @@ def test_an_equation_alone_is_a_centred_paragraph(test_parameters: TestParameter
     native = '[Para [Math DisplayMath "a^{2}"], Para [Str "Text", Space, Math DisplayMath "b"]]'
     body = _latex(test_parameters.container, native=native)
     body = body[body.index("\\begin{document}") :]
-    assert "{\\centering\\renewcommand{\\arraystretch}{1}\\(\\displaystyle a^{2}\\)\\par}" in body
+    assert "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{1.35pt}\\let\\frac\\pdcEquationFrac\\(\\displaystyle a^{2}\\)\\par}" in body
     assert "\\[b\\]" in body, "an equation within text stays a display"
+
+
+def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestParameters):
+    """Word sets the rows of a matrix a fixed pitch apart, the equation tight to its content and a little space
+    above it, and a fraction inside a fraction as large as the outer one."""
+    latex = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "a^{2}"]]')
+    assert "\\newcommand{\\pdcEquationRow}{14.1bp}" in _preamble(latex)
+    assert "\\baselineskip\\pdcEquationRow\\lineskiplimit-\\maxdimen" in _preamble(latex)
+    assert "\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}" in _preamble(latex)
+    body = " ".join(latex[latex.index("\\begin{document}") :].split())
+    assert "\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
 
 
 def test_a_numbered_heading_style_sets_its_number_in_its_hanging_indent(test_parameters: TestParameters):

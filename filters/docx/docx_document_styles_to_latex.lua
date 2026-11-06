@@ -171,6 +171,28 @@ local PAGE_GEOMETRY = table.concat({
 
 local ROMAN = { "i", "ii", "iii", "iv" }
 
+-- Word sets the rows of a matrix 1.175 times the size of the font apart, and an aligned row its own
+-- height and 1.35pt below the one above: TeX the line of the body and 3pt
+local MATRIX_ROW = 1.175
+-- Word sets the line of an equation 0.135 times the size of the font above its top
+local EQUATION_TOP = 0.135
+local ALIGNED_GAP = 1.35
+
+-- The array of array.sty with the rows of Word: no strut, and a pitch whatever the rows hold
+local EQUATION_ARRAY = table.concat({
+  "\\makeatletter",
+  "\\newcommand{\\pdcEquationArray}[2][c]{\\setbox\\@arstrutbox\\hbox{}%",
+  "\\begingroup\\@mkpream{#2}\\xdef\\@preamble{\\noexpand\\ialign\\@halignto\\bgroup\\@arstrut\\@preamble\\tabskip\\z@\\cr}\\endgroup",
+  "\\if #1t\\vtop\\else\\if#1b\\vbox\\else\\vcenter\\fi\\fi\\bgroup\\let\\@sharp##\\let\\protect\\relax",
+  "\\lineskip\\z@\\baselineskip\\pdcEquationRow\\lineskiplimit-\\maxdimen\\mathsurround\\z@",
+  "\\let\\\\\\@arraycr\\let\\tabularnewline\\\\\\let\\par\\@empty\\@preamble}",
+  "\\newsavebox{\\pdcEquationBox}",
+  "\\newcommand{\\pdcInnerFrac}[2]{\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}}",
+  "\\newcommand{\\pdcEquationFrac}[2]{\\genfrac{}{}{}{0}{\\let\\frac\\pdcInnerFrac #1}{\\let\\frac\\pdcInnerFrac #2}}",
+  "\\newcommand{\\pdcEquationArrays}{\\def\\@array[##1]##2{\\pdcEquationArray[##1]{##2}}}",
+  "\\makeatother",
+}, "\n")
+
 -- Word indents the text of each level of a list past the level above it, and sets the label at the
 -- start of the hanging indent, aligned left: LaTeX right-aligns it against the text.
 local function list_indents(meta, lines)
@@ -263,6 +285,11 @@ local function body_preamble(meta, lines)
     end
   end
   list_indents(meta, lines)
+  local size = points(meta[SIZE])
+  if size then
+    lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}", MATRIX_ROW * size)
+    lines[#lines + 1] = EQUATION_ARRAY
+  end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
     -- \\raggedright makes \\\\ end the paragraph, so the lines of a paragraph of line breaks were
     -- paragraphs of their own, which a page broke apart: a line break of Word stays in its paragraph
@@ -338,6 +365,7 @@ local function ascent_strut(style)
 end
 
 local body_descent = nil
+local body_size, body_baseline = nil, nil
 local body_ascent = nil
 local body_skip = 0
 
@@ -561,10 +589,19 @@ end
 -- a display which starts a paragraph, and its matrices take the row height
 -- of the tables: the equation is set as a centred paragraph in display style.
 local function display_equation(math)
+  -- Word sets a fraction inside a fraction of an equation as large as the outer one, closer to its line
+  local open = "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{" .. ALIGNED_GAP .. "pt}\\let\\frac\\pdcEquationFrac"
+  local close = "\\par}"
+  if body_size then
+    -- The rows of an array that far apart whatever they hold, and the array as high as its first row and
+    -- as deep as its last: see EQUATION_ARRAY. Word sets the line of an equation that much above it.
+    open = open .. "\\pdcEquationArrays\\sbox{\\pdcEquationBox}{"
+    close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}\\usebox{\\pdcEquationBox}\\par}", EQUATION_TOP * body_size)
+  end
   return pandoc.Plain({
-    pandoc.RawInline("latex", "{\\centering\\renewcommand{\\arraystretch}{1}"),
+    pandoc.RawInline("latex", open),
     pandoc.Math("InlineMath", "\\displaystyle " .. math.text),
-    pandoc.RawInline("latex", "\\par}"),
+    pandoc.RawInline("latex", close),
   })
 end
 
@@ -833,6 +870,7 @@ local function read_title(meta)
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
   body_descent = points(meta[DESCENT])
   body_ascent = points(meta["docx-body-ascent"])
+  body_size, body_baseline = points(meta[SIZE]), points(meta[BASELINE])
   body_skip = skip or 0
   for entry in pandoc.utils.stringify(meta[PARAGRAPH_SPACING] or ""):gmatch("[^;]+") do
     local id, name, before, after = entry:match("^(%w+):([%w ]+):([%d.]+):([%d.]+)$")
