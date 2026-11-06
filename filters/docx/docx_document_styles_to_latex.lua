@@ -225,6 +225,9 @@ local function body_preamble(meta, lines)
       -- longtable leaves the depth of its last row below the line, not in \\prevdepth: the line after it
       -- would stand a full line of the body below that, where Word sets it below the descent of the row
       lines[#lines + 1] = "\\AddToHook{env/longtable/after}{\\par\\prevdepth=\\dp\\strutbox}"
+      -- A table goes on at the top of the next page right at the margin, below its header row if it has one:
+      -- longtable sets an empty header there, which TeX would move down by the ascent of a line
+      lines[#lines + 1] = "\\AddToHook{env/longtable/begin}{\\topskip=0pt}"
     end
   end
   if points(meta[DESCENT]) ~= nil then

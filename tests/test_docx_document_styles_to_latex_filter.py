@@ -620,3 +620,9 @@ def test_a_picture_taller_than_a_page_runs_past_the_bottom_margin(test_parameter
     assert "\\setlength{\\pdcPictureRoom}{\\dimexpr\\textheight-2\\baselineskip\\relax}" in preamble
     assert "[\\pdcPictureRoom][0pt]" in preamble
     assert "\\RenewDocumentCommand{\\includegraphics}{som}{\\pdcPagePicture{" in preamble
+
+
+def test_a_table_goes_on_at_the_top_margin_of_the_next_page(test_parameters: TestParameters):
+    """longtable sets an empty header at the top of the next page, which TeX would move down by the ascent."""
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4"))
+    assert "\\AddToHook{env/longtable/begin}{\\topskip=0pt}" in preamble

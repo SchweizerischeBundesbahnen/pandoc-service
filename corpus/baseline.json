@@ -686,7 +686,7 @@
     "test_convert_live_doc_with_wi_table": {
      "any_page": 47,
      "lines": 47,
-     "mean_shift": 3.75,
+     "mean_shift": 0.28,
      "pages": [
       2,
       2
@@ -866,12 +866,12 @@
     "test_images_and_tables_conversion": {
      "any_page": 32,
      "lines": 32,
-     "mean_shift": 10.49,
+     "mean_shift": 1.91,
      "pages": [
       5,
       5
      ],
-     "same_page": 30
+     "same_page": 32
     },
     "test_indentation": {
      "any_page": 5,
@@ -997,9 +997,9 @@
    "total": {
     "any_page": 98.2,
     "documents": 49,
-    "mean_shift": 1.77,
+    "mean_shift": 1.53,
     "pages_as_reference": 49,
-    "same_page": 96.9
+    "same_page": 97.0
    }
   }
  }
