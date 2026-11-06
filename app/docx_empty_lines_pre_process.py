@@ -14,6 +14,11 @@ many empty lines. An empty paragraph without a line break needs no marker.
 
 A table cell keeps its own height. A paragraph with a picture, an equation, a
 field, a list number, a page break or the end of a section is left as it is.
+
+The reader drops a line break at the start or the end of a paragraph with text
+as well, where Word shows an empty line. A run of the text ``PDCKEEPBREAK``
+next to such a break keeps it, also in a table cell, and the filter sets the
+marker as an empty line of its own.
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ _CONTENT = frozenset(
     }
 )
 _BOOKMARKS = frozenset({f"{{{W_NS}}}bookmarkStart", f"{{{W_NS}}}bookmarkEnd"})
+KEEP_BREAK = "PDCKEEPBREAK"
 
 
 def _w(name: str) -> str:
@@ -76,6 +82,43 @@ def _marker(paragraph: ET.Element, lines: int) -> ET.Element:
     return marker
 
 
+def _is_break(element: ET.Element) -> bool:
+    return element.tag == _w("br") and element.get(_w("type"), "textWrapping") == "textWrapping"
+
+
+def _shows(element: ET.Element) -> bool:
+    """Whether Word shows something for the element of a paragraph, other than a line break."""
+    if element.tag == _w("t"):
+        return bool((element.text or "").strip())
+    return element.tag in _CONTENT and element.tag not in {_w("numPr"), _w("sectPr")}
+
+
+def _keep_run(paragraph: ET.Element, br: ET.Element, *, after: bool) -> None:
+    """Put a run of the marker next to the run which holds the line break."""
+    parents = {child: parent for parent in paragraph.iter() for child in parent}
+    run = parents[br]
+    while run.tag != _w("r") and run in parents:
+        run = parents[run]
+    parent = parents[run]
+    marker = ET.Element(_w("r"))
+    ET.SubElement(marker, _w("t")).text = KEEP_BREAK
+    parent.insert(list(parent).index(run) + (1 if after else 0), marker)
+
+
+def _keep_edge_breaks(paragraph: ET.Element) -> bool:
+    """Mark the line breaks at the start and the end of a paragraph with text; whether it has any."""
+    elements = [element for element in paragraph.iter() if _is_break(element) or _shows(element)]
+    shown = [index for index, element in enumerate(elements) if not _is_break(element)]
+    if not shown:
+        return False
+    leading, trailing = elements[: shown[0]], elements[shown[-1] + 1 :]
+    if trailing:
+        _keep_run(paragraph, trailing[-1], after=True)
+    if leading:
+        _keep_run(paragraph, leading[0], after=False)
+    return bool(leading or trailing)
+
+
 def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Mark the paragraphs of line breaks of the body; returns the part and whether it changed."""
     tree = parse_xml(xml_bytes)
@@ -85,6 +128,8 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     if body is None:
         return xml_bytes, False
     changed = False
+    for paragraph in list(body.iter(_w("p"))):
+        changed = _keep_edge_breaks(paragraph) or changed
     for index, child in enumerate(list(body)):
         lines = _lines(child) if child.tag == _w("p") else None
         if lines is not None:

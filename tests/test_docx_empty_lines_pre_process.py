@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from app.docx_empty_lines_pre_process import EMPTY_LINES_STYLE, MAX_LINES, rewrite_part
+from app.docx_empty_lines_pre_process import EMPTY_LINES_STYLE, KEEP_BREAK, MAX_LINES, rewrite_part
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
@@ -49,7 +49,6 @@ def test_the_lines_of_one_paragraph_have_a_limit():
 
 def test_a_paragraph_with_something_to_show_is_left_as_it_is():
     kept = (
-        "<w:p><w:r><w:t>text</w:t><w:br/></w:r></w:p>",
         '<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
         "<w:p><w:r><w:drawing/></w:r></w:p>",
         "<w:p><m:oMathPara/></w:p>",
@@ -74,3 +73,29 @@ def test_a_part_without_a_body_is_left_as_it_is():
 
 def test_a_part_which_is_no_xml_is_left_as_it_is():
     assert rewrite_part(b"not xml") == (b"not xml", False)
+
+
+def _runs(xml: bytes) -> list[str]:
+    """The text and the line breaks of the runs, in their order."""
+    return [match.group(1) or "br" for match in re.finditer(r"<w:t>([^<]*)</w:t>|<w:br ?/>", xml.decode())]
+
+
+def test_a_line_break_before_the_text_is_kept_by_a_marker():
+    xml, changed = rewrite_part(_document("<w:p><w:r><w:br/></w:r><w:r><w:t>text</w:t></w:r></w:p>"))
+    assert changed
+    assert _runs(xml) == [KEEP_BREAK, "br", "text"]
+
+
+def test_a_line_break_after_the_text_is_kept_by_a_marker():
+    xml, _ = rewrite_part(_document("<w:p><w:r><w:t>text</w:t><w:br/></w:r></w:p>"))
+    assert _runs(xml) == ["text", "br", KEEP_BREAK]
+
+
+def test_a_line_break_in_a_link_or_a_cell_is_kept_as_well():
+    xml, _ = rewrite_part(_document("<w:tbl><w:tr><w:tc><w:p><w:hyperlink><w:r><w:br/></w:r></w:hyperlink><w:r><w:drawing/></w:r></w:p></w:tc></w:tr></w:tbl>"))
+    assert re.search(rf"<w:hyperlink><w:r><w:t>{KEEP_BREAK}</w:t></w:r><w:r><w:br ?/></w:r></w:hyperlink>", xml.decode())
+
+
+def test_a_line_break_between_texts_needs_no_marker():
+    source = _document("<w:p><w:r><w:t>one</w:t><w:br/><w:t>two</w:t></w:r></w:p>")
+    assert rewrite_part(source) == (source, False)

@@ -80,6 +80,21 @@ def test_a_marked_paragraph_without_a_number_is_left_as_it_is(test_parameters: T
     assert "\\strut" not in _native_to_latex(test_parameters.container, _marked('Str "x"'))
 
 
+def test_a_kept_line_break_marker_becomes_an_empty_line(test_parameters: TestParameters):
+    flat = _native_to_latex(test_parameters.container, '[ Para [ Str "PDCKEEPBREAK" , LineBreak , Str "text" ] ]')
+    assert flat == "\\strut\\\\ text", flat
+
+
+def test_service_keeps_a_line_break_before_the_text(test_parameters: TestParameters):
+    document = Document()
+    paragraph = document.add_paragraph()
+    paragraph.add_run().add_break()
+    paragraph.add_run("text")
+    buffer = BytesIO()
+    document.save(buffer)
+    assert "\\strut\\\\ text" in _convert_docx_to_latex(test_parameters, buffer.getvalue())
+
+
 def test_paragraph_with_text_is_untouched(test_parameters: TestParameters):
     assert "\\strut" not in _native_to_latex(test_parameters.container, '[ Para [ Str "text" ] ]')
 

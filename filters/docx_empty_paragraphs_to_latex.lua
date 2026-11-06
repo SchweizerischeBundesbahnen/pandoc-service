@@ -117,7 +117,19 @@ local function keep_empty_lines(blocks)
   return result
 end
 
+-- A line break at the start or the end of a paragraph with text, which
+-- app/docx_empty_lines_pre_process.py marks so the reader keeps it: the empty
+-- line Word shows there.
+local KEEP_BREAK = "PDCKEEPBREAK"
+
+local function kept_break(str)
+  if str.text == KEEP_BREAK then
+    return pandoc.RawInline("latex", "\\strut")
+  end
+  return nil
+end
+
 function Pandoc(doc)
   doc.blocks = keep_empty_lines(doc.blocks)
-  return doc
+  return doc:walk({ Str = kept_break })
 end
