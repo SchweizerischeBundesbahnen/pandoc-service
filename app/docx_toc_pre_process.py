@@ -200,8 +200,8 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
             replacements = [entry for entry in (_entry_paragraph(paragraph) for paragraph in field_paragraphs) if entry is not None]
             if replacements:
                 used[ENTRY_STYLE] = _StyleSpec(ENTRY_STYLE)
-            if last > first and _entry_paragraph(field_paragraphs[-1]) is None:
-                # Word shows the paragraph which ends the field as an empty line
+            if replacements:
+                # Word updates the field and keeps the paragraph which ends it as an empty line, in Normal
                 replacements.append(ET.Element(_w("p")))
         else:
             style_id = f"{CONTENTS_STYLE}{_depth(instruction)}"

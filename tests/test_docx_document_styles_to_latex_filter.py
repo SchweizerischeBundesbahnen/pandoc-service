@@ -256,6 +256,15 @@ def test_a_page_starts_as_far_down_as_word_sets_its_first_line(test_parameters: 
     assert body.count("\\rule{0pt}") == 1
 
 
+def test_an_entry_of_a_list_of_figures_gets_the_space_of_the_paragraph_before(test_parameters: TestParameters):
+    """An entry is set without the paragraph skip, with 5pt after it: Body Text before it keeps its 9pt."""
+    entry = 'Div ("",[],[("custom-style","PandocToc__ENTRY")]) [Para [Str "Figure"]]'
+    native = f'[Div ("",[],[("custom-style","Body Text")]) [Para [Str "Before"]], {entry}, {entry}, Para [Str "After"]]'
+    body = " ".join(_latex(test_parameters.container, *SPACING, native=native).split())
+    assert body.count("\\vspace{9bp}") == 1
+    assert "\\vspace{-9bp}" in body, "Normal after an entry: the larger of 5 and 0, less the skip and the 5pt the entry ends with"
+
+
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
     assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble

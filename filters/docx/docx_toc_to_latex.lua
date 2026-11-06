@@ -105,8 +105,64 @@ function Meta(meta)
   return meta
 end
 
+-- Whether the document has a heading for a table of contents to list.
+local function has_heading(doc)
+  local found = false
+  doc:walk({
+    Header = function()
+      found = true
+    end,
+    Div = function(div)
+      found = found or div.attributes["pdc-style"] == "Heading"
+    end,
+  })
+  return found
+end
+
+-- Word fills a table of contents without a heading to list with its message, in
+-- the paragraph which ends the field: no empty line stays after it.
+local NO_ENTRIES = "No table of contents entries found."
+
+local function is_contents(block)
+  local style = block.t == "Div" and block.attributes["custom-style"] or ""
+  return style:sub(1, #CONTENTS) == CONTENTS
+end
+
+local function is_empty_line(block)
+  if block.t ~= "Para" and block.t ~= "Plain" then
+    return false
+  end
+  for _, inline in ipairs(block.content) do
+    if inline.t ~= "RawInline" then
+      return false
+    end
+  end
+  return true
+end
+
+local function empty_contents(doc)
+  if not FORMAT:match("latex") or has_heading(doc) then
+    return nil
+  end
+  local blocks, skip = {}, false
+  for _, block in ipairs(doc.blocks) do
+    if skip and is_empty_line(block) then
+      skip = false
+    elseif is_contents(block) then
+      blocks[#blocks + 1] = pandoc.Para({ pandoc.RawInline("latex", "\\strut{}"), pandoc.Strong({ pandoc.Str(NO_ENTRIES) }), pandoc.RawInline("latex", "\\strut{}") })
+      skip = true
+    else
+      skip = false
+      blocks[#blocks + 1] = block
+    end
+  end
+  doc.blocks = blocks
+  return doc
+end
+
 -- Divs first, so Meta knows whether the document holds a table of contents.
 return {
+  { Pandoc = empty_contents },
   { Div = Div },
   { Meta = Meta },
 }

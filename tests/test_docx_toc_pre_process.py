@@ -66,11 +66,12 @@ def test_a_list_of_figures_keeps_the_text_of_its_entries_and_marks_their_page():
     assert xml.decode().count('w:anchor="_Toc1"') == 1, "the entry keeps its link"
 
 
-def test_a_list_whose_last_entry_ends_the_field_adds_no_empty_paragraph():
+def test_a_list_whose_last_entry_ends_the_field_still_ends_with_an_empty_paragraph():
+    """Word updates the field when it opens the document, and keeps the paragraph which ends it as an empty line."""
     first = _field(" TOC \\h \\z \\c &quot;Table&quot; ", "").replace('<w:r><w:fldChar w:fldCharType="end"/></w:r>', "") + _entry_runs("Table 1", "_Toc3")
     last = _entry_runs("Table 2", "_Toc4") + '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
     xml, _ = rewrite_part(_document(_paragraph(first, "TOC1"), _paragraph(last, "TOC1")))
-    assert _paragraph_texts(xml) == [f"Table 1{PAGE_MARKER}_Toc3", f"Table 2{PAGE_MARKER}_Toc4"]
+    assert _paragraph_texts(xml) == [f"Table 1{PAGE_MARKER}_Toc3", f"Table 2{PAGE_MARKER}_Toc4", ""]
 
 
 def test_a_bookmark_which_is_no_name_is_not_marked():

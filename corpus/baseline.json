@@ -275,12 +275,12 @@
     "test_figure_caption_followed_by_table_conversion": {
      "any_page": 21,
      "lines": 25,
-     "mean_shift": 42.83,
+     "mean_shift": 4.45,
      "pages": [
       2,
       2
      ],
-     "same_page": 17
+     "same_page": 18
     },
     "test_fit_to_page": {
      "any_page": 34,
@@ -473,14 +473,14 @@
      "same_page": 16
     },
     "test_toc_tof_tot_without_gaps_conversion": {
-     "any_page": 12,
+     "any_page": 13,
      "lines": 17,
-     "mean_shift": 18.64,
+     "mean_shift": 24.28,
      "pages": [
       2,
       2
      ],
-     "same_page": 10
+     "same_page": 11
     },
     "test_wi_alignment_and_indentation": {
      "any_page": 9,
@@ -494,11 +494,11 @@
     }
    },
    "total": {
-    "any_page": 68.0,
+    "any_page": 68.1,
     "documents": 49,
-    "mean_shift": 8.77,
+    "mean_shift": 8.07,
     "pages_as_reference": 47,
-    "same_page": 64.8
+    "same_page": 64.9
    }
   },
   "word-fonts": {
@@ -774,14 +774,14 @@
      "same_page": 10
     },
     "test_figure_caption_followed_by_table_conversion": {
-     "any_page": 24,
+     "any_page": 25,
      "lines": 25,
-     "mean_shift": 32.3,
+     "mean_shift": 2.69,
      "pages": [
       2,
       2
      ],
-     "same_page": 20
+     "same_page": 22
     },
     "test_fit_to_page": {
      "any_page": 34,
@@ -974,14 +974,14 @@
      "same_page": 19
     },
     "test_toc_tof_tot_without_gaps_conversion": {
-     "any_page": 16,
+     "any_page": 17,
      "lines": 17,
-     "mean_shift": 15.43,
+     "mean_shift": 15.02,
      "pages": [
       2,
       2
      ],
-     "same_page": 14
+     "same_page": 15
     },
     "test_wi_alignment_and_indentation": {
      "any_page": 9,
@@ -995,11 +995,11 @@
     }
    },
    "total": {
-    "any_page": 95.8,
+    "any_page": 95.9,
     "documents": 49,
-    "mean_shift": 4.25,
+    "mean_shift": 3.64,
     "pages_as_reference": 47,
-    "same_page": 93.5
+    "same_page": 93.7
    }
   }
  }

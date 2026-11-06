@@ -606,6 +606,9 @@ local paragraph_spacing = { ids = {}, names = {} }
 -- docx_paragraphs_to_latex the style of an aligned or indented one.
 -- A table has no space before or after it: Word puts the space of the paragraph next to it
 local TABLE_SPACING = { before = 0, after = 0 }
+-- An entry of a list of figures or tables, in Word's TOC style: docx_toc_to_latex sets it without
+-- the paragraph skip and with its 5pt after it
+local ENTRY_SPACING = { before = 0, after = 5, no_skip = true, trailing = 5 }
 -- Raw LaTeX between blocks, as the groups around a table, which keeps the paragraph before
 local TRANSPARENT = {}
 
@@ -618,6 +621,9 @@ local function block_spacing(block)
   end
   if block.t == "RawBlock" then
     return TRANSPARENT
+  end
+  if block.t == "Div" and block.attributes["custom-style"] == "PandocToc__ENTRY" then
+    return ENTRY_SPACING
   end
   if block.t == "Div" then
     local id = block.attributes["pdc-style"]
@@ -635,7 +641,7 @@ local function gap(previous, spacing)
   if previous == nil or spacing == nil then
     return nil
   end
-  local delta = math.max(previous.after, spacing.before) - body_skip
+  local delta = math.max(previous.after, spacing.before) - (spacing.no_skip and 0 or body_skip) - (previous.trailing or 0)
   return math.abs(delta) > 0.01 and pandoc.RawBlock("latex", string.format("\\vspace{%gbp}", delta)) or nil
 end
 

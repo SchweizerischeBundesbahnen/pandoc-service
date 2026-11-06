@@ -29,11 +29,20 @@ def _latex(container, markdown: str) -> str:
 
 
 def test_the_contents_marker_becomes_the_table_of_contents(test_parameters: TestParameters):
-    latex = _latex(test_parameters.container, '::: {custom-style="PandocToc__CONTENTS_2"}\nPandocToc__CONTENTS_2\n:::\n')
+    latex = _latex(test_parameters.container, '::: {custom-style="PandocToc__CONTENTS_2"}\nPandocToc__CONTENTS_2\n:::\n\n# Heading\n')
     assert "\\pdcTableOfContents{2}" in latex
     assert "PandocToc__CONTENTS_2" not in latex[latex.index("\\begin{document}") :]
     assert "\\usepackage{titletoc}" in latex
     assert "\\@starttoc{toc}\\endgroup\\vspace{-\\parskip}" in latex, "the empty line after it stands 5pt below the last entry"
+
+
+def test_a_document_without_a_heading_gets_the_message_of_word(test_parameters: TestParameters):
+    """Word writes its message into the paragraph which ends the field: the empty line after it goes."""
+    latex = _latex(test_parameters.container, '::: {custom-style="PandocToc__CONTENTS_2"}\nPandocToc__CONTENTS_2\n:::\n\n`\\strut`{=latex}\n\nText\n')
+    body = latex[latex.index("\\begin{document}") :]
+    assert "\\textbf{No table of contents entries found.}" in body
+    assert "\\pdcTableOfContents" not in body
+    assert body.replace("\\strut{}", "").count("\\strut") == 0
 
 
 def test_a_depth_out_of_range_is_left_as_it_is(test_parameters: TestParameters):
