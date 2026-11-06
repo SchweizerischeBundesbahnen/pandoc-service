@@ -417,3 +417,108 @@ def test_preprocess_real_fixture_round_trip():
     assert "PandocColor__FG_FF0000" in style_ids
     assert "PandocColor__BG_00FF00" in style_ids
     assert "PandocColor__HL_yellow" in style_ids
+
+
+def _styles_xml(*styles: str) -> bytes:
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' + "".join(styles) + "</w:styles>").encode("utf-8")
+
+
+def _char_style(style_id: str, rpr_inner: str = "", based_on: str | None = None) -> str:
+    parent = f'<w:basedOn w:val="{based_on}"/>' if based_on else ""
+    return f'<w:style w:type="character" w:styleId="{style_id}"><w:name w:val="{style_id}"/>{parent}<w:rPr>{rpr_inner}</w:rPr></w:style>'
+
+
+# The Hyperlink style of a Word template: the concrete value written beside the theme color.
+HYPERLINK_STYLE = _char_style("Hyperlink", '<w:color w:val="156082" w:themeColor="accent1"/><w:u w:val="single"/>')
+
+
+def test_preprocess_takes_the_color_of_the_character_style():
+    """A link's runs reference the Hyperlink style and carry no color of their own.
+
+    pandoc keeps only the style's name, so without taking its color over the link
+    is printed black in the PDF while Word draws it in the template's color.
+    """
+    blob = _pack({"word/document.xml": _doc(_run('<w:rStyle w:val="Hyperlink"/>', "link")), "word/styles.xml": _styles_xml(HYPERLINK_STYLE)})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert _rstyle_vals(_body(result)) == ["PandocColor__FG_156082"]
+    assert "PandocColor__FG_156082" in _style_ids(_styles(result))
+
+
+def test_preprocess_follows_based_on_for_the_style_color():
+    """The color can come from the style a character style is based on; the nearest one wins."""
+    styles = _styles_xml(
+        _char_style("Base", '<w:color w:val="00FF00"/><w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/>'),
+        _char_style("Middle", based_on="Base"),
+        _char_style("Link", '<w:color w:val="0000FF"/>', based_on="Middle"),
+    )
+    blob = _pack({"word/document.xml": _doc(_run('<w:rStyle w:val="Link"/>', "link")), "word/styles.xml": styles})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert _rstyle_vals(_body(result)) == ["PandocColor__FG_0000FF__BG_FFFF00"]
+
+
+def test_preprocess_direct_color_wins_over_the_style_color():
+    """A color set on the run itself - a deleted Work Item drawn red inside a link - is kept."""
+    blob = _pack({"word/document.xml": _doc(_run('<w:rStyle w:val="Hyperlink"/><w:color w:val="E74C3C"/>', "EL-105")), "word/styles.xml": _styles_xml(HYPERLINK_STYLE)})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert _rstyle_vals(_body(result)) == ["PandocColor__FG_E74C3C"]
+
+
+def test_preprocess_direct_auto_color_is_not_replaced_by_the_style_color():
+    """<w:color w:val="auto"/> on the run means "no color" for it, whatever its style says."""
+    blob = _pack({"word/document.xml": _doc(_run('<w:rStyle w:val="Hyperlink"/><w:color w:val="auto"/>', "plain")), "word/styles.xml": _styles_xml(HYPERLINK_STYLE)})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert result == blob
+
+
+def test_preprocess_leaves_a_style_without_color_alone():
+    """A character style that sets no color (e.g. only bold) gives the run nothing to rewrite."""
+    blob = _pack({"word/document.xml": _doc(_run('<w:rStyle w:val="Strong"/>', "bold")), "word/styles.xml": _styles_xml(_char_style("Strong", "<w:b/>"))})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert result == blob
+
+
+def test_preprocess_survives_a_based_on_cycle():
+    """A hand-edited template may chain styles into a cycle; resolving it must terminate."""
+    styles = _styles_xml(_char_style("A", '<w:color w:val="FF0000"/>', based_on="B"), _char_style("B", based_on="A"))
+    blob = _pack({"word/document.xml": _doc(_run('<w:rStyle w:val="B"/>', "x")), "word/styles.xml": styles})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert _rstyle_vals(_body(result)) == ["PandocColor__FG_FF0000"]
+
+
+def test_preprocess_keeps_table_of_contents_entries_uncolored():
+    """The entries of a table of contents carry the Hyperlink style but are not drawn as links."""
+    document = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+        '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:hyperlink w:anchor="_h1">' + _run('<w:rStyle w:val="Hyperlink"/>', "Heading") + "</w:hyperlink></w:p>"
+        '<w:p><w:pPr><w:pStyle w:val="TableofFigures"/></w:pPr><w:hyperlink w:anchor="_f1">' + _run('<w:rStyle w:val="Hyperlink"/>', "Figure 1") + "</w:hyperlink></w:p>"
+        "</w:body></w:document>"
+    ).encode("utf-8")
+    blob = _pack({"word/document.xml": document, "word/styles.xml": _styles_xml(HYPERLINK_STYLE)})
+
+    result = docx_color_pre_process.preprocess(blob)
+
+    assert result == blob
+
+
+def test_character_style_colors_resolves_only_colored_character_styles():
+    styles = _styles_xml(
+        HYPERLINK_STYLE,
+        _char_style("Strong", "<w:b/>"),
+        '<w:style w:type="paragraph" w:styleId="Red"><w:name w:val="Red"/><w:rPr><w:color w:val="FF0000"/></w:rPr></w:style>',
+    )
+
+    colors = docx_color_pre_process.character_style_colors(styles)
+
+    assert colors == {"Hyperlink": docx_color_pre_process.StyleColors("156082", None, None)}
