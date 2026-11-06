@@ -39,6 +39,8 @@ DEFAULT_DEPTH = 3
 
 _OUTLINE = re.compile(r'\\o\s+"\s*(\d+)\s*-\s*(\d+)\s*"')
 _LIST = re.compile(r"\\[fc]\b")
+# The entries of chosen styles or of a bookmarked part: LaTeX lists the headings of the whole document only
+_SELECTION = re.compile(r"\\[tb]\b")
 _PAGEREF = re.compile(r"^\s*PAGEREF\s+([A-Za-z0-9_]+)")
 
 
@@ -173,6 +175,12 @@ def _before_tab(element: ET.Element) -> ET.Element | None:
     return element
 
 
+def _whole_outline(instruction: str) -> bool:
+    """Whether the field lists the headings of the whole document from the first level down, as LaTeX does."""
+    outline = _OUTLINE.search(instruction)
+    return not _SELECTION.search(instruction) and (outline is None or int(outline.group(1)) <= 1)
+
+
 def _depth(instruction: str) -> int:
     match = _OUTLINE.search(instruction)
     if match is None:
@@ -203,6 +211,9 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
             if replacements:
                 # Word updates the field and keeps the paragraph which ends it as an empty line, in Normal
                 replacements.append(ET.Element(_w("p")))
+        elif not _whole_outline(instruction):
+            # The entries Word stored in the field stay as they are
+            continue
         else:
             style_id = f"{CONTENTS_STYLE}{_depth(instruction)}"
             # Word fills the field with its entries and keeps the paragraph which ends it as an empty line

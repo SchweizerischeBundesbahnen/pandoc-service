@@ -95,3 +95,13 @@ def test_other_fields_are_left_as_they_are():
 def test_a_part_without_a_body_is_left_as_it_is():
     header = f"<w:hdr {W}><w:p/></w:hdr>".encode()
     assert rewrite_part(header) == (header, {})
+
+
+def test_a_table_of_contents_which_selects_its_entries_keeps_them():
+    """LaTeX lists the headings from the first level down: a field of chosen styles, of a bookmarked part or from a deeper
+    level stays with the entries Word stored in it."""
+    for instruction in (' TOC \\t "Title,1" ', ' TOC \\o "1-3" \\b part ', ' TOC \\o "2-3" '):
+        source = _document(_paragraph(_field(instruction, "<w:r><w:t>Entry</w:t></w:r>")))
+        xml, used = rewrite_part(source)
+        assert used == {}, instruction
+        assert "Entry" in xml.decode(), instruction
