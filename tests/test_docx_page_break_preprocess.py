@@ -92,6 +92,25 @@ def test_section_break_replaces_one_page_break_across_runs():
     assert _paragraph_texts(xml) == [PAGE_BREAK * 2, LANDSCAPE_SENTINEL]
 
 
+def test_page_break_before_a_section_paragraph_with_text_stays():
+    """The text stands on the page the break opens, and the section break opens one more."""
+    para = f"<w:p><w:pPr><w:sectPr>{A4_PORTRAIT}</w:sectPr></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"
+    xml, _ = rewrite_part(_document(PAGE_BREAK_PARAGRAPH + para + f"<w:sectPr>{A4_LANDSCAPE}</w:sectPr>"))
+    assert _paragraph_texts(xml) == [PAGE_BREAK, f"text{LANDSCAPE_SENTINEL}"]
+
+
+def test_page_break_before_a_section_paragraph_with_a_picture_stays():
+    para = f"<w:p><w:pPr><w:sectPr>{A4_PORTRAIT}</w:sectPr></w:pPr><w:r><w:drawing/></w:r></w:p>"
+    xml, _ = rewrite_part(_document(PAGE_BREAK_PARAGRAPH + para + f"<w:sectPr>{A4_LANDSCAPE}</w:sectPr>"))
+    assert _paragraph_texts(xml) == [PAGE_BREAK, LANDSCAPE_SENTINEL]
+
+
+def test_section_paragraph_with_only_a_bookmark_still_replaces_the_page_break():
+    para = f'<w:p><w:pPr><w:sectPr>{A4_PORTRAIT}</w:sectPr></w:pPr><w:bookmarkStart w:id="1" w:name="b"/><w:bookmarkEnd w:id="1"/><w:r><w:rPr><w:lang w:val="en"/></w:rPr></w:r></w:p>'
+    xml, _ = rewrite_part(_document(PAGE_BREAK_PARAGRAPH + para + f"<w:sectPr>{A4_LANDSCAPE}</w:sectPr>"))
+    assert _paragraph_texts(xml) == [LANDSCAPE_SENTINEL]
+
+
 def test_page_break_holding_a_section_break_stays_before_the_next_section_break():
     """Its paragraph closes a section of its own, so it is no duplicate of the next break."""
     para = f'<w:p><w:pPr><w:sectPr>{A4_PORTRAIT}</w:sectPr></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>'

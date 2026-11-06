@@ -21,7 +21,8 @@ document text.
 
 ``filters/page_orientation.lua`` writes a page break right before a section break
 for one break of the editor, the way ``_drop_empty_last_page`` in
-:mod:`app.docx_post_process` reads them. Here the section break takes its place.
+:mod:`app.docx_post_process` reads them. Here the section break takes its place,
+when its paragraph is empty as that filter writes it.
 
 Only paragraphs directly in the body count: a table cell or a list item cannot
 break a page in LaTeX.
@@ -57,6 +58,8 @@ _T_TAG = f"{{{W_NS}}}t"
 _BR_TAG = f"{{{W_NS}}}br"
 _TBL_TAG = f"{{{W_NS}}}tbl"
 _SDT_TAG = f"{{{W_NS}}}sdt"
+# What a paragraph can hold and still show nothing.
+_INVISIBLE_TAGS = frozenset({_PPR_TAG, f"{{{W_NS}}}bookmarkStart", f"{{{W_NS}}}bookmarkEnd"})
 _TYPE_ATTR = f"{{{W_NS}}}type"
 _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 
@@ -78,6 +81,11 @@ def _sentinel_text(marker: str) -> ET.Element:
 
 def _closes_a_section(para: ET.Element) -> bool:
     return para.find(f"{_PPR_TAG}/{_SECTPR_TAG}") is not None
+
+
+def _shows_nothing(para: ET.Element) -> bool:
+    """Whether the paragraph holds nothing but properties, bookmarks and empty runs."""
+    return all(child.tag in _INVISIBLE_TAGS or (child.tag == _R_TAG and all(part.tag == _RPR_TAG for part in child)) for child in para)
 
 
 def _is_lone_page_break(para: ET.Element) -> bool:
@@ -121,14 +129,15 @@ def _drop_one_page_break(body: ET.Element, para: ET.Element) -> None:
 
 
 def _mark_section_end(para: ET.Element, sections: Iterator[tuple[ET.Element | None, ET.Element | None]], lone_page_break: ET.Element | None, replaced_breaks: list[ET.Element]) -> bool:
-    """Mark the section break the paragraph holds, which replaces a page break of the paragraph before it. Returns whether it opens a page."""
+    """Mark the section break the paragraph holds. An empty paragraph replaces a page break of the paragraph before it. Returns whether it opens a page."""
     closed, opened = next(sections)
     start = docx_page_geometry.page_start(closed, opened)
     if start is None:
         return False
-    _mark_section_break(para, opened, start)
-    if lone_page_break is not None:
+    # Content keeps the break: it stands on the page the break opens, and the section break opens the next one.
+    if lone_page_break is not None and _shows_nothing(para):
         replaced_breaks.append(lone_page_break)
+    _mark_section_break(para, opened, start)
     return True
 
 
