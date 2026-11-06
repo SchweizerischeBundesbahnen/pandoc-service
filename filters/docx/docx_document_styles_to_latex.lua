@@ -640,6 +640,12 @@ local function block_spacing(block)
   if block.t == "RawBlock" then
     return TRANSPARENT
   end
+  if block.t == "BulletList" or block.t == "OrderedList" then
+    -- The items of a tight list are Compact paragraphs, of a loose one Normal
+    local first = block.content[1] and block.content[1][1]
+    local tight = first ~= nil and first.t == "Plain"
+    return tight and paragraph_spacing.ids.Compact or paragraph_spacing.ids.Normal
+  end
   if block.t == "Div" and block.attributes["custom-style"] == "PandocToc__ENTRY" then
     return ENTRY_SPACING
   end

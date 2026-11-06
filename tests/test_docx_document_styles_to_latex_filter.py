@@ -568,3 +568,15 @@ def test_a_document_of_grid_tables_only_compiles(test_parameters: TestParameters
         cell.text = "grid cell"
     text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(_docx_to_pdf(test_parameters, document))).pages)
     assert text.count("grid cell") == 4, text
+
+
+def test_a_table_after_a_tight_list_gets_only_the_space_after_compact(test_parameters: TestParameters):
+    """The items of a tight list are Compact paragraphs: Word puts their 1.8pt after above a table."""
+    cell = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "cell"]]'
+    body = f'TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{cell}]]'
+    table = f'Table ("",[],[]) (Caption Nothing []) [(AlignDefault,ColWidthDefault)] (TableHead ("",[],[]) []) [{body}] (TableFoot ("",[],[]) [])'
+    native = f'[BulletList [[Plain [Str "item"]]], {table}]'
+    spacing = "docx-paragraph-spacing=BodyText:Body Text:9:9;Compact:Compact:1.8:1.8;Normal:Normal:0:10"
+    body = _latex(test_parameters.container, "docx-body-paragraph-skip=9", spacing, native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert body.index("\\end{itemize}") < body.index("\\vspace{-7.2bp}") < body.index("\\begin{longtable}")
