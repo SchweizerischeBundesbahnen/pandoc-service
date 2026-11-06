@@ -101,6 +101,24 @@ def _body_line(chain: list[Element], styles: Element, size: float, font: str | N
     return options
 
 
+def _cell_options(styles: Element) -> list[str]:
+    """The spaces of the paragraphs of a table cell and of a list item, which Word sets in Compact or Normal."""
+    options: list[str] = []
+    cell_chain = _style_chain(styles, CELL_STYLE, fallback=None)
+    if cell_chain:
+        # A cell holds its paragraph with the space before and after it
+        cell_space = sum(_spacing_twips(cell_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
+        options += ["-M", f"docx-table-cell-space={cell_space:g}"]
+        # The items of a tight list are paragraphs of Compact: Word puts the larger of its spaces between them
+        item_space = max(_spacing_twips(cell_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
+        options += ["-M", f"docx-list-item-space={item_space:g}"]
+    # A cell paragraph without a style is in Normal, with the space of Normal
+    plain_chain = _style_chain(styles, "Normal", fallback=None)
+    plain_space = sum(_spacing_twips(plain_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
+    options += ["-M", f"docx-table-plain-cell-space={plain_space:g}"]
+    return options
+
+
 def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
@@ -133,6 +151,9 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         nearest = min(LATEX_FONT_SIZES, key=lambda points: abs(points - size / 2))
         options += ["-V", f"fontsize={nearest}pt"]
         options += _body_line(chain, styles, size / 2, font)
+        bullets = _bullet_ascents(numbering, document, size / 2)
+        if any(bullets):
+            options += ["-M", "docx-list-bullet-ascents=" + ",".join(f"{ascent:g}" for ascent in bullets)]
     skip = _paragraph_skip(chain, styles)
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]
@@ -140,15 +161,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     cell_margin = _cell_margin(styles)
     if cell_margin is not None:
         options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
-    cell_chain = _style_chain(styles, CELL_STYLE, fallback=None)
-    if cell_chain:
-        # A cell holds its paragraph with the space before and after it
-        cell_space = sum(_spacing_twips(cell_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
-        options += ["-M", f"docx-table-cell-space={cell_space:g}"]
-    # A cell paragraph without a style is in Normal, with the space of Normal
-    plain_chain = _style_chain(styles, "Normal", fallback=None)
-    plain_space = sum(_spacing_twips(plain_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
-    options += ["-M", f"docx-table-plain-cell-space={plain_space:g}"]
+    options += _cell_options(styles)
     link_chain = _style_chain(styles, "Hyperlink", fallback=None)
     link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
     if link_color is not None:
@@ -368,6 +381,34 @@ def _number_levels(numbering: Element, num_id: str) -> dict[str, Element]:
     if abstract is None:
         return {}
     return {level.get(_w("ilvl"), ""): level for level in abstract.iter(_w("lvl"))}
+
+
+def _bullet_levels(numbering: Element | None, document: Element | None) -> dict[str, Element]:
+    """The levels of the numbering of the first bulleted list of the document, by their index."""
+    if numbering is None or document is None:
+        return {}
+    for num_id in document.iter(_w("numId")):
+        levels = _number_levels(numbering, num_id.get(_w("val"), ""))
+        format_ = levels["0"].find(_w("numFmt")) if "0" in levels else None
+        if format_ is not None and format_.get(_w("val")) == "bullet":
+            return levels
+    return {}
+
+
+def _bullet_ascents(numbering: Element | None, document: Element | None, size: float) -> list[float]:
+    """How far above the baseline the bullet of each of the first four levels of a bulleted list reaches, in points.
+
+    Word sets a line as high as the highest font in it, the bullet's among them. The levels are those of
+    the first bulleted list of the document; a level whose font is not installed gets 0.
+    """
+    levels = _bullet_levels(numbering, document)
+    ascents = []
+    for index in range(4):
+        fonts = levels[str(index)].find(f"{_w('rPr')}/{_w('rFonts')}") if str(index) in levels else None
+        family = fonts.get(_w("ascii")) if fonts is not None else None
+        ratio = ascent_ratio(family) if family in installed_families() else None
+        ascents.append(round(size * ratio, 2) if ratio is not None else 0)
+    return ascents
 
 
 def _heading_number(chain: list[Element], styles: Element, numbering: Element | None) -> dict[str, str]:

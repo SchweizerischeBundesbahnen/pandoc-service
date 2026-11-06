@@ -42,6 +42,9 @@ local SIZE = "docx-body-size"
 local BASELINE = "docx-body-baseline"
 local DESCENT = "docx-body-descent"
 local CELL_SPACE = "docx-table-cell-space"
+local LIST_ITEM_SPACE = "docx-list-item-space"
+local BULLET_ASCENTS = "docx-list-bullet-ascents"
+local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
 local LINK_COLOR = "docx-link-color"
@@ -183,6 +186,23 @@ local function body_preamble(meta, lines)
   lines[#lines + 1] = "\\clubpenalty=10000\\widowpenalty=10000"
   if skip ~= nil then
     lines[#lines + 1] = string.format("\\setlength{\\parskip}{%gpt}", skip)
+  end
+  local item_space = points(meta[LIST_ITEM_SPACE])
+  if item_space ~= nil then
+    -- pandoc's template sets the items of a tight list without space between them, Word with that of Compact
+    lines[#lines + 1] = string.format("\\providecommand{\\tightlist}{}\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{%gpt}\\setlength{\\parskip}{0pt}}", item_space)
+  end
+  -- Word sets the line of a bullet as high as the font of the bullet reaches, Symbol higher than the text
+  local level = 0
+  for value in pandoc.utils.stringify(meta[BULLET_ASCENTS] or ""):gmatch("[^,]+") do
+    level = level + 1
+    local ascent = tonumber(value)
+    if BULLET_LABELS[level] and ascent and ascent > 0 then
+      local label = BULLET_LABELS[level]
+      -- As deep as a line of the body: Word sets the next line below its descent, whatever the letters
+      local strut = "\\let\\pdc%s\\%s\\renewcommand{\\%s}{\\rule[-\\dp\\strutbox]{0pt}{\\dimexpr%gbp+\\dp\\strutbox\\relax}\\pdc%s}"
+      lines[#lines + 1] = string.format(strut, label, label, label, ascent, label)
+    end
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
     lines[#lines + 1] = "\\AtBeginDocument{\\raggedright}"
@@ -563,7 +583,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

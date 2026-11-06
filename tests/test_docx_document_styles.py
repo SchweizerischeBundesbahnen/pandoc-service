@@ -457,3 +457,26 @@ def test_a_heading_without_the_numbering_part_has_no_number():
 def test_a_localised_heading_style_is_found_by_its_name():
     localised = HEADING1.replace('w:styleId="Heading1">', 'w:styleId="berschrift1"><w:name w:val="heading 1"/>')
     assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + localised))["docx-style-Heading1"])["size"] == "20"
+
+
+def test_the_items_of_a_list_get_the_larger_space_of_compact():
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + COMPACT))["docx-list-item-space"] == "1.8"
+
+
+def _bullets(font: str = "Body Font") -> str:
+    plain = '<w:abstractNum w:abstractNumId="990"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl></w:abstractNum>'
+    used = f'<w:abstractNum w:abstractNumId="991"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:rPr><w:rFonts w:ascii="{font}"/></w:rPr></w:lvl></w:abstractNum>'
+    return plain + used + '<w:num w:numId="1"><w:abstractNumId w:val="990"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="991"/></w:num>'
+
+
+LIST_ITEM = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr></w:p><w:sectPr/>'
+
+
+def test_a_bullet_reaches_as_high_as_its_font_in_the_list_of_the_document(font_metrics):
+    """Word sets the line of an item as high as the bullet's font: the first level of the list the document uses."""
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets()))
+    assert options["docx-list-bullet-ascents"] == "10.8,0,0,0"
+
+
+def test_a_bullet_in_a_font_which_is_not_installed_gets_no_ascent(font_metrics):
+    assert "docx-list-bullet-ascents" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets("Missing")))

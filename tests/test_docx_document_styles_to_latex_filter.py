@@ -169,6 +169,18 @@ def test_between_two_headings_only_their_own_spaces_count(test_parameters: TestP
     assert "\\titlespacing*{\\subsection}" not in body, "a heading before body text keeps the spacing of the preamble"
 
 
+def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
+    assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble
+
+
+def test_a_bullet_reaches_as_high_as_its_font(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-list-bullet-ascents=12.06,0,10.79,0"))
+    assert "\\renewcommand{\\labelitemi}{\\rule[-\\dp\\strutbox]{0pt}{\\dimexpr12.06bp+\\dp\\strutbox\\relax}\\pdclabelitemi}" in preamble
+    assert "labelitemiii}{\\rule" in preamble
+    assert "labelitemii}{" not in preamble
+
+
 def test_the_full_stop_which_ends_a_paragraph_hangs_in_the_margin(test_parameters: TestParameters):
     native = '[Para [Str "One", Space, Str "end."], Para [Str "No", Space, Str "stop"], Para [Str "."]]'
     body = _latex(test_parameters.container, native=native)
