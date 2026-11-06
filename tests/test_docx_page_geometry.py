@@ -8,7 +8,8 @@ import zipfile
 from docx import Document
 from docx.shared import Cm, Inches
 
-from app.docx_page_geometry import geometry_variables
+from app.docx_ooxml import W_NS, parse_xml
+from app.docx_page_geometry import body_sections, geometry_variables, section_page, table_text_widths_twips
 
 
 def _docx(width=None, height=None, top=None, bottom=None, left=None, right=None) -> bytes:
@@ -114,3 +115,43 @@ def test_a_document_part_without_a_body_gets_the_fallback():
     with zipfile.ZipFile(buffer, "w") as target:
         target.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
     assert _as_dict(geometry_variables(buffer.getvalue()))["paperwidth"] == "8.5000in"
+
+
+def _document(body: str):
+    document = parse_xml(f'<w:document xmlns:w="{W_NS}"><w:body>{body}</w:body></w:document>'.encode())
+    assert document is not None
+    return document
+
+
+PORTRAIT = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1" w:right="1000" w:bottom="2" w:left="1000"/></w:sectPr>'
+LANDSCAPE = '<w:sectPr><w:pgSz w:w="16838" w:h="11906"/><w:pgMar w:top="3" w:right="2000" w:bottom="4" w:left="2000"/></w:sectPr>'
+
+
+def test_section_page_reads_size_and_margins():
+    section = body_sections(_document(LANDSCAPE)[0])[0]
+    assert section_page(section) == {"paperwidth": 16838, "paperheight": 11906, "top": 3, "right": 2000, "bottom": 4, "left": 2000}
+
+
+def test_section_page_without_a_section_is_letter():
+    assert section_page(None) == {"paperwidth": 12240, "paperheight": 15840, "top": 1440, "right": 1440, "bottom": 1440, "left": 1440}
+
+
+def test_body_sections_end_with_the_body_section_even_when_it_is_missing():
+    document = _document(f"<w:p><w:pPr>{PORTRAIT}</w:pPr></w:p>")
+    sections = body_sections(document[0])
+    assert len(sections) == 2
+    assert sections[1] is None
+
+
+def test_each_table_gets_the_text_width_of_its_section():
+    nested = "<w:tbl><w:tr><w:tc><w:tbl/></w:tc></w:tr></w:tbl>"
+    document = _document(f"<w:tbl/><w:p><w:pPr>{PORTRAIT}</w:pPr></w:p>{nested}{LANDSCAPE}")
+    widths = table_text_widths_twips(document)
+    tables = list(document.iter(f"{{{W_NS}}}tbl"))
+    assert [widths[table] for table in tables] == [9906, 12838, 12838]
+
+
+def test_a_part_without_a_body_has_no_table_widths():
+    part = parse_xml(f'<w:ftr xmlns:w="{W_NS}"><w:tbl/></w:ftr>'.encode())
+    assert part is not None
+    assert table_text_widths_twips(part) == {}
