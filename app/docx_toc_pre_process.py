@@ -155,23 +155,25 @@ def _is_field_run(run: ET.Element) -> bool:
     return run.find(_w("fldChar")) is not None or run.find(_w("instrText")) is not None
 
 
+def _ends_text(element: ET.Element) -> bool:
+    """Whether the element is a run with a tab or a field char, which ends the text of an entry."""
+    return element.tag == _w("r") and (element.find(_w("tab")) is not None or _is_field_run(element))
+
+
 def _before_tab(element: ET.Element) -> ET.Element | None:
     """The element cut before the first tab and field it holds: itself when it holds none, None when it starts with one.
 
     A hyperlink keeps the runs before its tab; a run with a tab or a field char ends the text.
     """
-    if element.tag == _w("r"):
-        if element.find(_w("tab")) is not None or _is_field_run(element):
-            return None
+    if _ends_text(element):
+        return None
+    if element.tag != _w("hyperlink"):
         return element
-    if element.tag == _w("hyperlink"):
-        kept = ET.Element(element.tag, element.attrib)
-        for child in element:
-            cut = _before_tab(child)
-            if cut is None:
-                return kept
-            kept.append(cut)
-        return element
+    kept = ET.Element(element.tag, element.attrib)
+    for child in element:
+        if _ends_text(child):
+            return kept
+        kept.append(child)
     return element
 
 
