@@ -310,7 +310,7 @@ def test_an_equation_alone_is_a_centred_paragraph(test_parameters: TestParameter
     native = '[Para [Math DisplayMath "a^{2}"], Para [Str "Text", Space, Math DisplayMath "b"]]'
     body = _latex(test_parameters.container, native=native)
     body = body[body.index("\\begin{document}") :]
-    assert "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{1.35pt}\\let\\frac\\pdcEquationFrac\\(\\displaystyle a^{2}\\)\\par}" in body
+    assert "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{1.35pt}\\(\\displaystyle a^{2}\\)\\par}" in body
     assert "\\[b\\]" in body, "an equation within text stays a display"
 
 
@@ -322,7 +322,7 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     assert "\\lineskip\\pdcEquationGap\\baselineskip\\pdcEquationRow\\lineskiplimit\\z@" in _preamble(latex), "rows which would overlap keep a gap"
     assert "\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}" in _preamble(latex)
     body = " ".join(latex[latex.index("\\begin{document}") :].split())
-    assert "\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
+    assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
 
 
 def test_a_numbered_heading_style_sets_its_number_in_its_hanging_indent(test_parameters: TestParameters):
@@ -638,3 +638,10 @@ def test_an_equation_has_no_room_for_an_empty_limit(test_parameters: TestParamet
     """Word sets no limit where a sum has an empty one: TeX keeps room for it."""
     body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "\\\\sum_{i}^{}P_{}"]]')
     assert "\\sum_{i}P" in body, body
+
+
+def test_an_equation_without_the_size_of_the_body_keeps_the_fractions_of_latex(test_parameters: TestParameters):
+    """\\pdcEquationFrac comes with the size of the body: without it an equation uses no command it lacks."""
+    latex = _latex(test_parameters.container, native='[Para [Math DisplayMath "\\\\frac{a}{b}"]]')
+    assert "pdcEquation" not in latex
+    assert "\\frac{a}{b}" in latex

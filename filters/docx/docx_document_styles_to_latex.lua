@@ -561,13 +561,13 @@ end
 -- a display which starts a paragraph, and its matrices take the row height
 -- of the tables: the equation is set as a centred paragraph in display style.
 local function display_equation(math)
-  -- Word sets a fraction inside a fraction of an equation as large as the outer one, closer to its line
-  local open = "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{" .. ALIGNED_GAP .. "pt}\\let\\frac\\pdcEquationFrac"
+  local open = "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{" .. ALIGNED_GAP .. "pt}"
   local close = "\\par}"
   if body_size then
+    -- Word sets a fraction inside a fraction of an equation as large as the outer one, closer to its line.
     -- The rows of an array that far apart whatever they hold, and the array as high as its first row and
     -- as deep as its last: see EQUATION_ARRAY. Word sets the line of an equation that much above it.
-    open = open .. "\\pdcEquationArrays\\sbox{\\pdcEquationBox}{"
+    open = open .. "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{"
     close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}\\usebox{\\pdcEquationBox}\\par}", EQUATION_TOP * body_size)
   end
   return pandoc.Plain({
