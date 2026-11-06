@@ -51,7 +51,7 @@ def test_a_narrow_absolute_table_restores_the_padding_of_the_document_after_it(t
 
 def test_a_table_of_compact_paragraphs_takes_the_rows_of_compact(test_parameters: TestParameters):
     latex = _latex(test_parameters.container, "cc=1")
-    assert latex.startswith("\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi")
+    assert latex.startswith("\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\setlength{\\extrarowheight}{\\pdcCompactCellExtra}\\fi")
     assert latex.count("\\begingroup") == latex.count("\\endgroup")
 
 
@@ -138,7 +138,7 @@ def test_a_cell_of_compact_paragraphs_ends_as_deep_as_its_row(test_parameters: T
     """The last line of a cell of several lines stands as far above the bottom of the row as a single line."""
     latex = _latex(test_parameters.container, "cc=1")
     assert latex.count("\\ifdefined\\pdcCompactCellDepth\\pdcCompactCellDepth\\fi") == 4
-    assert "\\ifdefined\\pdcCompactCellBottom\\vspace{\\pdcCompactCellBottom}\\fi" in latex
+    assert "pdcCompactCellBottom" not in latex, "the row holds the space below its last line"
 
 
 def test_a_grid_keeps_the_curly_quotes_of_its_text(test_parameters: TestParameters):
@@ -209,3 +209,9 @@ def test_a_merged_cell_at_the_edge_of_a_table_takes_its_margin_back(test_paramet
     native = _grid_table([cell], [_cell('Str "a"'), _cell('Str "b"')])
     latex = _native_latex(test_parameters.container, native)
     assert "-0\\tabcolsep\\relax}@{}|}" in latex, latex
+
+
+def test_the_line_under_a_header_row_is_the_border_of_word_over_the_rows(test_parameters: TestParameters):
+    """Word draws a border of the default width, 2 eighths of a point, and the rows keep their pitch."""
+    latex = _latex(test_parameters.container, "rl=head")
+    assert "\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}" in latex

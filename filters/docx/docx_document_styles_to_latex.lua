@@ -116,17 +116,19 @@ local function table_preamble(meta, lines)
     -- of each cell, and switches a table of paragraphs of the Compact style to its rows
     local plain = points(meta[PLAIN_CELL_SPACE]) or space
     lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
-    lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)
     local descent = points(meta[DESCENT])
-    if descent ~= nil and descent < baseline then
-      -- The stretch puts the share of the space of a row above its first line, Word half of it: the table starts higher
-      local raise = (baseline - descent) * space / baseline - space / 2
-      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellRaise}{%.4gbp}", raise)
-      -- Word keeps the space after the paragraph of the last cell below the table, of which the
-      -- stretched row holds a share; the last line of each cell reaches as deep as the row
-      local stretched = descent * (baseline + space) / baseline
-      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellBottom}{%.4gbp}", descent + space / 2 - stretched)
+    if descent ~= nil and descent > 0 and descent < baseline then
+      -- Word sets half the space of a row of Compact above its line and half below it: the stretch
+      -- makes the depth of a row, and the extra height of array.sty takes off what it adds above
+      local stretch = (descent + space / 2) / descent
+      local ascent = baseline - descent
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", stretch)
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellExtra}{%.4gbp}", (ascent + space / 2) / stretch - ascent)
       lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}\\makeatother"
+    else
+      -- Without the metrics of the font, the space of a row shared out by the stretch of the line
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)
+      lines[#lines + 1] = "\\newcommand{\\pdcCompactCellExtra}{0pt}"
     end
   end
 end

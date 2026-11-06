@@ -40,7 +40,9 @@ local STRIP_PATTERN = OPEN .. ".-" .. CLOSE
 -- the header row with one, and LaTeX's own rules for a table with borders.
 local RULES = {
   none = "\\def\\toprule{}\\def\\midrule{}\\def\\bottomrule{}",
-  head = "\\def\\toprule{}\\def\\bottomrule{}",
+  -- The line under the header row as Word draws a border of the default width: 2 eighths of a point,
+  -- over the rows rather than between them
+  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}",
   grid = false,
 }
 
@@ -983,7 +985,7 @@ function table_pass.Table(tbl)
   end
   if layout.cc then
     -- Rows as high as a paragraph of Compact, which docx_document_styles_to_latex defines
-    before[#before + 1] = "\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi\\ifdefined\\pdcCompactCellRaise\\addtolength{\\LTpre}{-\\pdcCompactCellRaise}\\fi"
+    before[#before + 1] = "\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\setlength{\\extrarowheight}{\\pdcCompactCellExtra}\\fi"
   end
   if not grid and layout.tw and layout.tw > 0.999 then
     -- A table as wide as the line starts its text at the margin, whatever its alignment
@@ -999,7 +1001,7 @@ function table_pass.Table(tbl)
     after[#after + 1] = "\\endgroup"
   end
   if layout.cc then
-    after[#after + 1] = "\\ifdefined\\pdcCompactCellBottom\\vspace{\\pdcCompactCellBottom}\\fi\\endgroup"
+    after[#after + 1] = "\\endgroup"
   end
   if grid then
     after[#after + 1] = "\\endgroup"

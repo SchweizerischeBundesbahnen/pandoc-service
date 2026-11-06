@@ -230,10 +230,10 @@ def test_paragraphs_of_one_style_in_one_div_get_their_gap_each(test_parameters: 
 
 
 def test_a_table_ends_as_deep_as_word_sets_its_last_row(test_parameters: TestParameters):
-    """A stretched row reaches 3.4 * 18.25 / 14.65 = 4.24 deep, Word's 3.4 + 1.8: the rest goes below the table."""
+    """A row of Compact reaches Word's 3.4 + 1.8 deep: the stretch makes the depth."""
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", "docx-table-cell-space=3.6"))
     assert "\\AddToHook{env/longtable/after}{\\par\\prevdepth=\\dp\\strutbox}" in preamble
-    assert "\\newcommand{\\pdcCompactCellBottom}{0.9645bp}" in preamble
+    assert "\\newcommand{\\pdcCompactCellStretch}{1.5294}" in preamble
     assert "\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}" in preamble
 
 
@@ -432,10 +432,17 @@ def test_a_body_without_its_descent_keeps_the_strut_of_latex(test_parameters: Te
     assert "\\lineskip=0pt" not in preamble
 
 
-def test_a_table_of_compact_rows_starts_higher_by_the_share_of_the_stretch(test_parameters: TestParameters):
-    # The stretch puts 11.25 * 3.6 / 14.65 = 2.764 above the line, Word 1.8
+def test_a_row_of_compact_has_half_its_space_above_its_line_and_half_below(test_parameters: TestParameters):
+    """Word sets 1.8 above the line of a row of Compact: the stretched strut of array.sty is that high with an extra height of
+    (11.25 + 1.8) / 1.5294 - 11.25 = -2.717."""
     preamble = _preamble(_latex(test_parameters.container, "docx-body-baseline=14.65", "docx-body-descent=3.4", "docx-table-cell-space=3.6"))
-    assert "\\newcommand{\\pdcCompactCellRaise}{0.9645bp}" in preamble
+    assert "\\newcommand{\\pdcCompactCellExtra}{-2.717bp}" in preamble
+
+
+def test_without_the_descent_a_row_of_compact_shares_its_space_by_the_stretch(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-baseline=14.65", "docx-table-cell-space=3.6"))
+    assert "\\newcommand{\\pdcCompactCellStretch}{1.2457}" in preamble
+    assert "\\newcommand{\\pdcCompactCellExtra}{0pt}" in preamble
 
 
 def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):
