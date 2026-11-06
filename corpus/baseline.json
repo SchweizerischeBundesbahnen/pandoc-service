@@ -305,7 +305,7 @@
     "test_formulas_conversion": {
      "any_page": 55,
      "lines": 82,
-     "mean_shift": 19.59,
+     "mean_shift": 20.53,
      "pages": [
       4,
       4
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.4,
     "documents": 49,
-    "mean_shift": 6.26,
+    "mean_shift": 6.28,
     "pages_as_reference": 49,
     "same_page": 66.3
    }
@@ -806,7 +806,7 @@
     "test_formulas_conversion": {
      "any_page": 66,
      "lines": 82,
-     "mean_shift": 8.6,
+     "mean_shift": 7.44,
      "pages": [
       4,
       4
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 98.4,
     "documents": 49,
-    "mean_shift": 1.11,
+    "mean_shift": 1.08,
     "pages_as_reference": 49,
     "same_page": 97.2
    }

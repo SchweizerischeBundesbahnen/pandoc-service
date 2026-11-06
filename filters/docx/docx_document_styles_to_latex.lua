@@ -602,7 +602,8 @@ local function display_equation(math)
   end
   return pandoc.Plain({
     pandoc.RawInline("latex", open),
-    pandoc.Math("InlineMath", "\\displaystyle " .. math.text),
+    -- Word sets no limit where a sum has an empty one: TeX keeps room above or below it
+    pandoc.Math("InlineMath", "\\displaystyle " .. math.text:gsub("[_^]{}", "")),
     pandoc.RawInline("latex", close),
   })
 end

@@ -645,3 +645,9 @@ def test_a_period_at_the_end_of_a_line_hangs_past_the_margin(test_parameters: Te
     body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-body-descent=3.4", native=native).split())
     assert "One\\rlap{.}\\hskip\\dimexpr\\fontcharwd\\font`.+\\fontdimen2\\font\\relax Two" in body
     assert "end\\rlap{.}}" in body, "the period of the paragraph hangs inside the group of its run"
+
+
+def test_an_equation_has_no_room_for_an_empty_limit(test_parameters: TestParameters):
+    """Word sets no limit where a sum has an empty one: TeX keeps room for it."""
+    body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "\\\\sum_{i}^{}P_{}"]]')
+    assert "\\sum_{i}P" in body, body
