@@ -112,6 +112,12 @@ local function table_preamble(meta, lines)
     local plain = points(meta[PLAIN_CELL_SPACE]) or space
     lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
     lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)
+    local descent = points(meta[DESCENT])
+    if descent ~= nil and descent < baseline then
+      -- The stretch puts the share of the space of a row above its first line, Word half of it: the table starts higher
+      local raise = (baseline - descent) * space / baseline - space / 2
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellRaise}{%.4gbp}", raise)
+    end
   end
 end
 
@@ -164,6 +170,8 @@ local function body_preamble(meta, lines)
     lines[#lines + 1] = "\\normalsize"
     if strut ~= "" then
       lines[#lines + 1] = "\\lineskip=0pt\\lineskiplimit=0pt"
+      -- A table starts below the descent of the line before it, which TeX takes from its letters
+      lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
     end
   end
   local skip = points(meta[SKIP])
@@ -378,8 +386,9 @@ local function caption_preamble(lines)
   -- The switch first: it adds the font family to the lines itself
   local switch = font_switch(caption_style, "docxCaptionFont", lines)
   lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionStyle}{%s}", switch)
-  -- The space between a table and its caption, see filters/docx_tables_to_latex.lua
+  -- The space between a table and its caption, below or above it, see filters/docx_tables_to_latex.lua
   lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionBefore}{%gpt}", caption_style.own_before)
+  lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionAfter}{%gpt}", caption_style.own_after)
 end
 
 local function caption_div(div)

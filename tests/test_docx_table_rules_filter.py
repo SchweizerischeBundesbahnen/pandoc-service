@@ -113,3 +113,11 @@ def test_a_caption_under_a_table_takes_the_space_before_of_its_style(test_parame
     native = _grid_table([_cell('Str "a"'), _cell('Str "b"')])[:-1] + ', Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Table 1"]], Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Other"]]]'
     latex = _native_latex(test_parameters.container, native)
     assert latex.count("\\vspace{\\dimexpr\\pdcCaptionBefore-\\parskip\\relax}") == 1, "only the caption right under the table"
+
+
+def test_a_caption_above_a_table_takes_the_space_after_of_its_style(test_parameters: TestParameters):
+    table = _grid_table([_cell('Str "a"'), _cell('Str "b"')])
+    native = '[Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Table 1"]], Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Other"]], ' + table[1:]
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\vspace{\\dimexpr\\pdcCaptionAfter-\\parskip\\relax}") == 1, "only the caption right above the table"
+    assert latex.index("pdcCaptionAfter") > latex.index("Other")

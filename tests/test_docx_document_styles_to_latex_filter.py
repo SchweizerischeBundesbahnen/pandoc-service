@@ -248,7 +248,9 @@ def test_a_table_of_contents_starts_below_the_descent_of_the_title(test_paramete
 
 
 def test_the_caption_style_defines_its_space_before(test_parameters: TestParameters):
-    assert "\\newcommand{\\pdcCaptionBefore}{0pt}" in _preamble(_latex(test_parameters.container, "docx-style-Caption=size:9,before:0,after:10"))
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Caption=size:9,before:0,after:10"))
+    assert "\\newcommand{\\pdcCaptionBefore}{0pt}" in preamble
+    assert "\\newcommand{\\pdcCaptionAfter}{10pt}" in preamble
 
 
 def test_the_body_size_and_line_redefine_normalsize(test_parameters: TestParameters):
@@ -269,10 +271,21 @@ def test_a_line_of_the_body_reaches_as_deep_as_the_descent_of_its_font(test_para
     assert "\\lineskip=0pt\\lineskiplimit=0pt" in preamble
 
 
+def test_a_table_starts_below_the_descent_of_the_line_before_it(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4"))
+    assert "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox" in preamble
+
+
 def test_a_body_without_its_descent_keeps_the_strut_of_latex(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
     assert "\\strutbox" not in preamble
     assert "\\lineskip=0pt" not in preamble
+
+
+def test_a_table_of_compact_rows_starts_higher_by_the_share_of_the_stretch(test_parameters: TestParameters):
+    # The stretch puts 11.25 * 3.6 / 14.65 = 2.764 above the line, Word 1.8
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-baseline=14.65", "docx-body-descent=3.4", "docx-table-cell-space=3.6"))
+    assert "\\newcommand{\\pdcCompactCellRaise}{0.9645bp}" in preamble
 
 
 def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):

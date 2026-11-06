@@ -629,7 +629,7 @@ function table_pass.Table(tbl)
   end
   if layout.cc then
     -- Rows as high as a paragraph of Compact, which docx_document_styles_to_latex defines
-    before[#before + 1] = "\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi"
+    before[#before + 1] = "\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi\\ifdefined\\pdcCompactCellRaise\\addtolength{\\LTpre}{-\\pdcCompactCellRaise}\\fi"
   end
   local glue = layout.ta and ALIGN_GLUE[layout.ta]
   if glue then
@@ -729,6 +729,9 @@ end
 -- PandocCaption, takes the space before of its style instead of the paragraph
 -- skip; docx_document_styles_to_latex defines it.
 local CAPTION_AFTER_TABLE = "\\ifdefined\\pdcCaptionBefore\\vspace{\\dimexpr\\pdcCaptionBefore-\\parskip\\relax}\\fi"
+-- A caption above a table: Word puts its space after between them, the table
+-- has none before it. longtable puts the paragraph skip there.
+local CAPTION_BEFORE_TABLE = "\\ifdefined\\pdcCaptionAfter\\vspace{\\dimexpr\\pdcCaptionAfter-\\parskip\\relax}\\fi"
 
 local caption_pass = {}
 
@@ -738,6 +741,10 @@ function caption_pass.Blocks(blocks)
     local block = blocks[index]
     if blocks[index - 1].t == "Table" and block.t == "Div" and block.attributes["custom-style"] == "PandocCaption" then
       table.insert(block.content, 1, pandoc.RawBlock("latex", CAPTION_AFTER_TABLE))
+    end
+    local previous = blocks[index - 1]
+    if block.t == "Table" and previous.t == "Div" and previous.attributes["custom-style"] == "PandocCaption" then
+      previous.content:insert(pandoc.RawBlock("latex", CAPTION_BEFORE_TABLE))
     end
   end
   return blocks
