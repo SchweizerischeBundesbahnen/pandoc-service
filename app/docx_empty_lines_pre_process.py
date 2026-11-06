@@ -153,7 +153,9 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     if body is None:
         return xml_bytes, False
     changed = False
-    for paragraph in list(body.iter(_w("p"))):
+    # The marks go into the paragraphs as they are walked: the walk goes through a list of them taken before
+    paragraphs = list(body.iter(_w("p")))
+    for paragraph in paragraphs:
         changed = _keep_edge_breaks(paragraph) or changed
     for index, child in enumerate(list(body)):
         lines = _lines(child) if child.tag == _w("p") else None

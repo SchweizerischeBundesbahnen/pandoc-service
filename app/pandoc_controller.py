@@ -132,7 +132,7 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
 }
 # The docx filters a request may name lay in the folder of all filters before they moved to their own:
 # a request which names one there still gets it
-ALLOWED_PANDOC_OPTIONS |= {option.replace(f"{DOCX_FILTER_PATH}/", f"{FILTER_BASE_PATH}/"): option for option in list(ALLOWED_PANDOC_OPTIONS) if option.startswith(f"--lua-filter={DOCX_FILTER_PATH}/")}
+ALLOWED_PANDOC_OPTIONS |= {option.replace(f"{DOCX_FILTER_PATH}/", f"{FILTER_BASE_PATH}/"): option for option in ALLOWED_PANDOC_OPTIONS if option.startswith(f"--lua-filter={DOCX_FILTER_PATH}/")}
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
 # tectonic, latex is the raw .tex file). The DOCX color preprocessor only
