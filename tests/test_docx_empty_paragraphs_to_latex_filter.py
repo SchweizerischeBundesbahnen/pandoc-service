@@ -64,6 +64,22 @@ def test_empty_paragraph_inside_div_becomes_strut(test_parameters: TestParameter
     assert "\\strut" in _native_to_latex(test_parameters.container, native)
 
 
+def _marked(*inlines: str) -> str:
+    return f'[ Div ( "" , [] , [ ( "custom-style" , "PandocEmptyLines" ) ] ) [ Para [ {", ".join(inlines)} ] ] ]'
+
+
+def test_a_marked_paragraph_gets_its_lines(test_parameters: TestParameters):
+    """The preprocessor marks a paragraph of one line break with two lines, as Word prints it."""
+    flat = _native_to_latex(test_parameters.container, _marked('Span ( "_Toc3" , [ "anchor" ] , [] ) []', 'Str "2"'))
+    assert flat.count("\\strut") == 2, flat
+    assert "\\label{_Toc3}" in flat, flat
+    assert "2" not in flat.replace("\\label{_Toc3}", ""), flat
+
+
+def test_a_marked_paragraph_without_a_number_is_left_as_it_is(test_parameters: TestParameters):
+    assert "\\strut" not in _native_to_latex(test_parameters.container, _marked('Str "x"'))
+
+
 def test_paragraph_with_text_is_untouched(test_parameters: TestParameters):
     assert "\\strut" not in _native_to_latex(test_parameters.container, '[ Para [ Str "text" ] ]')
 

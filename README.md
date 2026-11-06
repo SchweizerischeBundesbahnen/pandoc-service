@@ -170,6 +170,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | the Hyperlink style, a theme colour as Word reads it | the colour of the links |
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it |
+| an empty paragraph, and one of line breaks only | an empty line, and one more for each line break, as Word shows them |
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
 | `<w:pgSz>` and `<w:pgMar>` of each later section | its pages in that size and with those margins, landscape among them |
 | no header and no footer in any section | no page number, as Word prints none |
