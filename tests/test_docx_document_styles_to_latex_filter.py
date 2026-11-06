@@ -51,6 +51,7 @@ def test_word_layout_goes_into_the_preamble(test_parameters: TestParameters):
     assert "\\hyphenpenalty=10000" in preamble
     assert "\\exhyphenpenalty=0" in preamble, "Word breaks a line after a hyphen as freely as after a space"
     assert "\\frenchspacing" in preamble, "Word puts no wider space after a full stop"
+    assert "\\clubpenalty=10000\\widowpenalty=10000" in preamble, "Word leaves no line of a paragraph alone on a page"
 
 
 def test_a_justified_hyphenated_style_keeps_latex_paragraphs(test_parameters: TestParameters):
