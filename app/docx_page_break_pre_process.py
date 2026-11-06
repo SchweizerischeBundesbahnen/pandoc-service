@@ -110,15 +110,15 @@ def _mark_section_break(para: ET.Element, section: ET.Element | None, start: str
     run.append(_sentinel_text(_section_sentinel(docx_page_geometry.section_page(section), start)))
 
 
-def _mark_section_end(body: ET.Element, para: ET.Element, sections: Iterator[tuple[ET.Element | None, ET.Element | None]], lone_page_break: ET.Element | None) -> bool:
-    """Mark the section break the paragraph holds, which takes the place of a lone page break before it. Returns whether it opens a page."""
+def _mark_section_end(para: ET.Element, sections: Iterator[tuple[ET.Element | None, ET.Element | None]], lone_page_break: ET.Element | None, replaced_breaks: list[ET.Element]) -> bool:
+    """Mark the section break the paragraph holds, which replaces a lone page break before it. Returns whether it opens a page."""
     closed, opened = next(sections)
     start = docx_page_geometry.page_start(closed, opened)
     if start is None:
         return False
     _mark_section_break(para, opened, start)
     if lone_page_break is not None:
-        body.remove(lone_page_break)
+        replaced_breaks.append(lone_page_break)
     return True
 
 
@@ -127,7 +127,8 @@ def _mark_body_breaks(body: ET.Element) -> bool:
     sections = pairwise(docx_page_geometry.body_sections(body))
     changed = False
     lone_page_break: ET.Element | None = None
-    for block in list(body):
+    replaced_breaks: list[ET.Element] = []
+    for block in body:
         if block.tag != _P_TAG:
             if block.tag in (_TBL_TAG, _SDT_TAG):
                 lone_page_break = None
@@ -135,8 +136,11 @@ def _mark_body_breaks(body: ET.Element) -> bool:
         is_lone_page_break = _is_lone_page_break(block)
         changed = _mark_page_breaks(block) or changed
         if _closes_a_section(block):
-            changed = _mark_section_end(body, block, sections, lone_page_break) or changed
+            changed = _mark_section_end(block, sections, lone_page_break, replaced_breaks) or changed
         lone_page_break = block if is_lone_page_break else None
+    # Not in the loop: removing a block while iterating the body skips the block after it.
+    for para in replaced_breaks:
+        body.remove(para)
     return changed
 
 
