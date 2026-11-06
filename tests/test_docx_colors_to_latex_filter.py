@@ -107,7 +107,10 @@ def test_shd_emits_full_height_colorbox(test_parameters: TestParameters):
     latex = _convert_docx_to_latex(test_parameters.container, FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(latex)
     assert "\\hl{" not in flat and "\\sethlcolor" not in flat, flat
-    assert "\\colorbox[HTML]{00FF00}{\\strut{}green shading}" in flat, flat
+    # A box per word, and a space in the colour of the background between them, where a line may end
+    space = "{\\color[HTML]{00FF00}\\leaders\\vrule height\\ht\\strutbox depth\\dp\\strutbox\\hskip\\fontdimen2\\font plus\\fontdimen3\\font minus\\fontdimen4\\font}"
+    words = "\\colorbox[HTML]{00FF00}{\\strut{}green}}" + space + "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{00FF00}{\\strut{}shading}}"
+    assert words in flat, flat
 
 
 def test_named_highlight_resolves_to_hex_and_boxes(test_parameters: TestParameters):
@@ -115,7 +118,7 @@ def test_named_highlight_resolves_to_hex_and_boxes(test_parameters: TestParamete
     color (resolved via the static name-to-hex table inside the filter)."""
     latex = _convert_docx_to_latex(test_parameters.container, FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(latex)
-    assert "\\colorbox[HTML]{FFFF00}{\\strut{}yellow highlight}" in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}yellow}}" in flat and "\\colorbox[HTML]{FFFF00}{\\strut{}highlight}}" in flat, flat
 
 
 def test_soul_package_added_to_header_includes(test_parameters: TestParameters):
@@ -227,7 +230,7 @@ def test_highlight_on_italic_is_boxed_with_color_outside(test_parameters: TestPa
     \\textcolor wraps OUTSIDE, and no soul \\hl is emitted."""
     flat = _md_to_latex(test_parameters.container, '[*injected humour*]{custom-style="PandocColor__FG_00B050__BG_FFFF00"}\n')
     assert "\\hl{" not in flat, f"soul \\hl used instead of \\colorbox: {flat}"
-    assert "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{injected humour}}" in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{injected}}" in flat and "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{humour}}" in flat, flat
     # \textcolor is outermost, then the box.
     assert flat.index("\\textcolor") < flat.index("\\colorbox"), flat
 

@@ -295,7 +295,7 @@
     "test_formatting": {
      "any_page": 4,
      "lines": 21,
-     "mean_shift": 3.56,
+     "mean_shift": 10.36,
      "pages": [
       1,
       1
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.6,
     "documents": 49,
-    "mean_shift": 6.33,
+    "mean_shift": 6.48,
     "pages_as_reference": 49,
     "same_page": 66.5
    }
@@ -794,14 +794,14 @@
      "same_page": 32
     },
     "test_formatting": {
-     "any_page": 16,
+     "any_page": 18,
      "lines": 21,
-     "mean_shift": 0.39,
+     "mean_shift": 0.4,
      "pages": [
       1,
       1
      ],
-     "same_page": 16
+     "same_page": 18
     },
     "test_formulas_conversion": {
      "any_page": 65,
@@ -995,11 +995,11 @@
     }
    },
    "total": {
-    "any_page": 98.2,
+    "any_page": 98.3,
     "documents": 49,
     "mean_shift": 1.48,
     "pages_as_reference": 49,
-    "same_page": 97.1
+    "same_page": 97.2
    }
   }
  }

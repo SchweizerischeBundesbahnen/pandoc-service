@@ -233,6 +233,9 @@ local PREAMBLE = table.concat({
   "\\setlength{\\ULdepth}{1.6pt}",
   "\\renewcommand{\\ULthickness}{0.4pt}",
   "\\setul{1.6pt}{0.4pt}",
+  -- Underline and strike-through in one pass: ulem breaks a line only at the spaces of its outermost
+  -- command, so a \\sout inside a \\uline was one word that no line could break
+  "\\newcommand{\\pdcUlineSout}{\\bgroup\\markoverwith{\\hbox{\\rlap{\\rule[-\\ULdepth]{.25pt}{\\ULthickness}}\\rule[.5ex]{.25pt}{\\ULthickness}}}\\ULon}",
   "\\providecommand{\\pdcDropHl}[1]{#1}",
   "\\let\\pdcOldSuperscript\\textsuperscript",
   "\\let\\pdcOldSubscript\\textsubscript",
@@ -266,6 +269,36 @@ function filter.Meta(meta)
     meta["header-includes"] = pandoc.MetaList({ existing, soul_block })
   end
   return meta
+end
+
+-- The words of inlines and the spaces between them, as { word, "space", word, ... }: an element of
+-- several words, as an emphasis, becomes a copy of it around each of them.
+local SPLITTABLE = { Span = true, Emph = true, Strong = true, Underline = true, Strikeout = true, SmallCaps = true }
+
+local function split_words(inlines)
+  local words = { {} }
+  for _, inline in ipairs(inlines) do
+    if inline.t == "Space" or inline.t == "SoftBreak" then
+      words[#words + 1] = "space"
+      words[#words + 1] = {}
+    elseif SPLITTABLE[inline.t] then
+      for index, part in ipairs(split_words(inline.content)) do
+        if part == "space" then
+          words[#words + 1] = "space"
+          words[#words + 1] = {}
+        else
+          local copy = inline:clone()
+          copy.content = part
+          if index > 1 or #part > 0 then
+            table.insert(words[#words], copy)
+          end
+        end
+      end
+    else
+      table.insert(words[#words], inline)
+    end
+  end
+  return words
 end
 
 function filter.Span(el)
@@ -335,6 +368,33 @@ function filter.Span(el)
     -- typeset rather than swallowed as the macro's argument terminator.
     open = open .. "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. bg_color .. "}{\\strut{}"
     close = "}}" .. close
+  end
+
+  if box_bg then
+    -- Word breaks a highlighted run at its spaces like any other: a box per word, and between them a
+    -- space in the colour of the background, where a line may end
+    local box_open = "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. bg_color .. "}{\\strut{}"
+    local space = "{\\color[HTML]{" .. bg_color .. "}\\leaders\\vrule height\\ht\\strutbox depth\\dp\\strutbox"
+      .. "\\hskip\\fontdimen2\\font plus\\fontdimen3\\font minus\\fontdimen4\\font}"
+    local words = split_words(el.content)
+    if #words > 1 then
+      local outer_open = open:sub(1, #open - #box_open)
+      local outer_close = close:sub(3)
+      local result = { pandoc.RawInline("latex", outer_open) }
+      for _, word in ipairs(words) do
+        if word == "space" then
+          result[#result + 1] = pandoc.RawInline("latex", space)
+        elseif #word > 0 then
+          result[#result + 1] = pandoc.RawInline("latex", box_open)
+          for _, inline in ipairs(word) do
+            result[#result + 1] = inline
+          end
+          result[#result + 1] = pandoc.RawInline("latex", "}}")
+        end
+      end
+      result[#result + 1] = pandoc.RawInline("latex", outer_close)
+      return result
+    end
   end
 
   local result = { pandoc.RawInline("latex", open) }

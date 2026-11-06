@@ -49,10 +49,10 @@ def test_underline_with_formatting_uses_ulem(test_parameters: TestParameters):
 
 
 def test_combined_underline_strikeout_both_ulem(test_parameters: TestParameters):
-    """When underline and strikeout combine, BOTH must be ulem — a soul \\ul/\\st
-    nested inside a ulem command breaks ulem's leaders."""
-    latex = _native_to_latex(test_parameters.container, '[ Para [ Underline [ Strikeout [ Str "x" ] ] ] ]', DECO)
-    assert "\\uline{" in latex and "\\sout{" in latex, latex
+    """When underline and strikeout combine, one ulem command draws both: ulem breaks a line only at
+    the spaces of its outermost command, and a soul \\ul/\\st inside ulem breaks its leaders."""
+    latex = _native_to_latex(test_parameters.container, '[ Para [ Underline [ Strikeout [ Str "x", Space, Str "y" ] ] ] ]', DECO)
+    assert "\\pdcUlineSout{x y}" in latex, latex
     assert "\\ul{" not in latex and "\\st{" not in latex, latex
 
 
@@ -76,12 +76,10 @@ def test_highlight_stripped_inside_decoration(test_parameters: TestParameters):
 
 
 def test_combined_decoration_always_nests_underline_outside_strikeout(test_parameters: TestParameters):
-    """ulem draws a \\uline nested inside \\sout at the wrong height (looks like a
-    second strike). Regardless of the AST nesting order, the combined decoration
-    must come out as \\uline{\\sout{...}} (underline outermost)."""
-    # AST has strikeout OUTSIDE underline — the filter must flip it.
+    """Regardless of the AST nesting order, the combined decoration comes out as the one command
+    which draws both lines."""
     latex = _native_to_latex(test_parameters.container, '[ Para [ Strikeout [ Underline [ Str "x" ] ] ] ]', DECO)
-    assert "\\uline{\\sout{x}}" in latex, latex
+    assert "\\pdcUlineSout{x}" in latex, latex
     assert "\\sout{\\uline{" not in latex, latex
 
 
@@ -104,17 +102,13 @@ def test_foreground_color_preserved_inside_decoration(test_parameters: TestParam
 
 def test_inter_span_space_inherits_shared_highlight(test_parameters: TestParameters):
     """Two adjacent runs sharing a background leave the Space pandoc lifts out
-    between them un-highlighted — a visible gap in the band. The space must be
-    wrapped in the shared highlight so the band stays continuous (rendered as a
-    boxed space abutting its neighbours)."""
+    between them un-highlighted — a visible gap in the band. The space gets the
+    shared highlight, as a space in its colour where a line may still end."""
     native = '[ Para [ Span ("",[],[("custom-style","PandocColor__BG_99FFFF")]) [ Str "injected" ] , Space , Span ("",[],[("custom-style","PandocColor__BG_99FFFF")]) [ Strong [ Str "humour" ] ] ] ]'
     latex = _native_to_latex(test_parameters.container, native, DECO, COLORS)
-    # Three highlight boxes: word, the bridged space, word — no un-highlighted gap.
-    assert latex.count("\\colorbox[HTML]{99FFFF}") == 3, latex
-    # The bridge box must keep its space: \strut{} (not "\strut ") so the space
-    # isn't swallowed as the control word's terminator (would jam the words).
-    assert "\\strut{} }" in latex, f"bridge space was lost (words would jam): {latex}"
-    assert "\\strut{} injected" not in latex  # the word box has no spurious leading space
+    # Two highlight boxes, and between them a space in their colour: no un-highlighted gap
+    assert latex.count("\\colorbox[HTML]{99FFFF}") == 2, latex
+    assert "\\strut{}injected}}{\\color[HTML]{99FFFF}\\leaders\\vrule" in latex, latex
 
 
 def test_inter_span_space_not_filled_when_backgrounds_differ(test_parameters: TestParameters):

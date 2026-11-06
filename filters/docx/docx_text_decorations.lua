@@ -93,9 +93,27 @@ local function boxify_highlight(inlines)
         -- \hl band (which is strut-based) — without it the box would hug only
         -- this run's glyph bbox and sit visibly lower/shorter than the \hl
         -- bands of adjacent non-decorated highlighted runs.
-        out[#out + 1] = pandoc.RawInline("latex", "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. hex .. "}{\\strut{}")
-        out[#out + 1] = inline
-        out[#out + 1] = pandoc.RawInline("latex", "}}")
+        -- A box per word: Word breaks a highlighted run at its spaces like any other
+        local word = {}
+        local function flush()
+          if #word > 0 then
+            local copy = inline:clone()
+            copy.content = word
+            out[#out + 1] = pandoc.RawInline("latex", "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. hex .. "}{\\strut{}")
+            out[#out + 1] = copy
+            out[#out + 1] = pandoc.RawInline("latex", "}}")
+          end
+          word = {}
+        end
+        for _, part in ipairs(inline.content) do
+          if part.t == "Space" or part.t == "SoftBreak" then
+            flush()
+            out[#out + 1] = part
+          else
+            word[#word + 1] = part
+          end
+        end
+        flush()
       else
         out[#out + 1] = inline
       end
@@ -189,6 +207,10 @@ render_decorations = function(content, set)
       open = open .. ULEM_MACRO[t] .. "{"
       close = "}" .. close
     end
+  end
+  if set.Underline and set.Strikeout then
+    -- One command for both, see docx_colors_to_latex: a line breaks at its spaces
+    open, close = "\\pdcUlineSout{", "}"
   end
   local result, segment = {}, {}
   local function flush()
