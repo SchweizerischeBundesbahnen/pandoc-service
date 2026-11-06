@@ -36,6 +36,7 @@ Limitations
 from __future__ import annotations
 
 import logging
+import re
 from xml.etree import ElementTree as ET
 
 from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
@@ -114,8 +115,8 @@ class _StyleSpec:
         self.indent_twips = indent_twips
 
 
-def _style_id(align: str | None, indent_twips: int | None) -> str:
-    # Fixed ALIGN/IND ordering keeps the id deterministic: the same combination
+def _style_id(align: str | None, indent_twips: int | None, base: str = "Normal") -> str:
+    # Fixed ALIGN/IND/STYLE ordering keeps the id deterministic: the same combination
     # always produces the same id, which is what lets the Lua filter pattern-
     # match the segments back out and what makes deduplication work.
     parts = [STYLE_PREFIX]
@@ -123,7 +124,16 @@ def _style_id(align: str | None, indent_twips: int | None) -> str:
         parts.append(f"ALIGN_{align}")
     if indent_twips is not None:
         parts.append(f"IND_{indent_twips}")
+    # The style the paragraph had, whose space before and after Word keeps
+    parts.append(f"STYLE_{base}")
     return SEGMENT_SEPARATOR.join(parts)
+
+
+def _base_style(ppr: ET.Element) -> str:
+    """The id of the paragraph's own style, letters and digits only; Normal without one."""
+    style = ppr.find(_PSTYLE_TAG)
+    value = re.sub(r"[^A-Za-z0-9]", "", style.get(_VAL_ATTR) or "") if style is not None else ""
+    return value or "Normal"
 
 
 def _extract_para_format(ppr: ET.Element) -> tuple[str | None, int | None]:
@@ -194,7 +204,7 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
         align, indent = _extract_para_format(ppr)
         if not align and not indent:
             continue
-        style_id = _style_id(align, indent)
+        style_id = _style_id(align, indent, _base_style(ppr))
         styles_used[style_id] = _StyleSpec(style_id, align, indent)
         _replace_para_props(ppr, style_id)
 

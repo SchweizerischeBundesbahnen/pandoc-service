@@ -29,12 +29,12 @@ def test_an_empty_paragraph_needs_no_marker():
 
 
 def test_each_line_break_adds_a_line():
-    assert _paragraphs('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:br/></w:r></w:p>') == [f"{EMPTY_LINES_STYLE}:2"]
-    assert _paragraphs("<w:p><w:r><w:br/><w:br/></w:r></w:p>") == [f"{EMPTY_LINES_STYLE}:3"]
+    assert _paragraphs('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:br/></w:r></w:p>') == [f"{EMPTY_LINES_STYLE}:2 BodyText"]
+    assert _paragraphs("<w:p><w:r><w:br/><w:br/></w:r></w:p>") == [f"{EMPTY_LINES_STYLE}:3 Normal"]
 
 
 def test_spaces_around_a_line_break_are_empty():
-    assert _paragraphs('<w:p><w:r><w:t xml:space="preserve"> </w:t><w:br/></w:r></w:p>') == [f"{EMPTY_LINES_STYLE}:2"]
+    assert _paragraphs('<w:p><w:r><w:t xml:space="preserve"> </w:t><w:br/></w:r></w:p>') == [f"{EMPTY_LINES_STYLE}:2 Normal"]
 
 
 def test_the_bookmarks_of_the_paragraph_stay():
@@ -44,7 +44,7 @@ def test_the_bookmarks_of_the_paragraph_stay():
 
 
 def test_the_lines_of_one_paragraph_have_a_limit():
-    assert _paragraphs(f"<w:p><w:r>{'<w:br/>' * (MAX_LINES + 5)}</w:r></w:p>") == [f"{EMPTY_LINES_STYLE}:{MAX_LINES}"]
+    assert _paragraphs(f"<w:p><w:r>{'<w:br/>' * (MAX_LINES + 5)}</w:r></w:p>") == [f"{EMPTY_LINES_STYLE}:{MAX_LINES} Normal"]
 
 
 def test_a_paragraph_with_something_to_show_is_left_as_it_is():

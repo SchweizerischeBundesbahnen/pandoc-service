@@ -9,7 +9,7 @@ broke elsewhere.
 
 This preprocessor replaces each paragraph of the body which holds line breaks
 and nothing else with a paragraph in the synthetic style ``PandocEmptyLines``.
-Its text is the number of lines, and its bookmarks stay. The filter sets that
+Its text is the number of lines and the id of its own style, and its bookmarks stay. The filter sets that
 many empty lines. An empty paragraph without a line break needs no marker.
 
 A table cell keeps its own height. A paragraph with a picture, an equation, a
@@ -23,6 +23,7 @@ marker as an empty line of its own.
 
 from __future__ import annotations
 
+import re
 from xml.etree import ElementTree as ET
 
 from .docx_ooxml import W_NS, parse_xml, serialize_tree
@@ -71,6 +72,13 @@ def _lines(paragraph: ET.Element) -> int | None:
     return min(breaks + 1, MAX_LINES) if breaks else None
 
 
+def _base_style(paragraph: ET.Element) -> str:
+    """The id of the paragraph's own style, letters and digits only; Normal without one."""
+    style = paragraph.find(f"{_w('pPr')}/{_w('pStyle')}")
+    value = re.sub(r"[^A-Za-z0-9]", "", style.get(_w("val")) or "") if style is not None else ""
+    return value or "Normal"
+
+
 def _marker(paragraph: ET.Element, lines: int) -> ET.Element:
     marker = ET.Element(_w("p"))
     properties = ET.SubElement(marker, _w("pPr"))
@@ -78,7 +86,8 @@ def _marker(paragraph: ET.Element, lines: int) -> ET.Element:
     for bookmark in (element for element in paragraph.iter() if element.tag in _BOOKMARKS):
         marker.append(bookmark)
     run = ET.SubElement(marker, _w("r"))
-    ET.SubElement(run, _w("t")).text = str(lines)
+    # The style the paragraph had, whose space before and after Word keeps around its lines
+    ET.SubElement(run, _w("t")).text = f"{lines} {_base_style(paragraph)}"
     return marker
 
 

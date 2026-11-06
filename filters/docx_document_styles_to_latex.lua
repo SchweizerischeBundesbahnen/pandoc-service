@@ -43,6 +43,7 @@ local BASELINE = "docx-body-baseline"
 local DESCENT = "docx-body-descent"
 local CELL_SPACE = "docx-table-cell-space"
 local LIST_ITEM_SPACE = "docx-list-item-space"
+local PARAGRAPH_SPACING = "docx-paragraph-spacing"
 local BULLET_ASCENTS = "docx-list-bullet-ascents"
 local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
@@ -551,11 +552,70 @@ local function read_first_block(doc)
   return nil
 end
 
+-- The space before and after each paragraph style of the body, by id and by name.
+local paragraph_spacing = { ids = {}, names = {} }
+
+-- The spacing of a block which is a paragraph of the body, or nil: a paragraph
+-- without a style is Normal; the reader keeps another style as a Div, and
+-- docx_paragraphs_to_latex the style of an aligned or indented one.
+local function block_spacing(block)
+  if block.t == "Para" or block.t == "Plain" then
+    return paragraph_spacing.ids.Normal
+  end
+  if block.t == "Div" then
+    local id = block.attributes["pdc-style"]
+    if id then
+      return paragraph_spacing.ids[id]
+    end
+    return paragraph_spacing.names[block.attributes["custom-style"] or ""]
+  end
+  return nil
+end
+
+-- Word puts the larger of the space after a paragraph and before the next
+-- between them, TeX the paragraph skip: the difference goes between them.
+local function gap(previous, spacing)
+  if previous == nil or spacing == nil then
+    return nil
+  end
+  local delta = math.max(previous.after, spacing.before) - body_skip
+  return math.abs(delta) > 0.01 and pandoc.RawBlock("latex", string.format("\\vspace{%gbp}", delta)) or nil
+end
+
+local function paragraph_gaps(blocks)
+  local result, previous = {}, nil
+  for _, block in ipairs(blocks) do
+    local spacing = block_spacing(block)
+    result[#result + 1] = gap(previous, spacing)
+    if spacing and block.t == "Div" and block.attributes["pdc-style"] == nil then
+      -- The paragraphs of one style the reader groups into one Div: each one its gap
+      local content = {}
+      for index, inner in ipairs(block.content) do
+        if index > 1 and (inner.t == "Para" or inner.t == "Plain") then
+          content[#content + 1] = gap(spacing, spacing)
+        end
+        content[#content + 1] = inner
+      end
+      block.content = content
+    end
+    result[#result + 1] = block
+    previous = spacing
+  end
+  return result
+end
+
 local function read_title(meta)
   local skip = points(meta[SKIP])
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
   body_descent = points(meta[DESCENT])
   body_skip = skip or 0
+  for entry in pandoc.utils.stringify(meta[PARAGRAPH_SPACING] or ""):gmatch("[^;]+") do
+    local id, name, before, after = entry:match("^(%w+):([%w ]+):([%d.]+):([%d.]+)$")
+    if id then
+      local spacing = { before = tonumber(before), after = tonumber(after) }
+      paragraph_spacing.ids[id], paragraph_spacing.names[name] = spacing, spacing
+    end
+  end
   caption_style = style_fields(meta[STYLE_PREFIX .. "Caption"], skip)
   for level, heading in ipairs(HEADINGS) do
     heading_styles[level] = style_fields(meta[STYLE_PREFIX .. heading.style], skip)
@@ -610,7 +670,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end
@@ -625,4 +685,12 @@ return {
   { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
+  {
+    Pandoc = function(doc)
+      if FORMAT:match("latex") then
+        doc.blocks = paragraph_gaps(doc.blocks)
+      end
+      return doc
+    end,
+  },
 }

@@ -70,19 +70,22 @@ local function blank_line(inlines)
 end
 
 -- A paragraph of line breaks, which app/docx_empty_lines_pre_process.py marks
--- with its number of lines: the reader drops the line breaks at its end.
+-- with its number of lines and its style: the reader drops the line breaks at its end.
 local EMPTY_LINES = "PandocEmptyLines"
 local MAX_LINES = 100
 
 -- The lines of a marked paragraph, with its bookmarks on the first; nil without a number.
 local function marked_lines(div)
   local count = nil
+  local style = nil
   local result = {}
   for _, block in ipairs(div.content) do
     if block.t == "Para" or block.t == "Plain" then
       for _, il in ipairs(block.content) do
         if il.t == "Str" and il.text:match("^%d+$") then
           count = tonumber(il.text)
+        elseif il.t == "Str" and count ~= nil and style == nil and il.text:match("^%w+$") then
+          style = il.text
         elseif il.t == "Span" and il.identifier ~= "" then
           result[#result + 1] = pandoc.Span({}, il.attr)
         end
@@ -97,7 +100,8 @@ local function marked_lines(div)
     result[#result + 1] = pandoc.LineBreak()
   end
   result[#result + 1] = pandoc.RawInline("latex", "\\strut")
-  return pandoc.Para(result)
+  -- The style the paragraph had, for the space docx_document_styles_to_latex puts around it
+  return pandoc.Div({ pandoc.Para(result) }, { ["pdc-style"] = style or "Normal" })
 end
 
 local function keep_empty_lines(blocks)

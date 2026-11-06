@@ -195,6 +195,24 @@ def test_between_two_headings_their_struts_keep_their_lines_apart(test_parameter
     assert body.index("\\titlespacing*{\\section}{0pt}{15.75pt}{8pt}") < body.index("One") < body.index("\\titlespacing*{\\section}{0pt}{15.75pt}{11.25pt}")
 
 
+SPACING = ("docx-body-paragraph-skip=9", "docx-paragraph-spacing=BodyText:Body Text:9:9;Normal:Normal:0:10")
+
+
+def test_paragraphs_of_normal_stand_the_larger_of_their_spaces_apart(test_parameters: TestParameters):
+    """Normal has 10pt after it: one more than the paragraph skip, which Body Text sets."""
+    native = '[Div ("",[],[("custom-style","Body Text")]) [Para [Str "Body"]], Para [Str "First"], Para [Str "Second"], Div ("",[],[("pdc-style","Normal")]) [Para [Str "Indented"]]]'
+    body = _latex(test_parameters.container, *SPACING, native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert "Body First" in body, "after Body Text, Normal has no more space before it than the skip"
+    assert "First \\vspace{1bp} Second \\vspace{1bp} Indented" in body
+
+
+def test_paragraphs_of_one_style_in_one_div_get_their_gap_each(test_parameters: TestParameters):
+    native = '[Div ("",[],[("custom-style","Wide")]) [Para [Str "One"], Para [Str "Two"]]]'
+    body = _latex(test_parameters.container, "docx-body-paragraph-skip=9", "docx-paragraph-spacing=Wide:Wide:0:12", native=native)
+    assert "One\n\n\\vspace{3bp}\n\nTwo" in body
+
+
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
     assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble

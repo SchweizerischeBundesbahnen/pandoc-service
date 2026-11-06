@@ -81,6 +81,7 @@ def test_sets_pandoc_template_like_word():
         "docx-body-hyphenated": "false",
         "docx-page-numbers": "false",
         "docx-table-plain-cell-space": "10",
+        "docx-paragraph-spacing": "Normal:Normal:0:10",
     }
 
 
@@ -480,3 +481,11 @@ def test_a_bullet_reaches_as_high_as_its_font_in_the_list_of_the_document(font_m
 
 def test_a_bullet_in_a_font_which_is_not_installed_gets_no_ascent(font_metrics):
     assert "docx-list-bullet-ascents" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets("Missing")))
+
+
+def test_the_spacing_of_normal_and_the_styles_of_the_body_is_handed_over():
+    body = '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr></w:p><w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr></w:p><w:sectPr/>'
+    styles = DEFAULTS + NORMAL + BODY_TEXT + '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/></w:style>'
+    spacing = _options(_docx(styles, section=body))["docx-paragraph-spacing"]
+    # Normal takes its space after from the defaults; the title has spaces of its own
+    assert spacing == "BodyText:BodyText:9:9;Normal:Normal:0:10"

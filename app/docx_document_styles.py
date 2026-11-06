@@ -101,6 +101,31 @@ def _body_line(chain: list[Element], styles: Element, size: float, font: str | N
     return options
 
 
+def _paragraph_spacing(styles: Element, document: Element | None) -> str:
+    """The space before and after the paragraph styles of the body, as ``id:name:before:after`` joined by ``;``.
+
+    Word puts the larger of the space after one paragraph and before the next between them, LaTeX the
+    paragraph skip. Normal, the style of a paragraph without one, is always there. A heading, the title
+    and a caption have spaces of their own.
+    """
+    used = {"Normal"}
+    if document is not None:
+        used |= {style.get(_w("val"), "") for style in document.iter(_w("pStyle"))}
+    entries = []
+    for style_id in sorted(used):
+        chain = _style_chain(styles, style_id, fallback=None)
+        if not chain or style_id in DISPLAY_STYLES or not re.fullmatch(r"[A-Za-z0-9]+", style_id):
+            continue
+        name_element = chain[0].find(_w("name"))
+        # The reader names a style without a name by its id
+        name = name_element.get(_w("val"), style_id) if name_element is not None else style_id
+        if not re.fullmatch(r"[A-Za-z0-9 ]+", name):
+            continue
+        before, after = (_spacing_twips(chain, styles, side) / TWIPS_PER_POINT for side in ("before", "after"))
+        entries.append(f"{style_id}:{name}:{before:g}:{after:g}")
+    return ";".join(entries)
+
+
 def _cell_options(styles: Element) -> list[str]:
     """The spaces of the paragraphs of a table cell and of a list item, which Word sets in Compact or Normal."""
     options: list[str] = []
@@ -162,6 +187,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     if cell_margin is not None:
         options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
     options += _cell_options(styles)
+    options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
     link_chain = _style_chain(styles, "Hyperlink", fallback=None)
     link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
     if link_color is not None:

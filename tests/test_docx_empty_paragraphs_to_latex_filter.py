@@ -76,6 +76,20 @@ def test_a_marked_paragraph_gets_its_lines(test_parameters: TestParameters):
     assert "2" not in flat.replace("\\label{_Toc3}", ""), flat
 
 
+SHOW_STYLE = 'function Div(div) if div.attributes["pdc-style"] then return {pandoc.RawBlock("latex", "STYLE=" .. div.attributes["pdc-style"]), table.unpack(div.content)} end end'
+
+
+def test_a_marked_paragraph_keeps_its_style(test_parameters: TestParameters):
+    """docx_document_styles_to_latex puts the space of that style around the lines."""
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/show.lua << 'HEREDOC_EOF'\n{SHOW_STYLE}\nHEREDOC_EOF"])
+    container.exec_run(["sh", "-c", f"cat > /tmp/test/in.native << 'HEREDOC_EOF'\n{_marked('Str "2"', 'Space', 'Str "BodyText"')}\nHEREDOC_EOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f native -t latex --lua-filter={FILTER_PATH} --lua-filter=/tmp/test/show.lua /tmp/test/in.native"])
+    assert exit_code == 0, output.decode()
+    assert "STYLE=BodyText" in output.decode()
+    assert output.decode().count("\\strut") == 2
+
+
 def test_a_marked_paragraph_without_a_number_is_left_as_it_is(test_parameters: TestParameters):
     assert "\\strut" not in _native_to_latex(test_parameters.container, _marked('Str "x"'))
 
