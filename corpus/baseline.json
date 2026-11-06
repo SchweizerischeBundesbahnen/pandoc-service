@@ -85,12 +85,12 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 139,
      "lines": 270,
-     "mean_shift": 13.57,
+     "mean_shift": 11.11,
      "pages": [
       8,
       8
      ],
-     "same_page": 133
+     "same_page": 134
     },
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 21,
@@ -205,12 +205,12 @@
     "test_convert_product_specification": {
      "any_page": 139,
      "lines": 270,
-     "mean_shift": 13.57,
+     "mean_shift": 11.11,
      "pages": [
       8,
       8
      ],
-     "same_page": 133
+     "same_page": 134
     },
     "test_convert_test_specification": {
      "any_page": 125,
@@ -365,7 +365,7 @@
     "test_images_and_tables_conversion": {
      "any_page": 32,
      "lines": 32,
-     "mean_shift": 82.3,
+     "mean_shift": 68.86,
      "pages": [
       5,
       6
@@ -435,7 +435,7 @@
     "test_tables_and_figures_captions_conversion": {
      "any_page": 40,
      "lines": 42,
-     "mean_shift": 14.87,
+     "mean_shift": 2.3,
      "pages": [
       3,
       3
@@ -445,12 +445,12 @@
     "test_tables_conversion": {
      "any_page": 56,
      "lines": 57,
-     "mean_shift": 5.81,
+     "mean_shift": 9.56,
      "pages": [
       3,
       3
      ],
-     "same_page": 54
+     "same_page": 53
     },
     "test_test_case_tables": {
      "any_page": 18,
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.0,
     "documents": 49,
-    "mean_shift": 9.35,
+    "mean_shift": 8.77,
     "pages_as_reference": 47,
     "same_page": 64.8
    }
@@ -556,12 +556,12 @@
     "test_convert_catalog_specification": {
      "any_page": 76,
      "lines": 77,
-     "mean_shift": 7.36,
+     "mean_shift": 0.64,
      "pages": [
       3,
       3
      ],
-     "same_page": 75
+     "same_page": 76
     },
     "test_convert_external_resources_happy_path": {
      "any_page": 6,
@@ -586,12 +586,12 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 4.89,
+     "mean_shift": 1.53,
      "pages": [
       8,
       8
      ],
-     "same_page": 254
+     "same_page": 256
     },
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 21,
@@ -706,12 +706,12 @@
     "test_convert_product_specification": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 4.89,
+     "mean_shift": 1.53,
      "pages": [
       8,
       8
      ],
-     "same_page": 254
+     "same_page": 256
     },
     "test_convert_test_specification": {
      "any_page": 186,
@@ -866,7 +866,7 @@
     "test_images_and_tables_conversion": {
      "any_page": 32,
      "lines": 32,
-     "mean_shift": 81.38,
+     "mean_shift": 69.05,
      "pages": [
       5,
       6
@@ -936,7 +936,7 @@
     "test_tables_and_figures_captions_conversion": {
      "any_page": 42,
      "lines": 42,
-     "mean_shift": 4.43,
+     "mean_shift": 1.17,
      "pages": [
       3,
       3
@@ -944,14 +944,14 @@
      "same_page": 42
     },
     "test_tables_conversion": {
-     "any_page": 55,
+     "any_page": 56,
      "lines": 57,
-     "mean_shift": 5.2,
+     "mean_shift": 0.9,
      "pages": [
       3,
       3
      ],
-     "same_page": 52
+     "same_page": 54
     },
     "test_test_case_tables": {
      "any_page": 21,
@@ -995,11 +995,11 @@
     }
    },
    "total": {
-    "any_page": 95.7,
+    "any_page": 95.8,
     "documents": 49,
-    "mean_shift": 5.33,
+    "mean_shift": 4.65,
     "pages_as_reference": 47,
-    "same_page": 93.2
+    "same_page": 93.5
    }
   }
  }

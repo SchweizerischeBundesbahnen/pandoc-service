@@ -47,7 +47,7 @@ def _preamble(latex: str) -> str:
 def test_word_layout_goes_into_the_preamble(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-body-paragraph-skip=9", "docx-body-justified=false", "docx-body-hyphenated=false"))
     assert "\\setlength{\\parskip}{9pt}" in preamble
-    assert "\\AtBeginDocument{\\raggedright}" in preamble
+    assert "\\AtBeginDocument{\\raggedright\\let\\\\\\@normalcr}" in preamble
     assert "\\hyphenpenalty=10000" in preamble
     assert "\\exhyphenpenalty=0" in preamble, "Word breaks a line after a hyphen as freely as after a space"
     assert "\\frenchspacing" in preamble, "Word puts no wider space after a full stop"
@@ -73,7 +73,7 @@ def test_the_preamble_of_other_filters_stays(test_parameters: TestParameters):
     """Setting header-includes as a variable replaces what filters add, the filter must add to it instead."""
     preamble = _preamble(_latex(test_parameters.container, "docx-body-justified=false", other_preamble=True))
     assert "\\newcommand{\\other}{}" in preamble
-    assert "\\AtBeginDocument{\\raggedright}" in preamble
+    assert "\\AtBeginDocument{\\raggedright\\let\\\\\\@normalcr}" in preamble
 
 
 def test_the_metadata_does_not_reach_the_document(test_parameters: TestParameters):
@@ -237,6 +237,13 @@ def test_a_paragraph_after_a_table_gets_only_its_own_space_before(test_parameter
     after = body.index("After")
     assert body.index("\\end{longtable}") < body.index("\\vspace{-9bp}") < after
     assert after < body.index("\\vspace{1bp}") < body.index("\\begin{longtable}", after)
+
+
+def test_the_lines_of_a_paragraph_stay_together_after_a_heading(test_parameters: TestParameters):
+    """LaTeX sets the club penalty back after a heading, and \\\\ under \\raggedright ends the paragraph."""
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-justified=false"))
+    assert "\\@clubpenalty=10000" in preamble
+    assert "\\let\\\\\\@normalcr" in preamble
 
 
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):

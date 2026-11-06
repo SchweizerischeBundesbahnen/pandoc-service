@@ -196,7 +196,8 @@ local function body_preamble(meta, lines)
   -- Word breaks a line after a hyphen of the text as freely as after a space
   lines[#lines + 1] = "\\exhyphenpenalty=0"
   -- Word keeps the first and the last line of a paragraph with another line of it
-  lines[#lines + 1] = "\\clubpenalty=10000\\widowpenalty=10000"
+  -- LaTeX sets \\clubpenalty back to \\@clubpenalty after each heading
+  lines[#lines + 1] = "\\makeatletter\\AtBeginDocument{\\clubpenalty=10000\\widowpenalty=10000\\@clubpenalty=10000}\\makeatother"
   if skip ~= nil then
     lines[#lines + 1] = string.format("\\setlength{\\parskip}{%gpt}", skip)
   end
@@ -218,7 +219,9 @@ local function body_preamble(meta, lines)
     end
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
-    lines[#lines + 1] = "\\AtBeginDocument{\\raggedright}"
+    -- \\raggedright makes \\\\ end the paragraph, so the lines of a paragraph of line breaks were
+    -- paragraphs of their own, which a page broke apart: a line break of Word stays in its paragraph
+    lines[#lines + 1] = "\\makeatletter\\AtBeginDocument{\\raggedright\\let\\\\\\@normalcr}\\makeatother"
   end
   if meta[HYPHENATED] ~= nil and not is_true(meta[HYPHENATED]) then
     -- Only the hyphenation of words: Word breaks a line after a hyphen the text holds.
