@@ -296,6 +296,13 @@ def test_run_pandoc_conversion_keeps_empty_paragraphs_for_docx_to_pdf():
     assert empty_paragraphs < cmd.index(f"--lua-filter={FILTERS['docx_tables_to_latex']}")
 
 
+def test_run_pandoc_conversion_reads_page_breaks_before_empty_paragraphs_for_docx_to_pdf():
+    """A paragraph holding only a break is no blank line."""
+    cmd, _ = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "pdf")
+
+    assert cmd.index(f"--lua-filter={FILTERS['docx_page_breaks_to_latex']}") < cmd.index(f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}")
+
+
 def test_run_pandoc_conversion_passes_the_docx_page_geometry_for_docx_to_pdf():
     """The PDF is laid out on the page of the DOCX; bytes without one get Letter."""
     cmd, _ = _run_conversion_capturing_cmd(b"PK\x03\x04docx-bytes", "docx", "pdf")

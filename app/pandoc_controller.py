@@ -93,6 +93,7 @@ FILTERS = {
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{DOCX_FILTER_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_empty_paragraphs_to_latex.lua",
+    "docx_page_breaks_to_latex": f"{DOCX_FILTER_PATH}/docx_page_breaks_to_latex.lua",
     "docx_comments_to_latex": f"{DOCX_FILTER_PATH}/docx_comments_to_latex.lua",
     "docx_document_styles_to_latex": f"{DOCX_FILTER_PATH}/docx_document_styles_to_latex.lua",
     "docx_toc_to_latex": f"{DOCX_FILTER_PATH}/docx_toc_to_latex.lua",
@@ -710,7 +711,9 @@ def _build_pandoc_command(
     if apply_docx_latex_filters:
         cmd.extend(
             [
-                # First, so the filters below see an empty line as the blank
+                # First, so that a paragraph holding only a break is no blank line below.
+                f"--lua-filter={FILTERS['docx_page_breaks_to_latex']}",
+                # Before the rest, so the filters below see an empty line as the blank
                 # paragraph it becomes and not as an empty one.
                 f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}",
                 # Prints the comments in balloons right of the text, not in it. See

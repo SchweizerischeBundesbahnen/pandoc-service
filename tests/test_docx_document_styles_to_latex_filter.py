@@ -500,15 +500,6 @@ def test_without_a_caption_style_a_caption_stays_plain(test_parameters: TestPara
     assert "pdcCaptionStyle" not in output.decode()
 
 
-def test_a_page_break_becomes_clearpage(test_parameters: TestParameters):
-    container = test_parameters.container
-    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'one\\n\\n::: {custom-style=\"PandocPageBreak\"}\\nPandocPageBreak\\n:::\\n\\ntwo\\n' > /tmp/test/break.md"])
-    _, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex --lua-filter={FILTER_PATH} /tmp/test/break.md"])
-    latex = output.decode()
-    assert "\\clearpage" in latex
-    assert "PandocPageBreak" not in latex
-
-
 def test_the_pdf_breaks_the_page_where_the_docx_does(test_parameters: TestParameters):
     from docx.enum.text import WD_BREAK
 
@@ -519,17 +510,6 @@ def test_the_pdf_breaks_the_page_where_the_docx_does(test_parameters: TestParame
     reader = PdfReader(io.BytesIO(_docx_to_pdf(test_parameters, document)))
     assert len(reader.pages) == 2
     assert "Second page." in reader.pages[1].extract_text()
-
-
-def test_a_section_marker_switches_the_page_geometry(test_parameters: TestParameters):
-    container = test_parameters.container
-    container.exec_run(["sh", "-c", 'mkdir -p /tmp/test && printf \'::: {custom-style="PandocSection"}\\n842 595 72 72 72 72\\n:::\\n\\n::: {custom-style="PandocSection"}\\n842 x 72 72 72 72\\n:::\\n\' > /tmp/test/section.md'])
-    _, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f markdown -t latex --lua-filter={FILTER_PATH} /tmp/test/section.md"])
-    latex = output.decode()
-    body = latex[latex.index("\\begin{document}") :]
-    assert "\\pdcPageGeometry{842}{595}{72}{72}{72}{72}" in body
-    assert body.count("\\clearpage") == 1, "a marker which is no geometry only breaks the page"
-    assert "\\newcommand{\\pdcPageGeometry}[6]" in latex
 
 
 def test_the_pdf_gives_a_section_its_own_page(test_parameters: TestParameters):
