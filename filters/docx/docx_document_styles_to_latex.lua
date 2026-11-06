@@ -174,6 +174,8 @@ local ROMAN = { "i", "ii", "iii", "iv" }
 -- Word sets the rows of a matrix 1.175 times the size of the font apart, and an aligned row its own
 -- height and 1.35pt below the one above: TeX the line of the body and 3pt
 local MATRIX_ROW = 1.175
+-- and rows which would overlap so that times the size of the font apart
+local ROW_GAP = 0.25
 -- Word sets the line of an equation 0.135 times the size of the font above its top
 local EQUATION_TOP = 0.135
 local ALIGNED_GAP = 1.35
@@ -184,7 +186,7 @@ local EQUATION_ARRAY = table.concat({
   "\\newcommand{\\pdcEquationArray}[2][c]{\\setbox\\@arstrutbox\\hbox{}%",
   "\\begingroup\\@mkpream{#2}\\xdef\\@preamble{\\noexpand\\ialign\\@halignto\\bgroup\\@arstrut\\@preamble\\tabskip\\z@\\cr}\\endgroup",
   "\\if #1t\\vtop\\else\\if#1b\\vbox\\else\\vcenter\\fi\\fi\\bgroup\\let\\@sharp##\\let\\protect\\relax",
-  "\\lineskip\\z@\\baselineskip\\pdcEquationRow\\lineskiplimit-\\maxdimen\\mathsurround\\z@",
+  "\\lineskip\\pdcEquationGap\\baselineskip\\pdcEquationRow\\lineskiplimit\\z@\\mathsurround\\z@",
   "\\let\\\\\\@arraycr\\let\\tabularnewline\\\\\\let\\par\\@empty\\@preamble}",
   "\\newsavebox{\\pdcEquationBox}",
   "\\newcommand{\\pdcInnerFrac}[2]{\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}}",
@@ -287,7 +289,7 @@ local function body_preamble(meta, lines)
   list_indents(meta, lines)
   local size = points(meta[SIZE])
   if size then
-    lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}", MATRIX_ROW * size)
+    lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}\\newcommand{\\pdcEquationGap}{%gbp}", MATRIX_ROW * size, ROW_GAP * size)
     lines[#lines + 1] = EQUATION_ARRAY
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then

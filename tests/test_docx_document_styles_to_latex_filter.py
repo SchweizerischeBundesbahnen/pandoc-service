@@ -318,8 +318,8 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     """Word sets the rows of a matrix a fixed pitch apart, the equation tight to its content and a little space
     above it, and a fraction inside a fraction as large as the outer one."""
     latex = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "a^{2}"]]')
-    assert "\\newcommand{\\pdcEquationRow}{14.1bp}" in _preamble(latex)
-    assert "\\baselineskip\\pdcEquationRow\\lineskiplimit-\\maxdimen" in _preamble(latex)
+    assert "\\newcommand{\\pdcEquationRow}{14.1bp}\\newcommand{\\pdcEquationGap}{3bp}" in _preamble(latex)
+    assert "\\lineskip\\pdcEquationGap\\baselineskip\\pdcEquationRow\\lineskiplimit\\z@" in _preamble(latex), "rows which would overlap keep a gap"
     assert "\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}" in _preamble(latex)
     body = " ".join(latex[latex.index("\\begin{document}") :].split())
     assert "\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
