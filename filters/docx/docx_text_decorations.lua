@@ -33,8 +33,8 @@ local DECO_ORDER = { "Underline", "Strikeout" }
 
 -- A \colorbox is one unbreakable hbox, so a long highlighted run inside a
 -- decoration would overflow the text block (a metres-wide "Overfull \hbox").
--- Only box short runs; longer ones drop the background (kept line-breakable),
--- matching docx_colors_to_latex's MAX_BOXABLE_LEN.
+-- A highlight is a box per word, see boxify_highlight: a word longer than this
+-- drops the background (kept line-breakable), matching docx_colors_to_latex.
 local MAX_BOXABLE_LEN = 60
 
 -- Total length of the plain text in `inlines` (Str chars + one per Space /
@@ -83,8 +83,18 @@ local function boxify_highlight(inlines)
       if hex and hex:upper() == "FFFFFF" then
         hex = nil -- white is the page colour (invisible); never box it
       end
-      if hex and content_text_length(inline.content) > MAX_BOXABLE_LEN then
-        hex = nil -- too long to box safely; drop the background, keep the text
+      if hex then
+        local word = 0
+        for _, part in ipairs(inline.content) do
+          if part.t == "Space" or part.t == "SoftBreak" then
+            word = 0
+          else
+            word = word + content_text_length({ part })
+            if word > MAX_BOXABLE_LEN then
+              hex = nil -- a word too long to box safely; drop the background, keep the text
+            end
+          end
+        end
       end
       if hex then
         -- \fboxsep=0pt so the box hugs the text (no padding around the

@@ -272,14 +272,12 @@ def test_white_background_is_not_boxed(test_parameters: TestParameters):
     assert "\\textcolor[HTML]{FF0000}" in flat, flat  # foreground colour still applied
 
 
-def test_long_highlight_is_not_boxed(test_parameters: TestParameters):
-    """A \\colorbox is unbreakable, so boxing a long run overflows the page by
-    metres. Only SHORT runs are boxed; a long highlighted run drops the
-    background (foreground color stays) rather than becoming an overfull box."""
-    long_text = "lorem ipsum dolor sit amet " * 6  # well over the ~60-char cap
-    flat = _md_to_latex(test_parameters.container, f'[{long_text}*it*]{{custom-style="PandocColor__BG_FFFF00"}}\n')
-    assert "\\colorbox" not in flat, f"long run was boxed (overflow risk): {flat}"
-    assert "\\hl{" not in flat, flat
+def test_a_long_word_of_a_highlight_is_not_boxed(test_parameters: TestParameters):
+    """A \\colorbox is unbreakable, and a highlight is a box per word: a word longer than a line drops the background
+    (the foreground colour stays) rather than becoming an overfull box."""
+    long_word = "x" * 70
+    flat = _md_to_latex(test_parameters.container, f'[a {long_word}]{{custom-style="PandocColor__BG_FFFF00"}}\n')
+    assert "\\colorbox" not in flat, f"a word longer than a line was boxed (overflow risk): {flat}"
 
 
 def test_underline_inside_highlight_is_boxed(test_parameters: TestParameters):
@@ -323,3 +321,10 @@ def test_a_run_larger_than_the_body_text_makes_its_line_as_high_as_its_font(test
     flat = _flatten_whitespace(output.decode())
     assert "\\fontsize{16bp}{19.2bp}\\selectfont \\pdcRunStrut{}big" in flat, flat
     assert flat.count("\\pdcRunStrut") == 1, "a smaller run leaves the line of the body"
+
+
+def test_a_long_highlight_keeps_its_background_word_by_word(test_parameters: TestParameters):
+    """A box per word breaks at the spaces: a run longer than a line keeps its background."""
+    text = " ".join(["highlighted"] * 8)
+    flat = _md_to_latex(test_parameters.container, f'[{text}]{{custom-style="PandocColor__BG_FFFF00"}}\n')
+    assert flat.count("\\colorbox[HTML]{FFFF00}") == 8, flat

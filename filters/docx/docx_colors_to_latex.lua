@@ -26,7 +26,7 @@
 -- inline content, so bold/italic/underlined highlights need no special casing.
 --
 -- The deliberate trade-off: a \colorbox cannot break across a line, so a
--- highlighted run no longer hyphenates, and a run longer than MAX_BOXABLE_LEN
+-- highlighted run no longer hyphenates, and a word longer than MAX_BOXABLE_LEN
 -- (or one containing an image/link/math/raw LaTeX — see BOX_UNSAFE) drops its
 -- background rather than overflow the margin. The foreground color is still
 -- applied in that case (\textcolor is line-breakable and harmless around
@@ -66,7 +66,7 @@ local STYLE_PREFIX = "PandocColor"
 -- non-underlined one. Boxing everything with a leading \strut gives one uniform
 -- band height across the whole run — the highlighter-pen look — with no steps.
 -- The trade-off (chosen deliberately): a \colorbox can't break across lines, so
--- a highlighted run no longer hyphenates and a run longer than MAX_BOXABLE_LEN
+-- a highlighted run no longer hyphenates and a word longer than MAX_BOXABLE_LEN
 -- drops its background rather than overflow the margin.
 
 -- Inline types that must NOT be wrapped in a \colorbox: a box is unbreakable
@@ -326,7 +326,15 @@ function filter.Span(el)
   -- only box content a box won't break or distort, and only while it is short
   -- enough to fit a line; otherwise the background is dropped (the foreground
   -- colour is still applied, which is harmless and line-breakable).
-  local box_bg = bg_color ~= nil and content_is_boxable(el.content) and content_text_length(el.content) <= MAX_BOXABLE_LEN
+  -- A box per word, see below: each word has to fit a line, not the whole run
+  local box_bg = bg_color ~= nil and content_is_boxable(el.content)
+  if box_bg then
+    for _, word in ipairs(split_words(el.content)) do
+      if word ~= "space" and content_text_length(word) > MAX_BOXABLE_LEN then
+        box_bg = false
+      end
+    end
+  end
 
   local size_open = props.sz and font_size_open(props.sz) or nil
 
