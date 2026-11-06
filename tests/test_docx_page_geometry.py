@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import zipfile
 
+import pytest
 from docx import Document
 from docx.shared import Cm, Inches
 
@@ -114,3 +115,41 @@ def test_a_document_part_without_a_body_gets_the_fallback():
     with zipfile.ZipFile(buffer, "w") as target:
         target.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
     assert _as_dict(geometry_variables(buffer.getvalue()))["paperwidth"] == "8.5000in"
+
+
+def _commented_docx() -> bytes:
+    document = Document()
+    paragraph = document.add_paragraph("commented text")
+    document.add_comment(paragraph.runs, text="a comment", author="Author")
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _metadata(variables: list[str]) -> dict[str, str]:
+    pairs = zip(variables[::2], variables[1::2], strict=True)
+    return dict(value.split("=", 1) for flag, value in pairs if flag == "-M")
+
+
+def test_a_document_with_comments_is_shrunk_as_word_prints_it():
+    variables = geometry_variables(_commented_docx())
+    geometry = dict(value.removeprefix("geometry:").split("=") for flag, value in zip(variables[::2], variables[1::2], strict=True) if flag == "-V")
+    metadata = _metadata(variables)
+    # Word for Mac prints a Letter page with comments at 0.747 of its size
+    assert metadata["docx-comment-mag"] == "747"
+    scale = 0.747
+    assert float(geometry["paperwidth"].removesuffix("bp")) * scale == pytest.approx(612, abs=0.1)
+    assert float(geometry["paperheight"].removesuffix("bp")) * scale == pytest.approx(792, abs=0.1)
+    # The text keeps its width: the margins grow with the paper
+    width = float(geometry["paperwidth"].removesuffix("bp")) - float(geometry["left"].removesuffix("bp")) - float(geometry["right"].removesuffix("bp"))
+    assert width == pytest.approx(612 - 2 * 90, abs=0.1)
+    area = [float(value) for value in metadata["docx-comment-area"].split()]
+    assert area[2:] == [259.4, 792.0]
+    balloon = [float(value) for value in metadata["docx-comment-balloon"].split()]
+    assert balloon[1] == 232.8
+
+
+def test_a_document_without_comments_keeps_its_page():
+    variables = geometry_variables(_docx())
+    assert _metadata(variables) == {}
+    assert _as_dict(variables)["paperwidth"] == "8.5000in"

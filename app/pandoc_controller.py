@@ -91,6 +91,7 @@ FILTERS = {
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
+    "docx_comments_to_latex": f"{FILTER_BASE_PATH}/docx_comments_to_latex.lua",
     "docx_document_styles_to_latex": f"{FILTER_BASE_PATH}/docx_document_styles_to_latex.lua",
     "docx_toc_to_latex": f"{FILTER_BASE_PATH}/docx_toc_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
@@ -707,6 +708,9 @@ def _build_pandoc_command(
                 # First, so the filters below see an empty line as the blank
                 # paragraph it becomes and not as an empty one.
                 f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}",
+                # Prints the comments in balloons right of the text, not in it. See
+                # app/docx_page_geometry.py, which sets the page of a document with comments.
+                f"--lua-filter={FILTERS['docx_comments_to_latex']}",
                 # Must precede docx_colors_to_latex: it rewrites underline/strikeout that
                 # carry other formatting into ulem and strips highlight from inside them,
                 # before the colour filter turns those spans into \textcolor/\hl.

@@ -90,6 +90,17 @@ LINK_COLOR_NAME = "pdcLink"
 _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
 
 
+def _body_line(chain: list[Element], styles: Element, size: float, font: str | None) -> list[str]:
+    """The size and the line of the body text, with where a line starts and ends when the font is known."""
+    options = ["-M", f"docx-body-size={size:g}", "-M", f"docx-body-baseline={_baseline(chain, styles, size, font):.4g}"]
+    ascent = ascent_ratio(font)
+    if ascent is not None:
+        # The balloon of a comment starts at the top of its line, the line to it at the bottom
+        descent = line_ratio(font) - ascent
+        options += ["-M", f"docx-body-ascent={size * ascent:.4g}", "-M", f"docx-body-descent={size * descent:.4g}"]
+    return options
+
+
 def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
@@ -121,7 +132,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         # The class sets the sizes of its footnotes and the like from the nearest size it knows
         nearest = min(LATEX_FONT_SIZES, key=lambda points: abs(points - size / 2))
         options += ["-V", f"fontsize={nearest}pt"]
-        options += ["-M", f"docx-body-size={size / 2:g}", "-M", f"docx-body-baseline={_baseline(chain, styles, size / 2, font):.4g}"]
+        options += _body_line(chain, styles, size / 2, font)
     skip = _paragraph_skip(chain, styles)
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]

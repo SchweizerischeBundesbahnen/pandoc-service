@@ -152,6 +152,7 @@ COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/d
 COPY filters/docx_document_styles_to_latex.lua "/usr/local/share/pandoc/filters/docx_document_styles_to_latex.lua"
 COPY filters/docx_toc_to_latex.lua "/usr/local/share/pandoc/filters/docx_toc_to_latex.lua"
 COPY filters/docx_empty_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_empty_paragraphs_to_latex.lua"
+COPY filters/docx_comments_to_latex.lua "/usr/local/share/pandoc/filters/docx_comments_to_latex.lua"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/bin/sh", "-c", "./healthcheck.sh"]

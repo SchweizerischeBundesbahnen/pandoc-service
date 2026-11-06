@@ -309,6 +309,15 @@ def test_the_body_size_is_in_points_and_its_line_comes_from_its_font(font_metric
     assert (options["docx-body-size"], options["docx-body-baseline"]) == ("12", "15")
 
 
+def test_the_body_gets_where_its_line_starts_and_ends(font_metrics):
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("10.8", "4.2")
+
+
+def test_a_body_font_without_metrics_gets_no_ascent():
+    assert "docx-body-ascent" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
 def test_a_line_spacing_of_the_style_multiplies_the_line(font_metrics):
     body = BODY_TEXT.replace('<w:spacing w:before="180" w:after="180"/>', '<w:spacing w:before="180" w:after="180" w:line="360" w:lineRule="auto"/>')
     assert _options(_docx(DEFAULTS + NORMAL + body))["docx-body-baseline"] == "22.5"
