@@ -169,6 +169,17 @@ def test_between_two_headings_only_their_own_spaces_count(test_parameters: TestP
     assert "\\titlespacing*{\\subsection}" not in body, "a heading before body text keeps the spacing of the preamble"
 
 
+def test_a_heading_right_before_a_table_keeps_only_its_own_space_after(test_parameters: TestParameters):
+    """Word puts the larger of the space after a heading and before the next block between them, and a table has none."""
+    cell = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "Cell"]]'
+    table = f'Table ("",[],[]) (Caption Nothing []) [(AlignDefault,ColWidthDefault)] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{cell}]]] (TableFoot ("",[],[]) [])'
+    native = '[Header 1 ("one",[],[]) [Str "One"], ' + table + ', Header 1 ("two",[],[]) [Str "Two"], Div ("",[],[("custom-style","Body Text")]) [Para [Str "Text"]]]'
+    body = _latex(test_parameters.container, *HEADING_STYLES, SPACING[1], native=native)
+    body = body[body.index("\\begin{document}") :]
+    assert body.index("\\titlespacing*{\\section}{0pt}{18pt}{4pt}") < body.index("One") < body.index("\\titlespacing*{\\section}{0pt}{18pt}{9pt}")
+    assert body.count("\\titlespacing") == 2, "before Body Text a heading keeps the spacing of the preamble"
+
+
 WORD_HEADINGS = (
     "docx-body-paragraph-skip=9",
     "docx-body-descent=3.38",

@@ -85,7 +85,7 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 139,
      "lines": 270,
-     "mean_shift": 11.11,
+     "mean_shift": 11.38,
      "pages": [
       8,
       8
@@ -115,7 +115,7 @@
     "test_convert_live_doc_with_filter": {
      "any_page": 109,
      "lines": 201,
-     "mean_shift": 12.61,
+     "mean_shift": 12.95,
      "pages": [
       6,
       6
@@ -205,7 +205,7 @@
     "test_convert_product_specification": {
      "any_page": 139,
      "lines": 270,
-     "mean_shift": 11.11,
+     "mean_shift": 11.38,
      "pages": [
       8,
       8
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.1,
     "documents": 49,
-    "mean_shift": 7.66,
+    "mean_shift": 7.68,
     "pages_as_reference": 47,
     "same_page": 64.9
    }
@@ -586,7 +586,7 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 1.4,
+     "mean_shift": 1.09,
      "pages": [
       8,
       8
@@ -616,7 +616,7 @@
     "test_convert_live_doc_with_filter": {
      "any_page": 188,
      "lines": 201,
-     "mean_shift": 12.24,
+     "mean_shift": 11.81,
      "pages": [
       6,
       6
@@ -706,7 +706,7 @@
     "test_convert_product_specification": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 1.4,
+     "mean_shift": 1.09,
      "pages": [
       8,
       8
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 95.9,
     "documents": 49,
-    "mean_shift": 3.18,
+    "mean_shift": 3.16,
     "pages_as_reference": 47,
     "same_page": 93.7
    }

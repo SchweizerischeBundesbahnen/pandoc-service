@@ -752,6 +752,23 @@ local function heading_spacing(blocks)
       result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, after))
       result[#result + 1] = block
       result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, style.after))
+    elseif style then
+      -- Word puts the larger of the space after the heading and before the next block, a table none
+      local ahead = index + 1
+      while blocks[ahead] and block_spacing(blocks[ahead]) == TRANSPARENT do
+        ahead = ahead + 1
+      end
+      local following = blocks[ahead] and block_spacing(blocks[ahead])
+      local after = following and math.max(style.own_after, following.before)
+      if after and math.abs(after - style.after) > 0.01 then
+        local spacing = "\\titlespacing*{\\%s}{0pt}{%s}{%.4gpt}"
+        local command, before = HEADINGS[level].command, space_before(style)
+        result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, after))
+        result[#result + 1] = block
+        result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, style.after))
+      else
+        result[#result + 1] = block
+      end
     else
       result[#result + 1] = block
     end
