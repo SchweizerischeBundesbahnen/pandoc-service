@@ -6,11 +6,14 @@ section. This preprocessor runs *before* pandoc and writes each break of the bod
 as a sentinel in the text::
 
     <open><close>                                  a page break
-    <open>width,height,top,right,bottom,left<close>  a section break, in twips
+    <open>width,height,top,right,bottom,left,start<close>  a section break
 
-The numbers describe the page the break opens. A ``<w:sectPr>`` holds the page of
-the section it closes, so they come from the section after it. A continuous
-section break opens no page and is left alone.
+The numbers are twips and describe the page the break opens. ``start`` says which
+page that is: ``nextPage``, ``oddPage`` or ``evenPage``. A ``<w:sectPr>`` holds the
+page and the start of the section it closes, so they come from the section after
+it. A continuous section break opens no page and is left alone. ``nextColumn``
+moves to the next column, which is the next page only when the closed section has
+one column: the PDF sets multiple columns as one, so otherwise no page opens.
 
 The companion Lua filter (``filters/docx_page_breaks_to_latex.lua``) turns the
 sentinels into LaTeX. The Private-Use-Area delimiters never collide with real
@@ -54,14 +57,16 @@ _BR_TAG = f"{{{W_NS}}}br"
 _TBL_TAG = f"{{{W_NS}}}tbl"
 _SDT_TAG = f"{{{W_NS}}}sdt"
 _TYPE_TAG = f"{{{W_NS}}}type"
+_COLS_TAG = f"{{{W_NS}}}cols"
+_NUM_ATTR = f"{{{W_NS}}}num"
 _TYPE_ATTR = f"{{{W_NS}}}type"
 _VAL_ATTR = f"{{{W_NS}}}val"
 _SPACE_ATTR = "{http://www.w3.org/XML/1998/namespace}space"
 
 
-def _section_sentinel(page: Mapping[str, int]) -> str:
+def _section_sentinel(page: Mapping[str, int], start: str) -> str:
     numbers = ",".join(str(page[name]) for name in ("paperwidth", "paperheight", "top", "right", "bottom", "left"))
-    return f"{SENTINEL_OPEN}{numbers}{SENTINEL_CLOSE}"
+    return f"{SENTINEL_OPEN}{numbers},{start}{SENTINEL_CLOSE}"
 
 
 def _is_page_break(element: ET.Element) -> bool:
@@ -97,15 +102,25 @@ def _mark_page_breaks(para: ET.Element) -> bool:
     return changed
 
 
-def _opens_a_page(section: ET.Element | None) -> bool:
-    """Whether the section starts on a page of its own. Word's default is the next page."""
-    start = section.find(_TYPE_TAG) if section is not None else None
-    return start is None or start.get(_VAL_ATTR) != "continuous"
+def _has_columns(section: ET.Element | None) -> bool:
+    """Whether the section sets its text in more than one column."""
+    columns = section.find(_COLS_TAG) if section is not None else None
+    number = columns.get(_NUM_ATTR, "1") if columns is not None else "1"
+    return number.isdecimal() and int(number) > 1
 
 
-def _mark_section_break(para: ET.Element, section: ET.Element | None) -> None:
+def _page_start(closed: ET.Element | None, opened: ET.Element | None) -> str | None:
+    """Which page the opened section starts on, or None when it opens no page. Word's default is the next page."""
+    start_element = opened.find(_TYPE_TAG) if opened is not None else None
+    start = start_element.get(_VAL_ATTR) if start_element is not None else None
+    if start == "continuous" or (start == "nextColumn" and _has_columns(closed)):
+        return None
+    return start if start in ("oddPage", "evenPage") else "nextPage"
+
+
+def _mark_section_break(para: ET.Element, section: ET.Element | None, start: str) -> None:
     run = ET.SubElement(para, _R_TAG)
-    run.append(_sentinel_text(_section_sentinel(docx_page_geometry.section_page(section))))
+    run.append(_sentinel_text(_section_sentinel(docx_page_geometry.section_page(section), start)))
 
 
 def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
@@ -131,8 +146,9 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
         changed = _mark_page_breaks(block) or changed
         if block.find(f"{_PPR_TAG}/{_SECTPR_TAG}") is not None:
             section_index += 1
-            if _opens_a_page(sections[section_index]):
-                _mark_section_break(block, sections[section_index])
+            start = _page_start(sections[section_index - 1], sections[section_index])
+            if start is not None:
+                _mark_section_break(block, sections[section_index], start)
                 if lone_page_break is not None:
                     body.remove(lone_page_break)
                 changed = True

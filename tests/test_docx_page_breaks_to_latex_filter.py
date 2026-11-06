@@ -23,8 +23,10 @@ from tests.test_container import TestParameters
 PANDOC_PATH = "/usr/local/bin/pandoc"
 FILTER_PATH = "/usr/local/share/pandoc/filters/docx_page_breaks_to_latex.lua"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-PAGE_BREAK = "\\ue020\\ue021"
-LANDSCAPE = "\\ue02016838,11906,1440,1440,1440,1440\\ue021"
+OPEN = "\\ue020"
+CLOSE = "\\ue021"
+PAGE_BREAK = f"{OPEN}{CLOSE}"
+LANDSCAPE = f"{OPEN}16838,11906,1440,1440,1440,1440,nextPage{CLOSE}"
 
 
 def _native_to_latex(container, native: str) -> str:
@@ -40,7 +42,7 @@ def _native_to_latex(container, native: str) -> str:
 
 def _str(text: str) -> str:
     """A pandoc native Str. Haskell escapes the code points as decimals."""
-    return 'Str "' + text.replace("\\ue020", "\\57376\\&").replace("\\ue021", "\\57377\\&") + '"'
+    return 'Str "' + text.replace(OPEN, "\\57376\\&").replace(CLOSE, "\\57377\\&") + '"'
 
 
 def test_page_break_becomes_clearpage(test_parameters: TestParameters):
@@ -103,10 +105,22 @@ def test_page_setup_of_a_section_break_goes_after_the_div(test_parameters: TestP
 
 def test_section_break_without_room_for_text_only_breaks(test_parameters: TestParameters):
     """The sentinel is document text, so numbers LaTeX cannot set must not reach it."""
-    for numbers in ("100,100,1440,1440,1440,1440", "999999,11906,0,0,0,0", "1,2"):
-        marker = f"\\ue020{numbers}\\ue021"
+    for numbers in ("100,100,1440,1440,1440,1440,nextPage", "999999,11906,0,0,0,0,nextPage", "1,2,nextPage", "16838,11906,0,0,0,0,unknown", "16838,11906,0,0,0,0"):
+        marker = f"{OPEN}{numbers}{CLOSE}"
         flat = _native_to_latex(test_parameters.container, f'[ Para [ Str "before" ], Para [ {_str(marker)} ] ]')
         assert flat == "before \\clearpage{}", flat
+
+
+def test_odd_section_adds_an_empty_page_on_an_even_number(test_parameters: TestParameters):
+    marker = f"{OPEN}16838,11906,1440,1440,1440,1440,oddPage{CLOSE}"
+    flat = _native_to_latex(test_parameters.container, f'[ Para [ Str "before" ], Para [ {_str(marker)} ] ]')
+    assert "\\clearpage{} \\ifodd\\value{page}\\else\\null\\clearpage\\fi\\pdfpagewidth" in flat
+
+
+def test_section_start_stays_when_the_numbers_are_no_page(test_parameters: TestParameters):
+    marker = f"{OPEN}100,100,1440,1440,1440,1440,evenPage{CLOSE}"
+    flat = _native_to_latex(test_parameters.container, f'[ Para [ Str "before" ], Para [ {_str(marker)} ] ]')
+    assert flat == "before \\clearpage{} \\ifodd\\value{page}\\null\\clearpage\\fi"
 
 
 def test_sentinel_outside_the_body_paragraphs_goes(test_parameters: TestParameters):
@@ -147,6 +161,26 @@ def test_page_breaks_reach_the_pdf(test_parameters: TestParameters):
     pages = _pages(test_parameters, document)
     assert len(pages) == 2
     assert "one" in pages[0].extract_text()
+    assert "two" in pages[1].extract_text()
+
+
+def _document_with_section_start(start: WD_SECTION):
+    document = Document()
+    document.add_paragraph("one")
+    document.add_section(start)
+    document.add_paragraph("two")
+    return document
+
+
+def test_odd_section_starts_on_an_odd_page(test_parameters: TestParameters):
+    pages = _pages(test_parameters, _document_with_section_start(WD_SECTION.ODD_PAGE))
+    assert len(pages) == 3
+    assert "two" in pages[2].extract_text()
+
+
+def test_even_section_starts_on_an_even_page(test_parameters: TestParameters):
+    pages = _pages(test_parameters, _document_with_section_start(WD_SECTION.EVEN_PAGE))
+    assert len(pages) == 2
     assert "two" in pages[1].extract_text()
 
 

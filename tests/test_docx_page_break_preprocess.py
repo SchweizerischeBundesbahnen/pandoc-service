@@ -11,7 +11,7 @@ PAGE_BREAK_PARAGRAPH = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
 TEXT_PARAGRAPH = "<w:p><w:r><w:t>text</w:t></w:r></w:p>"
 A4_PORTRAIT = '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1000" w:right="1100" w:bottom="1200" w:left="1300"/>'
 A4_LANDSCAPE = '<w:pgSz w:w="16838" w:h="11906"/><w:pgMar w:top="1400" w:right="1500" w:bottom="1600" w:left="1700"/>'
-LANDSCAPE_SENTINEL = f"{SENTINEL_OPEN}16838,11906,1400,1500,1600,1700{SENTINEL_CLOSE}"
+LANDSCAPE_SENTINEL = f"{SENTINEL_OPEN}16838,11906,1400,1500,1600,1700,nextPage{SENTINEL_CLOSE}"
 
 
 def _section_paragraph(page: str, start: str = "") -> str:
@@ -101,6 +101,25 @@ def test_section_type_of_the_closed_section_does_not_count():
     body = _section_paragraph(A4_PORTRAIT, '<w:type w:val="continuous"/>') + f"<w:sectPr>{A4_LANDSCAPE}</w:sectPr>"
     xml, _ = rewrite_part(_document(body))
     assert _paragraph_texts(xml) == [LANDSCAPE_SENTINEL]
+
+
+def test_odd_and_even_sections_keep_their_start():
+    for start in ("oddPage", "evenPage"):
+        body = _section_paragraph(A4_PORTRAIT) + f'<w:sectPr><w:type w:val="{start}"/>{A4_LANDSCAPE}</w:sectPr>'
+        xml, _ = rewrite_part(_document(body))
+        assert _paragraph_texts(xml) == [f"{SENTINEL_OPEN}16838,11906,1400,1500,1600,1700,{start}{SENTINEL_CLOSE}"]
+
+
+def test_next_column_after_one_column_is_the_next_page():
+    body = _section_paragraph(A4_PORTRAIT) + f'<w:sectPr><w:type w:val="nextColumn"/>{A4_LANDSCAPE}</w:sectPr>'
+    xml, _ = rewrite_part(_document(body))
+    assert _paragraph_texts(xml) == [LANDSCAPE_SENTINEL]
+
+
+def test_next_column_after_columns_opens_no_page():
+    columns = '<w:cols w:num="2"/>'
+    document = _document(_section_paragraph(A4_PORTRAIT + columns) + f'<w:sectPr><w:type w:val="nextColumn"/>{A4_PORTRAIT}</w:sectPr>')
+    assert rewrite_part(document) == (document, False)
 
 
 def test_paragraph_in_a_table_cell_is_left_alone():

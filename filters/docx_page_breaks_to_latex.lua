@@ -6,8 +6,9 @@
 -- them into the text as sentinels before pandoc reads the document:
 --
 --   Str "\u{E020}\u{E021}"                 a page break
---   Str "\u{E020}w,h,t,r,b,l\u{E021}"      a section break, in twips:
---                                          the page and margins it opens
+--   Str "\u{E020}w,h,t,r,b,l,start\u{E021}"  a section break: the page and
+--                                          margins it opens in twips, and
+--                                          nextPage, oddPage or evenPage
 --
 -- This filter replaces a sentinel with \clearpage where it stands. A
 -- section break then sets the page size and the margins of the next page,
@@ -15,6 +16,9 @@
 -- body block holding the break: docx_paragraphs_to_latex wraps a formatted
 -- paragraph in a TeX group, which would undo it. The sentinel is document
 -- text, so its numbers are checked and only they reach the raw LaTeX.
+--
+-- An oddPage or evenPage section adds an empty page when the next page
+-- has the wrong number, as Word does.
 --
 -- LaTeX ignores \clearpage on an empty page, where Word starts one more
 -- page. A break with nothing before it on its page gets \null first.
@@ -29,11 +33,19 @@
 
 local OPEN = "\u{E020}"
 local CLOSE = "\u{E021}"
-local SENTINEL_PATTERN = OPEN .. "([%d,]*)" .. CLOSE
+local SENTINEL_PATTERN = OPEN .. "([%w,]*)" .. CLOSE
 
 -- More than Word's largest page, and small enough for a TeX dimension.
 local MAX_TWIPS = 99999
 local TWIPS_PER_INCH = 1440
+
+-- What a section start adds after \clearpage. This is a trust boundary: only
+-- the literal values of this table reach the output.
+local PAGE_STARTS = {
+  nextPage = "",
+  oddPage = "\\ifodd\\value{page}\\else\\null\\clearpage\\fi",
+  evenPage = "\\ifodd\\value{page}\\null\\clearpage\\fi",
+}
 
 local BLANK_INLINES = {
   Space = true,
@@ -51,9 +63,9 @@ local function inches(twips)
   return string.format("%.4fin", twips / TWIPS_PER_INCH)
 end
 
--- The LaTeX which sets up the page a section break opens, or "" when the
--- numbers describe no page LaTeX can set.
-local function page_setup(numbers)
+-- The LaTeX which sets the size and margins of a page, or "" when the numbers
+-- describe no page LaTeX can set.
+local function page_geometry(numbers)
   local w, h, top, right, bottom, left = numbers:match("^(%d+),(%d+),(%d+),(%d+),(%d+),(%d+)$")
   if not w then
     return ""
@@ -70,10 +82,21 @@ local function page_setup(numbers)
   )
 end
 
-local function break_tex(numbers)
+-- The LaTeX which sets up the page a section break opens, or "" for a sentinel
+-- which is no section break.
+local function page_setup(marker)
+  local numbers, start = marker:match("^([%d,]*),(%a+)$")
+  local page_start = PAGE_STARTS[start]
+  if not page_start then
+    return ""
+  end
+  return page_start .. page_geometry(numbers)
+end
+
+local function break_tex(marker)
   local before = on_empty_page and "\\null" or ""
   on_empty_page = true
-  local setup = page_setup(numbers)
+  local setup = page_setup(marker)
   if setup ~= "" then
     pending_page_setup = setup
   end
@@ -92,7 +115,7 @@ local function expand(str)
   local result = {}
   local position = 1
   while true do
-    local first, last, numbers = text:find(SENTINEL_PATTERN, position)
+    local first, last, marker = text:find(SENTINEL_PATTERN, position)
     local before = text:sub(position, (first or 0) - 1)
     if before ~= "" then
       on_empty_page = false
@@ -101,7 +124,7 @@ local function expand(str)
     if not first then
       return result
     end
-    result[#result + 1] = break_tex(numbers)
+    result[#result + 1] = break_tex(marker)
     position = last + 1
   end
 end
