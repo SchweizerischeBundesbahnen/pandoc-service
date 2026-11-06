@@ -121,3 +121,10 @@ def test_a_caption_above_a_table_takes_the_space_after_of_its_style(test_paramet
     latex = _native_latex(test_parameters.container, native)
     assert latex.count("\\vspace{\\dimexpr\\pdcCaptionAfter-\\parskip\\relax}") == 1, "only the caption right above the table"
     assert latex.index("pdcCaptionAfter") > latex.index("Other")
+
+
+def test_a_cell_of_compact_paragraphs_ends_as_deep_as_its_row(test_parameters: TestParameters):
+    """The last line of a cell of several lines stands as far above the bottom of the row as a single line."""
+    latex = _latex(test_parameters.container, "cc=1")
+    assert latex.count("\\ifdefined\\pdcCompactCellDepth\\pdcCompactCellDepth\\fi") == 4
+    assert "\\ifdefined\\pdcCompactCellBottom\\vspace{\\pdcCompactCellBottom}\\fi" in latex

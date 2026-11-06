@@ -250,14 +250,19 @@ end
 -- the cell and the space of the Normal style below it.
 local PLAIN_CELL_SPACE = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi"
 
-local function add_plain_cell_space(rows)
+-- A cell of Compact paragraphs ends as deep as the row: the last line of a cell
+-- of several lines stands as far above the bottom of the row as a single line.
+local COMPACT_CELL_DEPTH = "\\ifdefined\\pdcCompactCellDepth\\pdcCompactCellDepth\\fi"
+
+local function add_plain_cell_space(rows, raw)
+  raw = raw or PLAIN_CELL_SPACE
   for _, row in ipairs(rows) do
     for _, cell in ipairs(row.cells) do
       local last = cell.contents[#cell.contents]
       if last == nil then
-        cell.contents = { pandoc.Plain({ pandoc.RawInline("latex", PLAIN_CELL_SPACE) }) }
+        cell.contents = { pandoc.Plain({ pandoc.RawInline("latex", raw) }) }
       elseif last.t == "Plain" or last.t == "Para" then
-        last.content:insert(pandoc.RawInline("latex", PLAIN_CELL_SPACE))
+        last.content:insert(pandoc.RawInline("latex", raw))
       end
     end
   end
@@ -548,13 +553,14 @@ function table_pass.Table(tbl)
   end
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
-  if not layout.cc then
-    add_plain_cell_space(tbl.head.rows)
+  local cell_end = not layout.cc and PLAIN_CELL_SPACE or COMPACT_CELL_DEPTH
+  do
+    add_plain_cell_space(tbl.head.rows, cell_end)
     for _, body in ipairs(tbl.bodies) do
-      add_plain_cell_space(body.head)
-      add_plain_cell_space(body.body)
+      add_plain_cell_space(body.head, cell_end)
+      add_plain_cell_space(body.body, cell_end)
     end
-    add_plain_cell_space(tbl.foot.rows)
+    add_plain_cell_space(tbl.foot.rows, cell_end)
     modified = true
   end
 
@@ -641,7 +647,7 @@ function table_pass.Table(tbl)
     after[#after + 1] = "\\endgroup"
   end
   if layout.cc then
-    after[#after + 1] = "\\endgroup"
+    after[#after + 1] = "\\ifdefined\\pdcCompactCellBottom\\vspace{\\pdcCompactCellBottom}\\fi\\endgroup"
   end
   if grid then
     after[#after + 1] = "\\endgroup"

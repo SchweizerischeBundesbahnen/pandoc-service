@@ -121,6 +121,11 @@ local function table_preamble(meta, lines)
       -- The stretch puts the share of the space of a row above its first line, Word half of it: the table starts higher
       local raise = (baseline - descent) * space / baseline - space / 2
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellRaise}{%.4gbp}", raise)
+      -- Word keeps the space after the paragraph of the last cell below the table, of which the
+      -- stretched row holds a share; the last line of each cell reaches as deep as the row
+      local stretched = descent * (baseline + space) / baseline
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellBottom}{%.4gbp}", descent + space / 2 - stretched)
+      lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}\\makeatother"
     end
   end
 end
@@ -176,6 +181,9 @@ local function body_preamble(meta, lines)
       lines[#lines + 1] = "\\lineskip=0pt\\lineskiplimit=0pt"
       -- A table starts below the descent of the line before it, which TeX takes from its letters
       lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
+      -- longtable leaves the depth of its last row below the line, not in \\prevdepth: the line after it
+      -- would stand a full line of the body below that, where Word sets it below the descent of the row
+      lines[#lines + 1] = "\\AddToHook{env/longtable/after}{\\par\\prevdepth=\\dp\\strutbox}"
     end
   end
   if points(meta[DESCENT]) ~= nil then
@@ -496,7 +504,8 @@ local function deep_heading(header)
   if header.identifier:match("^[%w_%-:.]+$") then
     inlines[#inlines + 1] = pandoc.RawInline("latex", "\\label{" .. header.identifier .. "}")
   end
-  return pandoc.Plain(inlines)
+  -- A heading sets its own space: the space between paragraphs passes it by
+  return pandoc.Div({ pandoc.Plain(inlines) }, { ["pdc-style"] = "Heading" })
 end
 
 -- An equation of Word is a centred paragraph. TeX opens an empty line above
@@ -547,7 +556,8 @@ local function title_div(div)
     return section_div(div)
   end
   if caption_style ~= nil and div.attributes["custom-style"] == CAPTION_DIV then
-    return caption_div(div)
+    -- A caption sets its own space: the space between paragraphs passes it by
+    return pandoc.Div(caption_div(div), { ["pdc-style"] = "Caption" })
   end
   if title_style == nil or div.attributes["custom-style"] ~= "Title" then
     return nil
@@ -557,7 +567,7 @@ local function title_div(div)
     blocks[#blocks + 1] = block
   end
   blocks[#blocks + 1] = pandoc.RawBlock("latex", string.format("\\par\\endgroup\\vspace{%gpt}", below_title(title_style, false)))
-  return blocks
+  return pandoc.Div(blocks, { ["pdc-style"] = "Title" })
 end
 
 local function add_header_includes(meta, lines)
@@ -588,9 +598,20 @@ local paragraph_spacing = { ids = {}, names = {} }
 -- The spacing of a block which is a paragraph of the body, or nil: a paragraph
 -- without a style is Normal; the reader keeps another style as a Div, and
 -- docx_paragraphs_to_latex the style of an aligned or indented one.
+-- A table has no space before or after it: Word puts the space of the paragraph next to it
+local TABLE_SPACING = { before = 0, after = 0 }
+-- Raw LaTeX between blocks, as the groups around a table, which keeps the paragraph before
+local TRANSPARENT = {}
+
 local function block_spacing(block)
   if block.t == "Para" or block.t == "Plain" then
     return paragraph_spacing.ids.Normal
+  end
+  if block.t == "Table" or (block.t == "RawBlock" and block.text:find("\\begin{longtable}", 1, true)) then
+    return TABLE_SPACING
+  end
+  if block.t == "RawBlock" then
+    return TRANSPARENT
   end
   if block.t == "Div" then
     local id = block.attributes["pdc-style"]
@@ -616,6 +637,10 @@ local function paragraph_gaps(blocks)
   local result, previous = {}, nil
   for _, block in ipairs(blocks) do
     local spacing = block_spacing(block)
+    if spacing == TRANSPARENT then
+      result[#result + 1] = block
+      goto next_block
+    end
     result[#result + 1] = gap(previous, spacing)
     if spacing and block.t == "Div" and block.attributes["pdc-style"] == nil then
       -- The paragraphs of one style the reader groups into one Div: each one its gap
@@ -630,6 +655,7 @@ local function paragraph_gaps(blocks)
     end
     result[#result + 1] = block
     previous = spacing
+    ::next_block::
   end
   return result
 end

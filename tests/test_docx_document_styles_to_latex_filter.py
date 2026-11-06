@@ -218,6 +218,27 @@ def test_paragraphs_of_one_style_in_one_div_get_their_gap_each(test_parameters: 
     assert "One\n\n\\vspace{3bp}\n\nTwo" in body
 
 
+def test_a_table_ends_as_deep_as_word_sets_its_last_row(test_parameters: TestParameters):
+    """A stretched row reaches 3.4 * 18.25 / 14.65 = 4.24 deep, Word's 3.4 + 1.8: the rest goes below the table."""
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", "docx-table-cell-space=3.6"))
+    assert "\\AddToHook{env/longtable/after}{\\par\\prevdepth=\\dp\\strutbox}" in preamble
+    assert "\\newcommand{\\pdcCompactCellBottom}{0.9645bp}" in preamble
+    assert "\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}" in preamble
+
+
+def test_a_paragraph_after_a_table_gets_only_its_own_space_before(test_parameters: TestParameters):
+    """A table has no space of its own: Normal after it starts right below, a table after Normal 10pt below."""
+    cell = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "cell"]]'
+    body = f'TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{cell}]]'
+    table = f'Table ("",[],[]) (Caption Nothing []) [(AlignDefault,ColWidthDefault)] (TableHead ("",[],[]) []) [{body}] (TableFoot ("",[],[]) [])'
+    native = f'[{table}, Para [Str "After"], {table}]'
+    body = _latex(test_parameters.container, *SPACING, native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    after = body.index("After")
+    assert body.index("\\end{longtable}") < body.index("\\vspace{-9bp}") < after
+    assert after < body.index("\\vspace{1bp}") < body.index("\\begin{longtable}", after)
+
+
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
     assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble
