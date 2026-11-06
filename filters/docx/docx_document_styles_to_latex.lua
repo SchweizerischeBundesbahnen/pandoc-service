@@ -397,8 +397,9 @@ local function below_title(style, toc)
   return toc and after or after - body_skip
 end
 
--- The LaTeX which switches to the font, size, weight, shape and colour of a style.
-local function font_switch(style, family_macro, lines)
+-- The LaTeX which switches to the font, size, weight, shape and colour of a style. With colour_apart the
+-- colour comes back on its own, the second result.
+local function font_switch(style, family_macro, lines, colour_apart)
   local parts = { "\\normalfont" }
   if style.font then
     lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{%s}", family_macro, style.font)
@@ -417,10 +418,11 @@ local function font_switch(style, family_macro, lines)
   if style.italic then
     parts[#parts + 1] = "\\itshape"
   end
-  if style.color then
-    parts[#parts + 1] = string.format("\\color[HTML]{%s}", style.color)
+  local colour = style.color and string.format("\\color[HTML]{%s}", style.color) or ""
+  if not colour_apart then
+    parts[#parts + 1] = colour
   end
-  return table.concat(parts)
+  return table.concat(parts), colour
 end
 
 -- Whether the document has a heading below level 5, which pandoc writes as a plain paragraph.
@@ -458,7 +460,9 @@ local function headings_preamble(meta, lines)
     local style = style_fields(meta[STYLE_PREFIX .. heading.style], points(meta[SKIP]))
     if style and (deep_used or not heading.deep) then
       packages()
-      local switch = font_switch(style, "docxHeadingFont" .. heading.letter, lines)
+      -- The colour goes inside the line of the heading: in the format, before the line, it leaves a colour
+      -- special on the page between the heading and what follows, where TeX may then break the page
+      local switch, colour = font_switch(style, "docxHeadingFont" .. heading.letter, lines, true)
       if style.number then
         -- The number of the numbering of the style, in its hanging indent, as Word sets it
         numbered = level
@@ -467,9 +471,9 @@ local function headings_preamble(meta, lines)
         if style.number_hang == 0 then
           label = string.format("\\the%s\\quad", heading.command)
         end
-        lines[#lines + 1] = string.format("\\titleformat{\\%s}[hang]{%s%s}{%s}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align], label)
+        lines[#lines + 1] = string.format("\\titleformat{\\%s}[hang]{%s%s}{%s%s}{0pt}{%s}", heading.command, switch, TITLESEC_ALIGN[style.align], colour, label, colour)
       else
-        lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
+        lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{%s}", heading.command, switch, TITLESEC_ALIGN[style.align], colour)
       end
       lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%s}{%.4gpt}", heading.command, space_before(style), style.after)
     end

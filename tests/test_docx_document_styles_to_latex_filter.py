@@ -123,7 +123,8 @@ def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParame
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=font:DejaVu Sans,size:20,line:24.4,bold:false,italic:true,color:0F4761,before:18,after:9,align:center"))
     assert "\\usepackage{titlesec}" in preamble
     assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{DejaVu Sans}" in preamble
-    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\color[HTML]{0F4761}\\filcenter}{}{0pt}{}" in preamble
+    # The colour inside the line of the heading: before it, its special would let TeX break the page after the heading
+    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\filcenter}{}{0pt}{\\color[HTML]{0F4761}}" in preamble
     assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
 
 
@@ -142,7 +143,7 @@ def test_a_heading_below_level_5_gets_a_level_of_its_own(test_parameters: TestPa
 
 def test_a_deep_heading_takes_the_format_of_its_style(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading7=size:12,italic:true,color:595959,before:2,after:0", native=DEEP_HEADINGS))
-    assert "\\titleformat{\\pdcHeadingG}[block]{\\normalfont\\fontsize{12bp}{14.4bp}\\selectfont\\itshape\\color[HTML]{595959}\\filright}{}{0pt}{}" in preamble
+    assert "\\titleformat{\\pdcHeadingG}[block]{\\normalfont\\fontsize{12bp}{14.4bp}\\selectfont\\itshape\\filright}{}{0pt}{\\color[HTML]{595959}}" in preamble
     assert "\\titlespacing*{\\pdcHeadingG}{0pt}{2pt}{0pt}" in preamble
 
 
@@ -323,6 +324,11 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     assert "\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}" in _preamble(latex)
     body = " ".join(latex[latex.index("\\begin{document}") :].split())
     assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
+
+
+def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,color:0F4761,number:{1:arabic},numberhang:21.6"))
+    assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\color[HTML]{0F4761}\\makebox[21.6pt][l]{\\thesection}}{0pt}{\\color[HTML]{0F4761}}" in preamble
 
 
 def test_a_numbered_heading_style_sets_its_number_in_its_hanging_indent(test_parameters: TestParameters):
