@@ -1,4 +1,4 @@
-"""Visual tests for inline CSS that filters/inline_styles.lua carries into a DOCX.
+"""Visual tests for inline CSS that filters/html/inline_styles.lua carries into a DOCX.
 
 Each test converts HTML to DOCX through the service, the DOCX to PDF, and
 compares the pages with the references (see tests/visual.py). The PDF is drawn

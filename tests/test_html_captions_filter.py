@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/html_captions.lua``.
+"""Integration tests for ``filters/html/html_captions.lua``.
 
 Runs the real ``pandoc`` binary (html -> docx) with the filter and inspects the
 paragraph styles in the produced ``document.xml``. The filter marks a paragraph
@@ -21,7 +21,7 @@ import pytest
 _PANDOC = shutil.which("pandoc")
 pytestmark = pytest.mark.skipif(_PANDOC is None, reason="pandoc binary not available")
 
-_FILTER = "filters/html_captions.lua"
+_FILTER = "filters/html/html_captions.lua"
 
 
 def _styles_by_text(body: str) -> dict[str, str | None]:

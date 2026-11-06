@@ -1,6 +1,6 @@
 """With preserved table styles, a table nested in a cell stays a table; #280.
 
-filters/inline_styles.lua rebuilds a styled table as raw OOXML, and wrote any table in one of its cells
+filters/html/inline_styles.lua rebuilds a styled table as raw OOXML, and wrote any table in one of its cells
 as plain text.
 """
 

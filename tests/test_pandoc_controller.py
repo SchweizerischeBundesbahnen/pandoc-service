@@ -1830,3 +1830,17 @@ def test_a_docx_filter_named_where_it_lay_before_its_folder_still_runs():
     """The docx filters moved to a folder of their own: a request naming the old place gets the new one."""
     old = "--lua-filter=/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
     assert _validate_pandoc_options([old]) == ["--lua-filter=/usr/local/share/pandoc/filters/docx/docx_tables_to_latex.lua"]
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("html_lists.lua", "html/html_lists.lua"),
+        ("page_orientation.lua", "html/page_orientation.lua"),
+        ("pagebreak.lua", "common/pagebreak.lua"),
+    ],
+)
+def test_a_filter_named_where_it_lay_before_the_folder_of_its_format_still_runs(old: str, new: str):
+    """The filters of HTML and those for any format moved to folders of their own: the old place still names them."""
+    base = "--lua-filter=/usr/local/share/pandoc/filters/"
+    assert _validate_pandoc_options([base + old]) == [base + new]

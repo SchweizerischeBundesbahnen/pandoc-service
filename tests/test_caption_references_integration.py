@@ -5,7 +5,7 @@ Polarion caption sequences are arbitrary names — a German instance emits
 ``<span data-sequence="Tabelle" ...>`` and the paragraph label reads
 "Tabelle 1 ...", which does NOT start with "Table". The old text-prefix
 heuristic silently produced an empty Table of Tables for such documents.
-The current pipeline (filters/html_captions.lua marks captions by the
+The current pipeline (filters/html/html_captions.lua marks captions by the
 Polarion caption span; docx_references_post_process keys on the Caption style)
 must handle them like any other caption.
 

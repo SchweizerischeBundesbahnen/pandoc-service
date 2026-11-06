@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/html_trailing_line_breaks.lua``.
+"""Integration tests for ``filters/html/html_trailing_line_breaks.lua``.
 
 Converts HTML to DOCX through the pandoc-service container, which applies the
 filter to every HTML to DOCX conversion, and reads the paragraphs of the

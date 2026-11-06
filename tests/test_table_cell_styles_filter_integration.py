@@ -1,5 +1,5 @@
 """End-to-end integration tests for the table-cell-styling section of
-filters/inline_styles.lua.
+filters/html/inline_styles.lua.
 
 These tests convert HTML → DOCX through the pandoc-service container (which
 applies the Lua filter automatically for HTML→DOCX conversions), then inspect

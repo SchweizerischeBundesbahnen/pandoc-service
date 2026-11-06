@@ -21,7 +21,7 @@ from the PNG/JPEG/GIF/BMP header (no image library needed). Anything we can't
 size — a non-``data:`` ``src`` (http/attachment reference), an SVG data URI
 (handled earlier by :mod:`app.svg_processor`, which already sets a width), an
 unknown format, or an image that already carries a ``width``/``height`` attribute
-or CSS ``width``/``height`` (handled by ``filters/inline_styles.lua``) — is left
+or CSS ``width``/``height`` (handled by ``filters/html/inline_styles.lua``) — is left
 untouched.
 
 The transformation is only applied for ``html -> docx`` conversions.
@@ -103,7 +103,7 @@ def size_image(img: html.HtmlElement) -> bool:
         return False
 
     style = _parse_style(img.get("style"))
-    # An explicit CSS width/height is handled by filters/inline_styles.lua; only
+    # An explicit CSS width/height is handled by filters/html/inline_styles.lua; only
     # the "no intrinsic size given" case is ours.
     if "width" in style or "height" in style:
         return False
