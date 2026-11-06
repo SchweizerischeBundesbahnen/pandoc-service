@@ -30,13 +30,14 @@ def _rewrite_body_part(
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec],
     text_width_twips: int,
     style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
+    toc_styles: frozenset[str] = frozenset(),
 ) -> tuple[bytes, bool]:
     """Run the colour → paragraph → list → table rewrites over one body part,
     collecting any synthetic styles into the shared dicts.  Returns
     (new_xml, changed)."""
     changed = False
     if has_styles:
-        rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors)
+        rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_styles)
         if color_used:
             xml, changed = rewritten, True
             color_styles.update(color_used)
@@ -89,9 +90,10 @@ def preprocess(docx_bytes: bytes) -> bytes:
     text_width_twips = docx_page_geometry.package_text_width_twips(entries)
     # The colors of the character styles (a link's Hyperlink style), read once for every part
     style_colors = docx_color_pre_process.character_style_colors(entries[STYLES_PART]) if has_styles else None
+    toc_styles = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, style_colors)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, style_colors, toc_styles)
         changed = changed or part_changed
 
     if not changed:

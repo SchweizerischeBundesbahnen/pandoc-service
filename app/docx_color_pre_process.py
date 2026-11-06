@@ -24,6 +24,9 @@ Limitations
   colored by the reference template's Hyperlink style would otherwise come
   out black. A direct property of the run, ``auto`` included, wins over the
   style's. Colors set by a *paragraph* style are not picked up.
+* A character style based on ``Verbatim Char`` gives its color to no run:
+  pandoc reads such a run as code through that style, and a synthetic style
+  in its place would set a highlighted token in the font of the text.
 * If a run already carries an ``<w:rStyle>``, that reference is replaced
   by the synthetic one. The original style's name is therefore not
   visible to pandoc; its character properties were going to be dropped
@@ -33,6 +36,7 @@ Limitations
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
@@ -40,7 +44,7 @@ from xml.etree import ElementTree as ET
 from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +80,9 @@ def preprocess(docx_bytes: bytes) -> bytes:
     needed_styles: dict[str, _StyleSpec] = {}
 
     style_colors = character_style_colors(entries[STYLES_PART])
+    toc_styles = table_of_contents_styles(entries[STYLES_PART])
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_styles = rewrite_part(entries[part], style_colors)
+        rewritten, part_styles = rewrite_part(entries[part], style_colors, toc_styles)
         if part_styles:
             entries[part] = rewritten
             needed_styles.update(part_styles)
@@ -229,52 +234,126 @@ class StyleColors:
 
 _STYLE_TAG = f"{{{W_NS}}}style"
 _BASED_ON_TAG = f"{{{W_NS}}}basedOn"
+_NAME_TAG = f"{{{W_NS}}}name"
 _TYPE_ATTR = f"{{{W_NS}}}type"
 _STYLE_ID_ATTR = f"{{{W_NS}}}styleId"
+_GENERATED_STYLE_PREFIX = STYLE_PREFIX + SEGMENT_SEPARATOR
+# pandoc marks a run as code when this name is on the basedOn chain of its style, whatever the case
+_CODE_STYLE_NAME = "verbatim char"
+# Word translates the id of a built-in style (Verzeichnis1, TM1), but never its name
+_TOC_STYLE_NAME = re.compile(r"toc [1-9]|table of figures")
+
+
+@dataclass(frozen=True, slots=True)
+class _StyleProps:
+    """What a character style says about its colors.
+
+    ``None`` leaves a property to the style it is based on; ``""`` clears it,
+    which is how ``auto`` and ``none`` read here.
+    """
+
+    fg: str | None = None
+    bg: str | None = None
+    highlight: str | None = None
+    code: bool = False
+
+    def over(self, parent: _StyleProps) -> _StyleProps:
+        return _StyleProps(
+            parent.fg if self.fg is None else self.fg,
+            parent.bg if self.bg is None else self.bg,
+            parent.highlight if self.highlight is None else self.highlight,
+            self.code or parent.code,
+        )
+
+
+def _own_style_props(style: ET.Element) -> _StyleProps:
+    name = style.find(_NAME_TAG)
+    code = name is not None and name.get(_VAL_ATTR, "").lower() == _CODE_STYLE_NAME
+    rpr = style.find(_RPR_TAG)
+    if rpr is None:
+        return _StyleProps(code=code)
+    fg, bg, highlight = _extract_run_colors(rpr)[:3]
+    return _StyleProps(
+        fg or ("" if rpr.find(_COLOR_TAG) is not None else None),
+        bg or ("" if rpr.find(_SHD_TAG) is not None else None),
+        highlight or ("" if rpr.find(_HIGHLIGHT_TAG) is not None else None),
+        code,
+    )
+
+
+def _resolve_based_on(own: Mapping[str, _StyleProps], based_on: Mapping[str, str]) -> dict[str, _StyleProps]:
+    """Merge each style with the styles it is based on, the nearest value first.
+
+    Every style is visited a fixed number of times, however long the chains: an
+    uploaded document decides how many styles there are, and this runs before
+    pandoc, in a conversion slot.
+    """
+    resolved: dict[str, _StyleProps] = {}
+    for style_id in own:
+        chain: list[str] = []
+        position: dict[str, int] = {}
+        current = style_id
+        while current in own and current not in resolved and current not in position:
+            position[current] = len(chain)
+            chain.append(current)
+            current = based_on.get(current, "")
+        # A hand-edited template may chain styles into a cycle. Going round it
+        # twice lets each of its styles see all the others, the nearest first.
+        start = position.get(current, len(chain))
+        props = resolved.get(current, _StyleProps())
+        for link in reversed(chain[:start] + chain[start:] * 2):
+            props = own[link].over(props)
+            resolved[link] = props
+    return resolved
 
 
 def character_style_colors(styles_xml: bytes) -> dict[str, StyleColors]:
     """Map each character style of ``styles.xml`` that draws with a color to
     those colors, following its ``basedOn`` chain.
 
-    A style's own property wins over the one it inherits, as in Word. The
-    concrete ``w:val`` is used even when the color names a theme color too
-    (Word writes both), so ``accent1`` styles resolve without reading the
-    theme. Styles without any color are left out.
+    A style's own property wins over the one it inherits, as in Word, and that
+    includes clearing it with ``auto`` or ``none``. The concrete ``w:val`` is
+    used even when the color names a theme color too (Word writes both), so
+    ``accent1`` styles resolve without reading the theme. Styles without any
+    color are left out, and so are the styles of code (see the module
+    docstring) and the synthetic styles of an earlier pass, whose runs are
+    rewritten already.
     """
     root = parse_xml(styles_xml)
     if root is None:
         return {}
-    own: dict[str, tuple[str | None, str | None, str | None]] = {}
+    own: dict[str, _StyleProps] = {}
     based_on: dict[str, str] = {}
     for style in root.iter(_STYLE_TAG):
         if style.get(_TYPE_ATTR) != "character":
             continue
         style_id = style.get(_STYLE_ID_ATTR)
-        if not style_id:
+        if not style_id or style_id.startswith(_GENERATED_STYLE_PREFIX):
             continue
-        rpr = style.find(_RPR_TAG)
-        fg, bg, highlight = _extract_run_colors(rpr)[:3] if rpr is not None else (None, None, None)
-        own[style_id] = (fg, bg, highlight)
+        own[style_id] = _own_style_props(style)
         parent = style.find(_BASED_ON_TAG)
         if parent is not None and parent.get(_VAL_ATTR):
             based_on[style_id] = parent.get(_VAL_ATTR, "")
 
-    resolved: dict[str, StyleColors] = {}
-    for style_id in own:
-        fg = bg = highlight = None
-        seen: set[str] = set()
-        current: str | None = style_id
-        # Walk from the style up its chain; the first value met is the nearest.
-        # ``seen`` guards against a basedOn cycle in a hand-edited template.
-        while current is not None and current in own and current not in seen:
-            seen.add(current)
-            own_fg, own_bg, own_highlight = own[current]
-            fg, bg, highlight = fg or own_fg, bg or own_bg, highlight or own_highlight
-            current = based_on.get(current)
-        if fg or bg or highlight:
-            resolved[style_id] = StyleColors(fg, bg, highlight)
-    return resolved
+    colors: dict[str, StyleColors] = {}
+    for style_id, props in _resolve_based_on(own, based_on).items():
+        if not props.code and (props.fg or props.bg or props.highlight):
+            colors[style_id] = StyleColors(props.fg or None, props.bg or None, props.highlight or None)
+    return colors
+
+
+def table_of_contents_styles(styles_xml: bytes) -> frozenset[str]:
+    """The ids of the paragraph styles of ``styles.xml`` for the entries of a
+    table of contents, figures or tables, read from their names."""
+    root = parse_xml(styles_xml)
+    if root is None:
+        return frozenset()
+    style_ids: set[str] = set()
+    for style in root.iter(_STYLE_TAG):
+        name = style.find(_NAME_TAG)
+        if style.get(_TYPE_ATTR) == "paragraph" and name is not None and _TOC_STYLE_NAME.fullmatch(name.get(_VAL_ATTR, "").lower()):
+            style_ids.add(style.get(_STYLE_ID_ATTR, ""))
+    return frozenset(style_ids)
 
 
 def _inherit_style_colors(rpr: ET.Element, style_colors: Mapping[str, StyleColors], fg: str | None, bg: str | None, highlight: str | None) -> tuple[str | None, str | None, str | None]:
@@ -302,27 +381,30 @@ _PSTYLE_PATH = f"{{{W_NS}}}pPr/{{{W_NS}}}pStyle"
 _TABLE_OF_FIGURES_STYLE = "TableofFigures"
 
 
-def _table_of_contents_runs(tree: ET.Element) -> set[int]:
+def _table_of_contents_runs(tree: ET.Element, toc_styles: Collection[str]) -> set[int]:
     """The ids of the runs in the entries of a table of contents, figures or tables.
 
     Their text carries the Hyperlink style, but a table of contents is not drawn
-    as a list of links, so the style's color is not taken over there.
+    as a list of links, so the style's color is not taken over there. The ids
+    themselves count too: ``docx_references_post_process`` writes ``TOC1``
+    whether or not the template defines that style.
     """
     runs: set[int] = set()
     for paragraph in tree.iter(_P_TAG):
         pstyle = paragraph.find(_PSTYLE_PATH)
         style_id = pstyle.get(_VAL_ATTR, "") if pstyle is not None else ""
-        if (style_id.startswith("TOC") and style_id[3:].isdigit()) or style_id == _TABLE_OF_FIGURES_STYLE:
+        if style_id in toc_styles or (style_id.startswith("TOC") and style_id[3:].isdigit()) or style_id == _TABLE_OF_FIGURES_STYLE:
             runs.update(id(run) for run in paragraph.iter(_R_TAG))
     return runs
 
 
-def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | None = None) -> tuple[bytes, dict[str, _StyleSpec]]:
+def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | None = None, toc_styles: Collection[str] = ()) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used).
 
     ``style_colors`` maps a character style id to the colors it draws with
     (see :func:`character_style_colors`); a run referencing such a style takes
-    every color it does not set directly from it.
+    every color it does not set directly from it. The entries of a table of
+    contents, in ``toc_styles`` (see :func:`table_of_contents_styles`), do not.
     """
     tree = parse_xml(xml_bytes)
     if tree is None:
@@ -330,7 +412,7 @@ def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | Non
         return xml_bytes, {}
 
     styles_used: dict[str, _StyleSpec] = {}
-    toc_runs = _table_of_contents_runs(tree) if style_colors else set()
+    toc_runs = _table_of_contents_runs(tree, toc_styles) if style_colors else set()
 
     # iter() walks every <w:r> descendant regardless of depth — runs can be
     # nested inside tables, structured-document-tags, content controls, etc.,
