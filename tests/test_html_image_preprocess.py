@@ -102,7 +102,7 @@ def test_existing_width_attribute_is_untouched():
 
 
 def test_explicit_css_width_left_to_lua_filter():
-    """A CSS width/height is handled by filters/inline_styles.lua; this
+    """A CSS width/height is handled by filters/html/inline_styles.lua; this
     preprocessor must not also set an attribute for it."""
     out = html_image_pre_process.preprocess(_img(_png(300, 150), "width:120px;"))
     # style is preserved, and no width/height *attribute* was injected.

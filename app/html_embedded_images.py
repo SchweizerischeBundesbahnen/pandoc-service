@@ -6,11 +6,11 @@ filter. A document of 20 MB with some 4000 small images took pandoc 5.8 GiB of m
 
 pandoc runs with ``--sandbox``, which reads no file a document names, so the images cannot simply
 be pointed at. :func:`extract` writes each image into a directory of the conversion and leaves its
-name in the ``src``. ``filters/html_embedded_images.lua`` reads those files into the media bag of
+name in the ``src``. ``filters/html/html_embedded_images.lua`` reads those files into the media bag of
 pandoc, which the DOCX writer takes them from, and reads nothing else. The directory reaches the
 filter through an environment variable, which a document cannot set.
 
-``filters/inline_styles.lua`` writes some images into the text as ``{{IMG:...}}`` placeholders for
+``filters/html/inline_styles.lua`` writes some images into the text as ``{{IMG:...}}`` placeholders for
 :mod:`app.docx_post_process`. :func:`finish_docx` puts their ``data:`` URIs back from the files,
 before the directory is removed.
 
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# The variable filters/html_embedded_images.lua reads the directory of the images from.
+# The variable filters/html/html_embedded_images.lua reads the directory of the images from.
 DIRECTORY_VARIABLE = "PANDOC_SERVICE_IMAGES_DIR"
 
 # The raster formats the DOCX writer embeds as they are, by the subtype of their media type. An SVG
@@ -62,11 +62,11 @@ _PARSE_FAILURES = (etree.ParseError, etree.ParserError, ValueError)
 _SUBTYPES = {"png": "png", "jpg": "jpeg", "gif": "gif", "bmp": "bmp", "tiff": "tiff"}
 
 # The name an extracted image is given: this prefix, a token of the conversion and a number.
-# filters/html_embedded_images.lua accepts this form only. The token is random, so a src the
+# filters/html/html_embedded_images.lua accepts this form only. The token is random, so a src the
 # document writes itself never names an image of the conversion.
 _NAME_PREFIX = "pandoc-service-image-"
 
-# {{IMG:<width>|<height>|<src>}}: see image_placeholder in filters/inline_styles.lua.
+# {{IMG:<width>|<height>|<src>}}: see image_placeholder in filters/html/inline_styles.lua.
 _PLACEHOLDER_RE = re.compile(rf"(\{{\{{IMG:[^|]*\|[^|]*\|)({_NAME_PREFIX}[0-9a-f]+-\d+\.([a-z]+))(\}}\}})".encode())
 
 # The description pandoc gives a picture of an extracted image: its src, which is the name.

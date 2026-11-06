@@ -7,7 +7,7 @@ and/or ``data-text-align="..."``, that a styled ``<div>`` gets those same marker
 set on itself, that the unit conversion from CSS lengths to Word twips is
 correct, and that ``text-align`` keywords map to canonical tokens.
 
-The companion Lua filter (filters/inline_styles.lua) is exercised separately
+The companion Lua filter (filters/html/inline_styles.lua) is exercised separately
 in ``test_inline_styles_filter_integration.py``.
 """
 
@@ -473,7 +473,7 @@ def test_scientific_notation_lengths_are_rejected():
 def test_module_constants_match_documented_contract():
     """The class name and attribute key are part of the contract with the
     Lua filter — pin them so a casual rename here doesn't silently break
-    filters/inline_styles.lua, which hard-codes the same strings."""
+    filters/html/inline_styles.lua, which hard-codes the same strings."""
     assert html_paragraph_pre_process.PARA_CLASS == "pandoc-para"
     assert html_paragraph_pre_process.INDENT_ATTR == "data-indent-twips"
     assert html_paragraph_pre_process.ALIGN_ATTR == "data-text-align"
@@ -638,7 +638,7 @@ def test_extract_text_align_direct(style: str, expected: str | None):
 
 
 def test_heading_div_is_not_marked():
-    """A heading-N div is left to filters/heading_levels.lua.
+    """A heading-N div is left to filters/html/heading_levels.lua.
 
     Marking it would cost it its heading-N class: the Div handler in
     inline_styles.lua replaces a marked div with its blocks, and it runs before

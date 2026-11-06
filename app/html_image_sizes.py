@@ -6,7 +6,7 @@ landscape section of a portrait document, or a larger paper size. To give an ima
 to the size it asked for, the post-processor needs that size.
 
 The sizes are read the way pandoc reads them: the ``width`` and ``height`` attributes of an
-``<img>`` first, else its CSS ``width`` and ``height`` (see ``filters/inline_styles.lua``), and for an
+``<img>`` first, else its CSS ``width`` and ``height`` (see ``filters/html/inline_styles.lua``), and for an
 image stating neither, the size :mod:`app.html_image_pre_process` gives it. pandoc keeps the bytes
 of an image as they are, so the post-processor finds the size of each picture by its bytes, taking
 images with the same bytes in document order.

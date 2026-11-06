@@ -68,14 +68,16 @@ CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 CUSTOM_REFERENCE_PPTX = "custom-reference.pptx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
 FILTER_BASE_PATH = "/usr/local/share/pandoc/filters"
-# The filters which set the LaTeX of a DOCX, for PDF and LaTeX
+# The filters by the format they read: of a DOCX, for PDF and LaTeX, and of HTML; those for any format
 DOCX_FILTER_PATH = f"{FILTER_BASE_PATH}/docx"
+HTML_FILTER_PATH = f"{FILTER_BASE_PATH}/html"
+COMMON_FILTER_PATH = f"{FILTER_BASE_PATH}/common"
 
 FILTERS = {
-    "page_break": f"{FILTER_BASE_PATH}/pagebreak.lua",
-    "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
-    "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
-    "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
+    "page_break": f"{COMMON_FILTER_PATH}/pagebreak.lua",
+    "page_orientation": f"{HTML_FILTER_PATH}/page_orientation.lua",
+    "heading_levels": f"{HTML_FILTER_PATH}/heading_levels.lua",
+    "inline_styles": f"{HTML_FILTER_PATH}/inline_styles.lua",
     "docx_text_decorations": f"{DOCX_FILTER_PATH}/docx_text_decorations.lua",
     "docx_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_colors_to_latex.lua",
     "docx_math_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_math_colors_to_latex.lua",
@@ -83,22 +85,22 @@ FILTERS = {
     "docx_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_paragraphs_to_latex.lua",
     "docx_lists_to_latex": f"{DOCX_FILTER_PATH}/docx_lists_to_latex.lua",
     "docx_tables_to_latex": f"{DOCX_FILTER_PATH}/docx_tables_to_latex.lua",
-    "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
-    "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
-    "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
-    "html_embedded_images": f"{FILTER_BASE_PATH}/html_embedded_images.lua",
-    "html_trailing_line_breaks": f"{FILTER_BASE_PATH}/html_trailing_line_breaks.lua",
-    "html_whitespace": f"{FILTER_BASE_PATH}/html_whitespace.lua",
-    "html_nowrap": f"{FILTER_BASE_PATH}/html_nowrap.lua",
-    "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
+    "html_lists": f"{HTML_FILTER_PATH}/html_lists.lua",
+    "html_tables_to_latex": f"{HTML_FILTER_PATH}/html_tables_to_latex.lua",
+    "html_captions": f"{HTML_FILTER_PATH}/html_captions.lua",
+    "html_embedded_images": f"{HTML_FILTER_PATH}/html_embedded_images.lua",
+    "html_trailing_line_breaks": f"{HTML_FILTER_PATH}/html_trailing_line_breaks.lua",
+    "html_whitespace": f"{HTML_FILTER_PATH}/html_whitespace.lua",
+    "html_nowrap": f"{HTML_FILTER_PATH}/html_nowrap.lua",
+    "latex_nested_tables": f"{COMMON_FILTER_PATH}/latex_nested_tables.lua",
     "docx_caption_labels_to_latex": f"{DOCX_FILTER_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_empty_paragraphs_to_latex.lua",
     "docx_page_breaks_to_latex": f"{DOCX_FILTER_PATH}/docx_page_breaks_to_latex.lua",
     "docx_comments_to_latex": f"{DOCX_FILTER_PATH}/docx_comments_to_latex.lua",
     "docx_document_styles_to_latex": f"{DOCX_FILTER_PATH}/docx_document_styles_to_latex.lua",
     "docx_toc_to_latex": f"{DOCX_FILTER_PATH}/docx_toc_to_latex.lua",
-    "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
-    "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
+    "strip_raw_tex": f"{COMMON_FILTER_PATH}/strip_raw_tex.lua",
+    "strip_document_images": f"{COMMON_FILTER_PATH}/strip_document_images.lua",
 }
 
 # Allowed pandoc options, each mapped to itself. A request names an option and
@@ -130,9 +132,11 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
         "--toc",
     )
 }
-# The docx filters a request may name lay in the folder of all filters before they moved to their own:
+# The filters a request may name lay in the folder of all filters before they moved to the folder of their format:
 # a request which names one there still gets it
-ALLOWED_PANDOC_OPTIONS |= {option.replace(f"{DOCX_FILTER_PATH}/", f"{FILTER_BASE_PATH}/"): option for option in ALLOWED_PANDOC_OPTIONS if option.startswith(f"--lua-filter={DOCX_FILTER_PATH}/")}
+ALLOWED_PANDOC_OPTIONS |= {
+    option.replace(f"{folder}/", f"{FILTER_BASE_PATH}/"): option for folder in (DOCX_FILTER_PATH, HTML_FILTER_PATH, COMMON_FILTER_PATH) for option in ALLOWED_PANDOC_OPTIONS if option.startswith(f"--lua-filter={folder}/")
+}
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
 # tectonic, latex is the raw .tex file). The DOCX color preprocessor only
@@ -665,16 +669,16 @@ def _build_pandoc_command(
                 # Drop the <br/> that ends a line of text, which a browser does not
                 # show but Word renders as an empty line. First, so that a break inside
                 # a styled span is gone before inline_styles turns the span into raw
-                # OOXML. See filters/html_trailing_line_breaks.lua.
+                # OOXML. See filters/html/html_trailing_line_breaks.lua.
                 f"--lua-filter={FILTERS['html_trailing_line_breaks']}",
                 # Collapse whitespace across inline elements, as a browser does, so
                 # Polarion's indented markup does not leave double or leading spaces.
                 # Before inline_styles, which turns styled spans into raw OOXML. See
-                # filters/html_whitespace.lua.
+                # filters/html/html_whitespace.lua.
                 f"--lua-filter={FILTERS['html_whitespace']}",
                 # Keep the content of a white-space: nowrap element on one line, with
                 # non-breaking spaces, which Word honors. After html_whitespace, which
-                # collapses the spaces. See filters/html_nowrap.lua.
+                # collapses the spaces. See filters/html/html_nowrap.lua.
                 f"--lua-filter={FILTERS['html_nowrap']}",
                 f"--lua-filter={FILTERS['inline_styles']}",
                 # Pairs with the html_lists_pre_process pass on the source bytes: the
@@ -686,7 +690,7 @@ def _build_pandoc_command(
                 # <span data-sequence=...> counter) with the "Caption" style so
                 # docx_references_post_process recognises them structurally instead of by
                 # a leaky "text starts with Table/Figure" check. See
-                # filters/html_captions.lua.
+                # filters/html/html_captions.lua.
                 f"--lua-filter={FILTERS['html_captions']}",
             ]
         )
@@ -983,12 +987,12 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     # list so pandoc's HTML reader doesn't synthesize an implicit list item
     # that the DOCX writer would render as a stray marker (e.g. "a.") above
     # the deeper item. See app/html_lists_pre_process.py and
-    # filters/html_lists.lua for the full pipeline.
+    # filters/html/html_lists.lua for the full pipeline.
     # Also wrap each <p style="margin-left: ...; text-align: ..."> in a marker
     # <div> so the paragraph indent and/or alignment survive pandoc's HTML
     # reader (which drops <p>'s style attribute outright). See
     # app/html_paragraph_pre_process.py and the Div handler in
-    # filters/inline_styles.lua for the full pipeline.
+    # filters/html/inline_styles.lua for the full pipeline.
     # Also give un-sized <img> an explicit px width/height read from the inlined
     # image so pandoc renders it at the 96 dpi CSS reference (not its 72 dpi
     # no-density fallback), honouring any CSS max-width. See
@@ -1024,7 +1028,7 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
 
             # Run pandoc with validated parameters and measure duration
             subprocess_start_time = time.time()
-            # Only the html -> docx command loads filters/html_embedded_images.lua, which reads the directory from it
+            # Only the html -> docx command loads filters/html/html_embedded_images.lua, which reads the directory from it
             environment = {**os.environ, html_embedded_images.DIRECTORY_VARIABLE: images_directory} if html_to_docx else None
             # pandoc finds rsvg-convert, which is weasysvg-convert
             environment = svg_renderer.pandoc_environment(environment)

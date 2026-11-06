@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/html_tables_to_latex.lua``.
+"""Integration tests for ``filters/html/html_tables_to_latex.lua``.
 
 Runs the real ``pandoc`` binary (html -> latex) with the filter and inspects
 the generated LaTeX. The filter recovers table width and horizontal alignment
@@ -23,7 +23,7 @@ import pytest
 _PANDOC = shutil.which("pandoc")
 pytestmark = pytest.mark.skipif(_PANDOC is None, reason="pandoc binary not available")
 
-_FILTER = "filters/html_tables_to_latex.lua"
+_FILTER = "filters/html/html_tables_to_latex.lua"
 
 
 def _html_to_latex(body: str) -> str:

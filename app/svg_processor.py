@@ -332,7 +332,7 @@ class SvgProcessor:
         leaves the element as the document wrote it, the target being the one to resolve the size.
 
         The size is written as an attribute and not only as a style, because the writer of every target
-        reads the attribute, while `filters/inline_styles.lua` carries a style onto it for docx alone.
+        reads the attribute, while `filters/html/inline_styles.lua` carries a style onto it for docx alone.
         """
         try:
             if drawn_size is None:
@@ -477,7 +477,7 @@ class SvgProcessor:
 
         A unit which stands for something else on every element - a percentage, `em`, `vw` - reads as
         none: it cannot be resolved without the layout the target has and this does not. A bare number
-        is px, which is how pandoc and `filters/inline_styles.lua` both read one.
+        is px, which is how pandoc and `filters/html/inline_styles.lua` both read one.
         """
         if value is None:
             return None

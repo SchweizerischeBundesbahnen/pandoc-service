@@ -42,8 +42,8 @@ RUN apt-get update && \
 RUN curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${ARCH}.tar.gz" -o /tmp/pandoc.tar.gz && \
     tar -xzf /tmp/pandoc.tar.gz -C /tmp && \
     mv "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/ && \
-    mkdir -p /usr/local/share/pandoc/filters/ && \
-    curl -fsSL https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -o /usr/local/share/pandoc/filters/pagebreak.lua && \
+    mkdir -p /usr/local/share/pandoc/filters/common/ && \
+    curl -fsSL https://raw.githubusercontent.com/pandoc/lua-filters/master/pagebreak/pagebreak.lua -o /usr/local/share/pandoc/filters/common/pagebreak.lua && \
     rm -rf /tmp/pandoc*
 
 # Install tectonic (downloaded static binary) for the PDF/LaTeX target.
@@ -128,21 +128,10 @@ COPY entrypoint.sh "${WORKING_DIR}/entrypoint.sh"
 COPY healthcheck.sh "${WORKING_DIR}/healthcheck.sh"
 RUN chmod +x "${WORKING_DIR}/entrypoint.sh" "${WORKING_DIR}/healthcheck.sh"
 
-COPY filters/page_orientation.lua "/usr/local/share/pandoc/filters/page_orientation.lua"
-COPY filters/heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.lua"
-COPY filters/strip_raw_tex.lua "/usr/local/share/pandoc/filters/strip_raw_tex.lua"
-COPY filters/strip_document_images.lua "/usr/local/share/pandoc/filters/strip_document_images.lua"
-COPY filters/inline_styles.lua "/usr/local/share/pandoc/filters/inline_styles.lua"
-COPY filters/html_lists.lua "/usr/local/share/pandoc/filters/html_lists.lua"
-COPY filters/html_tables_to_latex.lua "/usr/local/share/pandoc/filters/html_tables_to_latex.lua"
-COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lua"
-COPY filters/html_embedded_images.lua "/usr/local/share/pandoc/filters/html_embedded_images.lua"
-COPY filters/html_trailing_line_breaks.lua "/usr/local/share/pandoc/filters/html_trailing_line_breaks.lua"
-COPY filters/html_whitespace.lua "/usr/local/share/pandoc/filters/html_whitespace.lua"
-COPY filters/html_nowrap.lua "/usr/local/share/pandoc/filters/html_nowrap.lua"
-COPY filters/latex_nested_tables.lua "/usr/local/share/pandoc/filters/latex_nested_tables.lua"
-# The filters of DOCX to PDF and LaTeX, in a folder of their own
+# The filters by the format they read, and those for any format
+COPY filters/html/ "/usr/local/share/pandoc/filters/html/"
 COPY filters/docx/ "/usr/local/share/pandoc/filters/docx/"
+COPY filters/common/ "/usr/local/share/pandoc/filters/common/"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/bin/sh", "-c", "./healthcheck.sh"]

@@ -10,9 +10,9 @@
 -- pandoc's HTML reader resolves a src against a <base href>, a data: URI aside,
 -- so the name may arrive at the end of an address. The filter takes the name
 -- from there and writes it back as the src, which the DOCX writer and the
--- {{IMG:...}} placeholders of filters/inline_styles.lua then carry.
+-- {{IMG:...}} placeholders of filters/html/inline_styles.lua then carry.
 --
--- It runs first: filters/inline_styles.lua turns some images into raw OOXML.
+-- It runs first: filters/html/inline_styles.lua turns some images into raw OOXML.
 
 local directory = os.getenv("PANDOC_SERVICE_IMAGES_DIR")
 

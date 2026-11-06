@@ -1755,7 +1755,7 @@ def test_dimension_to_emu_whitespace_contract():
     """Surrounding whitespace is stripped by the caller, not by the pattern.
 
     The pattern carries no \\s* quantifiers (SonarCloud S5852), so whitespace
-    *between* the number and its unit no longer matches. filters/inline_styles.lua
+    *between* the number and its unit no longer matches. filters/html/inline_styles.lua
     builds these fields as `num .. unit`, so that form never reaches here.
     """
     from app.docx_post_process import EMU_1_INCH, _dimension_to_emu

@@ -72,7 +72,7 @@ def test_section_break_stands_after_the_text_of_its_paragraph():
 
 
 def test_page_break_before_a_section_break_is_one_break():
-    """filters/page_orientation.lua writes the two for one break of the editor."""
+    """filters/html/page_orientation.lua writes the two for one break of the editor."""
     body = TEXT_PARAGRAPH + PAGE_BREAK_PARAGRAPH + _section_paragraph(A4_PORTRAIT) + TEXT_PARAGRAPH + f"<w:sectPr>{A4_LANDSCAPE}</w:sectPr>"
     xml, _ = rewrite_part(_document(body))
     assert _paragraph_texts(xml) == ["text", LANDSCAPE_SENTINEL, "text"]

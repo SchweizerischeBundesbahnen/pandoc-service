@@ -23,7 +23,7 @@ CAPTION_STYLE = "Caption"
 TABLE_CAPTION_STYLE = "TableCaption"
 IMAGE_CAPTION_STYLE = "ImageCaption"
 
-# Paragraph style ids that mark a genuine caption. filters/html_captions.lua
+# Paragraph style ids that mark a genuine caption. filters/html/html_captions.lua
 # sets CAPTION_STYLE on paragraphs that carry Polarion's <span data-sequence=...>
 # caption counter. Non-HTML inputs bring their own caption styles: pandoc emits
 # TableCaption/ImageCaption for markdown/docx table & figure captions, and

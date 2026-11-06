@@ -15,7 +15,7 @@ renders as a stray marker (e.g. ``a.``) above the deeper item.
 This preprocessor finds each orphan ``<ol>`` / ``<ul>`` and wraps it in an
 explicit ``<li>``, prepended with a sentinel
 ``<span class="pandoc-suppress-marker"></span>``. The companion Lua filter
-(``filters/html_lists.lua``) detects the sentinel after pandoc has parsed
+(``filters/html/html_lists.lua``) detects the sentinel after pandoc has parsed
 the HTML and rewrites the list item so the DOCX writer skips emitting a
 numbered paragraph for it.
 

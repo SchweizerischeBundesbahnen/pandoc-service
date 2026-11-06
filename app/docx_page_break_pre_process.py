@@ -23,7 +23,7 @@ The companion Lua filter (``filters/docx/docx_page_breaks_to_latex.lua``) turns 
 sentinels into LaTeX. The Private-Use-Area delimiters never collide with real
 document text.
 
-``filters/page_orientation.lua`` writes a page break right before a section break
+``filters/html/page_orientation.lua`` writes a page break right before a section break
 for one break of the editor, the way ``_drop_empty_last_page`` in
 :mod:`app.docx_post_process` reads them. Here the section break takes its place,
 when its paragraph is empty as that filter writes it.

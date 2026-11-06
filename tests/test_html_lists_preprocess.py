@@ -195,7 +195,7 @@ def test_leading_text_alone_does_not_force_rewrite():
 
 
 def test_module_constants_match_documented_contract():
-    """The sentinel class name is hard-coded in filters/html_lists.lua —
+    """The sentinel class name is hard-coded in filters/html/html_lists.lua —
     pin it so a rename here doesn't silently break the Lua side."""
     assert html_lists_pre_process.SUPPRESS_MARKER_CLASS == "pandoc-suppress-marker"
 
