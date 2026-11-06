@@ -78,6 +78,14 @@ def test_page_break_before_a_section_break_is_one_break():
     assert _paragraph_texts(xml) == ["text", LANDSCAPE_SENTINEL, "text"]
 
 
+def test_page_break_holding_a_section_break_stays_before_the_next_section_break():
+    """Its paragraph closes a section of its own, so it is no duplicate of the next break."""
+    para = f'<w:p><w:pPr><w:sectPr>{A4_PORTRAIT}</w:sectPr></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>'
+    xml, _ = rewrite_part(_document(para + _section_paragraph(A4_LANDSCAPE) + f"<w:sectPr>{A4_PORTRAIT}</w:sectPr>"))
+    portrait = f"{SENTINEL_OPEN}11906,16838,1000,1100,1200,1300,nextPage{SENTINEL_CLOSE}"
+    assert _paragraph_texts(xml) == [f"{PAGE_BREAK}{LANDSCAPE_SENTINEL}", portrait]
+
+
 def test_page_break_with_text_before_a_section_break_stays():
     para = '<w:p><w:r><w:t>text</w:t><w:br w:type="page"/></w:r></w:p>'
     xml, _ = rewrite_part(_document(para + _section_paragraph(A4_PORTRAIT) + f"<w:sectPr>{A4_LANDSCAPE}</w:sectPr>"))

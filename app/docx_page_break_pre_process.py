@@ -80,8 +80,14 @@ def _sentinel_text(marker: str) -> ET.Element:
     return text
 
 
+def _closes_a_section(para: ET.Element) -> bool:
+    return para.find(f"{_PPR_TAG}/{_SECTPR_TAG}") is not None
+
+
 def _is_lone_page_break(para: ET.Element) -> bool:
     """Whether the paragraph holds a page break and nothing else, so it can go when a section break follows."""
+    if _closes_a_section(para):
+        return False
     runs = [child for child in para if child.tag != _PPR_TAG]
     return bool(runs) and all(run.tag == _R_TAG and all(_is_page_break(child) or child.tag == _RPR_TAG for child in run) for run in runs) and any(_is_page_break(child) for run in runs for child in run)
 
@@ -148,7 +154,7 @@ def _mark_body_breaks(body: ET.Element) -> bool:
             continue
         is_lone_page_break = _is_lone_page_break(block)
         changed = _mark_page_breaks(block) or changed
-        if block.find(f"{_PPR_TAG}/{_SECTPR_TAG}") is not None:
+        if _closes_a_section(block):
             changed = _mark_section_end(body, block, sections, lone_page_break) or changed
         lone_page_break = block if is_lone_page_break else None
     return changed
