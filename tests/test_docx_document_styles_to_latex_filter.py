@@ -252,8 +252,8 @@ def test_a_page_starts_as_far_down_as_word_sets_its_first_line(test_parameters: 
     latex = _latex(test_parameters.container, *metadata, native='[Div ("",[],[("custom-style","Body Text")]) [Para [Str "First"]], Para [Str "Next"]]')
     assert "\\setlength{\\topskip}{11.25bp}" in _preamble(latex)
     body = latex[latex.index("\\begin{document}") :]
-    assert "\\rule{0pt}{20.25bp}\\strut{}First" in body
-    assert body.count("\\rule{0pt}") == 1
+    assert "\\rule{0pt}{20.25bp}\\rule{0pt}{\\ht\\strutbox}First" in body
+    assert body.count("\\rule{0pt}{2") == 1
 
 
 def test_an_entry_of_a_list_of_figures_gets_the_space_of_the_paragraph_before(test_parameters: TestParameters):
@@ -271,7 +271,7 @@ def test_a_later_title_paragraph_gets_the_space_of_word(test_parameters: TestPar
     native = '[Para [Str "Before"], Div ("",[],[("custom-style","Title")]) [Para [Str "Later"]], Para [Str "After"]]'
     body = " ".join(_latex(test_parameters.container, *SPACING, title, "docx-body-descent=3.4", native=native).split())
     assert "\\vspace{1bp} \\par\\ifdim\\prevdepth<7.89bp\\ifdim\\prevdepth>-1000pt\\vskip\\dimexpr\\prevdepth-7.89bp\\relax\\fi\\fi" in body
-    assert "\\par\\endgroup \\vspace{-5bp} \\strut{}After" in body, "the larger of 4 and 0, less the skip"
+    assert "\\par\\endgroup \\vspace{-5bp} \\rule{0pt}{\\ht\\strutbox}After" in body, "the larger of 4 and 0, less the skip"
 
 
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
@@ -366,7 +366,7 @@ def test_a_table_of_contents_after_the_title_gets_its_space_after(test_parameter
 
 def test_a_paragraph_starts_and_ends_with_a_strut(test_parameters: TestParameters):
     body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native='[Para [Str "Text"]]')
-    assert "\\strut{}Text\\strut{}" in body
+    assert "\\rule{0pt}{\\ht\\strutbox}Text\\strut{}" in body
 
 
 def test_the_caption_style_defines_its_space_before(test_parameters: TestParameters):

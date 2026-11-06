@@ -545,7 +545,8 @@ local function set_paragraph(para)
   if body_descent ~= nil and #para.content > 0 then
     -- Every line of Word reaches the ascent and the descent of its font, whatever its letters:
     -- the first and the last line of a paragraph get the strut of its font
-    para.content:insert(1, pandoc.RawInline("latex", "\\strut{}"))
+    -- The first line reaches the ascent; only the last its descent: Word sets a line of only a picture on the line below
+    para.content:insert(1, pandoc.RawInline("latex", "\\rule{0pt}{\\ht\\strutbox}"))
     para.content:insert(pandoc.RawInline("latex", "\\strut{}"))
     changed = true
   end

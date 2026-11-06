@@ -776,7 +776,7 @@
     "test_figure_caption_followed_by_table_conversion": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 2.69,
+     "mean_shift": 1.82,
      "pages": [
       2,
       2
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 95.9,
     "documents": 49,
-    "mean_shift": 3.41,
+    "mean_shift": 3.39,
     "pages_as_reference": 47,
     "same_page": 93.7
    }
