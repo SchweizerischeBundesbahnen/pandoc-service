@@ -161,13 +161,26 @@ def _styles_by_id(styles: Element) -> dict[str | None, Element]:
     return {style.get(_w("styleId")): style for style in styles.iter(_w("style"))}
 
 
+def _builtin_style(styles: Element, style_id: str) -> Element | None:
+    """The style of the id given, else the built-in style of that name: a localised Word names Heading1 "heading 1"."""
+    found = _styles_by_id(styles).get(style_id)
+    if found is not None:
+        return found
+    name = re.sub(r"(?<=[a-z])(?=[A-Z0-9])", " ", style_id).lower()
+    for style in styles.iter(_w("style")):
+        style_name = style.find(_w("name"))
+        if style_name is not None and (style_name.get(_w("val")) or "").lower() == name:
+            return style
+    return None
+
+
 def _style_chain(styles: Element, style_id: str, fallback: str | None = "Normal") -> list[Element]:
     """The style and the styles it is based on, nearest first. A loop in basedOn ends the chain."""
     by_id = _styles_by_id(styles)
     chain: list[Element] = []
-    current = by_id.get(style_id)
+    current = _builtin_style(styles, style_id)
     if current is None and fallback is not None:
-        current = by_id.get(fallback)
+        current = _builtin_style(styles, fallback)
     while current is not None and current not in chain:
         chain.append(current)
         based_on = current.find(_w("basedOn"))

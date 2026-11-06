@@ -443,3 +443,8 @@ def test_a_number_this_cannot_set_is_left_out(text: str, second_format: str):
 
 def test_a_heading_without_the_numbering_part_has_no_number():
     assert "number" not in _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1))["docx-style-Heading1"])
+
+
+def test_a_localised_heading_style_is_found_by_its_name():
+    localised = HEADING1.replace('w:styleId="Heading1">', 'w:styleId="berschrift1"><w:name w:val="heading 1"/>')
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + localised))["docx-style-Heading1"])["size"] == "20"
