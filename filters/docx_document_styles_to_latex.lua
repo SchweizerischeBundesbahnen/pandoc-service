@@ -349,11 +349,26 @@ local function deep_heading(header)
   return pandoc.Plain(inlines)
 end
 
+-- An equation of Word is a centred paragraph. TeX opens an empty line above
+-- a display which starts a paragraph, and its matrices take the row height
+-- of the tables: the equation is set as a centred paragraph in display style.
+local function display_equation(math)
+  return pandoc.Plain({
+    pandoc.RawInline("latex", "{\\centering\\renewcommand{\\arraystretch}{1}"),
+    pandoc.Math("InlineMath", "\\displaystyle " .. math.text),
+    pandoc.RawInline("latex", "\\par}"),
+  })
+end
+
 -- Word lets the full stop which ends a paragraph stand in the right margin
 -- when the line is full: a full stop of no width, which nothing follows.
-local function hanging_stop(para)
+local function set_paragraph(para)
   if not FORMAT:match("latex") then
     return nil
+  end
+  local only = #para.content == 1 and para.content[1]
+  if only and only.t == "Math" and only.mathtype == "DisplayMath" then
+    return display_equation(only)
   end
   local last = para.content[#para.content]
   if last ~= nil and last.t == "Str" and #last.text > 1 and last.text:sub(-1) == "." then
@@ -476,5 +491,5 @@ end
 return {
   { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
-  { Div = title_div, Header = deep_heading, Para = hanging_stop, Meta = write_preamble },
+  { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
 }

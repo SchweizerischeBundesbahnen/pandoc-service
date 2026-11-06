@@ -176,7 +176,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | no header and no footer in any section | no page number, as Word prints none |
 | a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field, and the empty line Word leaves after it |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
-| an equation (OMML) | in Cambria Math, when the container has it, and without the space TeX puts around a display |
+| an equation (OMML) | in Cambria Math, when the container has it; an equation of its own paragraph as a centred line, without the empty line and the space TeX puts around a display |
 
 The image has no Microsoft fonts. A document in a font the container lacks, Aptos or Calibri among them,
 keeps Latin Modern. Mount the fonts into `/usr/share/fonts` to use them:

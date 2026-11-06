@@ -177,6 +177,14 @@ def test_the_full_stop_which_ends_a_paragraph_hangs_in_the_margin(test_parameter
     assert "\n.\n" in body, "a paragraph of a full stop alone keeps it"
 
 
+def test_an_equation_alone_is_a_centred_paragraph(test_parameters: TestParameters):
+    native = '[Para [Math DisplayMath "a^{2}"], Para [Str "Text", Space, Math DisplayMath "b"]]'
+    body = _latex(test_parameters.container, native=native)
+    body = body[body.index("\\begin{document}") :]
+    assert "{\\centering\\renewcommand{\\arraystretch}{1}\\(\\displaystyle a^{2}\\)\\par}" in body
+    assert "\\[b\\]" in body, "an equation within text stays a display"
+
+
 def test_fields_which_could_carry_latex_are_left_out(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading2=font:\\evil,size:x,color:12345G,align:sideways"))
     assert "\\evil" not in preamble
