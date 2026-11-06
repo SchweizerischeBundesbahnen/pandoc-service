@@ -81,6 +81,7 @@ def convert(image: str, fonts: Path | None, out: Path) -> list[str]:
                     if client.get(f"{base}/version").status_code == 200:  # noqa: PLR2004 - HTTP OK
                         break
                 except httpx.TransportError:
+                    # The service is still starting: try again until the time is up
                     pass
                 time.sleep(1)
 
