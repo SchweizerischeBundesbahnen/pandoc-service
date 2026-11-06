@@ -2,7 +2,7 @@
 
 The preprocessor puts the ``<w:position>`` of a picture's run and the left and right
 ``<wp:effectExtent>`` of its inline in front of the picture's ``<wp:docPr title>``, the one
-picture property pandoc's DOCX reader keeps. ``filters/docx_image_layout_to_latex.lua``
+picture property pandoc's DOCX reader keeps. ``filters/docx/docx_image_layout_to_latex.lua``
 reads it back and is exercised with pandoc in ``test_docx_image_layout_to_latex_filter.py``.
 """
 

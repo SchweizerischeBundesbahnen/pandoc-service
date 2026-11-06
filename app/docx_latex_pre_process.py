@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from . import (
     docx_color_pre_process,
+    docx_empty_lines_pre_process,
     docx_image_layout_pre_process,
     docx_list_level_pre_process,
     docx_math_color_pre_process,
@@ -29,8 +30,9 @@ from . import (
     docx_page_geometry,
     docx_paragraph_pre_process,
     docx_table_pre_process,
+    docx_toc_pre_process,
 )
-from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, read_entries, repack
+from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack
 
 
 def _rewrite_body_part(
@@ -39,8 +41,10 @@ def _rewrite_body_part(
     color_styles: dict[str, docx_color_pre_process._StyleSpec],
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec],
     text_width_twips: int,
+    toc_styles: dict[str, docx_toc_pre_process._StyleSpec],
+    bordered_styles: frozenset[str] = frozenset(),
     style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
-    toc_styles: frozenset[str] = frozenset(),
+    toc_style_ids: frozenset[str] = frozenset(),
 ) -> tuple[bytes, bool]:
     """Run the page break → colour → paragraph → list → table rewrites over one
     body part, collecting any synthetic styles into the shared dicts.  Returns
@@ -48,7 +52,16 @@ def _rewrite_body_part(
     # First, so a page break run sheds its properties before the colour rewrite reads them.
     xml, changed = docx_page_break_pre_process.rewrite_part(xml)
     if has_styles:
-        rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_styles)
+        # First, so the other rewrites see the entries of a list of figures and not the field around them
+        rewritten, toc_used = docx_toc_pre_process.rewrite_part(xml)
+        if toc_used:
+            xml, changed = rewritten, True
+            toc_styles.update(toc_used)
+        rewritten, empty_lines_changed = docx_empty_lines_pre_process.rewrite_part(xml)
+        if empty_lines_changed:
+            xml, changed = rewritten, True
+            toc_styles.update(docx_toc_pre_process.plain_styles(docx_empty_lines_pre_process.EMPTY_LINES_STYLE))
+        rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_style_ids)
         if color_used:
             xml, changed = rewritten, True
             color_styles.update(color_used)
@@ -59,7 +72,7 @@ def _rewrite_body_part(
     rewritten, list_changed = docx_list_level_pre_process.rewrite_part(xml)
     if list_changed:
         xml, changed = rewritten, True
-    rewritten, table_changed = docx_table_pre_process.rewrite_part(xml, text_width_twips)
+    rewritten, table_changed = docx_table_pre_process.rewrite_part(xml, text_width_twips, bordered_styles)
     if table_changed:
         xml, changed = rewritten, True
     rewritten, math_color_changed = docx_math_color_pre_process.rewrite_part(xml)
@@ -96,15 +109,18 @@ def preprocess(docx_bytes: bytes) -> bytes:
     has_styles = STYLES_PART in entries
     color_styles: dict[str, docx_color_pre_process._StyleSpec] = {}
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec] = {}
+    toc_styles: dict[str, docx_toc_pre_process._StyleSpec] = {}
     changed = False
     # The line LaTeX sets the PDF at, for the tables of every part
     text_width_twips = docx_page_geometry.package_text_width_twips(entries)
+    # The table styles which draw borders, for the lines of each table
+    bordered_styles = docx_table_pre_process.bordered_table_styles(parse_xml(entries[STYLES_PART]) if has_styles else None)
     # The colors of the character styles (a link's Hyperlink style), read once for every part
     style_colors = docx_color_pre_process.character_style_colors(entries[STYLES_PART]) if has_styles else None
-    toc_styles = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
+    toc_style_ids = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, style_colors, toc_styles)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, bordered_styles, style_colors, toc_style_ids)
         changed = changed or part_changed
 
     if not changed:
@@ -114,5 +130,11 @@ def preprocess(docx_bytes: bytes) -> bytes:
         entries[STYLES_PART] = augment_styles(entries[STYLES_PART], color_styles, docx_color_pre_process.build_style_element)
     if para_styles:
         entries[STYLES_PART] = augment_styles(entries[STYLES_PART], para_styles, docx_paragraph_pre_process.build_style_element)
+    if toc_styles:
+        entries[STYLES_PART] = augment_styles(entries[STYLES_PART], toc_styles, docx_toc_pre_process.build_style_element)
+    caption = docx_table_pre_process.PLAIN_CAPTION_STYLE
+    if has_styles and any(f'w:val="{caption}"'.encode() in entries[part] for part in body_parts):
+        # pandoc keeps the name of a paragraph style only when styles.xml defines it
+        entries[STYLES_PART] = augment_styles(entries[STYLES_PART], docx_toc_pre_process.plain_styles(caption), docx_toc_pre_process.build_style_element)
 
     return repack(entries)

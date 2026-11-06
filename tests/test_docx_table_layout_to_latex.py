@@ -2,7 +2,7 @@
 
 Builds a real DOCX with a table carrying ``<w:tblW>`` / ``<w:jc>`` (what the
 HTML->DOCX post-processing writes), runs it through the docx->latex
-preprocessing + ``filters/docx_tables_to_latex.lua``, and checks that:
+preprocessing + ``filters/docx/docx_tables_to_latex.lua``, and checks that:
 
 * pandoc's DOCX reader would normalise the column widths to sum to 1.0, but the
   filter scales them back to the table's real page fraction (``\\real{...}``);
@@ -26,7 +26,7 @@ from app import docx_latex_pre_process
 _PANDOC = shutil.which("pandoc")
 pytestmark = pytest.mark.skipif(_PANDOC is None, reason="pandoc binary not available")
 
-_FILTER = "filters/docx_tables_to_latex.lua"
+_FILTER = "filters/docx/docx_tables_to_latex.lua"
 
 
 def _docx_with_table(width_pct: int, jc: str, cols: int = 3) -> bytes:

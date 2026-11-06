@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOCX corpus comparison</title>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --muted: #6b6b70; --line: #d9d9de; --panel: #f4f4f6; --pick: #e6effd; --missing: #d1242f; --shifted: #d97706; --good: #1a7f37; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17171a; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --panel: #212125; --pick: #1f2d44; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); display: grid; grid-template-columns: 380px 1fr; height: 100vh; }
+  aside { border-right: 1px solid var(--line); overflow: auto; }
+  main { overflow: auto; padding: 16px 20px 40px; }
+  header { padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
+  h1 { font-size: 16px; margin: 0 0 6px; }
+  .totals { color: var(--muted); font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; word-break: break-all; }
+  th { cursor: pointer; position: sticky; top: 0; background: var(--panel); }
+  tr.doc { cursor: pointer; }
+  tr.doc:hover, tr.doc.picked { background: var(--pick); }
+  .bad { color: var(--missing); } .warn { color: var(--shifted); } .ok { color: var(--good); }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 10px 0 16px; }
+  .controls label { display: flex; gap: 6px; align-items: center; }
+  .pages { display: flex; flex-direction: column; gap: 22px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pair.stacked { grid-template-columns: 1fr; max-width: 900px; }
+  .sheet { position: relative; border: 1px solid var(--line); background: #fff; }
+  .sheet img { display: block; width: 100%; }
+  .sheet .top { position: absolute; inset: 0; }
+  .sheet .top img { position: absolute; inset: 0; }
+  .caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .empty { display: grid; place-items: center; aspect-ratio: 612 / 792; color: var(--muted); background: var(--panel); }
+  ul.problems { font-size: 12px; columns: 2; padding-left: 18px; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<aside>
+  <header>
+    <h1>DOCX corpus: pandoc-service and Word</h1>
+    <div class="totals" id="totals"></div>
+  </header>
+  <table>
+    <thead><tr><th data-key="name">Document</th><th data-key="pages">Pages</th><th data-key="same">Same page</th><th data-key="shift">Shift</th></tr></thead>
+    <tbody id="list"></tbody>
+  </table>
+</aside>
+<main>
+  <h2 id="title">Pick a document</h2>
+  <div id="facts" class="totals"></div>
+  <div class="controls">
+    <label><input type="radio" name="mode" value="side" checked> side by side</label>
+    <label><input type="radio" name="mode" value="overlay"> overlay</label>
+    <label><input type="radio" name="mode" value="swipe"> swipe</label>
+    <label id="amount-label">conversion <input type="range" id="amount" min="0" max="100" value="50"></label>
+  </div>
+  <div class="pages" id="pages"></div>
+  <ul class="problems" id="problems"></ul>
+</main>
+<script id="corpus-data" type="application/json">__CORPUS_DATA__</script>
+<script>
+const data = JSON.parse(document.getElementById("corpus-data").textContent);
+const documents = data.documents;
+const percent = (part, whole) => whole ? (100 * part / whole) : 0;
+const format = (value, digits = 1) => value === null || value === undefined ? "–" : Number(value).toFixed(digits);
+const totals = document.getElementById("totals");
+const lines = [`Reference: Word on ${data.reference}. Lines on the same page ${data.total.same_page}%, on any page ${data.total.any_page}%, pages as Word ${data.total.pages_as_reference}/${data.total.documents}, mean shift ${data.total.mean_shift} pt.`];
+for (const [variant, total] of Object.entries(data.baseline)) {
+  lines.push(`Baseline ${variant}: same page ${total.same_page}%, mean shift ${total.mean_shift} pt.`);
+}
+totals.innerHTML = lines.map(line => `<div>${line}</div>`).join("");
+
+let sortKey = "shift", sortDown = true;
+const value = (doc, key) => ({ name: doc.name, pages: doc.pages[0] === doc.pages[1] ? 0 : 1, same: percent(doc.same_page, doc.lines), shift: doc.mean_shift ?? 1000 })[key];
+function drawList() {
+  const sorted = [...documents].sort((a, b) => {
+    const [x, y] = [value(a, sortKey), value(b, sortKey)];
+    return (x < y ? -1 : x > y ? 1 : 0) * (sortDown ? -1 : 1);
+  });
+  document.getElementById("list").innerHTML = sorted.map(doc => {
+    const same = percent(doc.same_page, doc.lines);
+    const pages = doc.pages[0] === doc.pages[1] ? `${doc.pages[0]}` : `<span class="bad">${doc.pages[0]} / ${doc.pages[1]}</span>`;
+    const shiftClass = doc.mean_shift === null ? "bad" : doc.mean_shift > data.shifted ? "warn" : "ok";
+    return `<tr class="doc" data-name="${doc.name}"><td>${doc.name.replace(/^test_/, "")}</td><td>${pages}</td>` +
+      `<td class="${same < 90 ? "bad" : same < 99 ? "warn" : "ok"}">${format(same)}%</td><td class="${shiftClass}">${format(doc.mean_shift, 2)}</td></tr>`;
+  }).join("");
+  for (const row of document.querySelectorAll("tr.doc")) row.onclick = () => { location.hash = row.dataset.name; };
+  pick();
+}
+for (const header of document.querySelectorAll("th")) {
+  header.onclick = () => { sortDown = sortKey === header.dataset.key ? !sortDown : header.dataset.key !== "name"; sortKey = header.dataset.key; drawList(); };
+}
+
+function sheet(doc, number, side) {
+  const names = side === "converted" ? doc.converted_pages : doc.reference_pages;
+  if (number >= names.length) return `<div class="sheet empty">no page ${number + 1}</div>`;
+  return `<div class="sheet"><img loading="lazy" src="${side}/${names[number]}" alt="${doc.name} page ${number + 1}, ${side}"></div>`;
+}
+
+function draw(doc) {
+  const mode = document.querySelector("input[name=mode]:checked").value;
+  const amount = document.getElementById("amount").value;
+  document.getElementById("amount-label").style.visibility = mode === "side" ? "hidden" : "visible";
+  const count = Math.max(doc.reference_pages.length, doc.converted_pages.length);
+  const parts = [];
+  for (let number = 0; number < count; number++) {
+    if (mode === "side") {
+      parts.push(`<div><div class="caption">page ${number + 1}: Word | pandoc-service</div><div class="pair">${sheet(doc, number, "reference")}${sheet(doc, number, "converted")}</div></div>`);
+    } else if (number < doc.reference_pages.length && number < doc.converted_pages.length) {
+      const top = mode === "overlay" ? `opacity:${amount / 100}` : `clip-path:inset(0 0 0 ${amount}%)`;
+      parts.push(`<div><div class="caption">page ${number + 1}: Word under pandoc-service</div><div class="pair stacked"><div class="sheet"><img loading="lazy" src="reference/${doc.reference_pages[number]}" alt="">` +
+        `<div class="top" style="${top}"><img loading="lazy" src="converted/${doc.converted_pages[number]}" alt=""></div></div></div></div>`);
+    } else {
+      parts.push(`<div><div class="caption">page ${number + 1}</div><div class="pair stacked">${sheet(doc, number, number < doc.reference_pages.length ? "reference" : "converted")}</div></div>`);
+    }
+  }
+  const pages = document.getElementById("pages");
+  pages.innerHTML = parts.join("");
+}
+
+function pick() {
+  const name = decodeURIComponent(location.hash.slice(1));
+  const doc = documents.find(candidate => candidate.name === name);
+  for (const row of document.querySelectorAll("tr.doc")) row.classList.toggle("picked", row.dataset.name === name);
+  if (!doc) return;
+  document.getElementById("title").textContent = doc.name;
+  document.getElementById("facts").innerHTML = `Pages ${doc.pages[0]} in Word, ${doc.pages[1]} converted. ${doc.same_page} of ${doc.lines} lines on the same page, ` +
+    `${doc.any_page} on any page, mean shift ${format(doc.mean_shift, 2)} pt. <a href="docx/${doc.name}.docx">DOCX</a>`;
+  document.getElementById("problems").innerHTML = doc.problems.map(problem =>
+    `<li class="${problem.dy === null ? "bad" : "warn"}">p${problem.line.page + 1}: ${problem.line.text.replace(/</g, "&lt;")} ${problem.dy === null ? "(missing)" : `(${problem.dy > 0 ? "+" : ""}${problem.dy} pt)`}</li>`).join("");
+  draw(doc);
+}
+for (const input of document.querySelectorAll(".controls input")) input.oninput = pick;
+window.onhashchange = pick;
+if (!location.hash) location.hash = [...documents].sort((a, b) => (b.mean_shift ?? 1000) - (a.mean_shift ?? 1000))[0].name;
+drawList();
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_image_layout_to_latex.lua``.
+"""Integration tests for ``filters/docx/docx_image_layout_to_latex.lua``.
 
 The filter runs on the real ``pandoc`` binary inside the pandoc-service container: first on
 a native AST holding the marker ``app/docx_image_layout_pre_process.py`` writes into an image
@@ -18,7 +18,7 @@ from docker.models.containers import Container
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-LAYOUT = "/usr/local/share/pandoc/filters/docx_image_layout_to_latex.lua"
+LAYOUT = "/usr/local/share/pandoc/filters/docx/docx_image_layout_to_latex.lua"
 GRAPHIC = "\\pandocbounded{\\includegraphics[keepaspectratio]{pic.png}}"
 
 

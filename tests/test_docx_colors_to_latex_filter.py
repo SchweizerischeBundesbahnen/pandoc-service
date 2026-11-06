@@ -1,4 +1,4 @@
-"""End-to-end integration test for ``filters/docx_colors_to_latex.lua``.
+"""End-to-end integration test for ``filters/docx/docx_colors_to_latex.lua``.
 
 Companion to ``test_inline_styles_filter_integration.py``: runs pandoc inside
 the pandoc-service container with the Lua filter loaded and asserts that the
@@ -27,7 +27,7 @@ from app import docx_color_pre_process
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_colors_to_latex.lua"
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "tests" / "data" / "colored.docx"
 
 
@@ -107,7 +107,10 @@ def test_shd_emits_full_height_colorbox(test_parameters: TestParameters):
     latex = _convert_docx_to_latex(test_parameters.container, FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(latex)
     assert "\\hl{" not in flat and "\\sethlcolor" not in flat, flat
-    assert "\\colorbox[HTML]{00FF00}{\\strut{}green shading}" in flat, flat
+    # A box per word, and a space in the colour of the background between them, where a line may end
+    space = "{\\color[HTML]{00FF00}\\leaders\\vrule height\\ht\\strutbox depth\\dp\\strutbox\\hskip\\fontdimen2\\font plus\\fontdimen3\\font minus\\fontdimen4\\font}"
+    words = "\\colorbox[HTML]{00FF00}{\\strut{}green}}" + space + "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{00FF00}{\\strut{}shading}}"
+    assert words in flat, flat
 
 
 def test_named_highlight_resolves_to_hex_and_boxes(test_parameters: TestParameters):
@@ -115,7 +118,7 @@ def test_named_highlight_resolves_to_hex_and_boxes(test_parameters: TestParamete
     color (resolved via the static name-to-hex table inside the filter)."""
     latex = _convert_docx_to_latex(test_parameters.container, FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(latex)
-    assert "\\colorbox[HTML]{FFFF00}{\\strut{}yellow highlight}" in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}yellow}}" in flat and "\\colorbox[HTML]{FFFF00}{\\strut{}highlight}}" in flat, flat
 
 
 def test_soul_package_added_to_header_includes(test_parameters: TestParameters):
@@ -172,7 +175,7 @@ def test_font_size_emits_fontsize(test_parameters: TestParameters):
     """A PandocColor__SZ_<halfpoints> style becomes \\fontsize{pt}{...} (pt =
     half-points / 2, so 32 -> 16pt)."""
     flat = _md_to_latex(test_parameters.container, '[big]{custom-style="PandocColor__SZ_32"}\n')
-    assert "\\fontsize{16}{19.2}\\selectfont" in flat, flat
+    assert "\\fontsize{16bp}{19.2bp}\\selectfont" in flat, flat
     assert "big" in flat
 
 
@@ -227,7 +230,7 @@ def test_highlight_on_italic_is_boxed_with_color_outside(test_parameters: TestPa
     \\textcolor wraps OUTSIDE, and no soul \\hl is emitted."""
     flat = _md_to_latex(test_parameters.container, '[*injected humour*]{custom-style="PandocColor__FG_00B050__BG_FFFF00"}\n')
     assert "\\hl{" not in flat, f"soul \\hl used instead of \\colorbox: {flat}"
-    assert "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{injected humour}}" in flat, flat
+    assert "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{injected}}" in flat and "\\colorbox[HTML]{FFFF00}{\\strut{}\\emph{humour}}" in flat, flat
     # \textcolor is outermost, then the box.
     assert flat.index("\\textcolor") < flat.index("\\colorbox"), flat
 
@@ -269,14 +272,12 @@ def test_white_background_is_not_boxed(test_parameters: TestParameters):
     assert "\\textcolor[HTML]{FF0000}" in flat, flat  # foreground colour still applied
 
 
-def test_long_highlight_is_not_boxed(test_parameters: TestParameters):
-    """A \\colorbox is unbreakable, so boxing a long run overflows the page by
-    metres. Only SHORT runs are boxed; a long highlighted run drops the
-    background (foreground color stays) rather than becoming an overfull box."""
-    long_text = "lorem ipsum dolor sit amet " * 6  # well over the ~60-char cap
-    flat = _md_to_latex(test_parameters.container, f'[{long_text}*it*]{{custom-style="PandocColor__BG_FFFF00"}}\n')
-    assert "\\colorbox" not in flat, f"long run was boxed (overflow risk): {flat}"
-    assert "\\hl{" not in flat, flat
+def test_a_long_word_of_a_highlight_is_not_boxed(test_parameters: TestParameters):
+    """A \\colorbox is unbreakable, and a highlight is a box per word: a word longer than a line drops the background
+    (the foreground colour stays) rather than becoming an overfull box."""
+    long_word = "x" * 70
+    flat = _md_to_latex(test_parameters.container, f'[a {long_word}]{{custom-style="PandocColor__BG_FFFF00"}}\n')
+    assert "\\colorbox" not in flat, f"a word longer than a line was boxed (overflow risk): {flat}"
 
 
 def test_underline_inside_highlight_is_boxed(test_parameters: TestParameters):
@@ -288,3 +289,42 @@ def test_underline_inside_highlight_is_boxed(test_parameters: TestParameters):
     assert "\\colorbox[HTML]{CC99FF}" in flat, f"background dropped on underlined run: {flat}"
     assert "\\strut" in flat, flat
     assert "\\ul{underlined}" in flat or "\\uline{underlined}" in flat, flat
+
+
+def _font_style(family: str) -> str:
+    return "PandocColor__FN_" + family.encode().hex().upper()
+
+
+def test_a_run_font_becomes_fontspec_as_word_sets_it(test_parameters: TestParameters):
+    latex = _md_to_latex(test_parameters.container, f'[in Segoe]{{custom-style="{_font_style("Segoe UI")}"}}')
+    assert "{\\fontspec{Segoe UI}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]in Segoe}" in latex, latex
+
+
+def test_a_run_font_which_could_carry_latex_is_left_out(test_parameters: TestParameters):
+    latex = _md_to_latex(test_parameters.container, f'[evil]{{custom-style="{_font_style("x}" + chr(92) + "input{y")}"}}')
+    assert "fontspec" not in latex, latex
+    odd = _md_to_latex(test_parameters.container, '[odd]{custom-style="PandocColor__FN_ABC"}')
+    assert "fontspec" not in odd, odd
+
+
+def test_a_run_size_is_in_postscript_points(test_parameters: TestParameters):
+    latex = _md_to_latex(test_parameters.container, '[big]{custom-style="PandocColor__SZ_22"}')
+    assert "\\fontsize{11bp}{13.2bp}\\selectfont" in latex, latex
+
+
+def test_a_run_larger_than_the_body_text_makes_its_line_as_high_as_its_font(test_parameters: TestParameters):
+    """Word sets a line as high as the ascent and as deep as the descent of the largest font in it."""
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", 'mkdir -p /tmp/test && printf \'[big]{custom-style="PandocColor__SZ_32"} [small]{custom-style="PandocColor__SZ_20"}\\n\' > /tmp/test/run.md'])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex -M docx-body-size=12 --lua-filter={FILTER_PATH} /tmp/test/run.md"])
+    assert exit_code == 0, output.decode()
+    flat = _flatten_whitespace(output.decode())
+    assert "\\fontsize{16bp}{19.2bp}\\selectfont \\pdcRunStrut{}big" in flat, flat
+    assert flat.count("\\pdcRunStrut") == 1, "a smaller run leaves the line of the body"
+
+
+def test_a_long_highlight_keeps_its_background_word_by_word(test_parameters: TestParameters):
+    """A box per word breaks at the spaces: a run longer than a line keeps its background."""
+    text = " ".join(["highlighted"] * 8)
+    flat = _md_to_latex(test_parameters.container, f'[{text}]{{custom-style="PandocColor__BG_FFFF00"}}\n')
+    assert flat.count("\\colorbox[HTML]{FFFF00}") == 8, flat

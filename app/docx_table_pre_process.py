@@ -12,7 +12,7 @@ Pandoc's DOCX reader has three table-related problems this preprocessor fixes:
    (background shading, borders, vertical alignment) before building the
    AST.  This preprocessor prepends a PUA-delimited sentinel to the first
    paragraph of each coloured cell so the companion Lua filter
-   (``filters/docx_tables_to_latex.lua``) can inject ``\\cellcolor`` into
+   (``filters/docx/docx_tables_to_latex.lua``) can inject ``\\cellcolor`` into
    the LaTeX output.
 
 3. **Dropped table width & alignment**: pandoc normalises the column widths
@@ -57,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 # PUA delimiters — different from list-level (\uE000/\uE001) to avoid
 # ambiguity when a list paragraph happens to sit inside a table cell.
+# The style a Polarion caption keeps instead of Caption, so pandoc does not number it again.
+PLAIN_CAPTION_STYLE = "PandocCaption"
 SENTINEL_OPEN = "\ue010"
 SENTINEL_CLOSE = "\ue011"
 
@@ -100,6 +102,8 @@ _JC_TO_ALIGN = {"left": "left", "center": "center", "right": "right", "start": "
 # ("Table 1 ..."), so if pandoc's DOCX reader turns them into a LaTeX
 # \caption it prepends its OWN "Table N:" counter, printing the number twice.
 _CAPTION_STYLE_VAL = "Caption"
+# The paragraph style pandoc's DOCX writer gives the paragraphs of a table cell.
+_COMPACT_STYLE_VAL = "Compact"
 
 # Default column width (twips) assigned when <w:gridCol> lacks a w:w
 # attribute.  The exact value is unimportant — pandoc only uses the
@@ -466,7 +470,108 @@ def _first_own_cell(tbl: ET.Element) -> ET.Element | None:
     return None
 
 
-def _tag_table_layout(tbl: ET.Element, text_width_twips: float) -> bool:
+_BORDER_SIDES = ("top", "left", "bottom", "right", "insideH", "insideV")
+_NO_BORDER = frozenset({"nil", "none"})
+
+
+def _draws_a_border(borders: ET.Element | None) -> bool:
+    """Whether a <w:tblBorders> or <w:tcBorders> draws a line on any side."""
+    if borders is None:
+        return False
+    return any((side := borders.find(f"{{{W_NS}}}{name}")) is not None and side.get(_VAL_ATTR) not in _NO_BORDER for name in _BORDER_SIDES)
+
+
+def bordered_table_styles(styles: ET.Element | None) -> frozenset[str]:
+    """The table styles whose own table properties draw borders, as a grid does."""
+    if styles is None:
+        return frozenset()
+    found = set()
+    for style in styles.iter(f"{{{W_NS}}}style"):
+        if style.get(f"{{{W_NS}}}type") == "table" and _draws_a_border(style.find(f"{_TBLPR_TAG}/{{{W_NS}}}tblBorders")):
+            found.add(style.get(f"{{{W_NS}}}styleId") or "")
+    return frozenset(found)
+
+
+# A side of the first cell and the border of the table it falls back to.
+_GRID_SIDES = (("top", "top"), ("left", "left"), ("bottom", "insideH"), ("right", "insideV"))
+# The width of a border is in eighths of a point; Word draws one of no width at a quarter point.
+_EIGHTHS_PER_POINT = 8
+_THINNEST_LINE = 0.25
+_THICKEST_LINE = 6.0
+
+
+def _grid_sides(tbl: ET.Element) -> list[ET.Element] | None:
+    """The borders of every side of the first cell, its own else the table's; None when a side draws none.
+
+    The first cell stands for the table.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    table_borders = tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None
+    first = _first_own_cell(tbl)
+    tcpr = first.find(_TCPR_TAG) if first is not None else None
+    cell_borders = tcpr.find(f"{{{W_NS}}}tcBorders") if tcpr is not None else None
+    sides = []
+    for cell_side, table_side in _GRID_SIDES:
+        side = cell_borders.find(f"{{{W_NS}}}{cell_side}") if cell_borders is not None else None
+        if side is None and table_borders is not None:
+            side = table_borders.find(f"{{{W_NS}}}{table_side}")
+        if side is None or side.get(_VAL_ATTR) in _NO_BORDER:
+            return None
+        sides.append(side)
+    return sides
+
+
+def _line_width(side: ET.Element) -> float:
+    """The width of a border in points, within what a PDF line shows."""
+    try:
+        width = int(side.get(f"{{{W_NS}}}sz") or "4") / _EIGHTHS_PER_POINT
+    except ValueError:
+        width = 4 / _EIGHTHS_PER_POINT
+    return min(max(width, _THINNEST_LINE), _THICKEST_LINE)
+
+
+def _grid_lines(tbl: ET.Element) -> tuple[str, float] | None:
+    """The colour and width of the lines of a table which draws every side of its cells, else None."""
+    sides = _grid_sides(tbl)
+    if sides is None:
+        return None
+    raw_color = (sides[0].get(f"{{{W_NS}}}color") or "").upper()
+    if raw_color == "FFFFFF":
+        # White lines on white paper: nothing to draw
+        return None
+    return _normalize_hex(raw_color) or "000000", _line_width(sides[0])
+
+
+# The bit of the hexadecimal w:val of <w:tblLook> which turns the formatting of the first row on.
+_FIRST_ROW_BIT = 0x0020
+
+
+def _look_bits(value: str | None) -> int:
+    try:
+        return int(value or "0", 16)
+    except ValueError:
+        return 0
+
+
+def _rules(tbl: ET.Element, bordered_styles: frozenset[str]) -> str:
+    """The lines Word draws in a table: ``grid`` for borders of its own, of its cells or of its style,
+    ``head`` for the line under the header row of pandoc's Table style, ``none`` without one.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    style = tblpr.find(f"{{{W_NS}}}tblStyle") if tblpr is not None else None
+    if (
+        _draws_a_border(tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None)
+        or (style is not None and style.get(_VAL_ATTR) in bordered_styles)
+        or any(_draws_a_border(cell.find(f"{{{W_NS}}}tcBorders")) for cell in tbl.iter(_TCPR_TAG))
+    ):
+        return "grid"
+    look = tblpr.find(f"{{{W_NS}}}tblLook") if tblpr is not None else None
+    first_row = look is not None and (look.get(f"{{{W_NS}}}firstRow") in ("1", "true", "on") or _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0)
+    has_header = any(row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None for row in tbl.findall(f"{{{W_NS}}}tr"))
+    return "head" if first_row and has_header else "none"
+
+
+def _tag_table_layout(tbl: ET.Element, text_width_twips: float, bordered_styles: frozenset[str] = frozenset()) -> bool:
     """Tag the first cell with the table's width fraction and/or alignment.
 
     Every table with an explicit ``<w:tblW>`` is tagged, **including 100 %**:
@@ -489,11 +594,26 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float) -> bool:
             kv["aw"] = "1"
     if align is not None:
         kv["ta"] = align
-    if not kv:
-        return False
-
+    # The lines of a styled table: LaTeX draws booktabs rules around every table, Word only the borders it
+    # has. A table with borders keeps LaTeX's rules, and one without a style is left as it is.
+    # A table which draws every side of its cells is set as a grid in their colour and width.
+    tblpr = tbl.find(_TBLPR_TAG)
+    grid = _grid_lines(tbl)
+    if grid is not None:
+        kv["rl"], kv["lc"], kv["lw"] = "grid", grid[0], f"{grid[1]:g}"
+    elif tblpr is not None and tblpr.find(f"{{{W_NS}}}tblStyle") is not None:
+        rules = _rules(tbl, bordered_styles)
+        if rules != "grid":
+            kv["rl"] = rules
     first_tc = _first_own_cell(tbl)
     if first_tc is None:
+        return False
+    # A cell paragraph of the Compact style pandoc writes: its rows take the space of Compact, others of Normal
+    own_para = _own_first_para(first_tc)
+    own_style = own_para.find(f"{_PPR_TAG}/{_PSTYLE_TAG}") if own_para is not None else None
+    if own_style is not None and own_style.get(_VAL_ATTR) == _COMPACT_STYLE_VAL:
+        kv["cc"] = "1"
+    if not kv:
         return False
 
     first_para = _find_or_create_first_para(first_tc, first_tc.find(_TCPR_TAG))
@@ -501,34 +621,19 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float) -> bool:
     return True
 
 
-def _has_sequence_field(para: ET.Element) -> bool:
-    """True when the paragraph numbers itself with a Word ``SEQ`` field.
-
-    A genuine Word caption carries its number as a ``SEQ`` field, so pandoc can
-    strip that label and re-number it (keeping it in a List of Tables/Figures).
-    A Polarion caption instead has the number as literal text, so there is no
-    field to find.
-    """
-    if any("SEQ" in (fld.get(_INSTR_ATTR) or "").upper() for fld in para.iter(_FLDSIMPLE_TAG)):
-        return True
-    return any(instr.text and "SEQ" in instr.text.upper() for instr in para.iter(_INSTRTEXT_TAG))
-
-
 def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
-    """Strip the ``Caption`` style from *Polarion* captions so pandoc does not
-    turn them into auto-numbered LaTeX ``\\caption`` blocks.
+    """Give every ``Caption`` paragraph the style ``PandocCaption`` so pandoc keeps it where it is.
 
-    A Polarion caption's text already contains its number as literal text
-    ("Table 1 ..."); left as a ``Caption``-styled paragraph, pandoc's DOCX
-    reader attaches it to the adjacent table and LaTeX prints
-    "Table N: Table N ..." — the counter twice. Dropping the style makes it a
-    normal paragraph that renders its text once (matching how the DOCX shows it).
-
-    A genuine Word caption is left untouched: it numbers itself with a ``SEQ``
-    field, so pandoc re-numbers it correctly and can still list it in a
-    generated List of Tables/Figures. We therefore only neutralise captions
-    that have no ``SEQ`` field (i.e. the literal-numbered Polarion ones), and
-    never pandoc's own ``TableCaption``/``ImageCaption`` styles.
+    Left as ``Caption``, pandoc's DOCX reader attaches the paragraph to the
+    adjacent table or picture: LaTeX numbers it again ("Table N: Table N ...")
+    or docx_caption_labels_to_latex moves it above the table, though Word
+    prints it below. A caption carries its number as text, literally for
+    Polarion and as the cached result of a ``SEQ`` field for Word, so it needs
+    no counter of LaTeX; and the lists of figures and tables come from the
+    entries of their fields (see app/docx_toc_pre_process.py). A style of its
+    own keeps the look of the Caption style, which
+    filters/docx/docx_document_styles_to_latex.lua sets. pandoc's own
+    ``TableCaption``/``ImageCaption`` styles are left untouched.
 
     Returns True when any paragraph was changed.
     """
@@ -538,13 +643,13 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
         if ppr is None:
             continue
         pstyle = ppr.find(_PSTYLE_TAG)
-        if pstyle is not None and pstyle.get(_VAL_ATTR) == _CAPTION_STYLE_VAL and not _has_sequence_field(para):
-            ppr.remove(pstyle)
+        if pstyle is not None and pstyle.get(_VAL_ATTR) == _CAPTION_STYLE_VAL:
+            pstyle.set(_VAL_ATTR, PLAIN_CAPTION_STYLE)
             changed = True
     return changed
 
 
-def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None, bordered_styles: frozenset[str] = frozenset()) -> tuple[bytes, bool]:
     """Fix grid-column widths, tag styled table cells, carry table width/
     alignment, and neutralise caption styles in one body part.
 
@@ -571,7 +676,7 @@ def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None) -> tup
     for tbl in tree.iter(_TBL_TAG):
         if _fix_grid_col_widths(tbl):
             changed = True
-        if _tag_table_layout(tbl, section_widths.get(tbl, width)):
+        if _tag_table_layout(tbl, section_widths.get(tbl, width), bordered_styles):
             changed = True
         if _tag_cell_properties(tbl):
             changed = True

@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_lists_to_latex.lua``.
+"""Integration tests for ``filters/docx/docx_lists_to_latex.lua``.
 
 Runs the real ``pandoc`` binary inside the pandoc-service container with the
 filter on a native AST that mimics what the docx reader produces for a Polarion
@@ -12,7 +12,7 @@ from __future__ import annotations
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_lists_to_latex.lua"
 
 OPEN = "\ue000"
 CLOSE = "\ue001"

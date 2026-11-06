@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/docx_paragraphs_to_latex.lua``.
+"""Integration tests for ``filters/docx/docx_paragraphs_to_latex.lua``.
 
 Runs pandoc inside the pandoc-service container with the filter loaded and
 asserts the LaTeX output for a ``Div`` carrying the synthetic
@@ -13,7 +13,7 @@ from __future__ import annotations
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/docx_paragraphs_to_latex.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_paragraphs_to_latex.lua"
 
 
 def _md_to_latex(container, md: str) -> str:
@@ -71,3 +71,17 @@ def test_non_pandocpara_div_is_left_alone(test_parameters: TestParameters):
     assert "\\raggedleft" not in flat
     assert "\\leftskip" not in flat
     assert "content" in flat
+
+
+SHOW_STYLE = 'function Div(div) if div.attributes["pdc-style"] then return {pandoc.RawBlock("latex", "STYLE=" .. div.attributes["pdc-style"]), table.unpack(div.content)} end end'
+
+
+def test_the_style_the_paragraph_had_stays_on_its_div(test_parameters: TestParameters):
+    """docx_document_styles_to_latex puts the space of that style around the paragraph."""
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/show.lua << 'HEREDOC_EOF'\n{SHOW_STYLE}\nHEREDOC_EOF"])
+    container.exec_run(["sh", "-c", f"cat > /tmp/test/in.md << 'HEREDOC_EOF'\n{_div('PandocPara__ALIGN_center__STYLE_BodyText')}\nHEREDOC_EOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex --lua-filter={FILTER_PATH} --lua-filter=/tmp/test/show.lua /tmp/test/in.md"])
+    assert exit_code == 0, output.decode()
+    assert "STYLE=BodyText" in output.decode()
+    assert "\\centering" in output.decode()

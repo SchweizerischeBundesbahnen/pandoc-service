@@ -61,13 +61,15 @@ function filter.Div(el)
     return nil
   end
 
-  local align_cmd, indent_pt
+  local align_cmd, indent_pt, base
   -- Segments are "__<KEY>_<value>"; KEY is letters, value has no underscore.
   for key, value in style:gmatch("__(%a+)_([^_]+)") do
     if key == "ALIGN" then
       align_cmd = ALIGN_PRIMITIVE[value:lower()]
     elseif key == "IND" then
       indent_pt = twips_to_pt(value)
+    elseif key == "STYLE" and value:match("^%w+$") then
+      base = value
     end
   end
 
@@ -88,7 +90,8 @@ function filter.Div(el)
     result[#result + 1] = block
   end
   result[#result + 1] = pandoc.RawBlock("latex", "\\par}")
-  return result
+  -- The style the paragraph had, for the space docx_document_styles_to_latex puts around it
+  return pandoc.Div(result, { ["pdc-style"] = base })
 end
 
 return filter

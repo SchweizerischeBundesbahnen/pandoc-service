@@ -13,7 +13,8 @@
 --   FG (color)      -> \textcolor[HTML]{RRGGBB}{...}
 --   BG (shading)    -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
 --   HL (highlight)  -> full-height \colorbox[HTML]{RRGGBB}{\strut ...}
---   SZ (font size)  -> {\fontsize{pt}{baseline}\selectfont ...}
+--   SZ (font size)  -> {\fontsize{bp}{baseline}\selectfont ...}
+--   FN (font)       -> {\fontspec{Family}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}] ...}, the family as the hex of its UTF-8
 --
 -- Why \colorbox and not soul's \hl: soul's \hl band hugs the glyph height, so a
 -- plain-text highlight sits shorter and lower than the box we are forced to use
@@ -25,7 +26,7 @@
 -- inline content, so bold/italic/underlined highlights need no special casing.
 --
 -- The deliberate trade-off: a \colorbox cannot break across a line, so a
--- highlighted run no longer hyphenates, and a run longer than MAX_BOXABLE_LEN
+-- highlighted run no longer hyphenates, and a word longer than MAX_BOXABLE_LEN
 -- (or one containing an image/link/math/raw LaTeX — see BOX_UNSAFE) drops its
 -- background rather than overflow the margin. The foreground color is still
 -- applied in that case (\textcolor is line-breakable and harmless around
@@ -65,7 +66,7 @@ local STYLE_PREFIX = "PandocColor"
 -- non-underlined one. Boxing everything with a leading \strut gives one uniform
 -- band height across the whole run — the highlighter-pen look — with no steps.
 -- The trade-off (chosen deliberately): a \colorbox can't break across lines, so
--- a highlighted run no longer hyphenates and a run longer than MAX_BOXABLE_LEN
+-- a highlighted run no longer hyphenates and a word longer than MAX_BOXABLE_LEN
 -- drops its background rather than overflow the margin.
 
 -- Inline types that must NOT be wrapped in a \colorbox: a box is unbreakable
@@ -140,6 +141,19 @@ local function valid_hex(s)
   return s and #s == 6 and s:match("^%x%x%x%x%x%x$") ~= nil
 end
 
+-- The family of an FN segment: the hex of its UTF-8, as app/docx_color_pre_process.py
+-- writes it for a family the container has. Letters, digits, spaces, dots, hyphens and
+-- underscores only reach LaTeX.
+local function font_family(hex)
+  if not hex:match("^%x+$") or #hex % 2 ~= 0 then
+    return nil
+  end
+  local family = hex:gsub("%x%x", function(byte)
+    return string.char(tonumber(byte, 16))
+  end)
+  return family:match("^[%w][%w %.%-_]*$") and family or nil
+end
+
 local function parse_style(name)
   if name:sub(1, #STYLE_PREFIX) ~= STYLE_PREFIX then
     return nil
@@ -154,6 +168,8 @@ local function parse_style(name)
       props.hl = value
     elseif key == "SZ" then
       props.sz = value
+    elseif key == "FN" then
+      props.font = font_family(value)
     end
   end
   return props
@@ -163,13 +179,22 @@ end
 -- size, or nil when the value isn't a clean positive integer. pt = half-points
 -- / 2; the baseline skip follows LaTeX's usual 1.2x leading. string.format with
 -- %g keeps the trust boundary tight — only digits and a dot reach the output.
+-- The size of the body text, which docx_document_styles_to_latex sets: see filter.Meta
+local body_size = nil
+
 local function font_size_open(half_points)
   local hp = tonumber(half_points)
   if not hp or hp <= 0 or hp ~= math.floor(hp) then
     return nil
   end
   local pt = hp / 2
-  return "{\\fontsize{" .. string.format("%g", pt) .. "}{" .. string.format("%g", pt * 1.2) .. "}\\selectfont "
+  -- bp: Word counts in PostScript points, a pt of TeX is 0.4% smaller
+  local open = "{\\fontsize{" .. string.format("%g", pt) .. "bp}{" .. string.format("%g", pt * 1.2) .. "bp}\\selectfont "
+  if body_size and pt > body_size then
+    -- Word sets a line as high as the ascent and as deep as the descent of the largest font in it
+    open = open .. "\\pdcRunStrut{}"
+  end
+  return open
 end
 
 local filter = {}
@@ -208,6 +233,9 @@ local PREAMBLE = table.concat({
   "\\setlength{\\ULdepth}{1.6pt}",
   "\\renewcommand{\\ULthickness}{0.4pt}",
   "\\setul{1.6pt}{0.4pt}",
+  -- Underline and strike-through in one pass: ulem breaks a line only at the spaces of its outermost
+  -- command, so a \\sout inside a \\uline was one word that no line could break
+  "\\newcommand{\\pdcUlineSout}{\\bgroup\\markoverwith{\\hbox{\\rlap{\\rule[-\\ULdepth]{.25pt}{\\ULthickness}}\\rule[.5ex]{.25pt}{\\ULthickness}}}\\ULon}",
   "\\providecommand{\\pdcDropHl}[1]{#1}",
   "\\let\\pdcOldSuperscript\\textsuperscript",
   "\\let\\pdcOldSubscript\\textsubscript",
@@ -215,11 +243,21 @@ local PREAMBLE = table.concat({
   "\\renewcommand{\\textsubscript}[1]{\\pdcOldSubscript{\\let\\ul\\uline\\let\\st\\sout\\let\\hl\\pdcDropHl#1}}",
 }, "\n")
 
+-- A strut of the ascent and the descent of the current font: without the metrics of its glyphs, XeTeX
+-- sets a word as high as the ascent of its font and as deep as its descent
+local RUN_STRUT = "\\newcommand{\\pdcRunStrut}{\\begingroup\\XeTeXuseglyphmetrics=0 \\setbox0\\hbox{x}"
+  .. "\\rule[-\\dp0]{0pt}{\\dimexpr\\ht0+\\dp0\\relax}\\endgroup}"
+
+local function read_body_size(meta)
+  body_size = tonumber(pandoc.utils.stringify(meta["docx-body-size"] or ""))
+  return nil
+end
+
 function filter.Meta(meta)
   if not FORMAT:match("latex") then
     return nil
   end
-  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
+  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE .. "\n" .. RUN_STRUT) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ soul_block })
@@ -231,6 +269,36 @@ function filter.Meta(meta)
     meta["header-includes"] = pandoc.MetaList({ existing, soul_block })
   end
   return meta
+end
+
+-- The words of inlines and the spaces between them, as { word, "space", word, ... }: an element of
+-- several words, as an emphasis, becomes a copy of it around each of them.
+local SPLITTABLE = { Span = true, Emph = true, Strong = true, Underline = true, Strikeout = true, SmallCaps = true }
+
+local function split_words(inlines)
+  local words = { {} }
+  for _, inline in ipairs(inlines) do
+    if inline.t == "Space" or inline.t == "SoftBreak" then
+      words[#words + 1] = "space"
+      words[#words + 1] = {}
+    elseif SPLITTABLE[inline.t] then
+      for index, part in ipairs(split_words(inline.content)) do
+        if part == "space" then
+          words[#words + 1] = "space"
+          words[#words + 1] = {}
+        else
+          local copy = inline:clone()
+          copy.content = part
+          if index > 1 or #part > 0 then
+            table.insert(words[#words], copy)
+          end
+        end
+      end
+    else
+      table.insert(words[#words], inline)
+    end
+  end
+  return words
 end
 
 function filter.Span(el)
@@ -258,15 +326,29 @@ function filter.Span(el)
   -- only box content a box won't break or distort, and only while it is short
   -- enough to fit a line; otherwise the background is dropped (the foreground
   -- colour is still applied, which is harmless and line-breakable).
-  local box_bg = bg_color ~= nil and content_is_boxable(el.content) and content_text_length(el.content) <= MAX_BOXABLE_LEN
+  -- A box per word, see below: each word has to fit a line, not the whole run
+  local box_bg = bg_color ~= nil and content_is_boxable(el.content)
+  if box_bg then
+    for _, word in ipairs(split_words(el.content)) do
+      if word ~= "space" and content_text_length(word) > MAX_BOXABLE_LEN then
+        box_bg = false
+      end
+    end
+  end
 
   local size_open = props.sz and font_size_open(props.sz) or nil
 
-  if not props.fg and not box_bg and not size_open then
+  if not props.fg and not box_bg and not size_open and not props.font then
     return nil
   end
 
   local open, close = "", ""
+
+  -- Outermost of all: the family of the run, unkerned as Word sets it.
+  if props.font then
+    open = open .. "{\\fontspec{" .. props.font .. "}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]"
+    close = "}" .. close
+  end
 
   -- Outermost: font size. \fontsize ... \selectfont changes the size for the
   -- rest of the group; it wraps everything else so colour/highlight inherit it.
@@ -296,6 +378,33 @@ function filter.Span(el)
     close = "}}" .. close
   end
 
+  if box_bg then
+    -- Word breaks a highlighted run at its spaces like any other: a box per word, and between them a
+    -- space in the colour of the background, where a line may end
+    local box_open = "{\\setlength{\\fboxsep}{0pt}\\colorbox[HTML]{" .. bg_color .. "}{\\strut{}"
+    local space = "{\\color[HTML]{" .. bg_color .. "}\\leaders\\vrule height\\ht\\strutbox depth\\dp\\strutbox"
+      .. "\\hskip\\fontdimen2\\font plus\\fontdimen3\\font minus\\fontdimen4\\font}"
+    local words = split_words(el.content)
+    if #words > 1 then
+      local outer_open = open:sub(1, #open - #box_open)
+      local outer_close = close:sub(3)
+      local result = { pandoc.RawInline("latex", outer_open) }
+      for _, word in ipairs(words) do
+        if word == "space" then
+          result[#result + 1] = pandoc.RawInline("latex", space)
+        elseif #word > 0 then
+          result[#result + 1] = pandoc.RawInline("latex", box_open)
+          for _, inline in ipairs(word) do
+            result[#result + 1] = inline
+          end
+          result[#result + 1] = pandoc.RawInline("latex", "}}")
+        end
+      end
+      result[#result + 1] = pandoc.RawInline("latex", outer_close)
+      return result
+    end
+  end
+
   local result = { pandoc.RawInline("latex", open) }
   for _, inline in ipairs(el.content) do
     result[#result + 1] = inline
@@ -304,4 +413,4 @@ function filter.Span(el)
   return result
 end
 
-return filter
+return { { Meta = read_body_size }, filter }

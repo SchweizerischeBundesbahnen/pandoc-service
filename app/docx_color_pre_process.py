@@ -6,7 +6,7 @@ can recover those properties for the LaTeX/PDF writer. This preprocessor
 runs *before* pandoc reads the DOCX and converts every colored run into a
 reference to a synthetic character style. With ``-f docx+styles`` pandoc
 then emits ``Span`` nodes carrying ``custom-style="PandocColor__..."``
-attributes, which ``filters/docx_colors_to_latex.lua`` translates into
+attributes, which ``filters/docx/docx_colors_to_latex.lua`` translates into
 ``\\textcolor`` / ``\\colorbox`` raw LaTeX.
 
 Style-name encoding (parseable, deterministic, segments are optional):
@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 
+from . import docx_document_styles
 from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 if TYPE_CHECKING:
@@ -107,9 +108,11 @@ class _StyleSpec:
     highlight: str | None
     size: str | None
     size_cs: str | None
+    # The installed family of the run's font, in the style id as the hex of its UTF-8
+    font: str | None = None
 
 
-def _style_id(fg: str | None, bg: str | None, highlight: str | None, size: str | None, size_cs: str | None) -> str:
+def _style_id(fg: str | None, bg: str | None, highlight: str | None, size: str | None, size_cs: str | None, font: str | None = None) -> str:
     # Fixed FG/BG/HL/SZ ordering keeps the style id deterministic: the same
     # formatting combination always produces the same id, which is what lets
     # the Lua filter pattern-match the encoded segments back out and what
@@ -127,6 +130,9 @@ def _style_id(fg: str | None, bg: str | None, highlight: str | None, size: str |
         parts.append(f"SZ_{size}")
     if size_cs and size_cs != size:
         parts.append(f"SZCS_{size_cs}")
+    if font:
+        # A family holds spaces, which a style id carries badly: its UTF-8 as hex digits
+        parts.append(f"FN_{font.encode().hex().upper()}")
     return SEGMENT_SEPARATOR.join(parts)
 
 
@@ -136,6 +142,7 @@ _HIGHLIGHT_TAG = f"{{{W_NS}}}highlight"
 _SZ_TAG = f"{{{W_NS}}}sz"
 _SZCS_TAG = f"{{{W_NS}}}szCs"
 _RSTYLE_TAG = f"{{{W_NS}}}rStyle"
+_RFONTS_TAG = f"{{{W_NS}}}rFonts"
 _RPR_TAG = f"{{{W_NS}}}rPr"
 _R_TAG = f"{{{W_NS}}}r"
 _VAL_ATTR = f"{{{W_NS}}}val"
@@ -187,6 +194,19 @@ def _extract_run_colors(rpr: ET.Element) -> tuple[str | None, str | None, str | 
     if highlight == "none":
         highlight = None
     return fg, bg, highlight, size, size_cs
+
+
+def _extract_run_font(rpr: ET.Element) -> str | None:
+    """The installed family of the font a run names directly, or None.
+
+    pandoc's DOCX reader drops ``<w:rFonts>``, so the family rides along in the synthetic
+    style like the colours do. A name the container has no family of is left out, so no
+    name a document sets reaches LaTeX.
+    """
+    fonts = rpr.find(_RFONTS_TAG)
+    if fonts is None:
+        return None
+    return docx_document_styles.installed_family(fonts.get(f"{{{W_NS}}}ascii") or fonts.get(f"{{{W_NS}}}hAnsi"))
 
 
 def _normalize_half_points(value: str | None) -> str | None:
@@ -405,6 +425,20 @@ def _table_of_contents_runs(tree: ET.Element, toc_styles: Collection[str]) -> se
     return runs
 
 
+def _run_style(rpr: ET.Element, style_colors: Mapping[str, StyleColors] | None) -> _StyleSpec | None:
+    """The synthetic style of a run's colours, size and font, with those of its character style; None for none."""
+    fg, bg, highlight, size, size_cs = _extract_run_colors(rpr)
+    if style_colors:
+        fg, bg, highlight = _inherit_style_colors(rpr, style_colors, fg, bg, highlight)
+    font = _extract_run_font(rpr)
+    if font and not (fg or bg or highlight or size or size_cs) and rpr.find(_RSTYLE_TAG) is not None:
+        # A run of a character style of its own, as code is, keeps it for a font alone
+        font = None
+    if not (fg or bg or highlight or size or size_cs or font):
+        return None
+    return _StyleSpec(_style_id(fg, bg, highlight, size, size_cs, font), fg, bg, highlight, size, size_cs, font)
+
+
 def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | None = None, toc_styles: Collection[str] = ()) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite one body part. Returns (new_bytes, styles_used).
 
@@ -429,15 +463,11 @@ def rewrite_part(xml_bytes: bytes, style_colors: Mapping[str, StyleColors] | Non
         if rpr is None:
             # No run-properties element means no direct color formatting.
             continue
-        fg, bg, highlight, size, size_cs = _extract_run_colors(rpr)
-        if style_colors and id(run) not in toc_runs:
-            fg, bg, highlight = _inherit_style_colors(rpr, style_colors, fg, bg, highlight)
-        if not (fg or bg or highlight or size or size_cs):
+        spec = _run_style(rpr, style_colors if id(run) not in toc_runs else None)
+        if spec is None:
             continue
-
-        style_id = _style_id(fg, bg, highlight, size, size_cs)
-        styles_used[style_id] = _StyleSpec(style_id, fg, bg, highlight, size, size_cs)
-        _replace_run_color_props(rpr, style_id)
+        styles_used[spec.style_id] = spec
+        _replace_run_color_props(rpr, spec.style_id)
 
         # Skip the re-serialize roundtrip when nothing changed. ET.tostring
         # reformats namespace declarations and attribute order, so even a

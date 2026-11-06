@@ -133,13 +133,6 @@ COPY filters/heading_levels.lua "/usr/local/share/pandoc/filters/heading_levels.
 COPY filters/strip_raw_tex.lua "/usr/local/share/pandoc/filters/strip_raw_tex.lua"
 COPY filters/strip_document_images.lua "/usr/local/share/pandoc/filters/strip_document_images.lua"
 COPY filters/inline_styles.lua "/usr/local/share/pandoc/filters/inline_styles.lua"
-COPY filters/docx_text_decorations.lua "/usr/local/share/pandoc/filters/docx_text_decorations.lua"
-COPY filters/docx_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_colors_to_latex.lua"
-COPY filters/docx_math_colors_to_latex.lua "/usr/local/share/pandoc/filters/docx_math_colors_to_latex.lua"
-COPY filters/docx_image_layout_to_latex.lua "/usr/local/share/pandoc/filters/docx_image_layout_to_latex.lua"
-COPY filters/docx_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_paragraphs_to_latex.lua"
-COPY filters/docx_lists_to_latex.lua "/usr/local/share/pandoc/filters/docx_lists_to_latex.lua"
-COPY filters/docx_tables_to_latex.lua "/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
 COPY filters/html_lists.lua "/usr/local/share/pandoc/filters/html_lists.lua"
 COPY filters/html_tables_to_latex.lua "/usr/local/share/pandoc/filters/html_tables_to_latex.lua"
 COPY filters/html_captions.lua "/usr/local/share/pandoc/filters/html_captions.lua"
@@ -148,9 +141,8 @@ COPY filters/html_trailing_line_breaks.lua "/usr/local/share/pandoc/filters/html
 COPY filters/html_whitespace.lua "/usr/local/share/pandoc/filters/html_whitespace.lua"
 COPY filters/html_nowrap.lua "/usr/local/share/pandoc/filters/html_nowrap.lua"
 COPY filters/latex_nested_tables.lua "/usr/local/share/pandoc/filters/latex_nested_tables.lua"
-COPY filters/docx_caption_labels_to_latex.lua "/usr/local/share/pandoc/filters/docx_caption_labels_to_latex.lua"
-COPY filters/docx_empty_paragraphs_to_latex.lua "/usr/local/share/pandoc/filters/docx_empty_paragraphs_to_latex.lua"
-COPY filters/docx_page_breaks_to_latex.lua "/usr/local/share/pandoc/filters/docx_page_breaks_to_latex.lua"
+# The filters of DOCX to PDF and LaTeX, in a folder of their own
+COPY filters/docx/ "/usr/local/share/pandoc/filters/docx/"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/bin/sh", "-c", "./healthcheck.sh"]

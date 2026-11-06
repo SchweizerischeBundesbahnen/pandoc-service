@@ -9,6 +9,12 @@ see app/docx_page_break_pre_process.py.
 
 A DOCX without them (pandoc writes none) gets US Letter with 1 inch
 margins, the same fallback app/docx_post_process.py sizes images by.
+
+Word prints a document with comments on a smaller page, with a markup area
+right of it which holds the balloons of the comments. For such a document the
+page is laid out on a larger paper, which ``\\mag`` shrinks to the size of the
+DOCX page, and filters/docx/docx_comments_to_latex.lua draws the markup area and
+the balloons where these variables place them.
 """
 
 from __future__ import annotations
@@ -24,9 +30,23 @@ if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
 TWIPS_PER_INCH = 1440
+TWIPS_PER_POINT = 20
 DOCUMENT_PART = "word/document.xml"
 LETTER = {"w": 12240, "h": 15840}
 ONE_INCH_MARGINS = {"top": 1440, "right": 1440, "bottom": 1440, "left": 1440}
+
+# The markup area of Word for Mac, in points of the page before Word shrinks it:
+# the space it leaves left of the page and fills right of it, where the grey area
+# starts left of the right edge of the page and how wide it is, where the balloons
+# start and how wide they are, and where the line to a balloon turns.
+MARKUP_LEFT = 1.26
+MARKUP_RIGHT = 206.3
+AREA_START = 65.0
+AREA_WIDTH = 259.4
+BALLOON_START = 41.0
+BALLOON_WIDTH = 232.8
+LINE_TURN = 67.3
+COMMENT_REFERENCE = f"{{{W_NS}}}commentReference"
 
 # What a source this cannot read raises: not a zip, or a zip without a document in it.
 # See html_lists_pre_process for why this is a name rather than an inline except-tuple
@@ -141,7 +161,32 @@ def geometry_variables(docx_bytes: bytes) -> list[str]:
     except _UNREADABLE_DOCX:
         document = None
     values = section_page(_first_section(document) if document is not None else None)
+    if document is not None and next(document.iter(COMMENT_REFERENCE), None) is not None:
+        return _markup_variables({name: twips / TWIPS_PER_POINT for name, twips in values.items()})
     variables: list[str] = []
     for name, twips in values.items():
         variables += ["-V", f"geometry:{name}={_inches(twips)}"]
     return variables
+
+
+def _markup_variables(page: dict[str, float]) -> list[str]:
+    """The page with the markup area right of it, shrunk to the paper as Word does; the values in points."""
+    width, height = page["paperwidth"], page["paperheight"]
+    mag = round(1000 * width / (width + MARKUP_LEFT + MARKUP_RIGHT))
+    scale = mag / 1000
+    top = (height / scale - height) / 2
+    values = {
+        "paperwidth": width / scale,
+        "paperheight": height / scale,
+        "top": top + page["top"],
+        "bottom": top + page["bottom"],
+        "left": MARKUP_LEFT + page["left"],
+        "right": width / scale - MARKUP_LEFT - width + page["right"],
+    }
+    variables: list[str] = []
+    for name, points in values.items():
+        variables += ["-V", f"geometry:{name}={points:.2f}bp"]
+    edge = MARKUP_LEFT + width
+    area = f"{edge - AREA_START:.2f} {top:.2f} {AREA_WIDTH:g} {height:.2f}"
+    balloon = f"{edge - BALLOON_START:.2f} {BALLOON_WIDTH:g} {edge - LINE_TURN:.2f}"
+    return [*variables, "-M", f"docx-comment-mag={mag}", "-M", f"docx-comment-area={area}", "-M", f"docx-comment-balloon={balloon}"]

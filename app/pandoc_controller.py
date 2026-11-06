@@ -29,6 +29,7 @@ from app.schema import VersionSchema
 from app.tls import API_TLS_PREFIX, METRICS_TLS_PREFIX, get_scheme, get_tls_options, load_tls_options
 
 from . import (
+    docx_document_styles,
     docx_latex_pre_process,
     docx_page_geometry,
     docx_post_process,
@@ -67,19 +68,21 @@ CUSTOM_REFERENCE_DOCX = "custom-reference.docx"
 CUSTOM_REFERENCE_PPTX = "custom-reference.pptx"
 PANDOC_PATH = "/usr/local/bin/pandoc"
 FILTER_BASE_PATH = "/usr/local/share/pandoc/filters"
+# The filters which set the LaTeX of a DOCX, for PDF and LaTeX
+DOCX_FILTER_PATH = f"{FILTER_BASE_PATH}/docx"
 
 FILTERS = {
     "page_break": f"{FILTER_BASE_PATH}/pagebreak.lua",
     "page_orientation": f"{FILTER_BASE_PATH}/page_orientation.lua",
     "heading_levels": f"{FILTER_BASE_PATH}/heading_levels.lua",
     "inline_styles": f"{FILTER_BASE_PATH}/inline_styles.lua",
-    "docx_text_decorations": f"{FILTER_BASE_PATH}/docx_text_decorations.lua",
-    "docx_colors_to_latex": f"{FILTER_BASE_PATH}/docx_colors_to_latex.lua",
-    "docx_math_colors_to_latex": f"{FILTER_BASE_PATH}/docx_math_colors_to_latex.lua",
-    "docx_image_layout_to_latex": f"{FILTER_BASE_PATH}/docx_image_layout_to_latex.lua",
-    "docx_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_paragraphs_to_latex.lua",
-    "docx_lists_to_latex": f"{FILTER_BASE_PATH}/docx_lists_to_latex.lua",
-    "docx_tables_to_latex": f"{FILTER_BASE_PATH}/docx_tables_to_latex.lua",
+    "docx_text_decorations": f"{DOCX_FILTER_PATH}/docx_text_decorations.lua",
+    "docx_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_colors_to_latex.lua",
+    "docx_math_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_math_colors_to_latex.lua",
+    "docx_image_layout_to_latex": f"{DOCX_FILTER_PATH}/docx_image_layout_to_latex.lua",
+    "docx_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_paragraphs_to_latex.lua",
+    "docx_lists_to_latex": f"{DOCX_FILTER_PATH}/docx_lists_to_latex.lua",
+    "docx_tables_to_latex": f"{DOCX_FILTER_PATH}/docx_tables_to_latex.lua",
     "html_lists": f"{FILTER_BASE_PATH}/html_lists.lua",
     "html_tables_to_latex": f"{FILTER_BASE_PATH}/html_tables_to_latex.lua",
     "html_captions": f"{FILTER_BASE_PATH}/html_captions.lua",
@@ -88,9 +91,12 @@ FILTERS = {
     "html_whitespace": f"{FILTER_BASE_PATH}/html_whitespace.lua",
     "html_nowrap": f"{FILTER_BASE_PATH}/html_nowrap.lua",
     "latex_nested_tables": f"{FILTER_BASE_PATH}/latex_nested_tables.lua",
-    "docx_caption_labels_to_latex": f"{FILTER_BASE_PATH}/docx_caption_labels_to_latex.lua",
-    "docx_empty_paragraphs_to_latex": f"{FILTER_BASE_PATH}/docx_empty_paragraphs_to_latex.lua",
-    "docx_page_breaks_to_latex": f"{FILTER_BASE_PATH}/docx_page_breaks_to_latex.lua",
+    "docx_caption_labels_to_latex": f"{DOCX_FILTER_PATH}/docx_caption_labels_to_latex.lua",
+    "docx_empty_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_empty_paragraphs_to_latex.lua",
+    "docx_page_breaks_to_latex": f"{DOCX_FILTER_PATH}/docx_page_breaks_to_latex.lua",
+    "docx_comments_to_latex": f"{DOCX_FILTER_PATH}/docx_comments_to_latex.lua",
+    "docx_document_styles_to_latex": f"{DOCX_FILTER_PATH}/docx_document_styles_to_latex.lua",
+    "docx_toc_to_latex": f"{DOCX_FILTER_PATH}/docx_toc_to_latex.lua",
     "strip_raw_tex": f"{FILTER_BASE_PATH}/strip_raw_tex.lua",
     "strip_document_images": f"{FILTER_BASE_PATH}/strip_document_images.lua",
 }
@@ -124,6 +130,9 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
         "--toc",
     )
 }
+# The docx filters a request may name lay in the folder of all filters before they moved to their own:
+# a request which names one there still gets it
+ALLOWED_PANDOC_OPTIONS |= {option.replace(f"{DOCX_FILTER_PATH}/", f"{FILTER_BASE_PATH}/"): option for option in ALLOWED_PANDOC_OPTIONS if option.startswith(f"--lua-filter={DOCX_FILTER_PATH}/")}
 
 # Target formats whose writer ultimately produces LaTeX (PDF goes through
 # tectonic, latex is the raw .tex file). The DOCX color preprocessor only
@@ -707,6 +716,9 @@ def _build_pandoc_command(
                 # Before the rest, so the filters below see an empty line as the blank
                 # paragraph it becomes and not as an empty one.
                 f"--lua-filter={FILTERS['docx_empty_paragraphs_to_latex']}",
+                # Prints the comments in balloons right of the text, not in it. See
+                # app/docx_page_geometry.py, which sets the page of a document with comments.
+                f"--lua-filter={FILTERS['docx_comments_to_latex']}",
                 # Must precede docx_colors_to_latex: it rewrites underline/strikeout that
                 # carry other formatting into ulem and strips highlight from inside them,
                 # before the colour filter turns those spans into \textcolor/\hl.
@@ -721,6 +733,10 @@ def _build_pandoc_command(
                 # Strip "Table N" / "Figure N" prefix from Caption blocks so LaTeX's
                 # own \caption counter doesn't duplicate the numbering.
                 f"--lua-filter={FILTERS['docx_caption_labels_to_latex']}",
+                # Sets the text in the styles of the DOCX. See app/docx_document_styles.py.
+                f"--lua-filter={FILTERS['docx_document_styles_to_latex']}",
+                # Sets the tables of contents app/docx_toc_pre_process.py marks in the DOCX.
+                f"--lua-filter={FILTERS['docx_toc_to_latex']}",
             ]
         )
 
@@ -959,7 +975,8 @@ def run_pandoc_conversion(source_data: str | bytes, source_format: str, target_f
     apply_docx_latex_filters = source_format == "docx" and target_format in _LATEX_TARGET_FORMATS
     page_geometry: list[str] | None = None
     if apply_docx_latex_filters:
-        page_geometry = docx_page_geometry.geometry_variables(source_data)
+        # The styles of the text come along with the page: see app/docx_document_styles.py
+        page_geometry = docx_page_geometry.geometry_variables(source_data) + docx_document_styles.document_style_options(source_data)
         source_data = docx_latex_pre_process.preprocess(source_data)
 
     # html -> docx: rewrite orphan <ol>/<ul> directly nested inside another

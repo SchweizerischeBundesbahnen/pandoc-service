@@ -1824,3 +1824,9 @@ def test_the_heap_limit_is_worked_out_once():
         assert worked_out.call_count == 1
     finally:
         del app.state.pandoc_max_heap
+
+
+def test_a_docx_filter_named_where_it_lay_before_its_folder_still_runs():
+    """The docx filters moved to a folder of their own: a request naming the old place gets the new one."""
+    old = "--lua-filter=/usr/local/share/pandoc/filters/docx_tables_to_latex.lua"
+    assert _validate_pandoc_options([old]) == ["--lua-filter=/usr/local/share/pandoc/filters/docx/docx_tables_to_latex.lua"]

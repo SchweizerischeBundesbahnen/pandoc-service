@@ -499,16 +499,10 @@ def test_absolute_width_table_flagged_for_tight_padding():
     assert "aw" not in kv
 
 
-def test_word_caption_with_seq_field_keeps_style():
-    """A genuine Word caption (numbered via a SEQ field) keeps its Caption style
-    so pandoc still numbers it and lists it; only literal-numbered Polarion
-    captions are neutralised."""
-    # Polarion-style: literal number, no field -> style stripped.
+def test_every_caption_keeps_a_style_of_its_own():
+    """A Polarion caption (literal number) and a Word caption (SEQ field) both become PandocCaption,
+    so pandoc neither numbers them again nor moves them away from where Word prints them."""
     polarion = '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>Table 1 My caption</w:t></w:r></w:p>'
-    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(polarion)})))
-    assert "Caption" not in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
-
-    # Word-style: SEQ field for the number -> style preserved.
     word = (
         '<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>'
         "<w:r><w:t>Table </w:t></w:r>"
@@ -517,15 +511,22 @@ def test_word_caption_with_seq_field_keeps_style():
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
         "<w:r><w:t>: My caption</w:t></w:r></w:p>"
     )
-    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(word)})))
-    assert "Caption" in [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")]
+    for caption in (polarion, word):
+        root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(caption)})))
+        assert [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")] == ["PandocCaption"]
+
+
+def test_pandoc_captions_are_left_alone():
+    caption = '<w:p><w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr><w:r><w:t>A picture</w:t></w:r></w:p>'
+    root = _body(docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(caption)})))
+    assert [s.get(f"{{{W_NS}}}val") for s in root.iter(f"{{{W_NS}}}pStyle")] == ["ImageCaption"]
 
 
 # --- cell justification -----------------------------------------------------
 #
 # Pandoc's AST has no justified alignment, so a cell's <w:jc w:val="both">
 # reaches the reader as AlignLeft and "distribute" as AlignDefault. Either way
-# filters/docx_tables_to_latex.lua would flush the cell left, so the sentinel
+# filters/docx/docx_tables_to_latex.lua would flush the cell left, so the sentinel
 # carries it. The other three alignments survive on the Cell and are not tagged.
 
 
@@ -648,3 +649,124 @@ def test_a_table_in_the_footnotes_takes_the_line_of_the_document():
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         footnotes_tree = ET.fromstring(archive.read("word/footnotes.xml"))
     assert _first_cell_sentinel_kv(footnotes_tree)["tw"] == "0.3472"
+
+
+# ---- The lines of a styled table ----
+
+W_DECL = f'xmlns:w="{W_NS}"'
+
+
+def _styled_table(tblpr_extra: str = "", header: bool = False, cell_borders: str = "") -> str:
+    """A table of pandoc's Table style, with an optional header row and cell borders."""
+    header_row = '<w:tr><w:trPr><w:tblHeader w:val="on"/></w:trPr><w:tc><w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr>' if header else ""
+    tcpr = f"<w:tcPr>{cell_borders}</w:tcPr>" if cell_borders else ""
+    return f'<w:tbl><w:tblPr><w:tblStyle w:val="Table"/>{tblpr_extra}</w:tblPr>{header_row}<w:tr><w:tc>{tcpr}<w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+
+def _rules_of(table: str, bordered: frozenset[str] = frozenset()) -> str | None:
+    xml, _ = docx_table_pre_process.rewrite_part(f"<w:document {W_DECL}><w:body>{table}</w:body></w:document>".encode(), 9360, bordered)
+    text = "".join(t.text or "" for t in ET.fromstring(xml).iter(f"{{{W_NS}}}t"))
+    if SENTINEL_OPEN not in text:
+        return None
+    payload = text[text.index(SENTINEL_OPEN) + 1 : text.index(SENTINEL_CLOSE)]
+    return dict(item.split("=") for item in payload.split(";")).get("rl")
+
+
+def test_a_styled_table_without_header_row_draws_no_lines():
+    assert _rules_of(_styled_table()) == "none"
+
+
+def test_the_first_row_of_a_header_draws_the_line_under_it():
+    assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>', header=True)) == "head"
+
+
+def test_the_first_row_bit_of_the_look_counts_as_well():
+    assert _rules_of(_styled_table('<w:tblLook w:val="0020"/>', header=True)) == "head"
+
+
+def test_a_look_value_which_is_no_number_is_no_first_row():
+    assert _rules_of(_styled_table('<w:tblLook w:val="zz"/>', header=True)) == "none"
+
+
+def test_a_first_row_look_without_a_header_row_draws_no_line():
+    assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>')) == "none"
+
+
+def test_a_table_with_borders_keeps_the_rules_of_latex():
+    borders = '<w:tblBorders><w:top w:val="single" w:sz="4"/></w:tblBorders>'
+    assert _rules_of(_styled_table(borders)) is None
+
+
+def test_borders_of_nil_draw_nothing():
+    borders = '<w:tblBorders><w:top w:val="nil"/><w:insideH w:val="none"/></w:tblBorders>'
+    assert _rules_of(_styled_table(borders)) == "none"
+
+
+def test_a_cell_with_borders_keeps_the_rules_of_latex():
+    assert _rules_of(_styled_table(cell_borders='<w:tcBorders><w:left w:val="single"/></w:tcBorders>')) is None
+
+
+def test_a_style_with_borders_keeps_the_rules_of_latex():
+    assert _rules_of(_styled_table(), bordered=frozenset({"Table"})) is None
+
+
+def test_the_bordered_table_styles_are_read_from_the_styles():
+    styles = ET.fromstring(
+        f"<w:styles {W_DECL}>"
+        '<w:style w:type="table" w:styleId="Grid"><w:tblPr><w:tblBorders><w:insideV w:val="single"/></w:tblBorders></w:tblPr></w:style>'
+        '<w:style w:type="table" w:styleId="Table"><w:tblPr><w:tblCellMar/></w:tblPr></w:style>'
+        '<w:style w:type="paragraph" w:styleId="Normal"/>'
+        "</w:styles>"
+    )
+    assert docx_table_pre_process.bordered_table_styles(styles) == {"Grid"}
+    assert docx_table_pre_process.bordered_table_styles(None) == frozenset()
+
+
+def _first_cell_kv(table: str) -> dict[str, str]:
+    xml, _ = docx_table_pre_process.rewrite_part(f"<w:document {W_DECL}><w:body>{table}</w:body></w:document>".encode(), 9360)
+    text = "".join(t.text or "" for t in ET.fromstring(xml).iter(f"{{{W_NS}}}t"))
+    if SENTINEL_OPEN not in text:
+        return {}
+    payload = text[text.index(SENTINEL_OPEN) + 1 : text.index(SENTINEL_CLOSE)]
+    return dict(item.split("=") for item in payload.split(";"))
+
+
+def test_a_table_of_compact_paragraphs_is_marked():
+    compact = '<w:tbl><w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Compact"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    assert _first_cell_kv(compact)["cc"] == "1"
+
+
+def test_a_table_of_paragraphs_without_a_style_is_not_marked():
+    assert "cc" not in _first_cell_kv("<w:tbl><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>")
+
+
+GRID_BORDERS = "".join(f'<w:{side} w:val="single" w:sz="6" w:color="CCCCCC"/>' for side in ("top", "left", "bottom", "right"))
+
+
+def _grid_cell(borders: str = GRID_BORDERS) -> str:
+    return f"<w:tc><w:tcPr><w:tcBorders>{borders}</w:tcBorders></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>"
+
+
+def test_a_table_whose_cells_draw_every_side_is_a_grid():
+    kv = _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell()}</w:tr></w:tbl>")
+    assert (kv["rl"], kv["lc"], kv["lw"]) == ("grid", "CCCCCC", "0.75")
+
+
+def test_the_borders_of_the_table_stand_in_for_those_of_the_cell():
+    borders = "".join(f'<w:{side} w:val="single"/>' for side in ("top", "left", "insideH", "insideV"))
+    kv = _first_cell_kv(f"<w:tbl><w:tblPr><w:tblBorders>{borders}</w:tblBorders></w:tblPr><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>")
+    assert (kv["rl"], kv["lc"], kv["lw"]) == ("grid", "000000", "0.5")
+
+
+def test_a_cell_without_one_side_is_no_grid():
+    partial = GRID_BORDERS.replace('<w:left w:val="single" w:sz="6" w:color="CCCCCC"/>', '<w:left w:val="nil"/>')
+    assert "rl" not in _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(partial)}</w:tr></w:tbl>")
+
+
+def test_white_lines_are_no_grid():
+    assert "rl" not in _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('CCCCCC', 'ffffff'))}</w:tr></w:tbl>")
+
+
+def test_the_width_of_a_line_has_bounds():
+    assert _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('w:sz="6"', 'w:sz="0"'))}</w:tr></w:tbl>")["lw"] == "0.25"
+    assert _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('w:sz="6"', 'w:sz="x"'))}</w:tr></w:tbl>")["lw"] == "0.5"

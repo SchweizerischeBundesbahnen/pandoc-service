@@ -154,6 +154,45 @@ a quarter of the font size above the baseline. Other keywords are not mapped, an
 An anchor (`<a id>`, or a `<span>` with an `id`) stays a bookmark in the DOCX, also inside styled text,
 so a link to it still jumps there.
 
+### DOCX to PDF
+
+A PDF of a DOCX takes these from the document, so it lays the text out closer to Word:
+
+| From the DOCX | In the PDF |
+|---|---|
+| `<w:pgSz>` and `<w:pgMar>` of the first section | the page size and margins of the first pages; US Letter with 1 inch margins without them |
+| the font of the Body Text style, else Normal, else the defaults, also as a theme font | the font of the body text, when the container has it |
+| the font size and line spacing of that style | the size, and the line the font sets: its ascent, descent and line gap, as Word reads them; spaces neither shrink nor widen after a full stop, and neither the ligatures of TeX nor of the font; a line breaks after a hyphen as freely as after a space, and the full stop which ends a paragraph may stand in the margin; no line of a paragraph alone at the top or bottom of a page |
+| the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
+| `<w:jc>` of that style, and `<w:autoHyphenation>` | ragged right and unhyphenated, unless the style justifies and the document hyphenates |
+| `<w:rFonts>` of a run | the font of the run, when the container has it, matched regardless of case |
+| the Title and Heading 1 to 9 styles | the font, size, colour, italics, alignment and space of the title and the headings, the title as far down the page as the ascent of its font and the next line below its descent, the number of a heading style with numbering, all nine levels of them, as Word has them; between two headings only their own space |
+| the Hyperlink style, a theme colour as Word reads it | the colour of the links |
+| a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
+| a cell paragraph without a style | rows as tall as a paragraph of the Normal style, its text at the top and the space below it, as Word sets them |
+| a table whose cells draw every side, `<w:tcBorders>` or `<w:tblBorders>` | a grid of lines in their colour and width, none inside a merged cell, the table out to the cell margin; a table with a picture, a list or a note in a cell keeps LaTeX's rules |
+| a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it; under a table with only the space before of its style, above one with only its space after |
+| an empty paragraph, one of line breaks only, a line break at the start or the end of a paragraph | an empty line, and one more for each line break, as Word shows them |
+| a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
+| `<w:pgSz>` and `<w:pgMar>` of each later section | its pages in that size and with those margins, landscape among them |
+| no header and no footer in any section | no page number, as Word prints none |
+| a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field, and the empty line Word leaves after it |
+| a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
+| an equation (OMML) | in Cambria Math, when the container has it; an equation of its own paragraph as a centred line, without the empty line and the space TeX puts around a display |
+| a comment (`<w:commentReference>`) | a balloon "Commented [n]:" with its text in a grey area right of the text, with a dashed line from the commented text, on a page shrunk to make room for it, as Word for Mac prints it |
+
+The image has no Microsoft fonts. A document in a font the container lacks, Aptos or Calibri among them,
+keeps Latin Modern. Mount the fonts into `/usr/share/fonts` to use them:
+
+```bash
+docker run --detach --publish 9082:9082 --volume /path/to/fonts:/usr/share/fonts/truetype/custom:ro \
+  ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
+```
+
+The corpus in [`corpus/`](corpus/README.md) holds the documents of the docx-exporter system tests with
+the PDFs Word prints from them. `tools/corpus` converts them and measures, line by line, how close each
+PDF gets to Word's.
+
 ### External resources of a document
 
 A document names its own resources: an image, a stylesheet, a font. The writers which embed media

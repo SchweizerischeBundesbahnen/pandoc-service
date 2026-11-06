@@ -1,0 +1,1006 @@
+{
+ "macos": {
+  "image": {
+   "documents": {
+    "test_adjacent_tables_conversion": {
+     "any_page": 14,
+     "lines": 14,
+     "mean_shift": 5.5,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 14
+    },
+    "test_alignment": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 3.58,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_attribute_name_alignment": {
+     "any_page": 5,
+     "lines": 12,
+     "mean_shift": 5.97,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 5
+    },
+    "test_bold_titles_and_headings": {
+     "any_page": 20,
+     "lines": 20,
+     "mean_shift": 2.43,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 20
+    },
+    "test_both_link_role_direction": {
+     "any_page": 8,
+     "lines": 10,
+     "mean_shift": 3.0,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 8
+    },
+    "test_convert_catalog_specification": {
+     "any_page": 52,
+     "lines": 77,
+     "mean_shift": 28.75,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 46
+    },
+    "test_convert_external_resources_happy_path": {
+     "any_page": 4,
+     "lines": 6,
+     "mean_shift": 3.96,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_convert_external_resources_refused_image": {
+     "any_page": 4,
+     "lines": 6,
+     "mean_shift": 3.73,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_convert_live_doc_no_filter": {
+     "any_page": 144,
+     "lines": 270,
+     "mean_shift": 11.11,
+     "pages": [
+      8,
+      8
+     ],
+     "same_page": 139
+    },
+    "test_convert_live_doc_with_all_and_unreferenced_comments": {
+     "any_page": 21,
+     "lines": 21,
+     "mean_shift": 2.02,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 21
+    },
+    "test_convert_live_doc_with_all_comments": {
+     "any_page": 19,
+     "lines": 19,
+     "mean_shift": 1.95,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 19
+    },
+    "test_convert_live_doc_with_filter": {
+     "any_page": 114,
+     "lines": 201,
+     "mean_shift": 12.49,
+     "pages": [
+      6,
+      6
+     ],
+     "same_page": 110
+    },
+    "test_convert_live_doc_with_formulas": {
+     "any_page": 6,
+     "lines": 6,
+     "mean_shift": 3.62,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 6
+    },
+    "test_convert_live_doc_with_heading": {
+     "any_page": 25,
+     "lines": 25,
+     "mean_shift": 6.71,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 25
+    },
+    "test_convert_live_doc_with_open_and_unreferenced_comments": {
+     "any_page": 17,
+     "lines": 17,
+     "mean_shift": 2.09,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 17
+    },
+    "test_convert_live_doc_with_open_comments": {
+     "any_page": 16,
+     "lines": 16,
+     "mean_shift": 2.05,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 16
+    },
+    "test_convert_live_doc_with_svg_images": {
+     "any_page": 6,
+     "lines": 6,
+     "mean_shift": 3.32,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 6
+    },
+    "test_convert_live_doc_with_table_with_inline_style": {
+     "any_page": 24,
+     "lines": 28,
+     "mean_shift": 3.61,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 24
+    },
+    "test_convert_live_doc_with_wi_table": {
+     "any_page": 37,
+     "lines": 47,
+     "mean_shift": 7.68,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 37
+    },
+    "test_convert_live_doc_without_comments_rendering": {
+     "any_page": 7,
+     "lines": 7,
+     "mean_shift": 3.8,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 7
+    },
+    "test_convert_product_specification": {
+     "any_page": 144,
+     "lines": 270,
+     "mean_shift": 11.11,
+     "pages": [
+      8,
+      8
+     ],
+     "same_page": 139
+    },
+    "test_convert_test_specification": {
+     "any_page": 125,
+     "lines": 191,
+     "mean_shift": 8.28,
+     "pages": [
+      4,
+      4
+     ],
+     "same_page": 121
+    },
+    "test_deleted_linked_work_item": {
+     "any_page": 10,
+     "lines": 17,
+     "mean_shift": 7.14,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 10
+    },
+    "test_deleted_linked_work_item_filtered_by_role": {
+     "any_page": 10,
+     "lines": 15,
+     "mean_shift": 7.02,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 10
+    },
+    "test_direct_link_role_direction": {
+     "any_page": 8,
+     "lines": 9,
+     "mean_shift": 3.0,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 8
+    },
+    "test_embedded_images_conversion": {
+     "any_page": 15,
+     "lines": 19,
+     "mean_shift": 1.18,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 15
+    },
+    "test_empty_line_before_bullets": {
+     "any_page": 10,
+     "lines": 10,
+     "mean_shift": 5.51,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 10
+    },
+    "test_figure_caption_followed_by_table_conversion": {
+     "any_page": 21,
+     "lines": 25,
+     "mean_shift": 9.12,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 21
+    },
+    "test_fit_to_page": {
+     "any_page": 35,
+     "lines": 35,
+     "mean_shift": 1.94,
+     "pages": [
+      11,
+      11
+     ],
+     "same_page": 32
+    },
+    "test_formatting": {
+     "any_page": 4,
+     "lines": 21,
+     "mean_shift": 10.36,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_formulas_conversion": {
+     "any_page": 55,
+     "lines": 82,
+     "mean_shift": 20.53,
+     "pages": [
+      4,
+      4
+     ],
+     "same_page": 49
+    },
+    "test_heading_numbers_with_localized_numbered_template": {
+     "any_page": 14,
+     "lines": 25,
+     "mean_shift": 12.23,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 14
+    },
+    "test_heading_numbers_with_numbered_template": {
+     "any_page": 14,
+     "lines": 25,
+     "mean_shift": 12.23,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 14
+    },
+    "test_heading_numbers_with_template_not_numbering_headings": {
+     "any_page": 14,
+     "lines": 25,
+     "mean_shift": 3.66,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 14
+    },
+    "test_icons": {
+     "any_page": 9,
+     "lines": 11,
+     "mean_shift": 5.48,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 9
+    },
+    "test_image_sizes_conversion": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 7.71,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_images_and_tables_conversion": {
+     "any_page": 32,
+     "lines": 32,
+     "mean_shift": 11.11,
+     "pages": [
+      5,
+      5
+     ],
+     "same_page": 30
+    },
+    "test_indentation": {
+     "any_page": 5,
+     "lines": 5,
+     "mean_shift": 3.87,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 5
+    },
+    "test_irregular_lists": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 2.8,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_reverse_link_role_direction": {
+     "any_page": 7,
+     "lines": 8,
+     "mean_shift": 2.96,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 7
+    },
+    "test_svg_pictures_png_only": {
+     "any_page": 0,
+     "lines": 4,
+     "mean_shift": null,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 0
+    },
+    "test_svg_pictures_with_svg": {
+     "any_page": 0,
+     "lines": 4,
+     "mean_shift": null,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 0
+    },
+    "test_table_sizes_conversion": {
+     "any_page": 48,
+     "lines": 55,
+     "mean_shift": 3.6,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 46
+    },
+    "test_tables_and_figures_captions_conversion": {
+     "any_page": 40,
+     "lines": 42,
+     "mean_shift": 2.27,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 40
+    },
+    "test_tables_conversion": {
+     "any_page": 51,
+     "lines": 57,
+     "mean_shift": 9.96,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 50
+    },
+    "test_test_case_tables": {
+     "any_page": 18,
+     "lines": 21,
+     "mean_shift": 4.31,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 18
+    },
+    "test_test_case_tables_with_preserved_styles": {
+     "any_page": 16,
+     "lines": 19,
+     "mean_shift": 3.97,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 16
+    },
+    "test_toc_tof_tot_without_gaps_conversion": {
+     "any_page": 13,
+     "lines": 17,
+     "mean_shift": 4.03,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 11
+    },
+    "test_wi_alignment_and_indentation": {
+     "any_page": 9,
+     "lines": 9,
+     "mean_shift": 3.86,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 9
+    }
+   },
+   "total": {
+    "any_page": 68.4,
+    "documents": 49,
+    "mean_shift": 6.31,
+    "pages_as_reference": 49,
+    "same_page": 66.3
+   }
+  },
+  "word-fonts": {
+   "documents": {
+    "test_adjacent_tables_conversion": {
+     "any_page": 14,
+     "lines": 14,
+     "mean_shift": 0.19,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 14
+    },
+    "test_alignment": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 0.07,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_attribute_name_alignment": {
+     "any_page": 12,
+     "lines": 12,
+     "mean_shift": 0.11,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 12
+    },
+    "test_bold_titles_and_headings": {
+     "any_page": 20,
+     "lines": 20,
+     "mean_shift": 0.2,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 20
+    },
+    "test_both_link_role_direction": {
+     "any_page": 10,
+     "lines": 10,
+     "mean_shift": 0.14,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 10
+    },
+    "test_convert_catalog_specification": {
+     "any_page": 77,
+     "lines": 77,
+     "mean_shift": 0.23,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 77
+    },
+    "test_convert_external_resources_happy_path": {
+     "any_page": 6,
+     "lines": 6,
+     "mean_shift": 0.1,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 6
+    },
+    "test_convert_external_resources_refused_image": {
+     "any_page": 6,
+     "lines": 6,
+     "mean_shift": 0.1,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 6
+    },
+    "test_convert_live_doc_no_filter": {
+     "any_page": 268,
+     "lines": 270,
+     "mean_shift": 0.74,
+     "pages": [
+      8,
+      8
+     ],
+     "same_page": 268
+    },
+    "test_convert_live_doc_with_all_and_unreferenced_comments": {
+     "any_page": 21,
+     "lines": 21,
+     "mean_shift": 0.34,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 21
+    },
+    "test_convert_live_doc_with_all_comments": {
+     "any_page": 19,
+     "lines": 19,
+     "mean_shift": 0.34,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 19
+    },
+    "test_convert_live_doc_with_filter": {
+     "any_page": 200,
+     "lines": 201,
+     "mean_shift": 10.87,
+     "pages": [
+      6,
+      6
+     ],
+     "same_page": 197
+    },
+    "test_convert_live_doc_with_formulas": {
+     "any_page": 6,
+     "lines": 6,
+     "mean_shift": 0.83,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 6
+    },
+    "test_convert_live_doc_with_heading": {
+     "any_page": 25,
+     "lines": 25,
+     "mean_shift": 0.14,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 25
+    },
+    "test_convert_live_doc_with_open_and_unreferenced_comments": {
+     "any_page": 17,
+     "lines": 17,
+     "mean_shift": 0.33,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 17
+    },
+    "test_convert_live_doc_with_open_comments": {
+     "any_page": 16,
+     "lines": 16,
+     "mean_shift": 0.33,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 16
+    },
+    "test_convert_live_doc_with_svg_images": {
+     "any_page": 6,
+     "lines": 6,
+     "mean_shift": 2.75,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 6
+    },
+    "test_convert_live_doc_with_table_with_inline_style": {
+     "any_page": 26,
+     "lines": 28,
+     "mean_shift": 3.14,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 26
+    },
+    "test_convert_live_doc_with_wi_table": {
+     "any_page": 47,
+     "lines": 47,
+     "mean_shift": 0.28,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 47
+    },
+    "test_convert_live_doc_without_comments_rendering": {
+     "any_page": 7,
+     "lines": 7,
+     "mean_shift": 0.19,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 7
+    },
+    "test_convert_product_specification": {
+     "any_page": 268,
+     "lines": 270,
+     "mean_shift": 0.74,
+     "pages": [
+      8,
+      8
+     ],
+     "same_page": 268
+    },
+    "test_convert_test_specification": {
+     "any_page": 191,
+     "lines": 191,
+     "mean_shift": 2.61,
+     "pages": [
+      4,
+      4
+     ],
+     "same_page": 188
+    },
+    "test_deleted_linked_work_item": {
+     "any_page": 17,
+     "lines": 17,
+     "mean_shift": 0.2,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 17
+    },
+    "test_deleted_linked_work_item_filtered_by_role": {
+     "any_page": 15,
+     "lines": 15,
+     "mean_shift": 0.21,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 15
+    },
+    "test_direct_link_role_direction": {
+     "any_page": 9,
+     "lines": 9,
+     "mean_shift": 0.14,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 9
+    },
+    "test_embedded_images_conversion": {
+     "any_page": 19,
+     "lines": 19,
+     "mean_shift": 0.7,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 19
+    },
+    "test_empty_line_before_bullets": {
+     "any_page": 10,
+     "lines": 10,
+     "mean_shift": 0.13,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 10
+    },
+    "test_figure_caption_followed_by_table_conversion": {
+     "any_page": 25,
+     "lines": 25,
+     "mean_shift": 0.2,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 22
+    },
+    "test_fit_to_page": {
+     "any_page": 35,
+     "lines": 35,
+     "mean_shift": 1.86,
+     "pages": [
+      11,
+      11
+     ],
+     "same_page": 32
+    },
+    "test_formatting": {
+     "any_page": 18,
+     "lines": 21,
+     "mean_shift": 0.4,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 18
+    },
+    "test_formulas_conversion": {
+     "any_page": 66,
+     "lines": 82,
+     "mean_shift": 7.44,
+     "pages": [
+      4,
+      4
+     ],
+     "same_page": 60
+    },
+    "test_heading_numbers_with_localized_numbered_template": {
+     "any_page": 24,
+     "lines": 25,
+     "mean_shift": 0.14,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 24
+    },
+    "test_heading_numbers_with_numbered_template": {
+     "any_page": 24,
+     "lines": 25,
+     "mean_shift": 0.14,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 24
+    },
+    "test_heading_numbers_with_template_not_numbering_headings": {
+     "any_page": 25,
+     "lines": 25,
+     "mean_shift": 0.14,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 25
+    },
+    "test_icons": {
+     "any_page": 11,
+     "lines": 11,
+     "mean_shift": 0.18,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 11
+    },
+    "test_image_sizes_conversion": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 2.52,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_images_and_tables_conversion": {
+     "any_page": 32,
+     "lines": 32,
+     "mean_shift": 2.46,
+     "pages": [
+      5,
+      5
+     ],
+     "same_page": 32
+    },
+    "test_indentation": {
+     "any_page": 5,
+     "lines": 5,
+     "mean_shift": 0.09,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 5
+    },
+    "test_irregular_lists": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 1.0,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_reverse_link_role_direction": {
+     "any_page": 8,
+     "lines": 8,
+     "mean_shift": 0.14,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 8
+    },
+    "test_svg_pictures_png_only": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 1.67,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_svg_pictures_with_svg": {
+     "any_page": 4,
+     "lines": 4,
+     "mean_shift": 1.67,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 4
+    },
+    "test_table_sizes_conversion": {
+     "any_page": 53,
+     "lines": 55,
+     "mean_shift": 1.53,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 51
+    },
+    "test_tables_and_figures_captions_conversion": {
+     "any_page": 42,
+     "lines": 42,
+     "mean_shift": 0.29,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 42
+    },
+    "test_tables_conversion": {
+     "any_page": 57,
+     "lines": 57,
+     "mean_shift": 0.84,
+     "pages": [
+      3,
+      3
+     ],
+     "same_page": 57
+    },
+    "test_test_case_tables": {
+     "any_page": 21,
+     "lines": 21,
+     "mean_shift": 0.79,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 21
+    },
+    "test_test_case_tables_with_preserved_styles": {
+     "any_page": 19,
+     "lines": 19,
+     "mean_shift": 0.19,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 19
+    },
+    "test_toc_tof_tot_without_gaps_conversion": {
+     "any_page": 17,
+     "lines": 17,
+     "mean_shift": 0.28,
+     "pages": [
+      2,
+      2
+     ],
+     "same_page": 15
+    },
+    "test_wi_alignment_and_indentation": {
+     "any_page": 9,
+     "lines": 9,
+     "mean_shift": 0.12,
+     "pages": [
+      1,
+      1
+     ],
+     "same_page": 9
+    }
+   },
+   "total": {
+    "any_page": 98.4,
+    "documents": 49,
+    "mean_shift": 1.03,
+    "pages_as_reference": 49,
+    "same_page": 97.2
+   }
+  }
+ }
+}

@@ -15,7 +15,7 @@ it. A continuous section break opens no page and is left alone. ``nextColumn``
 moves to the next column, which is the next page only when the closed section has
 one column: the PDF sets multiple columns as one, so otherwise no page opens.
 
-The companion Lua filter (``filters/docx_page_breaks_to_latex.lua``) turns the
+The companion Lua filter (``filters/docx/docx_page_breaks_to_latex.lua``) turns the
 sentinels into LaTeX. The Private-Use-Area delimiters never collide with real
 document text.
 
