@@ -594,7 +594,7 @@ local function title_div(div)
     return section_div(div)
   end
   if caption_style ~= nil and div.attributes["custom-style"] == CAPTION_DIV then
-    -- A caption sets its own space: the space between paragraphs passes it by
+    -- Its space comes from the space between paragraphs, next to a table from docx_tables_to_latex
     return pandoc.Div(caption_div(div), { ["pdc-style"] = "Caption" })
   end
   if title_style == nil or div.attributes["custom-style"] ~= "Title" then
@@ -676,6 +676,9 @@ local function block_spacing(block)
   if block.t == "Div" and block.attributes["custom-style"] == "PandocToc__ENTRY" then
     return ENTRY_SPACING
   end
+  if block.t == "Div" and block.attributes["pdc-style"] == "Caption" and caption_style ~= nil then
+    return { before = caption_style.own_before, after = caption_style.own_after, caption = true }
+  end
   if block.t == "Div" and block.attributes["pdc-style"] == "Title" and title_style ~= nil then
     return { before = title_style.own_before, after = title_style.own_after }
   end
@@ -693,6 +696,10 @@ end
 -- between them, TeX the paragraph skip: the difference goes between them.
 local function gap(previous, spacing)
   if previous == nil or spacing == nil then
+    return nil
+  end
+  if (previous.caption and spacing == TABLE_SPACING) or (previous == TABLE_SPACING and spacing.caption) then
+    -- docx_tables_to_latex spaces a caption next to its table
     return nil
   end
   local delta = math.max(previous.after, spacing.before) - (spacing.no_skip and 0 or body_skip) - (previous.trailing or 0)

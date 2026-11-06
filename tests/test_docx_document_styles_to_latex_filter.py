@@ -594,3 +594,11 @@ def test_a_list_takes_the_indents_of_word_with_its_label_aligned_left(test_param
 
 def test_a_list_without_four_levels_of_indents_keeps_those_of_latex(test_parameters: TestParameters):
     assert "pdcListLeft" not in _preamble(_latex(test_parameters.container, "docx-list-indents=36:18"))
+
+
+def test_a_paragraph_after_a_caption_gets_the_larger_of_their_spaces(test_parameters: TestParameters):
+    """Word puts the 6pt after the caption before a Normal paragraph, not the paragraph skip of 9pt."""
+    native = '[Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Figure"]], Para [Str "After"]]'
+    body = _latex(test_parameters.container, *SPACING, "docx-style-Caption=size:12,before:0,after:6", native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert body.index("Figure") < body.index("\\vspace{-3bp}") < body.index("After")

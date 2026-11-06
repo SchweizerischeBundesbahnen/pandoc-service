@@ -275,12 +275,12 @@
     "test_figure_caption_followed_by_table_conversion": {
      "any_page": 21,
      "lines": 25,
-     "mean_shift": 4.45,
+     "mean_shift": 8.9,
      "pages": [
       2,
       2
      ],
-     "same_page": 18
+     "same_page": 21
     },
     "test_fit_to_page": {
      "any_page": 34,
@@ -475,7 +475,7 @@
     "test_toc_tof_tot_without_gaps_conversion": {
      "any_page": 13,
      "lines": 17,
-     "mean_shift": 5.45,
+     "mean_shift": 4.09,
      "pages": [
       2,
       2
@@ -496,9 +496,9 @@
    "total": {
     "any_page": 68.1,
     "documents": 49,
-    "mean_shift": 7.66,
+    "mean_shift": 7.73,
     "pages_as_reference": 47,
-    "same_page": 64.9
+    "same_page": 65.1
    }
   },
   "word-fonts": {
@@ -776,7 +776,7 @@
     "test_figure_caption_followed_by_table_conversion": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 1.82,
+     "mean_shift": 1.17,
      "pages": [
       2,
       2
@@ -976,7 +976,7 @@
     "test_toc_tof_tot_without_gaps_conversion": {
      "any_page": 17,
      "lines": 17,
-     "mean_shift": 3.92,
+     "mean_shift": 2.92,
      "pages": [
       2,
       2
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 96.5,
     "documents": 49,
-    "mean_shift": 3.11,
+    "mean_shift": 3.08,
     "pages_as_reference": 47,
     "same_page": 94.3
    }
