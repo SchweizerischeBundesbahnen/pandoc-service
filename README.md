@@ -189,6 +189,10 @@ docker run --detach --publish 9082:9082 --volume /path/to/fonts:/usr/share/fonts
   ghcr.io/schweizerischebundesbahnen/pandoc-service:latest
 ```
 
+The corpus in [`corpus/`](corpus/README.md) holds the documents of the docx-exporter system tests with
+the PDFs Word prints from them. `tools/corpus` converts them and measures, line by line, how close each
+PDF gets to Word's.
+
 ### External resources of a document
 
 A document names its own resources: an image, a stylesheet, a font. The writers which embed media

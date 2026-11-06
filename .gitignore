@@ -185,3 +185,6 @@ junittest.xml
 
 # Page images and diffs of a failed visual test
 tests/output/
+
+# The PDFs, scores and pages of tools/corpus/corpus.py
+out/
