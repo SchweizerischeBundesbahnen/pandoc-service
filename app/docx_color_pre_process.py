@@ -281,6 +281,24 @@ def _own_style_props(style: ET.Element) -> _StyleProps:
     )
 
 
+def _read_character_styles(root: ET.Element) -> tuple[dict[str, _StyleProps], dict[str, str]]:
+    """The character styles of ``styles.xml`` with what each says itself, and
+    the style each is based on. Synthetic styles of an earlier pass are skipped."""
+    own: dict[str, _StyleProps] = {}
+    based_on: dict[str, str] = {}
+    for style in root.iter(_STYLE_TAG):
+        if style.get(_TYPE_ATTR) != "character":
+            continue
+        style_id = style.get(_STYLE_ID_ATTR)
+        if not style_id or style_id.startswith(_GENERATED_STYLE_PREFIX):
+            continue
+        own[style_id] = _own_style_props(style)
+        parent = style.find(_BASED_ON_TAG)
+        if parent is not None and parent.get(_VAL_ATTR):
+            based_on[style_id] = parent.get(_VAL_ATTR, "")
+    return own, based_on
+
+
 def _resolve_based_on(own: Mapping[str, _StyleProps], based_on: Mapping[str, str]) -> dict[str, _StyleProps]:
     """Merge each style with the styles it is based on, the nearest value first.
 
@@ -322,18 +340,7 @@ def character_style_colors(styles_xml: bytes) -> dict[str, StyleColors]:
     root = parse_xml(styles_xml)
     if root is None:
         return {}
-    own: dict[str, _StyleProps] = {}
-    based_on: dict[str, str] = {}
-    for style in root.iter(_STYLE_TAG):
-        if style.get(_TYPE_ATTR) != "character":
-            continue
-        style_id = style.get(_STYLE_ID_ATTR)
-        if not style_id or style_id.startswith(_GENERATED_STYLE_PREFIX):
-            continue
-        own[style_id] = _own_style_props(style)
-        parent = style.find(_BASED_ON_TAG)
-        if parent is not None and parent.get(_VAL_ATTR):
-            based_on[style_id] = parent.get(_VAL_ATTR, "")
+    own, based_on = _read_character_styles(root)
 
     colors: dict[str, StyleColors] = {}
     for style_id, props in _resolve_based_on(own, based_on).items():
