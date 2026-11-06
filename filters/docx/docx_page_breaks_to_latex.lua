@@ -25,7 +25,8 @@
 -- heading goes before it, any other break after it.
 --
 -- LaTeX ignores \clearpage on an empty page, where Word starts one more
--- page. A break with nothing before it on its page gets \null first.
+-- page. A break with nothing before it on its page gets \null first. The
+-- first page holds the title and the abstract, when the document has them.
 --
 -- Only paragraphs of the body are changed, also inside a Div (the reader
 -- wraps a styled paragraph in one). A sentinel anywhere else, a list item
@@ -38,6 +39,9 @@
 local OPEN = "\u{E020}"
 local CLOSE = "\u{E021}"
 local SENTINEL_PATTERN = OPEN .. "([%w,]*)" .. CLOSE
+
+-- The marker of a paragraph which starts a new page before it, see app/docx_page_break_pre_process.py
+local BREAK_BEFORE = "before"
 
 -- More than Word's largest page, and small enough for a TeX dimension.
 local MAX_TWIPS = 99999
@@ -113,6 +117,10 @@ local function page_setup(marker)
 end
 
 local function break_tex(marker)
+  -- A paragraph which starts a new page before it, on a page with nothing on it yet, needs none
+  if marker == BREAK_BEFORE and on_empty_page then
+    return ""
+  end
   local before = on_empty_page and "\\null" or ""
   on_empty_page = true
   local setup = page_setup(marker)
@@ -274,6 +282,8 @@ end
 
 function Pandoc(doc)
   keep_first_page = doc.meta["docx-comment-mag"] ~= nil
+  -- The template sets the title and the abstract on the first page before the body
+  on_empty_page = doc.meta.title == nil and doc.meta.abstract == nil
   doc.blocks = replace_breaks(doc.blocks)
   return doc:walk({ Str = strip_sentinels })
 end

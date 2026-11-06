@@ -337,3 +337,64 @@ def test_a_document_with_comments_keeps_its_page_at_a_section_break(test_paramet
     flat = " ".join(output.decode().split())
     assert "\\clearpage{}" in flat
     assert "\\newgeometry" not in flat
+
+
+def test_a_paragraph_with_page_break_before_starts_a_page(test_parameters: TestParameters):
+    """Word starts a new page before such a paragraph, and before the first one of a document none."""
+    document = Document()
+    first = document.add_paragraph("First page.")
+    first.paragraph_format.page_break_before = True
+    second = document.add_paragraph("Second page.")
+    second.paragraph_format.page_break_before = True
+    pages = _pages(test_parameters, document)
+    assert len(pages) == 2
+    assert "First page." in pages[0].extract_text()
+    assert "Second page." in pages[1].extract_text()
+
+
+def test_a_heading_with_page_break_before_leaves_the_title_page(test_parameters: TestParameters):
+    """The title stands on the first page, so the heading after it starts a new one, as in Word."""
+    document = Document()
+    document.add_paragraph("The title", style="Title")
+    heading = document.add_heading("Chapter", level=1)
+    heading.paragraph_format.page_break_before = True
+    pages = _pages(test_parameters, document)
+    assert len(pages) == 2
+    assert "The title" in pages[0].extract_text()
+    assert "Chapter" in pages[1].extract_text()
+
+
+def test_a_break_before_a_paragraph_opens_no_page_on_an_empty_one(test_parameters: TestParameters):
+    """Unlike a page break, it leaves no empty page: not at the start of a document, nor after another break."""
+    before = f"{OPEN}before{CLOSE}"
+    native = f"[ Para [ {_str(before + 'first')} ], Para [ {_str(PAGE_BREAK)} ], Para [ {_str(before + 'second')} ], Para [ {_str(before + 'third')} ] ]"
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.count("\\clearpage") == 2, flat
+    assert "\\null" not in flat
+
+
+def _text_top(pdf: bytes, page_index: int, text: str) -> float:
+    """Where the text ends at the top on the page, in points from the bottom."""
+    text_page = pdfium.PdfDocument(pdf)[page_index].get_textpage()
+    start = text_page.get_text_range().index(text)
+    return text_page.get_charbox(start)[3]
+
+
+def test_a_blank_paragraph_with_page_break_before_keeps_its_lines(test_parameters: TestParameters):
+    """Word starts the new page with the blank lines of the paragraph, and the text after them."""
+    pdfs = []
+    for blank in (False, True):
+        document = Document()
+        document.add_paragraph("First page.")
+        if blank:
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.page_break_before = True
+            run = paragraph.add_run()
+            run.add_break()
+            run.add_break()
+        after = document.add_paragraph("After.")
+        after.paragraph_format.page_break_before = not blank
+        pdfs.append(_pdf(test_parameters, document))
+    without, with_blank = pdfs
+    assert len(PdfReader(io.BytesIO(with_blank)).pages) == 2
+    assert _text_top(with_blank, 1, "After.") < _text_top(without, 1, "After.") - 20

@@ -178,3 +178,52 @@ def test_preprocess_keeps_translated_table_of_contents_entries_uncolored():
 
     with zipfile.ZipFile(io.BytesIO(result)) as zf:
         assert b"PandocColor__FG_156082" not in zf.read("word/document.xml")
+
+
+def test_the_styles_which_break_the_page_before_their_paragraphs():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    styles = parse_xml(
+        b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:styleId="Chapter"><w:pPr><w:pageBreakBefore/></w:pPr></w:style>'
+        b'<w:style w:styleId="Part"><w:basedOn w:val="Chapter"/></w:style>'
+        b'<w:style w:styleId="Plain"><w:basedOn w:val="Chapter"/><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr></w:style>'
+        b'<w:style w:styleId="Other"/></w:styles>'
+    )
+    assert page_break_styles(styles) == frozenset({"Chapter", "Part"})
+
+
+def test_the_default_paragraph_style_breaks_the_page_before_a_paragraph_without_a_style():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    styles = parse_xml(
+        b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:pPr><w:pageBreakBefore/></w:pPr></w:style>'
+        b'<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"/></w:styles>'
+    )
+    assert page_break_styles(styles) == frozenset({"Normal", None})
+
+
+def test_a_long_chain_of_styles_based_on_each_other():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    chain = "".join(f'<w:style w:styleId="S{index}"><w:basedOn w:val="S{index - 1}"/></w:style>' for index in range(1, 5000))
+    styles = parse_xml(b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:styleId="S0"><w:pPr><w:pageBreakBefore/></w:pPr></w:style>' + chain.encode() + b"</w:styles>")
+    assert len(page_break_styles(styles)) == 5000
+
+
+def test_the_document_defaults_break_the_page_before_every_style_which_keeps_them():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    styles = parse_xml(
+        b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b"<w:docDefaults><w:pPrDefault><w:pPr><w:pageBreakBefore/></w:pPr></w:pPrDefault></w:docDefaults>"
+        b'<w:style w:type="paragraph" w:default="1" w:styleId="Normal"/>'
+        b'<w:style w:styleId="Heading1"><w:basedOn w:val="Normal"/></w:style>'
+        b'<w:style w:styleId="Plain"><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr></w:style></w:styles>'
+    )
+    assert page_break_styles(styles) == frozenset({"Normal", "Heading1", None})
