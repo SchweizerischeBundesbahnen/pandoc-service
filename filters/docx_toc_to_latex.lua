@@ -15,6 +15,9 @@
 -- body, without a heading of their own, a line apart with 5pt after it, a
 -- leader of close dots to the page number at the right margin, and each level
 -- of the table of contents indented 12pt further, down to the ninth.
+-- The empty line Word leaves after a table of contents, see
+-- app/docx_toc_pre_process.py, stands 5pt below the last entry: Word puts no
+-- more than the larger of the space after one paragraph and before the next.
 --
 -- Only runs for the LaTeX writer (gated in PandocController on
 -- docx -> pdf/latex).
@@ -27,7 +30,7 @@ local PREAMBLE = [[
 \usepackage{titletoc}
 \makeatletter
 \newcommand{\pdcTocLeader}{\leaders\hbox to 0.275em{\hss.\hss}\hfill}
-\newcommand{\pdcTableOfContents}[1]{\par\begingroup\hypersetup{linkcolor=black}\setcounter{tocdepth}{#1}\setlength{\parskip}{0pt}\@starttoc{toc}\endgroup}
+\newcommand{\pdcTableOfContents}[1]{\par\begingroup\hypersetup{linkcolor=black}\setcounter{tocdepth}{#1}\setlength{\parskip}{0pt}\@starttoc{toc}\endgroup\vspace{-\parskip}}
 \newcommand{\pdcTocEntryBegin}{\par\begingroup\hypersetup{linkcolor=black}\setlength{\parskip}{0pt}}
 \newcommand{\pdcTocEntryEnd}{\par\endgroup\vspace{5pt}}
 \newcommand{\pdcTocPage}[1]{\nobreak\pdcTocLeader\nobreak\pageref{#1}}

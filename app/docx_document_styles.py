@@ -307,6 +307,9 @@ def _display_style(styles: Element, theme: Element | None, style_id: str) -> str
     if size is not None:
         fields["size"] = f"{size / 2:g}"
         fields["line"] = f"{_baseline(chain, styles, size / 2, font):.4g}"
+        ascent = ascent_ratio(font)
+        if ascent is not None:
+            fields["ascent"] = f"{size / 2 * ascent:.4g}"
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
     color = _color(_first(chain, styles, "rPr", "color"), theme)
@@ -319,15 +322,8 @@ def _display_style(styles: Element, theme: Element | None, style_id: str) -> str
     return ",".join(f"{name}:{value}" for name, value in fields.items())
 
 
-@functools.cache
-def line_ratio(family: str | None) -> float:
-    """The single line of a family as a share of its size, as Word sets it: hhea ascent, descent and line gap.
-
-    Word for Mac reads the hhea table, and so does Word for Windows for a font which asks for its typographic
-    metrics, Aptos among them. The family is one fontconfig knows: see installed_families.
-    """
-    if family is None:
-        return DEFAULT_LINE_RATIO
+def _hhea(family: str) -> tuple[float, float] | None:
+    """The ascent and the single line of a family as shares of its size, from its hhea table; None when unreadable."""
     try:
         result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607 - fc-match of the image, given an installed family as one argument
         from fontTools.ttLib import TTFont  # noqa: PLC0415 - only a document in an installed font needs it
@@ -336,10 +332,28 @@ def line_ratio(family: str | None) -> float:
         # fontTools makes the fields of a table at run time, which a type checker does not see
         hhea: Any = font["hhea"]
         head: Any = font["head"]
-        return (hhea.ascent - hhea.descent + hhea.lineGap) / head.unitsPerEm
+        return hhea.ascent / head.unitsPerEm, (hhea.ascent - hhea.descent + hhea.lineGap) / head.unitsPerEm
     except Exception:  # noqa: BLE001 - a font fontTools cannot read gets LaTeX's line
         logger.info("docx_document_styles: no line metrics for %r, using %s", family, DEFAULT_LINE_RATIO)
-        return DEFAULT_LINE_RATIO
+        return None
+
+
+@functools.cache
+def line_ratio(family: str | None) -> float:
+    """The single line of a family as a share of its size, as Word sets it: hhea ascent, descent and line gap.
+
+    Word for Mac reads the hhea table, and so does Word for Windows for a font which asks for its typographic
+    metrics, Aptos among them. The family is one fontconfig knows: see installed_families.
+    """
+    metrics = _hhea(family) if family is not None else None
+    return metrics[1] if metrics is not None else DEFAULT_LINE_RATIO
+
+
+@functools.cache
+def ascent_ratio(family: str | None) -> float | None:
+    """The hhea ascent of a family as a share of its size: Word sets the first line of a page that far down."""
+    metrics = _hhea(family) if family is not None else None
+    return metrics[0] if metrics is not None else None
 
 
 def _baseline(chain: list[Element], styles: Element, size: float, font: str | None) -> float:

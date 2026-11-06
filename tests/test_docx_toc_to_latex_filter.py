@@ -33,6 +33,7 @@ def test_the_contents_marker_becomes_the_table_of_contents(test_parameters: Test
     assert "\\pdcTableOfContents{2}" in latex
     assert "PandocToc__CONTENTS_2" not in latex[latex.index("\\begin{document}") :]
     assert "\\usepackage{titletoc}" in latex
+    assert "\\@starttoc{toc}\\endgroup\\vspace{-\\parskip}" in latex, "the empty line after it stands 5pt below the last entry"
 
 
 def test_a_depth_out_of_range_is_left_as_it_is(test_parameters: TestParameters):

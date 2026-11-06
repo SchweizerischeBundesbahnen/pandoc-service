@@ -52,9 +52,11 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
         raise FileNotFoundError("fc-match")
 
     docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", missing)
     yield
     docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -288,9 +290,11 @@ def font_metrics(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """fc-match answers with a font of 1.25 lines an em."""
     file = _font_file(tmp_path, 900, -250, 100)
     docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
     yield
     docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
 
 
 def test_the_line_of_a_font_is_its_hhea_ascent_descent_and_gap(font_metrics):
@@ -315,6 +319,20 @@ def test_an_exact_or_least_line_counts_in_twips(font_metrics, rule: str, line: s
 
 def test_a_heading_gets_the_line_of_its_size(font_metrics):
     assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["line"] == "25"
+
+
+def test_a_heading_gets_the_ascent_of_its_font(font_metrics):
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "18"
+
+
+def test_a_font_without_metrics_gets_no_ascent(monkeypatch: pytest.MonkeyPatch):
+    docx_document_styles.ascent_ratio.cache_clear()
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout="/no/such/font.ttf"))
+    try:
+        assert docx_document_styles.ascent_ratio("Minor Serif") is None
+        assert docx_document_styles.ascent_ratio(None) is None
+    finally:
+        docx_document_styles.ascent_ratio.cache_clear()
 
 
 def test_a_font_without_metrics_gets_the_line_of_latex(monkeypatch: pytest.MonkeyPatch):

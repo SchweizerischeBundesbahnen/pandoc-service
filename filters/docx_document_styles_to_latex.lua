@@ -185,6 +185,7 @@ local function style_fields(value, skip)
   end
   style.size = points(fields.size)
   style.line = points(fields.line)
+  style.ascent = points(fields.ascent)
   style.bold = fields.bold == "true"
   style.italic = fields.italic == "true"
   if fields.color and fields.color:match("^%x%x%x%x%x%x$") then
@@ -196,6 +197,13 @@ local function style_fields(value, skip)
   style.after = math.max(style.own_after, skip or 0)
   style.align = PLAIN_ALIGN[fields.align] and fields.align or "left"
   return style
+end
+
+-- Word sets the first line of a page as far down as the ascent of its font, TeX
+-- as far as its letters reach: a strut as high as the ascent, for the title at
+-- the top of the first page.
+local function ascent_strut(style)
+  return style.ascent and string.format("\\rule{0pt}{%gbp}", style.ascent) or ""
 end
 
 -- The LaTeX which switches to the font, size, weight, shape and colour of a style.
@@ -267,6 +275,9 @@ local title_style = nil
 
 -- \maketitle sets the title alone, in the Title style, at the top of the page as Word does.
 -- \pdcTitleStyle switches to it for a later Title paragraph.
+-- Whether the document starts with a table of contents: see app/docx_toc_pre_process.py.
+local toc_first = false
+
 local function title_preamble(lines)
   if title_style == nil then
     return
@@ -275,7 +286,9 @@ local function title_preamble(lines)
   local switch = font_switch(title_style, "docxTitleFont", lines)
   lines[#lines + 1] = string.format("\\newcommand{\\pdcTitleStyle}{%s%s}", PLAIN_ALIGN[title_style.align], switch)
   lines[#lines + 1] = "\\makeatletter"
-  lines[#lines + 1] = string.format("\\renewcommand{\\maketitle}{\\par\\begingroup\\pdcTitleStyle\\@title\\par\\endgroup\\vspace{%gpt}}", title_style.after)
+  -- A table of contents right after the title: its entries have no space before them, so only the title's counts
+  local after = toc_first and title_style.own_after or title_style.after
+  lines[#lines + 1] = string.format("\\renewcommand{\\maketitle}{\\par\\begingroup\\pdcTitleStyle%s\\@title\\par\\endgroup\\vspace{%gpt}}", ascent_strut(title_style), after)
   lines[#lines + 1] = "\\makeatother"
 end
 
@@ -374,6 +387,12 @@ end
 
 -- The styles of the headings by level, read with the title.
 local heading_styles = {}
+local function read_first_block(doc)
+  local first = doc.blocks[1]
+  local style = first ~= nil and first.t == "Div" and first.attributes["custom-style"] or ""
+  toc_first = style:sub(1, #"PandocToc__CONTENTS_") == "PandocToc__CONTENTS_"
+  return nil
+end
 
 local function read_title(meta)
   local skip = points(meta[SKIP])
@@ -440,7 +459,7 @@ end
 
 -- The Title, Caption and heading styles are read before the blocks are set, the preamble written after.
 return {
-  { Meta = read_title },
+  { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Meta = write_preamble },
 }

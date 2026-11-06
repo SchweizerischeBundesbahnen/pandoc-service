@@ -188,6 +188,17 @@ def test_the_title_style_sets_the_title_and_a_later_title_paragraph(test_paramet
     assert "Later Title" in body
 
 
+def test_the_title_stands_as_far_down_as_the_ascent_of_its_font(test_parameters: TestParameters):
+    latex = _latex(test_parameters.container, "title=Doc", "docx-style-Title=size:28,ascent:26.29,after:4", "docx-body-paragraph-skip=9")
+    assert "\\pdcTitleStyle\\rule{0pt}{26.29bp}\\@title\\par\\endgroup\\vspace{9pt}" in _preamble(latex)
+
+
+def test_a_table_of_contents_after_the_title_takes_only_the_space_of_the_title(test_parameters: TestParameters):
+    native = '[Div ("",[],[("custom-style","PandocToc__CONTENTS_3")]) [Para [Str "PandocToc__CONTENTS_3"]]]'
+    latex = _latex(test_parameters.container, "title=Doc", "docx-style-Title=size:28,after:4", "docx-body-paragraph-skip=9", native=native)
+    assert "\\pdcTitleStyle\\@title\\par\\endgroup\\vspace{4pt}" in _preamble(latex)
+
+
 def test_the_body_size_and_line_redefine_normalsize(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
     assert "\\renewcommand{\\normalsize}{\\fontsize{12bp}{14.65bp}\\selectfont" in preamble
