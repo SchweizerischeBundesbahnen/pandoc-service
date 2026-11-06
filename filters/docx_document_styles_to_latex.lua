@@ -149,14 +149,22 @@ local function body_preamble(meta, lines)
   -- Word counts in PostScript points, \fontsize in bp does the same; pt of TeX are 0.4% smaller
   local size, baseline = points(meta[SIZE]), points(meta[BASELINE])
   if size ~= nil and baseline ~= nil then
+    -- A line of Word reaches as far down as the descent of its font, and the next
+    -- line or picture starts right there: a strut that deep, and no line skip
+    local descent = points(meta[DESCENT])
+    local strut = descent and descent < baseline and string.format("\\setbox\\strutbox\\hbox{\\vrule height %gbp depth %gbp width 0pt}", baseline - descent, descent) or ""
     -- An equation of Word is a paragraph like any other: no space of a display of its own around it
     lines[#lines + 1] = string.format(
-      "\\renewcommand{\\normalsize}{\\fontsize{%gbp}{%gbp}\\selectfont"
+      "\\renewcommand{\\normalsize}{\\fontsize{%gbp}{%gbp}\\selectfont%s"
         .. "\\abovedisplayskip=0pt\\belowdisplayskip=0pt\\abovedisplayshortskip=0pt\\belowdisplayshortskip=0pt}",
       size,
-      baseline
+      baseline,
+      strut
     )
     lines[#lines + 1] = "\\normalsize"
+    if strut ~= "" then
+      lines[#lines + 1] = "\\lineskip=0pt\\lineskiplimit=0pt"
+    end
   end
   local skip = points(meta[SKIP])
   -- Word puts the same space after a full stop as between words

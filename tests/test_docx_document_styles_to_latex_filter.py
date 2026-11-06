@@ -263,6 +263,18 @@ def test_an_equation_gets_no_space_of_a_display_around_it(test_parameters: TestP
         assert f"\\{skip}=0pt" in preamble
 
 
+def test_a_line_of_the_body_reaches_as_deep_as_the_descent_of_its_font(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4"))
+    assert "\\selectfont\\setbox\\strutbox\\hbox{\\vrule height 11.25bp depth 3.4bp width 0pt}" in preamble
+    assert "\\lineskip=0pt\\lineskiplimit=0pt" in preamble
+
+
+def test_a_body_without_its_descent_keeps_the_strut_of_latex(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
+    assert "\\strutbox" not in preamble
+    assert "\\lineskip=0pt" not in preamble
+
+
 def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):
     assert "\\renewcommand{\\normalsize}" not in _preamble(_latex(test_parameters.container, "docx-body-size=12"))
 
