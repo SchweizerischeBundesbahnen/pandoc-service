@@ -184,6 +184,16 @@ def _link_options(styles: Element, theme: Element | None) -> list[str]:
     return options + [item for kind in ("link", "url", "file", "cite") for item in ("-V", f"{kind}color={LINK_COLOR_NAME}")]
 
 
+def _display_options(styles: Element, theme: Element | None, numbering: Element | None) -> list[str]:
+    """The fields of the title, the headings and the caption, each style that has any."""
+    options: list[str] = []
+    for style_id in DISPLAY_STYLES:
+        fields = _display_style(styles, theme, style_id, numbering)
+        if fields:
+            options += ["-M", f"docx-style-{style_id}={fields}"]
+    return options
+
+
 def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
@@ -217,11 +227,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += _link_options(styles, theme)
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
-    for style_id in DISPLAY_STYLES:
-        fields = _display_style(styles, theme, style_id, numbering)
-        if fields:
-            options += ["-M", f"docx-style-{style_id}={fields}"]
-    return options
+    return options + _display_options(styles, theme, numbering)
 
 
 def _w(name: str) -> str:
