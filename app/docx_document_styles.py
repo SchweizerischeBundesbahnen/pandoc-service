@@ -85,8 +85,6 @@ THEME_SLOTS = {
     "followedHyperlink": "folHlink",
 }
 HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
-# The colour filters/docx/docx_document_styles_to_latex.lua defines as the colour of the Hyperlink style.
-LINK_COLOR_NAME = "pdcLink"
 
 _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
 
@@ -173,17 +171,6 @@ def _size_options(chain: list[Element], styles: Element, font: str | None, numbe
     return options
 
 
-def _link_options(styles: Element, theme: Element | None) -> list[str]:
-    """The colour of the links, from the Hyperlink style."""
-    link_chain = _style_chain(styles, "Hyperlink", fallback=None)
-    link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
-    if link_color is None:
-        return []
-    # The template sets hyperref up after the preamble of the filters, which defines pdcLink
-    options = ["-M", f"docx-link-color={link_color}", "-V", "colorlinks=true"]
-    return options + [item for kind in ("link", "url", "file", "cite") for item in ("-V", f"{kind}color={LINK_COLOR_NAME}")]
-
-
 def _display_options(styles: Element, theme: Element | None, numbering: Element | None) -> list[str]:
     """The fields of the title, the headings and the caption, each style that has any."""
     options: list[str] = []
@@ -224,7 +211,6 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
     options += _cell_options(styles)
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
-    options += _link_options(styles, theme)
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
     return options + _display_options(styles, theme, numbering)
@@ -412,7 +398,7 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, number
             fields["ascent"] = f"{size / 2 * ascent:.4g}"
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
-    color = _color(_first(chain, styles, "rPr", "color"), theme)
+    color = word_color(_first(chain, styles, "rPr", "color"), theme)
     if color is not None:
         fields["color"] = color
     for side in ("before", "after"):
@@ -610,7 +596,7 @@ def _theme_colors(theme: Element | None) -> dict[str, str]:
     return colors
 
 
-def _color(element: Element | None, theme: Element | None) -> str | None:
+def word_color(element: Element | None, theme: Element | None) -> str | None:
     """The colour of a <w:color> as six hex digits: the theme colour when it names one, as Word reads it, else its value."""
     if element is None:
         return None

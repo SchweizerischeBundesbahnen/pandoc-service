@@ -365,11 +365,11 @@ def test_the_latin_modern_body_gets_the_line_of_latex(installed: set[str]):
 HYPERLINK = '<w:style w:type="character" w:styleId="Hyperlink"><w:rPr><w:color w:val="4F81BD" w:themeColor="accent1"/></w:rPr></w:style>'
 
 
-def test_links_take_the_theme_colour_of_the_hyperlink_style_as_word_does():
+def test_links_get_no_colour_of_their_own():
+    """Word colours the text of a link only by its runs: the Hyperlink style, which docx_color_pre_process carries over."""
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HYPERLINK))
-    assert options["docx-link-color"] == "156082"
-    assert options["colorlinks"] == "true"
-    assert {options[f"{kind}color"] for kind in ("link", "url", "file", "cite")} == {"pdcLink"}
+    assert "docx-link-color" not in options
+    assert "colorlinks" not in options
 
 
 def test_a_theme_shade_darkens_as_word_does():

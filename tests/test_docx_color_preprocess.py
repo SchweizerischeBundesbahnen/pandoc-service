@@ -687,3 +687,13 @@ def test_character_style_colors_resolves_only_colored_character_styles():
     colors = docx_color_pre_process.character_style_colors(styles)
 
     assert colors == {"Hyperlink": docx_color_pre_process.StyleColors("156082", None, None)}
+
+
+THEME_XML = b'<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="Office"><a:accent1><a:srgbClr val="156082"/></a:accent1></a:clrScheme></a:themeElements></a:theme>'
+
+
+def test_character_style_colors_take_the_theme_colour_as_word_does():
+    """Word draws a theme colour from the theme, whatever value is written beside it."""
+    styles = _styles_xml(_char_style("Hyperlink", '<w:color w:val="4F81BD" w:themeColor="accent1"/>'))
+    assert docx_color_pre_process.character_style_colors(styles, THEME_XML) == {"Hyperlink": docx_color_pre_process.StyleColors("156082", None, None)}
+    assert docx_color_pre_process.character_style_colors(styles) == {"Hyperlink": docx_color_pre_process.StyleColors("4F81BD", None, None)}

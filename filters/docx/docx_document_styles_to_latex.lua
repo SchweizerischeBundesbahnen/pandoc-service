@@ -19,7 +19,6 @@
 --   docx-table-plain-cell-space  the same for a cell paragraph without a
 --                             style, of the Normal style
 --   docx-table-cell-margin    the left and right margin of a table cell
---   docx-link-color           the colour of the Hyperlink style
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
 --   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
@@ -49,7 +48,6 @@ local LIST_INDENTS = "docx-list-indents"
 local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
-local LINK_COLOR = "docx-link-color"
 local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
 
@@ -133,14 +131,8 @@ local function table_preamble(meta, lines)
   end
 end
 
--- Links in the colour of the Hyperlink style, the pages without a number when the document has none.
+-- The pages without a number when the document has none.
 local function page_preamble(meta, lines)
-  local color = meta[LINK_COLOR] and pandoc.utils.stringify(meta[LINK_COLOR]) or ""
-  if color:match("^%x%x%x%x%x%x$") then
-    lines[#lines + 1] = "\\usepackage{xcolor}"
-    -- The service passes colorlinks and the colours of the template as pdcLink, set up after this preamble
-    lines[#lines + 1] = string.format("\\definecolor{pdcLink}{HTML}{%s}", color)
-  end
   -- Word sets a picture taller than what a page holds at the top of a page, below the lines before it
   -- there, and lets it run past the bottom margin: TeX gets a picture that much shorter, the rest below
   lines[#lines + 1] = "\\newsavebox{\\pdcPictureBox}\\newlength{\\pdcPictureRoom}"
@@ -926,7 +918,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end
