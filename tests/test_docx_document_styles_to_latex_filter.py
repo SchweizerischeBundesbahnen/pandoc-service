@@ -186,6 +186,22 @@ def test_an_equation_alone_is_a_centred_paragraph(test_parameters: TestParameter
     assert "\\[b\\]" in body, "an equation within text stays a display"
 
 
+def test_a_numbered_heading_style_sets_its_number_in_its_hanging_indent(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,number:{1:Roman},numberhang:21.6", "docx-style-Heading2=size:16,number:{1:Roman}.{2:arabic}"))
+    assert "\\renewcommand{\\thesection}{\\Roman{section}}" in preamble
+    assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\makebox[21.6pt][l]{\\thesection}}{0pt}{}" in preamble
+    assert "\\renewcommand{\\thesubsection}{\\Roman{section}.\\arabic{subsection}}" in preamble
+    assert "{\\thesubsection\\quad}{0pt}{}" in preamble, "a number without a hanging indent is followed by a space"
+    assert "\\AtBeginDocument{\\setcounter{secnumdepth}{2}}" in preamble
+
+
+def test_a_number_which_could_carry_latex_is_left_out(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,number:{1:input}", "docx-style-Heading2=size:16,number:\\x{1:arabic}"))
+    assert "\\thesection" not in preamble
+    assert "\\thesubsection" not in preamble
+    assert "\\AtBeginDocument{\\setcounter{secnumdepth}" not in preamble
+
+
 def test_fields_which_could_carry_latex_are_left_out(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading2=font:\\evil,size:x,color:12345G,align:sideways"))
     assert "\\evil" not in preamble

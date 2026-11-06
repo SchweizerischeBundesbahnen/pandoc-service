@@ -40,6 +40,11 @@ logger = logging.getLogger(__name__)
 DOCUMENT_PART = "word/document.xml"
 THEME_PART = "word/theme/theme1.xml"
 SETTINGS_PART = "word/settings.xml"
+NUMBERING_PART = "word/numbering.xml"
+# The LaTeX counter command of each number format of Word a heading may carry.
+NUMBER_FORMATS = {"decimal": "arabic", "lowerLetter": "alph", "upperLetter": "Alph", "lowerRoman": "roman", "upperRoman": "Roman"}
+# The text of a number: its level placeholders, digits and the punctuation around them.
+_NUMBER_TEXT = re.compile(r"^(?:%[1-9]|[0-9.\-() ])*$")
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 
 # The font Word sets the equations (OMML) of every document in.
@@ -89,7 +94,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
-            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART) if name in package.namelist()}
+            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART, NUMBERING_PART) if name in package.namelist()}
     except _UNREADABLE_DOCX:
         return []
     styles = parse_xml(parts[STYLES_PART]) if STYLES_PART in parts else None
@@ -98,6 +103,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     theme = parse_xml(parts[THEME_PART]) if THEME_PART in parts else None
     settings = parse_xml(parts[SETTINGS_PART]) if SETTINGS_PART in parts else None
     document = parse_xml(parts[DOCUMENT_PART]) if DOCUMENT_PART in parts else None
+    numbering = parse_xml(parts[NUMBERING_PART]) if NUMBERING_PART in parts else None
 
     chain = _style_chain(styles, BODY_STYLE)
     options: list[str] = []
@@ -141,7 +147,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
     for style_id in DISPLAY_STYLES:
-        fields = _display_style(styles, theme, style_id)
+        fields = _display_style(styles, theme, style_id, numbering)
         if fields:
             options += ["-M", f"docx-style-{style_id}={fields}"]
     return options
@@ -293,7 +299,7 @@ def _toggle(chain: list[Element], styles: Element, child: str) -> bool:
     return element is not None and element.get(_w("val"), "true") not in OFF_VALUES
 
 
-def _display_style(styles: Element, theme: Element | None, style_id: str) -> str:
+def _display_style(styles: Element, theme: Element | None, style_id: str, numbering: Element | None = None) -> str:
     """The title or a heading style as ``name:value`` fields, empty when the document lacks the style.
 
     The space before and after is the style's own: Word puts the larger of the after of one paragraph
@@ -323,7 +329,53 @@ def _display_style(styles: Element, theme: Element | None, style_id: str) -> str
         fields[side] = f"{_spacing_twips(chain, styles, side) / TWIPS_PER_POINT:g}"
     alignment = _first(chain, styles, "pPr", "jc")
     fields["align"] = ALIGNMENTS.get(alignment.get(_w("val"), "") if alignment is not None else "", "left")
+    if style_id.startswith("Heading"):
+        fields.update(_heading_number(chain, styles, numbering))
     return ",".join(f"{name}:{value}" for name, value in fields.items())
+
+
+def _number_levels(numbering: Element, num_id: str) -> dict[str, Element]:
+    """The levels of the abstract numbering a numbering instance refers to, by their index."""
+    abstract_id = next(
+        (ref.get(_w("val")) for num in numbering.iter(_w("num")) if num.get(_w("numId")) == num_id and (ref := num.find(_w("abstractNumId"))) is not None),
+        None,
+    )
+    abstract = next((item for item in numbering.iter(_w("abstractNum")) if item.get(_w("abstractNumId")) == abstract_id), None)
+    if abstract is None:
+        return {}
+    return {level.get(_w("ilvl"), ""): level for level in abstract.iter(_w("lvl"))}
+
+
+def _heading_number(chain: list[Element], styles: Element, numbering: Element | None) -> dict[str, str]:
+    """The number the numbering of a heading style gives it: its text, each level in its format, and its hanging indent.
+
+    The text names the level of each part as ``{level:format}``, the format one of LaTeX's counter commands.
+    Empty for a style without numbering, or with a format or text this cannot set.
+    """
+    num_pr = _first(chain, styles, "pPr", "numPr")
+    num_id = num_pr.find(_w("numId")) if num_pr is not None and numbering is not None else None
+    if num_id is None or numbering is None:
+        return {}
+    level_index = num_pr.find(_w("ilvl")) if num_pr is not None else None
+    levels = _number_levels(numbering, num_id.get(_w("val"), ""))
+    level = levels.get(level_index.get(_w("val"), "0") if level_index is not None else "0")
+    text = level.find(_w("lvlText")) if level is not None else None
+    if level is None or text is None or not _NUMBER_TEXT.match(text.get(_w("val"), "")):
+        return {}
+    parts = []
+    for match in re.finditer(r"%([1-9])|[^%]+", text.get(_w("val"), "")):
+        if match.group(1) is None:
+            parts.append(match.group(0))
+            continue
+        number_format = levels.get(str(int(match.group(1)) - 1))
+        number_format = number_format.find(_w("numFmt")) if number_format is not None else None
+        latex = NUMBER_FORMATS.get(number_format.get(_w("val"), "") if number_format is not None else "")
+        if latex is None:
+            return {}
+        parts.append(f"{{{match.group(1)}:{latex}}}")
+    indent = level.find(f"{_w('pPr')}/{_w('ind')}")
+    hanging = indent.get(_w("hanging"), "0") if indent is not None else "0"
+    return {"number": "".join(parts), "numberhang": f"{int(hanging) / TWIPS_PER_POINT:g}" if hanging.isdigit() else "0"}
 
 
 def _hhea(family: str) -> tuple[float, float] | None:

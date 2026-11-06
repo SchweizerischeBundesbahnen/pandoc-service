@@ -25,9 +25,11 @@ NORMAL = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w
 BODY_TEXT = '<w:style w:type="paragraph" w:styleId="BodyText"><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="180" w:after="180"/></w:pPr></w:style>'
 
 
-def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>") -> bytes:
+def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>", numbering: str | None = None) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as package:
+        if numbering is not None:
+            package.writestr("word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>")
         package.writestr("word/document.xml", f"<w:document {W}><w:body>{section}</w:body></w:document>")
         package.writestr("word/styles.xml", f"<w:styles {W}>{styles}</w:styles>")
         if theme is not None:
@@ -414,3 +416,30 @@ def test_margins_which_differ_or_are_no_twips_are_left_out():
     no_default = TABLE_STYLE.replace(' w:default="1"', "")
     for style in (uneven, percent, no_default):
         assert "docx-table-cell-margin" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + style))
+
+
+NUMBERED_HEADING1 = HEADING1.replace("<w:keepNext/>", '<w:keepNext/><w:numPr><w:ilvl w:val="1"/><w:numId w:val="2"/></w:numPr>')
+
+
+def _numbering(text: str = "%1.%2", second_format: str = "lowerLetter") -> str:
+    return (
+        '<w:abstractNum w:abstractNumId="7">'
+        '<w:lvl w:ilvl="0"><w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1"/></w:lvl>'
+        f'<w:lvl w:ilvl="1"><w:numFmt w:val="{second_format}"/><w:lvlText w:val="{text}"/><w:pPr><w:ind w:left="432" w:hanging="432"/></w:pPr></w:lvl>'
+        '</w:abstractNum><w:num w:numId="2"><w:abstractNumId w:val="7"/></w:num>'
+    )
+
+
+def test_a_heading_style_with_numbering_carries_its_number():
+    fields = _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1, numbering=_numbering()))["docx-style-Heading1"])
+    assert (fields["number"], fields["numberhang"]) == ("{1:Roman}.{2:alph}", "21.6")
+
+
+@pytest.mark.parametrize(("text", "second_format"), [("%1.%2", "bullet"), ("§%2", "decimal"), ("%1.%3", "decimal")])
+def test_a_number_this_cannot_set_is_left_out(text: str, second_format: str):
+    fields = _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1, numbering=_numbering(text, second_format)))["docx-style-Heading1"])
+    assert "number" not in fields
+
+
+def test_a_heading_without_the_numbering_part_has_no_number():
+    assert "number" not in _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1))["docx-style-Heading1"])

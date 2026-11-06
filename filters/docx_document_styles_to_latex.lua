@@ -176,6 +176,27 @@ local function body_preamble(meta, lines)
   end
 end
 
+-- LaTeX's counter commands, which the number of a heading may use.
+local NUMBER_FORMATS = { arabic = true, alph = true, Alph = true, roman = true, Roman = true }
+
+-- The number of a heading in LaTeX, from its text: digits and punctuation, and
+-- each level as {level:format}. nil for any other text.
+local function heading_number(text)
+  if text == nil or not text:gsub("{%d:%a+}", ""):match("^[%d%.%-%(%) ]*$") then
+    return nil
+  end
+  local valid = true
+  local latex = text:gsub("{(%d):(%a+)}", function(level, format)
+    local heading = HEADINGS[tonumber(level)]
+    if heading == nil or not NUMBER_FORMATS[format] then
+      valid = false
+      return ""
+    end
+    return string.format("\\%s{%s}", format, heading.command)
+  end)
+  return valid and latex or nil
+end
+
 -- The fields of a style, each checked: a family of letters, digits, spaces,
 -- dots, hyphens and underscores only, numbers for sizes and spaces, six hex
 -- digits for the colour. Anything else is left out.
@@ -206,6 +227,8 @@ local function style_fields(value, skip)
   style.before = math.max(style.own_before, skip or 0)
   style.after = math.max(style.own_after, skip or 0)
   style.align = PLAIN_ALIGN[fields.align] and fields.align or "left"
+  style.number = heading_number(fields.number)
+  style.number_hang = points(fields.numberhang) or 0
   return style
 end
 
@@ -268,14 +291,30 @@ local function headings_preamble(meta, lines)
     packages()
     deep_levels(lines)
   end
-  for _, heading in ipairs(HEADINGS) do
+  local numbered = nil
+  for level, heading in ipairs(HEADINGS) do
     local style = style_fields(meta[STYLE_PREFIX .. heading.style], points(meta[SKIP]))
     if style and (deep_used or not heading.deep) then
       packages()
       local switch = font_switch(style, "docxHeadingFont" .. heading.letter, lines)
-      lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
+      if style.number then
+        -- The number of the numbering of the style, in its hanging indent, as Word sets it
+        numbered = level
+        lines[#lines + 1] = string.format("\\renewcommand{\\the%s}{%s}", heading.command, style.number)
+        local label = string.format("\\makebox[%gpt][l]{\\the%s}", style.number_hang, heading.command)
+        if style.number_hang == 0 then
+          label = string.format("\\the%s\\quad", heading.command)
+        end
+        lines[#lines + 1] = string.format("\\titleformat{\\%s}[hang]{%s%s}{%s}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align], label)
+      else
+        lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
+      end
       lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%gpt}{%gpt}", heading.command, style.before, style.after)
     end
+  end
+  if numbered then
+    -- The template numbers no heading; a level of a numbered style and those above it count
+    lines[#lines + 1] = string.format("\\AtBeginDocument{\\setcounter{secnumdepth}{%d}}", numbered)
   end
 end
 
