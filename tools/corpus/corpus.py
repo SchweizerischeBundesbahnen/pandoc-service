@@ -23,7 +23,8 @@ from pathlib import Path
 import httpx
 import pypdfium2 as pdfium
 
-from tools.corpus.pdf_lines import Line, document_lines
+from tools.corpus import regions
+from tools.corpus.pdf_lines import Line, Word, document_lines, document_words
 
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "corpus"
@@ -34,8 +35,10 @@ PAGE_TEMPLATE = Path(__file__).parent / "page.html"
 PORT = 9082
 # Where the fonts of --fonts appear in the container: fontconfig reads every directory under /usr/share/fonts
 FONT_MOUNT = "/usr/share/fonts/truetype/corpus"
-# A line further off than this, in points, counts as shifted on the page
+# A line further off than this, in points, counts as shifted on the page; a word too
 SHIFTED = 2.0
+# Worse than the baseline by more than this many percent of the words or the regions of a document fails --against
+SHARE_TOLERANCE = 2.0
 # The rendering of the pages on the comparison page, in pixels per point
 SCALE = 1.5
 WORKERS = 4
@@ -118,18 +121,43 @@ def _match(reference: list[list[Line]], converted: list[list[Line]]) -> tuple[li
     return matches, found
 
 
+def _words_in_place(reference: list[list[Word]], converted: list[list[Word]]) -> int:
+    """How many words of the reference the conversion sets on the same page, within SHIFTED points across and down."""
+    found = 0
+    for number, words in enumerate(reference):
+        candidates: dict[str, list[Word]] = {}
+        for word in converted[number] if number < len(converted) else []:
+            candidates.setdefault(word.text, []).append(word)
+        for word in words:
+            same = candidates.get(word.text, [])
+            if not same:
+                continue
+            nearest = min(same, key=lambda other, word=word: abs(other.x - word.x) + abs(other.y - word.y))
+            if abs(nearest.x - word.x) <= SHIFTED and abs(nearest.y - word.y) <= SHIFTED:
+                same.remove(nearest)
+                found += 1
+    return found
+
+
 def score_document(reference_pdf: Path, converted_pdf: Path) -> dict:
-    """How the conversion of one document compares with its reference."""
+    """How the conversion of one document compares with its reference: its lines, its words and the regions of its pages."""
+    exists = converted_pdf.exists()
     reference = document_lines(reference_pdf)
-    converted = document_lines(converted_pdf) if converted_pdf.exists() else []
+    converted = document_lines(converted_pdf) if exists else []
     matches, anywhere = _match(reference, converted)
     shifts = [abs(match["dy"]) for match in matches if match["dy"] is not None]
+    reference_words = document_words(reference_pdf)
+    pages = regions.compare_documents(reference_pdf, converted_pdf if exists else None)
     return {
         "pages": [len(reference), len(converted)],
         "lines": len(matches),
         "same_page": len(shifts),
         "any_page": anywhere,
         "mean_shift": round(statistics.mean(shifts), 2) if shifts else None,
+        "words": sum(len(words) for words in reference_words),
+        "words_in_place": _words_in_place(reference_words, document_words(converted_pdf) if exists else []),
+        "regions": sum(page.inked for page in pages),
+        "regions_matched": sum(page.matched for page in pages),
         "problems": [match for match in matches if match["dy"] is None or abs(match["dy"]) > SHIFTED],
     }
 
@@ -143,6 +171,8 @@ def _total(documents: dict[str, dict]) -> dict:
         "any_page": round(100 * sum(result["any_page"] for result in documents.values()) / max(lines, 1), 1),
         "pages_as_reference": sum(result["pages"][0] == result["pages"][1] for result in documents.values()),
         "mean_shift": round(statistics.mean(shifts), 2) if shifts else None,
+        "words_in_place": round(100 * sum(result["words_in_place"] for result in documents.values()) / max(sum(result["words"] for result in documents.values()), 1), 1),
+        "regions_matched": round(100 * sum(result["regions_matched"] for result in documents.values()) / max(sum(result["regions"] for result in documents.values()), 1), 1),
     }
 
 
@@ -156,24 +186,34 @@ def score(out: Path, reference: str) -> dict:
 
 
 def _summary(documents: dict[str, dict]) -> dict[str, dict]:
-    keys = ("pages", "lines", "same_page", "any_page", "mean_shift")
-    return {name: {key: result[key] for key in keys} for name, result in documents.items()}
+    keys = ("pages", "lines", "same_page", "any_page", "mean_shift", "words", "words_in_place", "regions", "regions_matched")
+    return {name: {key: result[key] for key in keys if key in result} for name, result in documents.items()}
 
 
 def report(result: dict) -> str:
     """The score as a Markdown table, the documents furthest off first."""
     total = result["total"]
     rows = [
-        f"Reference: {result['reference']}. Lines on the same page {total['same_page']}%, on any page {total['any_page']}%, pages as the reference {total['pages_as_reference']}/{total['documents']}, mean shift {total['mean_shift']} pt.",
+        (
+            f"Reference: {result['reference']}. Lines on the same page {total['same_page']}%, on any page {total['any_page']}%, pages as the reference {total['pages_as_reference']}/{total['documents']}, mean shift {total['mean_shift']} pt."
+            f" Words in place {total.get('words_in_place')}%, regions matched {total.get('regions_matched')}%."
+        ),
         "",
-        "| Document | Pages | Same page | Any page | Mean shift |",
-        "|---|---|---|---|---|",
+        "| Document | Pages | Same page | Any page | Mean shift | Words in place | Regions matched |",
+        "|---|---|---|---|---|---|---|",
     ]
     ordered = sorted(result["documents"].items(), key=lambda item: -(item[1]["mean_shift"] or 1000))
     for name, document in ordered:
         lines = max(document["lines"], 1)
-        rows.append(f"| {name} | {document['pages'][0]} / {document['pages'][1]} | {100 * document['same_page'] / lines:.1f}% | {100 * document['any_page'] / lines:.1f}% | {document['mean_shift']} |")
+        rows.append(
+            f"| {name} | {document['pages'][0]} / {document['pages'][1]} | {100 * document['same_page'] / lines:.1f}% | {100 * document['any_page'] / lines:.1f}% | {document['mean_shift']} "
+            f"| {_share(document, 'words_in_place', 'words'):.1f}% | {_share(document, 'regions_matched', 'regions'):.1f}% |"
+        )
     return "\n".join(rows) + "\n"
+
+
+def _share(document: dict, part: str, whole: str) -> float:
+    return 100 * document.get(part, 0) / max(document.get(whole, 0), 1)
 
 
 def write_baseline(result: dict, variant: str) -> None:
@@ -199,6 +239,9 @@ def regressions(result: dict, variant: str) -> list[str]:
             found.append(f"{name}: {document['same_page']} lines on the same page, was {before['same_page']}")
         if document["mean_shift"] is not None and before["mean_shift"] is not None and document["mean_shift"] > before["mean_shift"] + TOLERANCE:
             found.append(f"{name}: mean shift {document['mean_shift']} pt, was {before['mean_shift']}")
+        for part, whole, what in (("words_in_place", "words", "words in place"), ("regions_matched", "regions", "regions matched")):
+            if whole in before and _share(document, part, whole) < _share(before, part, whole) - SHARE_TOLERANCE:
+                found.append(f"{name}: {_share(document, part, whole):.1f}% {what}, was {_share(before, part, whole):.1f}%")
     return found
 
 
@@ -229,7 +272,9 @@ def page(out: Path, reference: str) -> Path:
         converted = out / "pdf" / f"{name}.pdf"
         reference_pages, sizes = _render(REFERENCES / reference / f"{name}.pdf", site / "reference", name)
         converted_pages = _render(converted, site / "converted", name)[0] if converted.exists() else []
-        documents.append({"name": name, **document, "reference_pages": reference_pages, "converted_pages": converted_pages, "sizes": sizes})
+        regions.compare_documents(REFERENCES / reference / f"{name}.pdf", converted if converted.exists() else None, site / "difference", name)
+        difference_pages = [f"{name}-{number + 1}.webp" for number in range(len(reference_pages))]
+        documents.append({"name": name, **document, "reference_pages": reference_pages, "converted_pages": converted_pages, "difference_pages": difference_pages, "sizes": sizes})
     data = {"reference": reference, "total": result["total"], "baseline": {variant: stored["total"] for variant, stored in baseline.items()}, "scale": SCALE, "shifted": SHIFTED, "documents": documents}
     template = PAGE_TEMPLATE.read_text()
     # The data sits in a script element, which only "</" can end

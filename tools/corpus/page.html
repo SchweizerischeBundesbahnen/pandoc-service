@@ -43,7 +43,7 @@
     <div class="totals" id="totals"></div>
   </header>
   <table>
-    <thead><tr><th data-key="name">Document</th><th data-key="pages">Pages</th><th data-key="same">Same page</th><th data-key="shift">Shift</th></tr></thead>
+    <thead><tr><th data-key="name">Document</th><th data-key="pages">Pages</th><th data-key="same">Same page</th><th data-key="shift">Shift</th><th data-key="words">Words</th><th data-key="regions">Regions</th></tr></thead>
     <tbody id="list"></tbody>
   </table>
 </aside>
@@ -54,6 +54,7 @@
     <label><input type="radio" name="mode" value="side" checked> side by side</label>
     <label><input type="radio" name="mode" value="overlay"> overlay</label>
     <label><input type="radio" name="mode" value="swipe"> swipe</label>
+    <label><input type="radio" name="mode" value="difference"> difference</label>
     <label id="amount-label">conversion <input type="range" id="amount" min="0" max="100" value="50"></label>
   </div>
   <div class="pages" id="pages"></div>
@@ -66,14 +67,14 @@ const documents = data.documents;
 const percent = (part, whole) => whole ? (100 * part / whole) : 0;
 const format = (value, digits = 1) => value === null || value === undefined ? "–" : Number(value).toFixed(digits);
 const totals = document.getElementById("totals");
-const lines = [`Reference: Word on ${data.reference}. Lines on the same page ${data.total.same_page}%, on any page ${data.total.any_page}%, pages as Word ${data.total.pages_as_reference}/${data.total.documents}, mean shift ${data.total.mean_shift} pt.`];
+const lines = [`Reference: Word on ${data.reference}. Lines on the same page ${data.total.same_page}%, on any page ${data.total.any_page}%, pages as Word ${data.total.pages_as_reference}/${data.total.documents}, mean shift ${data.total.mean_shift} pt. Words in place ${format(data.total.words_in_place)}%, regions matched ${format(data.total.regions_matched)}%.`];
 for (const [variant, total] of Object.entries(data.baseline)) {
-  lines.push(`Baseline ${variant}: same page ${total.same_page}%, mean shift ${total.mean_shift} pt.`);
+  lines.push(`Baseline ${variant}: same page ${total.same_page}%, mean shift ${total.mean_shift} pt, words in place ${format(total.words_in_place)}%, regions matched ${format(total.regions_matched)}%.`);
 }
 totals.innerHTML = lines.map(line => `<div>${line}</div>`).join("");
 
 let sortKey = "shift", sortDown = true;
-const value = (doc, key) => ({ name: doc.name, pages: doc.pages[0] === doc.pages[1] ? 0 : 1, same: percent(doc.same_page, doc.lines), shift: doc.mean_shift ?? 1000 })[key];
+const value = (doc, key) => ({ name: doc.name, pages: doc.pages[0] === doc.pages[1] ? 0 : 1, same: percent(doc.same_page, doc.lines), shift: doc.mean_shift ?? 1000, words: percent(doc.words_in_place, doc.words), regions: percent(doc.regions_matched, doc.regions) })[key];
 function drawList() {
   const sorted = [...documents].sort((a, b) => {
     const [x, y] = [value(a, sortKey), value(b, sortKey)];
@@ -84,7 +85,8 @@ function drawList() {
     const pages = doc.pages[0] === doc.pages[1] ? `${doc.pages[0]}` : `<span class="bad">${doc.pages[0]} / ${doc.pages[1]}</span>`;
     const shiftClass = doc.mean_shift === null ? "bad" : doc.mean_shift > data.shifted ? "warn" : "ok";
     return `<tr class="doc" data-name="${doc.name}"><td>${doc.name.replace(/^test_/, "")}</td><td>${pages}</td>` +
-      `<td class="${same < 90 ? "bad" : same < 99 ? "warn" : "ok"}">${format(same)}%</td><td class="${shiftClass}">${format(doc.mean_shift, 2)}</td></tr>`;
+      `<td class="${same < 90 ? "bad" : same < 99 ? "warn" : "ok"}">${format(same)}%</td><td class="${shiftClass}">${format(doc.mean_shift, 2)}</td>` +
+      [percent(doc.words_in_place, doc.words), percent(doc.regions_matched, doc.regions)].map(share => `<td class="${share < 80 ? "bad" : share < 95 ? "warn" : "ok"}">${format(share)}%</td>`).join("") + `</tr>`;
   }).join("");
   for (const row of document.querySelectorAll("tr.doc")) row.onclick = () => { location.hash = row.dataset.name; };
   pick();
@@ -102,11 +104,14 @@ function sheet(doc, number, side) {
 function draw(doc) {
   const mode = document.querySelector("input[name=mode]:checked").value;
   const amount = document.getElementById("amount").value;
-  document.getElementById("amount-label").style.visibility = mode === "side" ? "hidden" : "visible";
+  document.getElementById("amount-label").style.visibility = mode === "side" || mode === "difference" ? "hidden" : "visible";
   const count = Math.max(doc.reference_pages.length, doc.converted_pages.length);
   const parts = [];
   for (let number = 0; number < count; number++) {
-    if (mode === "side") {
+    if (mode === "difference") {
+      parts.push(`<div><div class="caption">page ${number + 1}: Word in gray, pandoc-service in red, regions which differ framed</div><div class="pair stacked">` +
+        (number < doc.difference_pages.length ? `<div class="sheet"><img loading="lazy" src="difference/${doc.difference_pages[number]}" alt="${doc.name} page ${number + 1}, difference"></div>` : `<div class="sheet empty">no page ${number + 1} in Word</div>`) + `</div></div>`);
+    } else if (mode === "side") {
       parts.push(`<div><div class="caption">page ${number + 1}: Word | pandoc-service</div><div class="pair">${sheet(doc, number, "reference")}${sheet(doc, number, "converted")}</div></div>`);
     } else if (number < doc.reference_pages.length && number < doc.converted_pages.length) {
       const top = mode === "overlay" ? `opacity:${amount / 100}` : `clip-path:inset(0 0 0 ${amount}%)`;
@@ -127,7 +132,7 @@ function pick() {
   if (!doc) return;
   document.getElementById("title").textContent = doc.name;
   document.getElementById("facts").innerHTML = `Pages ${doc.pages[0]} in Word, ${doc.pages[1]} converted. ${doc.same_page} of ${doc.lines} lines on the same page, ` +
-    `${doc.any_page} on any page, mean shift ${format(doc.mean_shift, 2)} pt. <a href="docx/${doc.name}.docx">DOCX</a>`;
+    `${doc.any_page} on any page, mean shift ${format(doc.mean_shift, 2)} pt. ${doc.words_in_place} of ${doc.words} words in place, ${doc.regions_matched} of ${doc.regions} regions matched. <a href="docx/${doc.name}.docx">DOCX</a>`;
   document.getElementById("problems").innerHTML = doc.problems.map(problem =>
     `<li class="${problem.dy === null ? "bad" : "warn"}">p${problem.line.page + 1}: ${problem.line.text.replace(/</g, "&lt;")} ${problem.dy === null ? "(missing)" : `(${problem.dy > 0 ? "+" : ""}${problem.dy} pt)`}</li>`).join("");
   draw(doc);

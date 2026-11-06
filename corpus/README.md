@@ -54,6 +54,11 @@ cells of a table row are lines of their own. The same rule reads both PDFs.
 | Same page | Word's lines which the conversion sets on the same page, with the same text |
 | Any page | Word's lines which the conversion sets on any page |
 | Mean shift | the mean vertical distance of the lines on the same page, in points |
+| Words in place | Word's words which the conversion sets on the same page within 2 points across and down |
+| Regions matched | the squares of 14 points with ink in either PDF where the ink of each lies within 1.5 points of ink of the other: pictures, borders and shading count as well as text |
+
+The page shows each page of a document side by side, as an overlay, or as its difference: Word in
+gray, the conversion in red, and each square which does not match framed in orange.
 
 A line further off than 2 points, or missing on its page, is a problem. The page lists them under the pages of the document.
 
@@ -73,7 +78,7 @@ Open `index.html` there. Each command runs alone as well: `convert`, `score`, `p
 
 | Option of `score` | Effect |
 |---|---|
-| `--against` | fails when a document got worse than `baseline.json`: fewer lines on the same page, another page count than Word where it had Word's, or a mean shift 0.5 points larger |
+| `--against` | fails when a document got worse than `baseline.json`: fewer lines on the same page, another page count than Word where it had Word's, a mean shift 0.5 points larger, or 2 percent fewer words in place or regions matched |
 | `--write-baseline` | stores the score in `baseline.json`, for the run `--variant` |
 | `--reference windows` | compares with the PDFs of Word for Windows |
 
