@@ -541,13 +541,12 @@ def _baseline(chain: list[Element], styles: Element, size: float, font: str | No
         line = int(found[1]) if found is not None else LINE_UNITS
     except ValueError:
         line = LINE_UNITS
-    match rule[1] if rule is not None else "auto":
-        case "exact":
-            return line / TWIPS_PER_POINT
-        case "atLeast":
-            return max(single, line / TWIPS_PER_POINT)
-        case _:
-            return single * line / LINE_UNITS
+    kind = rule[1] if rule is not None else "auto"
+    if kind == "exact":
+        return line / TWIPS_PER_POINT
+    if kind == "atLeast":
+        return max(single, line / TWIPS_PER_POINT)
+    return single * line / LINE_UNITS
 
 
 def _theme_colors(theme: Element | None) -> dict[str, str]:
