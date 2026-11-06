@@ -9,7 +9,9 @@
 -- This filter restores the title and sets the picture as Word does:
 --
 --   position (<w:position>)          -> \raisebox{<pt>}{...}, negative lowers it
---   left/right (<wp:effectExtent>)   -> \hspace{<pt>} before/after it
+--   left/right (<wp:effectExtent>)   -> \kern<pt> before/after it: a kern, not glue,
+--                                     since Word breaks no line between a picture
+--                                     and the text right next to it
 
 local EMU_PER_POINT = 12700
 -- TeX's largest dimension is just under 16384pt.
@@ -23,6 +25,10 @@ local function points(value)
   return s .. "pt"
 end
 
+local function kern(value)
+  return pandoc.RawInline("latex", "\\kern" .. points(value) .. "\\relax ")
+end
+
 function Image(el)
   local position, left, right, title = el.title:match("^{{PICLAYOUT:(%-?%d+)|(%d+)|(%d+)}}(.*)$")
   if not position then return nil end
@@ -31,7 +37,7 @@ function Image(el)
 
   local result = {}
   if left > 0 then
-    result[#result + 1] = pandoc.RawInline("latex", "\\hspace{" .. points(left / EMU_PER_POINT) .. "}")
+    result[#result + 1] = kern(left / EMU_PER_POINT)
   end
   if position ~= 0 then
     result[#result + 1] = pandoc.RawInline("latex", "\\raisebox{" .. points(position / 2) .. "}{")
@@ -41,7 +47,7 @@ function Image(el)
     result[#result + 1] = el
   end
   if right > 0 then
-    result[#result + 1] = pandoc.RawInline("latex", "\\hspace{" .. points(right / EMU_PER_POINT) .. "}")
+    result[#result + 1] = kern(right / EMU_PER_POINT)
   end
   return result
 end
