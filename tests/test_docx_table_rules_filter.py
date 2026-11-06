@@ -53,3 +53,47 @@ def test_a_table_of_compact_paragraphs_takes_the_rows_of_compact(test_parameters
     latex = _latex(test_parameters.container, "cc=1")
     assert latex.startswith("\\begingroup\\ifdefined\\pdcCompactCellStretch\\renewcommand{\\arraystretch}{\\pdcCompactCellStretch}\\fi")
     assert latex.count("\\begingroup") == latex.count("\\endgroup")
+
+
+GRID = "rl=grid;lc=CCCCCC;lw=0.75"
+
+
+def _native_latex(container, native: str) -> str:
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/grid.native << 'EOF'\n{native}\nEOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/grid.native"])
+    assert exit_code == 0, f"pandoc failed (exit {exit_code}): {output.decode()}"
+    return output.decode()
+
+
+def _cell(content: str, rows: int = 1) -> str:
+    return f'Cell ("",[],[]) AlignDefault (RowSpan {rows}) (ColSpan 1) [Plain [{content}]]'
+
+
+def _grid_table(*rows: list[str]) -> str:
+    body = ", ".join(f'Row ("",[],[]) [{", ".join(cells)}]' for cells in rows)
+    columns = ", ".join(["(AlignDefault, ColWidth 0.5)"] * 2)
+    return f'[Table ("",[],[]) (Caption Nothing []) [{columns}] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [{body}]] (TableFoot ("",[],[]) [])]'
+
+
+def test_a_grid_draws_a_line_around_every_cell(test_parameters: TestParameters):
+    latex = _latex(test_parameters.container, GRID)
+    assert "\\begin{longtable}[]{|" in latex
+    assert latex.count("|") >= 3
+    assert "\\setlength{\\arrayrulewidth}{0.75pt}\\arrayrulecolor[HTML]{CCCCCC}" in latex
+    assert "b \\\\\\hline" in latex
+    assert "pdcGridRowEnd" not in latex
+    assert latex.count("\\begingroup") == latex.count("\\endgroup")
+
+
+def test_a_merged_cell_keeps_no_line_inside_it(test_parameters: TestParameters):
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"', rows=2), _cell('Str "b"')], [_cell('Str "c"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "\\multirow[t]{2}" in latex, "Word sets the text of a merged cell at its top"
+    assert "\\cline{2-2}" in latex
+
+
+def test_a_grid_with_a_picture_keeps_the_table_of_pandoc(test_parameters: TestParameters):
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Image ("",[],[]) [] ("x.png","")')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "{|" not in latex
+    assert "\\toprule" in latex

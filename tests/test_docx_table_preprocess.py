@@ -738,3 +738,35 @@ def test_a_table_of_compact_paragraphs_is_marked():
 
 def test_a_table_of_paragraphs_without_a_style_is_not_marked():
     assert "cc" not in _first_cell_kv("<w:tbl><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>")
+
+
+GRID_BORDERS = "".join(f'<w:{side} w:val="single" w:sz="6" w:color="CCCCCC"/>' for side in ("top", "left", "bottom", "right"))
+
+
+def _grid_cell(borders: str = GRID_BORDERS) -> str:
+    return f"<w:tc><w:tcPr><w:tcBorders>{borders}</w:tcBorders></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>"
+
+
+def test_a_table_whose_cells_draw_every_side_is_a_grid():
+    kv = _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell()}</w:tr></w:tbl>")
+    assert (kv["rl"], kv["lc"], kv["lw"]) == ("grid", "CCCCCC", "0.75")
+
+
+def test_the_borders_of_the_table_stand_in_for_those_of_the_cell():
+    borders = "".join(f'<w:{side} w:val="single"/>' for side in ("top", "left", "insideH", "insideV"))
+    kv = _first_cell_kv(f"<w:tbl><w:tblPr><w:tblBorders>{borders}</w:tblBorders></w:tblPr><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>")
+    assert (kv["rl"], kv["lc"], kv["lw"]) == ("grid", "000000", "0.5")
+
+
+def test_a_cell_without_one_side_is_no_grid():
+    partial = GRID_BORDERS.replace('<w:left w:val="single" w:sz="6" w:color="CCCCCC"/>', '<w:left w:val="nil"/>')
+    assert "rl" not in _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(partial)}</w:tr></w:tbl>")
+
+
+def test_white_lines_are_no_grid():
+    assert "rl" not in _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('CCCCCC', 'ffffff'))}</w:tr></w:tbl>")
+
+
+def test_the_width_of_a_line_has_bounds():
+    assert _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('w:sz="6"', 'w:sz="0"'))}</w:tr></w:tbl>")["lw"] == "0.25"
+    assert _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('w:sz="6"', 'w:sz="x"'))}</w:tr></w:tbl>")["lw"] == "0.5"

@@ -350,3 +350,22 @@ def test_a_straight_quote_of_the_text_stays_straight(test_parameters: TestParame
 
 def test_a_cell_gets_the_margin_of_the_table_style(test_parameters: TestParameters):
     assert "\\setlength{\\tabcolsep}{5.4pt}" in _preamble(_latex(test_parameters.container, "docx-table-cell-margin=5.4", "docx-table-cell-space=3.6"))
+
+
+def test_a_document_of_grid_tables_only_compiles(test_parameters: TestParameters):
+    """The grid is raw LaTeX: the template must still load the packages of a table."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    for cell in table._cells:
+        borders = OxmlElement("w:tcBorders")
+        for side in ("top", "left", "bottom", "right"):
+            line = OxmlElement(f"w:{side}")
+            line.set(qn("w:val"), "single")
+            borders.append(line)
+        cell._tc.get_or_add_tcPr().append(borders)
+        cell.text = "grid cell"
+    text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(_docx_to_pdf(test_parameters, document))).pages)
+    assert text.count("grid cell") == 4, text

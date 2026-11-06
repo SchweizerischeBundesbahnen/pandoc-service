@@ -492,6 +492,44 @@ def bordered_table_styles(styles: ET.Element | None) -> frozenset[str]:
     return frozenset(found)
 
 
+# A side of the first cell and the border of the table it falls back to.
+_GRID_SIDES = (("top", "top"), ("left", "left"), ("bottom", "insideH"), ("right", "insideV"))
+# The width of a border is in eighths of a point; Word draws one of no width at a quarter point.
+_EIGHTHS_PER_POINT = 8
+_THINNEST_LINE = 0.25
+_THICKEST_LINE = 6.0
+
+
+def _grid_lines(tbl: ET.Element) -> tuple[str, float] | None:
+    """The colour and width of the lines of a table which draws every side of its cells, else None.
+
+    The first cell stands for the table: its own borders, else the borders of the table.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    table_borders = tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None
+    first = _first_own_cell(tbl)
+    tcpr = first.find(_TCPR_TAG) if first is not None else None
+    cell_borders = tcpr.find(f"{{{W_NS}}}tcBorders") if tcpr is not None else None
+    sides = []
+    for cell_side, table_side in _GRID_SIDES:
+        side = cell_borders.find(f"{{{W_NS}}}{cell_side}") if cell_borders is not None else None
+        if side is None and table_borders is not None:
+            side = table_borders.find(f"{{{W_NS}}}{table_side}")
+        if side is None or side.get(_VAL_ATTR) in _NO_BORDER:
+            return None
+        sides.append(side)
+    raw_color = (sides[0].get(f"{{{W_NS}}}color") or "").upper()
+    if raw_color == "FFFFFF":
+        # White lines on white paper: nothing to draw
+        return None
+    color = _normalize_hex(raw_color) or "000000"
+    try:
+        width = int(sides[0].get(f"{{{W_NS}}}sz") or "4") / _EIGHTHS_PER_POINT
+    except ValueError:
+        width = 4 / _EIGHTHS_PER_POINT
+    return color, min(max(width, _THINNEST_LINE), _THICKEST_LINE)
+
+
 # The bit of the hexadecimal w:val of <w:tblLook> which turns the formatting of the first row on.
 _FIRST_ROW_BIT = 0x0020
 
@@ -546,8 +584,12 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float, bordered_styles:
         kv["ta"] = align
     # The lines of a styled table: LaTeX draws booktabs rules around every table, Word only the borders it
     # has. A table with borders keeps LaTeX's rules, and one without a style is left as it is.
+    # A table which draws every side of its cells is set as a grid in their colour and width.
     tblpr = tbl.find(_TBLPR_TAG)
-    if tblpr is not None and tblpr.find(f"{{{W_NS}}}tblStyle") is not None:
+    grid = _grid_lines(tbl)
+    if grid is not None:
+        kv["rl"], kv["lc"], kv["lw"] = "grid", grid[0], f"{grid[1]:g}"
+    elif tblpr is not None and tblpr.find(f"{{{W_NS}}}tblStyle") is not None:
         rules = _rules(tbl, bordered_styles)
         if rules != "grid":
             kv["rl"] = rules

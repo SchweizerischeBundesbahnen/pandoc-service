@@ -54,6 +54,7 @@ end
 --   ta=left|center|right  table horizontal alignment (table-level, first cell)
 --   rl=none|head|grid  the lines Word draws (table-level, first cell)
 --   cc=1  the cells hold paragraphs of the Compact style (table-level, first cell)
+--   lc=RRGGBB, lw=<points>  the colour and width of the lines of a grid
 local function parse_payload(payload)
   local props = {}
   for segment in payload:gmatch("[^;]+") do
@@ -75,6 +76,13 @@ local function parse_payload(payload)
       props.rl = value
     elseif key == "cc" and value == "1" then
       props.cc = true
+    elseif key == "lc" and valid_hex(value:upper()) then
+      props.lc = value:upper()
+    elseif key == "lw" then
+      local n = tonumber(value)
+      if n and n > 0 and n <= 6 then
+        props.lw = n
+      end
     end
   end
   return props
@@ -222,6 +230,7 @@ local JUSTIFY_LATEX = "\\pdcCellJustify{}"
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
+local has_grid = false       -- set when a table is written as the raw LaTeX of a grid
 
 -- True when a cell renders nothing, so there is nothing to align.
 --
@@ -277,10 +286,220 @@ local function process_rows(rows, layout, flags)
         if props.aw then layout.aw = true end
         if props.rl then layout.rl = props.rl end
         if props.cc then layout.cc = true end
+        if props.lc then layout.lc = props.lc end
+        if props.lw then layout.lw = props.lw end
       end
     end
   end
   return modified
+end
+
+-- ---- A table drawn as a grid ----
+--
+-- Word draws every side of each cell of such a table. pandoc's writer sets a
+-- longtable with booktabs rules and no vertical lines. The table is written to
+-- LaTeX here, and its column specification and rows get the lines: a vertical
+-- line between and around the columns, and under each row a line across the
+-- columns whose cell ends there, so a merged cell keeps no line inside it.
+
+local ROW_END = "\\pdcGridRowEnd"
+
+-- The index of the brace which closes the one at `open`.
+local function closing_brace(s, open)
+  local depth = 0
+  for i = open, #s do
+    local ch = s:sub(i, i)
+    if ch == "{" then
+      depth = depth + 1
+    elseif ch == "}" then
+      depth = depth - 1
+      if depth == 0 then
+        return i
+      end
+    end
+  end
+  return nil
+end
+
+-- The end of the column at `i` of a column specification: >{..}p{..}, p{..} or a letter.
+local function column_end(body, i)
+  local ch = body:sub(i, i)
+  local stop = i
+  if ch == ">" then
+    stop = closing_brace(body, i + 1)
+    if stop == nil then
+      return nil
+    end
+    stop = stop + 1
+  end
+  if body:sub(stop + 1, stop + 1) == "{" then
+    stop = closing_brace(body, stop + 1)
+  end
+  return stop
+end
+
+-- The column specification of pandoc's writer with a line around every column.
+local function grid_columns(spec)
+  local body = spec:gsub("^%s*@{}", ""):gsub("@{}%s*$", "")
+  local columns = {}
+  local i = 1
+  while i <= #body do
+    if body:sub(i, i):match("%s") then
+      i = i + 1
+    else
+      local stop = column_end(body, i)
+      if stop == nil then
+        return nil
+      end
+      columns[#columns + 1] = body:sub(i, stop)
+      i = stop + 1
+    end
+  end
+  return "|" .. table.concat(columns, "|") .. "|"
+end
+
+-- A \multicolumn replaces the lines of the columns it spans: it gets its own.
+local function grid_multicolumns(latex)
+  local result, position = {}, 1
+  while true do
+    local start, finish = latex:find("\\multicolumn{%d+}{", position)
+    local close = start and closing_brace(latex, finish)
+    if close == nil then
+      break
+    end
+    local first = not latex:sub(1, start - 1):match("&%s*$")
+    result[#result + 1] = latex:sub(position, finish)
+    result[#result + 1] = (first and "|" or "") .. latex:sub(finish + 1, close - 1) .. "|}"
+    position = close + 1
+  end
+  result[#result + 1] = latex:sub(position)
+  return table.concat(result)
+end
+
+-- The line under each row, in the order of the rows: across the columns whose cell ends in that row.
+local function grid_row_lines(rows, columns)
+  local carry, lines = {}, {}
+  for c = 1, columns do
+    carry[c] = 0
+  end
+  for index, row in ipairs(rows) do
+    local occupied, column = {}, 1
+    for c = 1, columns do
+      occupied[c] = carry[c] > 0
+    end
+    for _, cell in ipairs(row.cells) do
+      while column <= columns and occupied[column] do
+        column = column + 1
+      end
+      for c = column, math.min(column + cell.col_span - 1, columns) do
+        carry[c] = cell.row_span
+      end
+      column = column + cell.col_span
+    end
+    local runs, from = {}, nil
+    for c = 1, columns + 1 do
+      local ends = c <= columns and carry[c] <= 1
+      if ends and from == nil then
+        from = c
+      elseif not ends and from ~= nil then
+        runs[#runs + 1] = { from, c - 1 }
+        from = nil
+      end
+    end
+    for c = 1, columns do
+      carry[c] = math.max(carry[c] - 1, 0)
+    end
+    if #runs == 1 and runs[1][1] == 1 and runs[1][2] == columns then
+      lines[index] = "\\hline"
+    else
+      local parts = {}
+      for _, run in ipairs(runs) do
+        parts[#parts + 1] = string.format("\\cline{%d-%d}", run[1], run[2])
+      end
+      lines[index] = table.concat(parts)
+    end
+  end
+  return lines
+end
+
+-- What a cell of a grid may hold: the template of pandoc loads the packages of
+-- a list, a picture or a note only for one it sees, and a grid is raw LaTeX.
+local GRID_BLOCKS = { Plain = true, Para = true }
+local GRID_INLINES = {
+  Str = true, Space = true, SoftBreak = true, LineBreak = true, Emph = true, Strong = true,
+  Underline = true, Span = true, RawInline = true, Link = true, Math = true, SmallCaps = true,
+  Superscript = true, Subscript = true, Quoted = true, Code = true,
+}
+
+local function simple_cells(rows)
+  local simple = true
+  local check = {
+    Block = function(block)
+      if not GRID_BLOCKS[block.t] then
+        simple = false
+      end
+    end,
+    Inline = function(inline)
+      if not GRID_INLINES[inline.t] then
+        simple = false
+      end
+    end,
+  }
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      pandoc.Div(cell.contents):walk(check)
+    end
+  end
+  return simple
+end
+
+local function all_rows(tbl)
+  local rows = {}
+  local function add(list)
+    for _, row in ipairs(list) do
+      rows[#rows + 1] = row
+    end
+  end
+  add(tbl.head.rows)
+  for _, body in ipairs(tbl.bodies) do
+    add(body.head)
+    add(body.body)
+  end
+  add(tbl.foot.rows)
+  return rows
+end
+
+-- The table as LaTeX with the lines of a grid, or nil when it cannot be set so.
+local function grid_table(tbl)
+  local rows = all_rows(tbl)
+  if #tbl.colspecs == 0 or not simple_cells(rows) then
+    return nil
+  end
+  local lines = grid_row_lines(rows, #tbl.colspecs)
+  for index, row in ipairs(rows) do
+    local last = row.cells[#row.cells]
+    if last ~= nil then
+      table.insert(last.contents, pandoc.Plain({ pandoc.RawInline("latex", string.format("%s{%d}", ROW_END, index)) }))
+    end
+  end
+  local latex = pandoc.write(pandoc.Pandoc({ tbl }), "latex")
+  local _, open = latex:find("\\begin{longtable}[]{", 1, true)
+  local close = open and closing_brace(latex, open)
+  local columns = close and grid_columns(latex:sub(open + 1, close - 1))
+  if columns == nil then
+    return nil
+  end
+  latex = grid_multicolumns(latex:sub(1, open) .. columns .. latex:sub(close))
+  -- Word sets the text of a merged cell at its top
+  latex = latex:gsub("\\multirow{", "\\multirow[t]{")
+  -- Each row ends with the line under it
+  latex = latex:gsub("%s*\\pdcGridRowEnd{(%d+)}(.-)\\\\", function(index, between)
+    return between .. "\\\\" .. (lines[tonumber(index)] or "")
+  end)
+  if latex:find(ROW_END, 1, true) then
+    return nil
+  end
+  return latex
 end
 
 -- ---- Pass 1: Table processing ----
@@ -355,6 +574,21 @@ function table_pass.Table(tbl)
   --  * the recovered horizontal alignment is applied via longtable
   --    \LTleft/\LTright glue (pandoc drops <w:jc>, defaulting to centered).
   local before, after = {}, {}
+  local grid = nil
+  if layout.rl == "grid" and layout.lc and layout.lw then
+    grid = grid_table(tbl)
+  end
+  if grid then
+    -- The lines of the cells in their colour and width, the table out to the cell margin as Word sets it
+    has_cellcolor = true
+    has_grid = true
+    before[#before + 1] = string.format("\\begingroup\\def\\toprule{\\hline}\\def\\midrule{}\\def\\bottomrule{}\\setlength{\\arrayrulewidth}{%gpt}\\arrayrulecolor[HTML]{%s}", layout.lw, layout.lc)
+    if layout.ta == nil or layout.ta == "left" then
+      before[#before + 1] = "\\setlength{\\LTleft}{-\\tabcolsep}\\setlength{\\LTright}{\\fill}"
+      layout.ta = nil
+      after[#after + 1] = RESET_GLUE
+    end
+  end
   -- A group, so the rules come back for the next table
   local rules = layout.rl and RULES[layout.rl]
   if rules then
@@ -380,6 +614,10 @@ function table_pass.Table(tbl)
   end
   if layout.cc then
     after[#after + 1] = "\\endgroup"
+  end
+  if grid then
+    after[#after + 1] = "\\endgroup"
+    return { pandoc.RawBlock("latex", table.concat(before)), pandoc.RawBlock("latex", grid), pandoc.RawBlock("latex", table.concat(after)) }
   end
   if #before > 0 then
     return { pandoc.RawBlock("latex", table.concat(before)), tbl, pandoc.RawBlock("latex", table.concat(after)) }
@@ -414,7 +652,12 @@ local preamble_pass = {}
 
 function preamble_pass.Meta(meta)
   if not FORMAT:match("latex") then return nil end
-  if not (has_cellcolor or has_align) then return nil end
+  if has_grid then
+    -- The template loads the packages of a table only for a Table it sees, and a grid is raw LaTeX
+    meta.tables = true
+    meta.multirow = true
+  end
+  if not (has_cellcolor or has_align) then return meta end
 
   local parts = {}
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end

@@ -170,6 +170,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | the Hyperlink style, a theme colour as Word reads it | the colour of the links |
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
 | a cell paragraph without a style | rows as tall as a paragraph of the Normal style, as Word sets them |
+| a table whose cells draw every side, `<w:tcBorders>` or `<w:tblBorders>` | a grid of lines in their colour and width, none inside a merged cell, the table out to the cell margin; a table with a picture, a list or a note in a cell keeps LaTeX's rules |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it |
 | an empty paragraph, and one of line breaks only | an empty line, and one more for each line break, as Word shows them |
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
