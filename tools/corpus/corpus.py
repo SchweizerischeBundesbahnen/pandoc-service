@@ -51,8 +51,23 @@ def _run(*command: str) -> str:
     return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - docker with arguments of this script
 
 
-def convert(image: str, fonts: Path | None, out: Path) -> None:
-    """Convert every DOCX of the corpus to a PDF in OUT/pdf with a container of IMAGE."""
+def convert_one(client: httpx.Client, base: str, docx: Path, target: Path) -> str | None:
+    """Convert one DOCX to its PDF in TARGET; why it failed, or None.
+
+    The PDF of an earlier run goes first: the score would read it and miss that the conversion now fails.
+    """
+    pdf = target / f"{docx.stem}.pdf"
+    pdf.unlink(missing_ok=True)
+    with docx.open("rb") as source:
+        response = client.post(f"{base}/convert/docx/to/pdf", files={"source": (docx.name, source)})
+    if response.status_code != 200 or not response.content.startswith(b"%PDF"):  # noqa: PLR2004 - HTTP OK
+        return f"conversion failed: {response.text[:200]}"
+    pdf.write_bytes(response.content)
+    return None
+
+
+def convert(image: str, fonts: Path | None, out: Path) -> list[str]:
+    """Convert every DOCX of the corpus to a PDF in OUT/pdf with a container of IMAGE; the documents which failed."""
     target = out / "pdf"
     target.mkdir(parents=True, exist_ok=True)
     mounts = ["--volume", f"{fonts.resolve()}:{FONT_MOUNT}:ro"] if fonts else []
@@ -69,17 +84,14 @@ def convert(image: str, fonts: Path | None, out: Path) -> None:
                     pass
                 time.sleep(1)
 
-            def one(docx: Path) -> str:
-                with docx.open("rb") as source:
-                    response = client.post(f"{base}/convert/docx/to/pdf", files={"source": (docx.name, source)})
-                if response.status_code != 200 or not response.content.startswith(b"%PDF"):  # noqa: PLR2004 - HTTP OK
-                    return f"{docx.stem}: conversion failed: {response.text[:200]}"
-                (target / f"{docx.stem}.pdf").write_bytes(response.content)
-                return f"{docx.stem}: ok"
-
+            failed = []
+            documents = _documents()
             with ThreadPoolExecutor(WORKERS) as pool:
-                for message in pool.map(one, _documents()):
-                    print(message)  # noqa: T201 - a command line tool
+                for docx, error in zip(documents, pool.map(lambda docx: convert_one(client, base, docx, target), documents), strict=True):
+                    print(f"{docx.stem}: {error or 'ok'}")  # noqa: T201 - a command line tool
+                    if error:
+                        failed.append(docx.stem)
+            return failed
     finally:
         subprocess.run(["docker", "stop", container], check=False, capture_output=True)  # noqa: S603, S607 - docker with arguments of this script
 
@@ -243,15 +255,19 @@ def main() -> int:
     if arguments.command in ("convert", "all"):
         if not arguments.image:
             parser.error("convert needs --image")
-        convert(arguments.image, arguments.fonts, arguments.out)
-    status = 0
+        failed = convert(arguments.image, arguments.fonts, arguments.out)
+    else:
+        failed = []
+    # A conversion which failed fails the run, apart from what got worse
+    status = 1 if failed else 0
     if arguments.command in ("score", "all"):
         result = score(arguments.out, arguments.reference)
         text = report(result)
         if arguments.against:
             found = regressions(result, arguments.variant)
             text += "".join(f"\n- worse: {message}" for message in found) + ("\n" if found else "")
-            status = 1 if found else 0
+            status = 1 if found else status
+        text += "".join(f"\n- conversion failed: {name}" for name in failed) + ("\n" if failed else "")
         (arguments.out / "report.md").write_text(text)
         print(text)  # noqa: T201 - a command line tool
         if arguments.write_baseline:

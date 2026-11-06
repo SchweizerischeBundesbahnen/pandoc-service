@@ -91,3 +91,15 @@ def test_the_report_lists_the_documents_furthest_off_first():
     result["total"] = {"same_page": 90.0, "any_page": 100.0, "pages_as_reference": 2, "documents": 2, "mean_shift": 3.0}
     text = corpus.report(result)
     assert text.index("| other |") < text.index("| doc |")
+
+
+def test_a_failed_conversion_leaves_no_pdf_of_an_earlier_run(tmp_path: Path):
+    """The score would read the old PDF and miss that the conversion now fails."""
+    import httpx
+
+    docx = tmp_path / "doc.docx"
+    docx.write_bytes(b"docx")
+    (tmp_path / "doc.pdf").write_bytes(b"%PDF old")
+    client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(400, text="Bad Request")))
+    assert corpus.convert_one(client, "http://service", docx, tmp_path) == "conversion failed: Bad Request"
+    assert not (tmp_path / "doc.pdf").exists()
