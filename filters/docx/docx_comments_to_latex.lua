@@ -122,7 +122,7 @@ local function preamble(mag, area, balloon, ascent, descent)
     "\\def\\pdc@anchor#1#2#3#4{\\expandafter\\xdef\\csname pdc@at@#1\\endcsname{{#2}{#3}{#4}}}",
     string.format("\\def\\pdc@count{%d}", #texts),
     "\\newcount\\pdc@n",
-    "\\newdimen\\pdc@next\\newdimen\\pdc@top\\newdimen\\pdc@ax\\newdimen\\pdc@ay\\newdimen\\pdc@h",
+    "\\newdimen\\pdc@next\\newdimen\\pdc@top\\newdimen\\pdc@ax\\newdimen\\pdc@ay\\newdimen\\pdc@h\\newdimen\\pdc@limit",
     "\\newbox\\pdc@text\\newbox\\pdc@box",
     "\\AtBeginDocument{\\IfFontExistsTF{Times New Roman}{\\newfontfamily\\pdc@labelfont{Times New Roman}}{\\IfFontExistsTF{Liberation Serif}{\\newfontfamily\\pdc@labelfont{Liberation Serif}}{\\let\\pdc@labelfont\\rmfamily}}}",
     -- The grey markup area, on every page
@@ -145,23 +145,40 @@ local function preamble(mag, area, balloon, ascent, descent)
       string.format(" 0 %s l 0 %s %s 0 %s 0 c h B}", bp(RADIUS), bp(RADIUS * 0.4477), bp(RADIUS * 0.4477), bp(RADIUS)),
       string.format("\\setbox\\pdc@box\\hbox{\\special{pdf:content q \\pdc@frame\\space Q}\\kern%sbp\\raise\\dp\\pdc@text\\box\\pdc@text}}", bp(PADDING)),
     }),
-    -- The balloon of a comment anchored on this page, with the line from its anchor
+    -- Where the balloon of a comment anchored on this page goes: level with its anchor, below the one before
     table.concat({
-      "\\def\\pdc@place#1#2#3#4{\\ifnum#2=\\ReadonlyShipoutCounter",
+      "\\def\\pdc@measure#1#2#3#4{\\ifnum#2=\\ReadonlyShipoutCounter",
       -- XeTeX takes the page from an inch in, the driver from a true inch
       "\\pdc@ax=\\dimexpr#3sp+1truein-1in\\relax\\pdc@ay=\\dimexpr\\pdfpageheight-#4sp+1truein-1in\\relax",
       string.format("\\pdc@top=\\dimexpr\\pdc@ay-%sbp\\relax\\ifdim\\pdc@top<\\pdc@next\\pdc@top=\\pdc@next\\fi", bp(ascent)),
-      "\\pdc@balloon{#1}",
+      "\\pdc@balloon{#1}\\pdc@keep{#1}",
+      string.format("\\global\\pdc@next=\\dimexpr\\pdc@top+\\pdc@h+%sbp\\relax\\fi}", bp(GAP)),
+    }),
+    "\\def\\pdc@keep#1{\\expandafter\\xdef\\csname pdc@pos@#1\\endcsname{{\\the\\pdc@ax}{\\the\\pdc@ay}{\\the\\pdc@top}{\\the\\pdc@h}}}",
+    "\\def\\pdc@get#1#2#3#4{\\pdc@ax=#1\\pdc@ay=#2\\pdc@top=#3\\pdc@h=#4}",
+    "\\def\\pdc@read#1{\\expandafter\\expandafter\\expandafter\\pdc@get\\csname pdc@pos@#1\\endcsname}",
+    -- A balloon which reaches past the markup area moves up, and the ones above it with it, as Word moves them
+    table.concat({
+      "\\def\\pdc@lift#1{\\@ifundefined{pdc@pos@#1}{}{\\pdc@read{#1}",
+      "\\ifdim\\dimexpr\\pdc@top+\\pdc@h\\relax>\\pdc@limit\\pdc@top=\\dimexpr\\pdc@limit-\\pdc@h\\relax\\fi",
+      string.format("\\pdc@keep{#1}\\global\\pdc@limit=\\dimexpr\\pdc@top-%sbp\\relax}}", bp(GAP)),
+    }),
+    -- The balloon of a comment and the line from its anchor
+    table.concat({
+      "\\def\\pdc@draw#1{\\@ifundefined{pdc@pos@#1}{}{\\pdc@read{#1}\\pdc@balloon{#1}",
       string.format("\\put(0,0){\\special{pdf:content q %s RG %s w [%s %s] 0 d", BLUE, bp(LINE_WIDTH), bp(DASH), bp(DASH)),
       string.format(" \\pdc@bp{\\pdc@ax} \\pdc@bp{-\\pdc@ay-%sbp} m %s \\pdc@bp{-\\pdc@ay-%sbp} l", bp(descent), bp(bend), bp(descent)),
       string.format(" %s \\pdc@bp{-\\pdc@top-%sbp} l S Q}}", bp(x), bp(LINE_END)),
       string.format("\\put(\\strip@pt\\dimexpr%sbp\\relax,\\strip@pt\\dimexpr-\\pdc@top-\\pdc@h\\relax){\\box\\pdc@box}", bp(x)),
-      string.format("\\global\\pdc@next=\\dimexpr\\pdc@top+\\pdc@h+%sbp\\relax\\fi}", bp(GAP)),
+      "\\global\\expandafter\\let\\csname pdc@pos@#1\\endcsname\\relax}}",
     }),
     table.concat({
       "\\AddToHook{shipout/foreground}{\\global\\pdc@next=-\\maxdimen\\global\\pdc@n=\\z@",
       "\\@whilenum\\pdc@n<\\pdc@count\\do{\\global\\advance\\pdc@n\\@ne",
-      "\\@ifundefined{pdc@at@\\the\\pdc@n}{}{\\edef\\pdc@args{{\\the\\pdc@n}\\csname pdc@at@\\the\\pdc@n\\endcsname}\\expandafter\\pdc@place\\pdc@args}}}",
+      "\\@ifundefined{pdc@at@\\the\\pdc@n}{}{\\edef\\pdc@args{{\\the\\pdc@n}\\csname pdc@at@\\the\\pdc@n\\endcsname}\\expandafter\\pdc@measure\\pdc@args}}",
+      string.format("\\global\\pdc@limit=%sbp\\global\\pdc@n=\\pdc@count", bp(area[2] + area[4] - GAP)),
+      "\\@whilenum\\pdc@n>\\z@\\do{\\pdc@lift{\\the\\pdc@n}\\global\\advance\\pdc@n\\m@ne}",
+      "\\global\\pdc@n=\\z@\\@whilenum\\pdc@n<\\pdc@count\\do{\\global\\advance\\pdc@n\\@ne\\pdc@draw{\\the\\pdc@n}}}",
     }),
   }
   for number, text in ipairs(texts) do

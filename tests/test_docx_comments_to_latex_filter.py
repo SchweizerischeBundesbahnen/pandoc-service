@@ -123,3 +123,27 @@ def test_service_prints_the_comments_of_a_heading_a_table_and_a_list(test_parame
     text = _convert_docx_to_pdf(test_parameters, buffer.getvalue()).pages[0].extract_text()
     for number, remark in enumerate(("On the heading", "On the cell", "On the item"), start=1):
         assert f"Commented [{number}]: {remark}" in text
+
+
+def test_balloons_which_reach_past_the_page_move_up_as_word_moves_them(test_parameters: TestParameters):
+    """Each balloon goes below the one before it: those near the bottom of a page move up to stay on it."""
+    import pypdfium2
+
+    document = Document()
+    # The last line of the first page, with more balloons than the rest of it holds
+    for number in range(23):
+        document.add_paragraph(f"Line {number} of the text.")
+    last = document.add_paragraph("The last commented line.")
+    for number in range(8):
+        document.add_comment(last.runs, text=f"Remark {number}: " + "a long remark which takes several lines " * 4, author="Author")
+    buffer = io.BytesIO()
+    document.save(buffer)
+    files = {"source": ("in.docx", buffer.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files=files)
+    assert response.status_code == 200, response.text
+    pdf = pypdfium2.PdfDocument(response.content)
+    for index in range(len(pdf)):
+        text = pdf[index].get_textpage()
+        bottoms = [text.get_charbox(char)[1] for char in range(text.count_chars())]
+        assert min(bottoms, default=0) >= 0, f"text below the paper on page {index + 1}"
+    assert "Remark 7" in "".join(pdf[index].get_textpage().get_text_range() for index in range(len(pdf)))
