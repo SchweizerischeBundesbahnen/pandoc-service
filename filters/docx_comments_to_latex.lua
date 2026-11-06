@@ -192,7 +192,8 @@ function Pandoc(doc)
   local ascent = tonumber(pandoc.utils.stringify(meta[ASCENT] or ""))
   local descent = tonumber(pandoc.utils.stringify(meta[DESCENT] or ""))
   local line = tonumber(pandoc.utils.stringify(meta[BASELINE] or "")) or DEFAULT_LINE
-  for _, key in ipairs({ MAG, AREA, BALLOON, ASCENT, DESCENT }) do
+  -- The ascent and descent of the body stay for filters/docx_document_styles_to_latex.lua
+  for _, key in ipairs({ MAG, AREA, BALLOON }) do
     meta[key] = nil
   end
   if mag == nil or #area ~= 4 or #balloon ~= 3 or not FORMAT:match("latex") then

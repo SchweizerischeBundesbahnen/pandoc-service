@@ -40,6 +40,7 @@ local JUSTIFIED = "docx-body-justified"
 local HYPHENATED = "docx-body-hyphenated"
 local SIZE = "docx-body-size"
 local BASELINE = "docx-body-baseline"
+local DESCENT = "docx-body-descent"
 local CELL_SPACE = "docx-table-cell-space"
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
@@ -239,6 +240,21 @@ local function ascent_strut(style)
   return style.ascent and string.format("\\rule{0pt}{%gbp}", style.ascent) or ""
 end
 
+-- Word starts the next line below the bottom of the title's line, its descent
+-- and line gap, after the larger of the title's space after and the next one's
+-- before. TeX sets it a line of the body below, as if the title reached as far
+-- down as a line of the body, and adds the paragraph skip of the body. The space
+-- after the title makes up the difference. A table of contents has no skip.
+local body_descent = nil
+local body_skip = 0
+local function below_title(style, toc)
+  local after = toc and style.own_after or style.after
+  if style.line == nil or style.ascent == nil or body_descent == nil then
+    return after
+  end
+  return after - (toc and 0 or body_skip) + style.line - style.ascent - body_descent
+end
+
 -- The LaTeX which switches to the font, size, weight, shape and colour of a style.
 local function font_switch(style, family_macro, lines)
   local parts = { "\\normalfont" }
@@ -336,7 +352,7 @@ local function title_preamble(lines)
   lines[#lines + 1] = string.format("\\newcommand{\\pdcTitleStyle}{%s%s}", PLAIN_ALIGN[title_style.align], switch)
   lines[#lines + 1] = "\\makeatletter"
   -- A table of contents right after the title: its entries have no space before them, so only the title's counts
-  local after = toc_first and title_style.own_after or title_style.after
+  local after = below_title(title_style, toc_first)
   lines[#lines + 1] = string.format("\\renewcommand{\\maketitle}{\\par\\begingroup\\pdcTitleStyle%s\\@title\\par\\endgroup\\vspace{%gpt}}", ascent_strut(title_style), after)
   lines[#lines + 1] = "\\makeatother"
 end
@@ -449,7 +465,7 @@ local function title_div(div)
   for _, block in ipairs(div.content) do
     blocks[#blocks + 1] = block
   end
-  blocks[#blocks + 1] = pandoc.RawBlock("latex", string.format("\\par\\endgroup\\vspace{%gpt}", title_style.after))
+  blocks[#blocks + 1] = pandoc.RawBlock("latex", string.format("\\par\\endgroup\\vspace{%gpt}", below_title(title_style, false)))
   return blocks
 end
 
@@ -478,6 +494,8 @@ end
 local function read_title(meta)
   local skip = points(meta[SKIP])
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
+  body_descent = points(meta[DESCENT])
+  body_skip = skip or 0
   caption_style = style_fields(meta[STYLE_PREFIX .. "Caption"], skip)
   for level, heading in ipairs(HEADINGS) do
     heading_styles[level] = style_fields(meta[STYLE_PREFIX .. heading.style], skip)
@@ -528,7 +546,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

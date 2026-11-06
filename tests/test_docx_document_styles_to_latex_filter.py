@@ -233,6 +233,20 @@ def test_a_table_of_contents_after_the_title_takes_only_the_space_of_the_title(t
     assert "\\pdcTitleStyle\\@title\\par\\endgroup\\vspace{4pt}" in _preamble(latex)
 
 
+def test_the_next_line_starts_below_the_descent_of_the_title(test_parameters: TestParameters):
+    # Word: the descent of the title, 7.89, and the larger space, 9; TeX: a line of the body, 3.4 below the baseline, and the skip, 9
+    title = "docx-style-Title=size:28,line:34.18,ascent:26.29,after:4"
+    latex = _latex(test_parameters.container, "title=Doc", title, "docx-body-paragraph-skip=9", "docx-body-descent=3.4")
+    assert "\\@title\\par\\endgroup\\vspace{4.49pt}" in _preamble(latex)
+
+
+def test_a_table_of_contents_starts_below_the_descent_of_the_title(test_parameters: TestParameters):
+    native = '[Div ("",[],[("custom-style","PandocToc__CONTENTS_3")]) [Para [Str "PandocToc__CONTENTS_3"]]]'
+    title = "docx-style-Title=size:28,line:34.18,ascent:26.29,after:4"
+    latex = _latex(test_parameters.container, "title=Doc", title, "docx-body-paragraph-skip=9", "docx-body-descent=3.4", native=native)
+    assert "\\@title\\par\\endgroup\\vspace{8.49pt}" in _preamble(latex)
+
+
 def test_the_caption_style_defines_its_space_before(test_parameters: TestParameters):
     assert "\\newcommand{\\pdcCaptionBefore}{0pt}" in _preamble(_latex(test_parameters.container, "docx-style-Caption=size:9,before:0,after:10"))
 
