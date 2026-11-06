@@ -558,6 +558,40 @@ end
 
 -- Word lets the full stop which ends a paragraph stand in the right margin
 -- when the line is full: a full stop of no width, which nothing follows.
+-- What else a line of only a picture may hold: the struts of the filters and the space around them
+local function strut_only(inline)
+  return inline.t == "Space" or inline.t == "SoftBreak" or (inline.t == "RawInline" and (inline.text:match("^\\strut") or inline.text:match("^\\rule{0pt}")))
+end
+
+-- Word sets a line of only a picture on the bottom of the picture, without the descent of the font,
+-- and the next line right below it: the picture goes down by the descent, which the next line then
+-- keeps between the baselines.
+local function lower_lone_pictures(content)
+  local start = 1
+  for index = 1, #content + 1 do
+    local inline = content[index]
+    if inline == nil or inline.t == "LineBreak" then
+      local picture, others = nil, false
+      for position = start, index - 1 do
+        local item = content[position]
+        if item.t == "Image" and picture == nil then
+          picture = position
+        elseif not strut_only(item) then
+          others = true
+        end
+      end
+      if picture and not others then
+        content[picture] = pandoc.Span({
+          pandoc.RawInline("latex", string.format("\\raisebox{-%gbp}{", body_descent)),
+          content[picture],
+          pandoc.RawInline("latex", "}"),
+        })
+      end
+      start = index + 1
+    end
+  end
+end
+
 local function set_paragraph(para)
   if not FORMAT:match("latex") then
     return nil
@@ -574,10 +608,10 @@ local function set_paragraph(para)
     changed = true
   end
   if body_descent ~= nil and #para.content > 0 then
+    lower_lone_pictures(para.content)
     -- Every line of Word reaches the ascent and the descent of its font, whatever its letters:
     -- the first and the last line of a paragraph get the strut of its font
-    -- The first line reaches the ascent; only the last its descent: Word sets a line of only a picture on the line below
-    para.content:insert(1, pandoc.RawInline("latex", "\\rule{0pt}{\\ht\\strutbox}"))
+    para.content:insert(1, pandoc.RawInline("latex", "\\strut{}"))
     para.content:insert(pandoc.RawInline("latex", "\\strut{}"))
     changed = true
   end
