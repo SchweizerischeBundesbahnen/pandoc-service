@@ -151,6 +151,23 @@ def test_a_document_without_deep_headings_gets_no_levels_of_them(test_parameters
     assert "titlesec" not in preamble
 
 
+HEADING_STYLES = ("docx-body-paragraph-skip=9", "docx-style-Heading1=size:20,before:18,after:4", "docx-style-Heading2=size:16,before:8,after:4")
+
+
+def test_next_to_body_text_a_heading_gets_at_least_the_paragraph_skip(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, *HEADING_STYLES))
+    assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
+    assert "\\titlespacing*{\\subsection}{0pt}{9pt}{9pt}" in preamble
+
+
+def test_between_two_headings_only_their_own_spaces_count(test_parameters: TestParameters):
+    native = '[Header 1 ("one",[],[]) [Str "One"], Header 2 ("two",[],[]) [Str "Two"], Para [Str "Text"]]'
+    body = _latex(test_parameters.container, *HEADING_STYLES, native=native)
+    body = body[body.index("\\begin{document}") :]
+    assert body.index("\\titlespacing*{\\section}{0pt}{18pt}{8pt}") < body.index("One") < body.index("\\titlespacing*{\\section}{0pt}{18pt}{9pt}")
+    assert "\\titlespacing*{\\subsection}" not in body, "a heading before body text keeps the spacing of the preamble"
+
+
 def test_fields_which_could_carry_latex_are_left_out(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading2=font:\\evil,size:x,color:12345G,align:sideways"))
     assert "\\evil" not in preamble

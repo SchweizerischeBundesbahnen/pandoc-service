@@ -169,7 +169,9 @@ end
 -- The fields of a style, each checked: a family of letters, digits, spaces,
 -- dots, hyphens and underscores only, numbers for sizes and spaces, six hex
 -- digits for the colour. Anything else is left out.
-local function style_fields(value)
+-- The space before and after is the style's own; next to body text, Word puts
+-- the larger of it and the paragraph skip.
+local function style_fields(value, skip)
   if value == nil then
     return nil
   end
@@ -188,8 +190,10 @@ local function style_fields(value)
   if fields.color and fields.color:match("^%x%x%x%x%x%x$") then
     style.color = fields.color
   end
-  style.before = points(fields.before) or 0
-  style.after = points(fields.after) or 0
+  style.own_before = points(fields.before) or 0
+  style.own_after = points(fields.after) or 0
+  style.before = math.max(style.own_before, skip or 0)
+  style.after = math.max(style.own_after, skip or 0)
   style.align = PLAIN_ALIGN[fields.align] and fields.align or "left"
   return style
 end
@@ -247,7 +251,7 @@ local function headings_preamble(meta, lines)
     deep_levels(lines)
   end
   for _, heading in ipairs(HEADINGS) do
-    local style = style_fields(meta[STYLE_PREFIX .. heading.style])
+    local style = style_fields(meta[STYLE_PREFIX .. heading.style], points(meta[SKIP]))
     if style and (deep_used or not heading.deep) then
       packages()
       local switch = font_switch(style, "docxHeadingFont" .. heading.letter, lines)
@@ -368,10 +372,48 @@ local function add_header_includes(meta, lines)
   end
 end
 
+-- The styles of the headings by level, read with the title.
+local heading_styles = {}
+
 local function read_title(meta)
-  title_style = style_fields(meta[STYLE_PREFIX .. "Title"])
-  caption_style = style_fields(meta[STYLE_PREFIX .. "Caption"])
+  local skip = points(meta[SKIP])
+  title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
+  caption_style = style_fields(meta[STYLE_PREFIX .. "Caption"], skip)
+  for level, heading in ipairs(HEADINGS) do
+    heading_styles[level] = style_fields(meta[STYLE_PREFIX .. heading.style], skip)
+  end
   return nil
+end
+
+local function heading_level(block)
+  return block ~= nil and block.t == "Header" and math.min(block.level, DEEPEST) or nil
+end
+
+-- Between two headings Word puts the larger of their own spaces, without the
+-- paragraph skip the spacing of the preamble holds for body text. LaTeX sets
+-- no space before a heading right after another, so a heading followed by
+-- another gets that space after it, and its own spacing back after it.
+local function heading_spacing(blocks)
+  if not FORMAT:match("latex") then
+    return nil
+  end
+  local result = {}
+  for index, block in ipairs(blocks) do
+    local level = heading_level(block)
+    local style = level and heading_styles[level]
+    local next = style and heading_styles[heading_level(blocks[index + 1])]
+    if next then
+      local spacing = "\\titlespacing*{\\%s}{0pt}{%gpt}{%gpt}"
+      local command = HEADINGS[level].command
+      local after = math.max(style.own_after, next.own_before)
+      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, style.before, after))
+      result[#result + 1] = block
+      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, style.before, style.after))
+    else
+      result[#result + 1] = block
+    end
+  end
+  return result
 end
 
 local function write_preamble(meta)
@@ -396,8 +438,9 @@ local function write_preamble(meta)
   return meta
 end
 
--- The Title and Caption styles are read before the Divs are set, the preamble written after.
+-- The Title, Caption and heading styles are read before the blocks are set, the preamble written after.
 return {
   { Meta = read_title },
+  { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Meta = write_preamble },
 }

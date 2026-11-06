@@ -137,7 +137,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
     for style_id in DISPLAY_STYLES:
-        fields = _display_style(styles, theme, style_id, skip)
+        fields = _display_style(styles, theme, style_id)
         if fields:
             options += ["-M", f"docx-style-{style_id}={fields}"]
     return options
@@ -289,12 +289,12 @@ def _toggle(chain: list[Element], styles: Element, child: str) -> bool:
     return element is not None and element.get(_w("val"), "true") not in OFF_VALUES
 
 
-def _display_style(styles: Element, theme: Element | None, style_id: str, skip: float) -> str:
+def _display_style(styles: Element, theme: Element | None, style_id: str) -> str:
     """The title or a heading style as ``name:value`` fields, empty when the document lacks the style.
 
-    The space before and after is the whole space next to the heading: Word puts the larger of the
-    after of one paragraph and the before of the next between them, and titlesec adds no paragraph
-    skip around a heading.
+    The space before and after is the style's own: Word puts the larger of the after of one paragraph
+    and the before of the next between them, which filters/docx_document_styles_to_latex.lua works
+    out from the neighbours of each heading.
     """
     chain = _style_chain(styles, style_id, fallback=None)
     if not chain:
@@ -313,7 +313,7 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, skip: 
     if color is not None:
         fields["color"] = color
     for side in ("before", "after"):
-        fields[side] = f"{max(_spacing_twips(chain, styles, side) / TWIPS_PER_POINT, skip):g}"
+        fields[side] = f"{_spacing_twips(chain, styles, side) / TWIPS_PER_POINT:g}"
     alignment = _first(chain, styles, "pPr", "jc")
     fields["align"] = ALIGNMENTS.get(alignment.get(_w("val"), "") if alignment is not None else "", "left")
     return ",".join(f"{name}:{value}" for name, value in fields.items())

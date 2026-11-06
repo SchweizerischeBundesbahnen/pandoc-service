@@ -225,7 +225,7 @@ def test_a_heading_takes_the_font_size_colour_and_space_of_its_style():
         "italic": "false",
         "color": "0F4761",
         "before": "18",
-        "after": "9",
+        "after": "4",
         "align": "left",
     }
 
