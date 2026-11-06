@@ -162,7 +162,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 |---|---|
 | `<w:pgSz>` and `<w:pgMar>` of the first section | the page size and margins of the first pages; US Letter with 1 inch margins without them |
 | the font of the Body Text style, else Normal, else the defaults, also as a theme font | the font of the body text, when the container has it |
-| the font size and line spacing of that style | the size, and the line the font sets: its ascent, descent and line gap, as Word reads them; spaces neither shrink nor widen after a full stop, and neither the ligatures of TeX nor of the font |
+| the font size and line spacing of that style | the size, and the line the font sets: its ascent, descent and line gap, as Word reads them; spaces neither shrink nor widen after a full stop, and neither the ligatures of TeX nor of the font; a line breaks after a hyphen as freely as after a space |
 | the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
 | `<w:jc>` of that style, and `<w:autoHyphenation>` | ragged right and unhyphenated, unless the style justifies and the document hyphenates |
 | `<w:rFonts>` of a run | the font of the run, when the container has it, matched regardless of case |

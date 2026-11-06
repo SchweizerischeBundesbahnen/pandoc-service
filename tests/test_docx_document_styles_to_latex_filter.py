@@ -49,7 +49,7 @@ def test_word_layout_goes_into_the_preamble(test_parameters: TestParameters):
     assert "\\setlength{\\parskip}{9pt}" in preamble
     assert "\\AtBeginDocument{\\raggedright}" in preamble
     assert "\\hyphenpenalty=10000" in preamble
-    assert "\\exhyphenpenalty" not in preamble, "Word breaks a line after a hyphen of the text"
+    assert "\\exhyphenpenalty=0" in preamble, "Word breaks a line after a hyphen as freely as after a space"
     assert "\\frenchspacing" in preamble, "Word puts no wider space after a full stop"
 
 

@@ -152,6 +152,8 @@ local function body_preamble(meta, lines)
   local skip = points(meta[SKIP])
   -- Word puts the same space after a full stop as between words
   lines[#lines + 1] = "\\frenchspacing"
+  -- Word breaks a line after a hyphen of the text as freely as after a space
+  lines[#lines + 1] = "\\exhyphenpenalty=0"
   if skip ~= nil then
     lines[#lines + 1] = string.format("\\setlength{\\parskip}{%gpt}", skip)
   end
