@@ -71,6 +71,10 @@ local on_empty_page = true
 -- The page setup of the last section break, until its body block ends.
 local pending_page_setup = ""
 
+-- Whether the pages keep the size of the first section: docx_comments_to_latex magnifies a document
+-- with comments and puts the balloons where its first page has room for them.
+local keep_first_page = false
+
 -- Whether add_heading has passed visible content of the heading.
 local heading_has_text = false
 
@@ -82,7 +86,7 @@ end
 -- describe no page LaTeX can set.
 local function page_geometry(numbers)
   local w, h, top, right, bottom, left = numbers:match("^(%d+),(%d+),(%d+),(%d+),(%d+),(%d+)$")
-  if not w then
+  if not w or keep_first_page then
     return ""
   end
   w, h, top, right, bottom, left = tonumber(w), tonumber(h), tonumber(top), tonumber(right), tonumber(bottom), tonumber(left)
@@ -269,6 +273,7 @@ local function strip_sentinels(str)
 end
 
 function Pandoc(doc)
+  keep_first_page = doc.meta["docx-comment-mag"] ~= nil
   doc.blocks = replace_breaks(doc.blocks)
   return doc:walk({ Str = strip_sentinels })
 end

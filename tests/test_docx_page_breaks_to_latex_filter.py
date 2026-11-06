@@ -324,3 +324,16 @@ def test_table_of_a_landscape_section_spans_its_text_width(test_parameters: Test
     pdf = _pdf(test_parameters, document)
     page = PdfReader(io.BytesIO(pdf)).pages[1]
     assert _text_left_edge(pdf, 1, "right") > float(page.mediabox.width) / 2 - 20
+
+
+def test_a_document_with_comments_keeps_its_page_at_a_section_break(test_parameters: TestParameters):
+    """The page of a document with comments is magnified, with the balloons where its first section puts them: a section
+    break opens a page of the same size, which no magnification measures wrong."""
+    container = test_parameters.container
+    native = f'[ Para [ Str "before" ], Para [ {_str(LANDSCAPE)} ] ]'
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/in.native << 'HEREDOC_EOF'\n{native}\nHEREDOC_EOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f native -t latex -M docx-comment-mag=747 --lua-filter={FILTER_PATH} /tmp/test/in.native"])
+    assert exit_code == 0, output.decode()
+    flat = " ".join(output.decode().split())
+    assert "\\clearpage{}" in flat
+    assert "\\newgeometry" not in flat
