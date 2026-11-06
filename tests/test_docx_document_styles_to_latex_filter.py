@@ -216,6 +216,10 @@ def test_a_table_of_contents_after_the_title_takes_only_the_space_of_the_title(t
     assert "\\pdcTitleStyle\\@title\\par\\endgroup\\vspace{4pt}" in _preamble(latex)
 
 
+def test_the_caption_style_defines_its_space_before(test_parameters: TestParameters):
+    assert "\\newcommand{\\pdcCaptionBefore}{0pt}" in _preamble(_latex(test_parameters.container, "docx-style-Caption=size:9,before:0,after:10"))
+
+
 def test_the_body_size_and_line_redefine_normalsize(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65"))
     assert "\\renewcommand{\\normalsize}{\\fontsize{12bp}{14.65bp}\\selectfont" in preamble

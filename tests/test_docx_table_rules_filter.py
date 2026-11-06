@@ -107,3 +107,9 @@ def test_the_text_of_a_cell_without_a_style_stands_at_its_top(test_parameters: T
 
 def test_a_table_of_compact_paragraphs_gets_no_space_below_its_text(test_parameters: TestParameters):
     assert "pdcPlainCellSpace" not in _latex(test_parameters.container, "cc=1")
+
+
+def test_a_caption_under_a_table_takes_the_space_before_of_its_style(test_parameters: TestParameters):
+    native = _grid_table([_cell('Str "a"'), _cell('Str "b"')])[:-1] + ', Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Table 1"]], Div ("",[],[("custom-style","PandocCaption")]) [Para [Str "Other"]]]'
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\vspace{\\dimexpr\\pdcCaptionBefore-\\parskip\\relax}") == 1, "only the caption right under the table"

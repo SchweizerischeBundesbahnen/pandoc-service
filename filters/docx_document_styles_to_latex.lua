@@ -313,6 +313,8 @@ local function caption_preamble(lines)
   -- The switch first: it adds the font family to the lines itself
   local switch = font_switch(caption_style, "docxCaptionFont", lines)
   lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionStyle}{%s}", switch)
+  -- The space between a table and its caption, see filters/docx_tables_to_latex.lua
+  lines[#lines + 1] = string.format("\\newcommand{\\pdcCaptionBefore}{%gpt}", caption_style.own_before)
 end
 
 local function caption_div(div)

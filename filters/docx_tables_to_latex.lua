@@ -723,4 +723,24 @@ function cleanup_pass.Str(s)
 end
 
 -- Return all three passes in order: tables, conditional preamble, cleanup.
-return { table_pass, preamble_pass, cleanup_pass }
+-- ---- Pass 0: A caption under a table ----
+-- Word puts no more than the space before a paragraph between a table and the
+-- paragraph after it. A caption, which app/docx_table_pre_process.py keeps as
+-- PandocCaption, takes the space before of its style instead of the paragraph
+-- skip; docx_document_styles_to_latex defines it.
+local CAPTION_AFTER_TABLE = "\\ifdefined\\pdcCaptionBefore\\vspace{\\dimexpr\\pdcCaptionBefore-\\parskip\\relax}\\fi"
+
+local caption_pass = {}
+
+function caption_pass.Blocks(blocks)
+  if not FORMAT:match("latex") then return nil end
+  for index = 2, #blocks do
+    local block = blocks[index]
+    if blocks[index - 1].t == "Table" and block.t == "Div" and block.attributes["custom-style"] == "PandocCaption" then
+      table.insert(block.content, 1, pandoc.RawBlock("latex", CAPTION_AFTER_TABLE))
+    end
+  end
+  return blocks
+end
+
+return { caption_pass, table_pass, preamble_pass, cleanup_pass }
