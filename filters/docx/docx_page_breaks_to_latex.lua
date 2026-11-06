@@ -25,7 +25,8 @@
 -- heading goes before it, any other break after it.
 --
 -- LaTeX ignores \clearpage on an empty page, where Word starts one more
--- page. A break with nothing before it on its page gets \null first.
+-- page. A break with nothing before it on its page gets \null first. The
+-- first page holds the title and the abstract, when the document has them.
 --
 -- Only paragraphs of the body are changed, also inside a Div (the reader
 -- wraps a styled paragraph in one). A sentinel anywhere else, a list item
@@ -281,6 +282,8 @@ end
 
 function Pandoc(doc)
   keep_first_page = doc.meta["docx-comment-mag"] ~= nil
+  -- The template sets the title and the abstract on the first page before the body
+  on_empty_page = doc.meta.title == nil and doc.meta.abstract == nil
   doc.blocks = replace_breaks(doc.blocks)
   return doc:walk({ Str = strip_sentinels })
 end

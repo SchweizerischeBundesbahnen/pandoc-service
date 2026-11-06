@@ -352,6 +352,18 @@ def test_a_paragraph_with_page_break_before_starts_a_page(test_parameters: TestP
     assert "Second page." in pages[1].extract_text()
 
 
+def test_a_heading_with_page_break_before_leaves_the_title_page(test_parameters: TestParameters):
+    """The title stands on the first page, so the heading after it starts a new one, as in Word."""
+    document = Document()
+    document.add_paragraph("The title", style="Title")
+    heading = document.add_heading("Chapter", level=1)
+    heading.paragraph_format.page_break_before = True
+    pages = _pages(test_parameters, document)
+    assert len(pages) == 2
+    assert "The title" in pages[0].extract_text()
+    assert "Chapter" in pages[1].extract_text()
+
+
 def test_a_break_before_a_paragraph_opens_no_page_on_an_empty_one(test_parameters: TestParameters):
     """Unlike a page break, it leaves no empty page: not at the start of a document, nor after another break."""
     before = f"{OPEN}before{CLOSE}"
