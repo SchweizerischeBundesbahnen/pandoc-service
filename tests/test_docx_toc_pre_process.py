@@ -34,7 +34,7 @@ def _paragraph_texts(xml: bytes) -> list[str]:
 def test_an_empty_table_of_contents_becomes_its_marker():
     xml, used = rewrite_part(_document(_paragraph("<w:r><w:t>Before</w:t></w:r>"), _paragraph(_field(' TOC \\o "1-9" \\h \\z \\u ')), _paragraph("<w:r><w:t>After</w:t></w:r>")))
     assert list(used) == ["PandocToc__CONTENTS_9"]
-    assert _paragraph_texts(xml) == ["Before", "PandocToc__CONTENTS_9", "After"]
+    assert _paragraph_texts(xml) == ["Before", "PandocToc__CONTENTS_9", "", "After"], "Word keeps the paragraph which ends the field"
     assert '<w:pStyle w:val="PandocToc__CONTENTS_9" />' in xml.decode()
 
 
@@ -52,7 +52,7 @@ def test_a_table_of_contents_over_several_paragraphs_becomes_one_marker():
     first = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \\o "1-2" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Old entry</w:t></w:r>'
     last = '<w:r><w:t>Old entry 2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>'
     xml, _ = rewrite_part(_document(_paragraph(first), _paragraph(last), _paragraph("<w:r><w:t>After</w:t></w:r>")))
-    assert _paragraph_texts(xml) == ["PandocToc__CONTENTS_2", "After"]
+    assert _paragraph_texts(xml) == ["PandocToc__CONTENTS_2", "", "After"]
 
 
 def test_a_list_of_figures_keeps_the_text_of_its_entries_and_marks_their_page():

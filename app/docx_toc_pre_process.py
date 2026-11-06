@@ -11,7 +11,8 @@ the one which begins it to the one which ends it:
 
 * a table of contents becomes one paragraph in the synthetic style
   ``PandocToc__CONTENTS_<depth>``, which filters/docx_toc_to_latex.lua turns
-  into LaTeX's table of contents of that depth;
+  into LaTeX's table of contents of that depth, and the empty paragraph Word
+  leaves after the entries it fills in;
 * each entry of a list of figures or tables becomes a paragraph in the style
   ``PandocToc__ENTRY`` holding its text and a marker run
   ``PDCPAGEREF<bookmark>``, which the filter turns into a dot leader and the
@@ -204,7 +205,8 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
                 replacements.append(ET.Element(_w("p")))
         else:
             style_id = f"{CONTENTS_STYLE}{_depth(instruction)}"
-            replacements = [_marker_paragraph(style_id)]
+            # Word fills the field with its entries and keeps the paragraph which ends it as an empty line
+            replacements = [_marker_paragraph(style_id), ET.Element(_w("p"))]
             used[style_id] = _StyleSpec(style_id)
         position = list(body).index(field_paragraphs[0])
         for paragraph in field_paragraphs:

@@ -174,7 +174,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
 | `<w:pgSz>` and `<w:pgMar>` of each later section | its pages in that size and with those margins, landscape among them |
 | no header and no footer in any section | no page number, as Word prints none |
-| a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field |
+| a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field, and the empty line Word leaves after it |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
 | an equation (OMML) | in Cambria Math, when the container has it, and without the space TeX puts around a display |
 
