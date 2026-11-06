@@ -30,6 +30,7 @@ import subprocess
 import zipfile
 from typing import TYPE_CHECKING, Any
 
+from .docx_numbers import whole_number
 from .docx_ooxml import STYLES_PART, W_NS, parse_xml
 
 if TYPE_CHECKING:
@@ -456,12 +457,12 @@ def _list_indents(numbering: Element | None, document: Element | None) -> list[t
         indent = levels[str(index)].find(f"{_w('pPr')}/{_w('ind')}") if str(index) in levels else None
         if indent is None:
             return []
-        left = indent.get(_w("left"), indent.get(_w("start"), ""))
-        hanging = indent.get(_w("hanging"), "0")
-        if not left.isdigit() or not hanging.isdigit() or int(left) <= outer:
+        left = whole_number(indent.get(_w("left"), indent.get(_w("start"))))
+        hanging = whole_number(indent.get(_w("hanging"), "0"))
+        if left is None or hanging is None or left <= outer:
             return []
-        indents.append(((int(left) - outer) / TWIPS_PER_POINT, int(hanging) / TWIPS_PER_POINT))
-        outer = int(left)
+        indents.append(((left - outer) / TWIPS_PER_POINT, hanging / TWIPS_PER_POINT))
+        outer = left
     return indents
 
 
@@ -493,8 +494,8 @@ def _heading_number(chain: list[Element], styles: Element, numbering: Element | 
             return {}
         parts.append(f"{{{match.group(1)}:{latex}}}")
     indent = level.find(f"{_w('pPr')}/{_w('ind')}")
-    hanging = indent.get(_w("hanging"), "0") if indent is not None else "0"
-    return {"number": "".join(parts), "numberhang": f"{int(hanging) / TWIPS_PER_POINT:g}" if hanging.isdigit() else "0"}
+    hanging = whole_number(indent.get(_w("hanging"), "0") if indent is not None else "0") or 0
+    return {"number": "".join(parts), "numberhang": f"{hanging / TWIPS_PER_POINT:g}"}
 
 
 def _hhea(family: str) -> tuple[float, float] | None:

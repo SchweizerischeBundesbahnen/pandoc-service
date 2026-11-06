@@ -506,3 +506,15 @@ def test_each_level_of_a_list_is_indented_past_the_level_above_it():
 def test_a_list_with_a_level_not_past_the_one_above_gets_the_indents_of_latex():
     numbering = _indented((720, 360), (720, 360), (2160, 360), (2880, 360))
     assert "docx-list-indents" not in _options(_docx(DEFAULTS + NORMAL, section=LIST_ITEM, numbering=numbering))
+
+
+def test_a_list_indent_of_a_digit_python_cannot_read_falls_back_to_latex():
+    """'²'.isdigit() is true, but int('²') fails: the conversion keeps the indents of LaTeX instead of failing."""
+    numbering = _indented((720, 360), (1440, 360), (2160, 360), (2880, 360)).replace('w:left="1440"', 'w:left="²"')
+    assert "docx-list-indents" not in _options(_docx(DEFAULTS + NORMAL, section=LIST_ITEM, numbering=numbering))
+
+
+def test_a_heading_hanging_indent_of_a_digit_python_cannot_read_hangs_nothing():
+    numbering = _numbering().replace('w:hanging="432"', 'w:hanging="²"')
+    fields = _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1, numbering=numbering))["docx-style-Heading1"])
+    assert fields["numberhang"] == "0"
