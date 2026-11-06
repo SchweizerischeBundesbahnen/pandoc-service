@@ -1,4 +1,4 @@
-"""End-to-end integration tests for filters/inline_styles.lua.
+"""End-to-end integration tests for filters/html/inline_styles.lua.
 
 These tests convert HTML → DOCX through the pandoc-service container (which
 applies the lua filter automatically for HTML→DOCX conversions), then inspect
@@ -58,7 +58,7 @@ def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParam
     Catches two failure modes:
       1. Filter dropping the Link wrapper -> no <w:hyperlink> in document.xml,
          no Relationship entry in word/_rels/document.xml.rels (the bug we
-         just fixed in filters/inline_styles.lua walk()'s Link branch).
+         just fixed in filters/html/inline_styles.lua walk()'s Link branch).
       2. Link runs emitted as raw OOXML without the Hyperlink character
          style -> the link ignores the reference template's link formatting
          and takes the surrounding span's color instead (docx-exporter#462).
@@ -91,7 +91,9 @@ def test_hyperlink_inside_styled_span_survives_filter(test_parameters: TestParam
     runs = hyperlink.findall(f"{{{W_NS}}}r")
     assert runs, "hyperlink has no runs"
     run_styles = [r.find(f"{{{W_NS}}}rPr/{{{W_NS}}}rStyle") for r in runs]
-    assert all(s is not None and s.get(f"{{{W_NS}}}val") == "Hyperlink" for s in run_styles), f"not every hyperlink run references rStyle=Hyperlink — Link branch of walk() in filters/inline_styles.lua\nhyperlink: {ET.tostring(hyperlink)!r}"
+    assert all(s is not None and s.get(f"{{{W_NS}}}val") == "Hyperlink" for s in run_styles), (
+        f"not every hyperlink run references rStyle=Hyperlink — Link branch of walk() in filters/html/inline_styles.lua\nhyperlink: {ET.tostring(hyperlink)!r}"
+    )
     color_vals = [c.get(f"{{{W_NS}}}val") for c in hyperlink.findall(f".//{{{W_NS}}}color")]
     assert "FF0000" not in color_vals, f"hyperlink runs inherit the surrounding span's FF0000 (found colors: {color_vals}), which overrides the Hyperlink style"
 
@@ -203,7 +205,7 @@ def test_intersecting_text_decorations_are_additive(test_parameters: TestParamet
     # Case 1: outer underline + inner line-through → inner range must have BOTH.
     assert _decorations_for("u_outer") == {"u"}, "outer underline range lost its decoration"
     inner_u = _decorations_for("u_inner")
-    assert "u" in inner_u and "strike" in inner_u, f"inner range lost inherited underline when it added line-through (got {inner_u!r}) — text-decoration merge regression in filters/inline_styles.lua merge_css"
+    assert "u" in inner_u and "strike" in inner_u, f"inner range lost inherited underline when it added line-through (got {inner_u!r}) — text-decoration merge regression in filters/html/inline_styles.lua merge_css"
 
     # Case 2: outer line-through + inner underline → symmetric — inner must have BOTH.
     assert _decorations_for("s_outer") == {"strike"}, "outer strike range lost its decoration"
@@ -253,7 +255,7 @@ def test_superscript_wrapping_styled_span_keeps_both(test_parameters: TestParame
 
 
 # ---------------------------------------------------------------------------
-# Paragraph formatting (Div handler) — see filter.Div in filters/inline_styles.lua
+# Paragraph formatting (Div handler) — see filter.Div in filters/html/inline_styles.lua
 # ---------------------------------------------------------------------------
 #
 # These tests cover the contract with app/html_paragraph_pre_process.py: a
@@ -585,7 +587,7 @@ def test_attribute_injection_in_data_indent_twips_is_rejected(test_parameters: T
     # If parse_twips ever forgets to reject this shape, the marker would
     # show up here because the run we crafted would render as visible text.
     assert b"INJECTED_PAYLOAD_marker_xyz" not in doc_xml, (
-        "data-indent-twips injection succeeded — the malicious payload reached document.xml. parse_twips in filters/inline_styles.lua must reject any non-numeric value before formatting it into <w:ind w:left>."
+        "data-indent-twips injection succeeded — the malicious payload reached document.xml. parse_twips in filters/html/inline_styles.lua must reject any non-numeric value before formatting it into <w:ind w:left>."
     )
 
     # And the original paragraph text must still be present (graceful fallback,
@@ -659,7 +661,7 @@ def test_valid_integer_twips_values_still_work(test_parameters: TestParameters):
 # ---------------------------------------------------------------------------
 #
 # Two cooperating pieces size images so a DOCX matches the browser:
-#   * filters/inline_styles.lua (Image handler) copies a CSS width/height from
+#   * filters/html/inline_styles.lua (Image handler) copies a CSS width/height from
 #     an <img style="..."> onto the node's width/height attributes, which the
 #     DOCX writer honours.
 #   * app/html_image_pre_process.py sizes images that have NO explicit width/height
@@ -790,7 +792,7 @@ def test_list_inside_styled_div_keeps_its_numbering(test_parameters: TestParamet
 def test_styled_heading_div_keeps_its_heading_style(test_parameters: TestParameters):
     """A heading-N div keeps its heading even when it carries paragraph CSS.
 
-    filters/heading_levels.lua turns <div class="heading-7"> into a Header, but
+    filters/html/heading_levels.lua turns <div class="heading-7"> into a Header, but
     the Div handler here runs first and replaces a marked div with its blocks.
     app/html_paragraph_pre_process.py therefore leaves heading divs unmarked,
     trading their indent/alignment for the heading itself.

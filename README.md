@@ -132,7 +132,7 @@ The `/health` and `/version` endpoints report `svgRenderer`, always `weasysvg`, 
 ### Inline CSS in HTML to DOCX
 
 Pandoc's DOCX writer ignores the `style` attribute of an HTML element. For an `html` to `docx`
-conversion, `filters/inline_styles.lua` carries the inline CSS across instead:
+conversion, `filters/html/inline_styles.lua` carries the inline CSS across instead:
 
 | Element | CSS the DOCX keeps |
 |---|---|

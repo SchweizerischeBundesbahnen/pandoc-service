@@ -98,7 +98,7 @@ _REFERENCE_WIDTH_TWIPS = 9360.0
 _JC_TO_ALIGN = {"left": "left", "center": "center", "right": "right", "start": "left", "end": "right"}
 
 # Paragraph style id that HTML->DOCX assigns to Polarion captions (see
-# filters/html_captions.lua). Their text already carries the sequence number
+# filters/html/html_captions.lua). Their text already carries the sequence number
 # ("Table 1 ..."), so if pandoc's DOCX reader turns them into a LaTeX
 # \caption it prepends its OWN "Table N:" counter, printing the number twice.
 _CAPTION_STYLE_VAL = "Caption"
@@ -580,7 +580,7 @@ def _tag_table_layout(tbl: ET.Element, text_width_twips: float, bordered_styles:
     glue, centered) instead of filling the line. The companion filter forces
     the recovered fraction onto the columns and re-applies the alignment, so a
     100 % table fills the text width flush-left rather than floating centered.
-    (This matches how the HTML path in filters/html_tables_to_latex.lua already
+    (This matches how the HTML path in filters/html/html_tables_to_latex.lua already
     handles full-width tables.) Returns True when a sentinel was written.
     """
     fraction, align, is_absolute = _extract_table_layout(tbl, text_width_twips)

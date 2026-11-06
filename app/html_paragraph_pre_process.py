@@ -25,7 +25,7 @@ Each ``data-*`` attribute is emitted only when the corresponding property is
 present, so an indent-only, align-only, or combined paragraph all share the
 same markers. Pandoc preserves both ``class`` and ``data-*`` attributes on
 ``<div>`` elements (they survive as the AST's ``Attr`` triple), so the values
-travel intact to the companion Lua filter (``filters/inline_styles.lua``),
+travel intact to the companion Lua filter (``filters/html/inline_styles.lua``),
 which emits a raw OOXML ``<w:p>`` carrying the matching paragraph properties
 (``<w:ind w:left="N"/>`` and/or ``<w:jc w:val="..."/>``). Pandoc strips the
 ``data-`` prefix off these attributes when they aren't reserved HTML attribute
@@ -82,9 +82,9 @@ INDENT_ATTR = "data-indent-twips"
 # attribute lookups symmetric. See the module docstring.
 ALIGN_ATTR = "data-text-align"
 
-# Divs carrying one of these classes belong to filters/heading_levels.lua,
+# Divs carrying one of these classes belong to filters/html/heading_levels.lua,
 # which turns them into a Header. They are left unmarked: the Div handler in
-# filters/inline_styles.lua replaces a marked div with its blocks and drops the
+# filters/html/inline_styles.lua replaces a marked div with its blocks and drops the
 # div itself, and it runs before heading_levels (it is added to the pandoc
 # command earlier than DEFAULT_CONVERSION_OPTIONS), so marking one would strip
 # the heading-N class before the heading filter ever saw it and the heading
@@ -220,7 +220,7 @@ def _inherited_margin_left_twips(element: html.HtmlElement) -> int:
 
 
 def _is_heading_div(div: html.HtmlElement) -> bool:
-    """True when ``div`` is one filters/heading_levels.lua turns into a Header."""
+    """True when ``div`` is one filters/html/heading_levels.lua turns into a Header."""
     return any(_HEADING_CLASS_RE.match(cls) for cls in div.get("class", "").split())
 
 

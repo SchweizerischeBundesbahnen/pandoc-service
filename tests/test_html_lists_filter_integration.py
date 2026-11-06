@@ -1,7 +1,7 @@
 """End-to-end integration tests for the html-lists pipeline.
 
 These exercise the preprocessor (``app.html_lists_pre_process``) plus the Lua
-filter (``filters/html_lists.lua``) together by converting HTML → DOCX through
+filter (``filters/html/html_lists.lua``) together by converting HTML → DOCX through
 the pandoc-service container (which applies both the preprocessor and the Lua
 filter automatically for HTML→DOCX conversions), then inspecting the resulting
 ``word/document.xml`` to confirm the stray marker paragraph is gone.
@@ -24,7 +24,7 @@ from tests.test_container import TestParameters
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
-FILTER_PATH = "/usr/local/share/pandoc/filters/html_lists.lua"
+FILTER_PATH = "/usr/local/share/pandoc/filters/html/html_lists.lua"
 
 
 def _convert_html_to_docx(test_parameters: TestParameters, html: str) -> bytes:

@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/html_whitespace.lua``.
+"""Integration tests for ``filters/html/html_whitespace.lua``.
 
 Converts HTML to DOCX through the pandoc-service container, which applies the
 filter to every HTML to DOCX conversion, and reads the text of each paragraph

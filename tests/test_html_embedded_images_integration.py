@@ -1,8 +1,8 @@
 """The data: images of an HTML document reach the DOCX through files and the media bag; #271.
 
-pandoc gets each image as a file of the conversion, which filters/html_embedded_images.lua loads.
+pandoc gets each image as a file of the conversion, which filters/html/html_embedded_images.lua loads.
 The images in a styled span and in a table with preserved styles take the {{IMG:...}} placeholder
-path of filters/inline_styles.lua instead, which app.html_embedded_images restores.
+path of filters/html/inline_styles.lua instead, which app.html_embedded_images restores.
 """
 
 from __future__ import annotations

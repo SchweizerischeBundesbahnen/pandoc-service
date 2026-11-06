@@ -862,7 +862,7 @@ end
 
 -- longtable positions itself via the \LTleft/\LTright glue read at \begin;
 -- both \fill is centered (pandoc's default). Pinning one side to 0pt flushes
--- the table to that edge. Mirrors filters/html_tables_to_latex.lua.
+-- the table to that edge. Mirrors filters/html/html_tables_to_latex.lua.
 local ALIGN_GLUE = {
   left = "\\setlength{\\LTleft}{0pt}\\setlength{\\LTright}{\\fill}",
   center = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{\\fill}",

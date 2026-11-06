@@ -74,8 +74,8 @@ bash tests/shell/test_pandoc_service.sh
 - **app/prometheus_metrics.py**, **app/pandoc_metrics.py**, **app/metrics_server.py**: Prometheus metrics instrumentation (incl. SVG metrics)
 
 ### Security Model
-- Pandoc runs with `--sandbox` by default (`PANDOC_SANDBOX`, see `is_sandbox_enabled`), so a document cannot make it read a network address or a container path. Lua filters, `--reference-doc`, tectonic and `data:` URI images are unaffected. tectonic runs outside that sandbox and reads what the TeX names, so on the pdf and latex targets `filters/strip_raw_tex.lua` drops the raw TeX of the document and the file-reading primitives inside math, and `filters/strip_document_images.lua` drops images whose address is neither a `data:` URI nor in pandoc's media bag, which covers every source format. Both run before the docx filters emit their own raw LaTeX.
-- On html -> docx, `app/html_embedded_images.py` writes the `data:` images of `<img>` into a directory of the conversion, and `filters/html_embedded_images.lua` loads them into the media bag: a `data:` URI kept as a string through every filter took pandoc gigabytes (#271). The filter reads only the names the service gives an image, from the directory in `PANDOC_SERVICE_IMAGES_DIR`, an environment variable a document cannot set; the sandbox still blocks every path a document names. `{{IMG:...}}` placeholders of `filters/inline_styles.lua` get their `data:` URI back before the directory is removed. `finish_docx` also empties `descr` of the `pic:cNvPr` of each extracted image: pandoc writes the `src` there, a name with a random token (#289).
+- Pandoc runs with `--sandbox` by default (`PANDOC_SANDBOX`, see `is_sandbox_enabled`), so a document cannot make it read a network address or a container path. Lua filters, `--reference-doc`, tectonic and `data:` URI images are unaffected. tectonic runs outside that sandbox and reads what the TeX names, so on the pdf and latex targets `filters/common/strip_raw_tex.lua` drops the raw TeX of the document and the file-reading primitives inside math, and `filters/common/strip_document_images.lua` drops images whose address is neither a `data:` URI nor in pandoc's media bag, which covers every source format. Both run before the docx filters emit their own raw LaTeX.
+- On html -> docx, `app/html_embedded_images.py` writes the `data:` images of `<img>` into a directory of the conversion, and `filters/html/html_embedded_images.lua` loads them into the media bag: a `data:` URI kept as a string through every filter took pandoc gigabytes (#271). The filter reads only the names the service gives an image, from the directory in `PANDOC_SERVICE_IMAGES_DIR`, an environment variable a document cannot set; the sandbox still blocks every path a document names. `{{IMG:...}}` placeholders of `filters/html/inline_styles.lua` get their `data:` URI back before the directory is removed. `finish_docx` also empties `descr` of the `pic:cNvPr` of each extracted image: pandoc writes the `src` there, a name with a random token (#289).
 - Uses allowlisted pandoc options to prevent command injection
 - Direct subprocess calls to pandoc binary (no shell=True)
 - Input validation with 200MB request size limit
@@ -90,10 +90,18 @@ bash tests/shell/test_pandoc_service.sh
 4. Post-processing (especially for DOCX files)
 5. Response formatting with appropriate MIME types
 
+### Lua filters
+The filters lie in a folder per format they read, as the image installs them under `/usr/local/share/pandoc/filters/`:
+- `filters/html/`: HTML input.
+- `filters/docx/`: DOCX input, to PDF and LaTeX.
+- `filters/common/`: any input, such as the filters of the sandbox and the nested tables of LaTeX. `pagebreak.lua` comes from pandoc's lua-filters at build time.
+
+A request may still name a filter by its path before the folders: `ALLOWED_PANDOC_OPTIONS` maps it to the new one.
+
 ### SVG to PNG conversion
 - Runs only for `source_format == "html"`, before pandoc.
 - Density is a device scale factor: per-request `scale_factor` query param (overrides `DEVICE_SCALE_FACTOR` env, default 1.0). docx-exporter sends its "Image density" setting via this param.
-- Size and density are separate. `SvgProcessor._drawn_size_px` reads the size the document states on the `<img>` style and brings it inside `max-width`/`max-height`; `_render_size_px` is that size for the rasterizer, capped; `_apply_img_dimensions` writes the drawn size back as a `width`/`height` **attribute**, which is what the writer of every target reads (`filters/inline_styles.lua` carries a style onto the attribute for docx alone, and `app/html_image_pre_process.py` skips an `<img>` that already carries one). Where the document states no size a length can be read from, the SVG's own size is the one drawn, as before; a percentage is left for the target to resolve.
+- Size and density are separate. `SvgProcessor._drawn_size_px` reads the size the document states on the `<img>` style and brings it inside `max-width`/`max-height`; `_render_size_px` is that size for the rasterizer, capped; `_apply_img_dimensions` writes the drawn size back as a `width`/`height` **attribute**, which is what the writer of every target reads (`filters/html/inline_styles.lua` carries a style onto the attribute for docx alone, and `app/html_image_pre_process.py` skips an `<img>` that already carries one). Where the document states no size a length can be read from, the SVG's own size is the one drawn, as before; a percentage is left for the target to resolve.
 - weasysvg patches WeasyPrint once, when the controller is imported (`configure_svg_renderer`). Tunable via `ENABLE_SVG_CONVERSION` and `DEVICE_SCALE_FACTOR` (see README). PDFium draws one PNG at a time (`_PDFIUM_LOCK`).
 
 ### Supported Formats

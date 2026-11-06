@@ -138,7 +138,7 @@ def process(
 
 
 # {{IMG:<width>|<height>|<src>}} — see image_placeholder in
-# filters/inline_styles.lua. Both dimensions are always present and may be
+# filters/html/inline_styles.lua. Both dimensions are always present and may be
 # empty; "|" cannot occur in a validated dimension or in a data: URI's base64,
 # and only the first two fields are delimited by it, so a src containing one is
 # still read whole.
@@ -381,7 +381,7 @@ def _resolve_image_src(src: str) -> bytes | None:
 
 
 # {{IMGLAYOUT:<vertical-align>|<margin-left>|<margin-right>}} - see
-# image_layout_marker in filters/inline_styles.lua. The marker is a run of its
+# image_layout_marker in filters/html/inline_styles.lua. The marker is a run of its
 # own, right before the run of the picture it describes.
 _IMG_LAYOUT_MARKER_RE = re.compile(r"^\{\{IMGLAYOUT:([^|]*)\|([^|]*)\|([^|]*)\}\}$")
 _SIGNED_DIMENSION_RE = re.compile(r"^(-?\d+(?:\.\d+)?)([a-z]*)$", re.IGNORECASE)
@@ -641,7 +641,7 @@ def _separate_adjacent_tables(doc: DocumentObject) -> None:
 def _complete_section_geometry(doc: DocumentObject) -> None:
     """Give a section break written without margins the page and margins of the template.
 
-    ``filters/page_orientation.lua`` turns a page to landscape or back with a section break which
+    ``filters/html/page_orientation.lua`` turns a page to landscape or back with a section break which
     states an A4 page and its orientation, and no margins. Word then lays the section out on its
     own default margins, and the post-processor could not tell how wide its text is. The break takes
     the margins of the template's page and its size, turned to the orientation the break states.
@@ -904,7 +904,7 @@ def _replace_size_and_orientation(doc: DocumentObject, paper_size: str | None = 
         sect_pr = section._sectPr  # noqa: SLF001
         pg_sz = sect_pr.find(".//w:pgSz", namespaces={"w": SCHEMA})
         # A page break turns the pages above it and keeps the orientation it states, as Polarion
-        # marks it: see filters/page_orientation.lua. The pages after the last break follow the request.
+        # marks it: see filters/html/page_orientation.lua. The pages after the last break follow the request.
         section_orientation = orientation if sect_pr is body_sect_pr or not _states_orientation(pg_sz) else None
 
         if paper_size is not None:
@@ -1115,7 +1115,7 @@ def _grid_is_stated(tbl: Any, table_properties: Any) -> bool:
 
     pandoc keeps the column widths of a ``<colgroup>`` in percent and then states the table width.
     Without them it splits its text width evenly and leaves the table width automatic.
-    ``filters/inline_styles.lua`` states the table width either way, and leaves a column the HTML
+    ``filters/html/inline_styles.lua`` states the table width either way, and leaves a column the HTML
     gives no width without one in the grid.
     """
     tbl_w = table_properties.find(TBL_W, namespaces={"w": SCHEMA})

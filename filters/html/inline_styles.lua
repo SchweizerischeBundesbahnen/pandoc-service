@@ -908,7 +908,7 @@ end
 -- would otherwise lose any paragraph style in the raw-OOXML rewrite below —
 -- leaving app/DocxReferencesPostProcess.py unable to recognise it structurally.
 -- (Captions without an alignment are handled separately by
--- filters/html_captions.lua, which runs on the un-wrapped Para.)
+-- filters/html/html_captions.lua, which runs on the un-wrapped Para.)
 local function contains_caption_span(inlines)
   for _, il in ipairs(inlines) do
     if il.t == "Span" and il.classes then

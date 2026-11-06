@@ -1,4 +1,4 @@
-"""Integration tests for ``filters/html_nowrap.lua``.
+"""Integration tests for ``filters/html/html_nowrap.lua``.
 
 Converts HTML to DOCX through the pandoc-service container, which applies the
 filter to every HTML to DOCX conversion, and reads the text of each paragraph
