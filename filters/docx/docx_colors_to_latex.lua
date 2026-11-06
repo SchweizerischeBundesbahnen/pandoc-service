@@ -179,6 +179,9 @@ end
 -- size, or nil when the value isn't a clean positive integer. pt = half-points
 -- / 2; the baseline skip follows LaTeX's usual 1.2x leading. string.format with
 -- %g keeps the trust boundary tight — only digits and a dot reach the output.
+-- The size of the body text, which docx_document_styles_to_latex sets: see filter.Meta
+local body_size = nil
+
 local function font_size_open(half_points)
   local hp = tonumber(half_points)
   if not hp or hp <= 0 or hp ~= math.floor(hp) then
@@ -186,7 +189,12 @@ local function font_size_open(half_points)
   end
   local pt = hp / 2
   -- bp: Word counts in PostScript points, a pt of TeX is 0.4% smaller
-  return "{\\fontsize{" .. string.format("%g", pt) .. "bp}{" .. string.format("%g", pt * 1.2) .. "bp}\\selectfont "
+  local open = "{\\fontsize{" .. string.format("%g", pt) .. "bp}{" .. string.format("%g", pt * 1.2) .. "bp}\\selectfont "
+  if body_size and pt > body_size then
+    -- Word sets a line as high as the ascent and as deep as the descent of the largest font in it
+    open = open .. "\\pdcRunStrut{}"
+  end
+  return open
 end
 
 local filter = {}
@@ -232,11 +240,21 @@ local PREAMBLE = table.concat({
   "\\renewcommand{\\textsubscript}[1]{\\pdcOldSubscript{\\let\\ul\\uline\\let\\st\\sout\\let\\hl\\pdcDropHl#1}}",
 }, "\n")
 
+-- A strut of the ascent and the descent of the current font: without the metrics of its glyphs, XeTeX
+-- sets a word as high as the ascent of its font and as deep as its descent
+local RUN_STRUT = "\\newcommand{\\pdcRunStrut}{\\begingroup\\XeTeXuseglyphmetrics=0 \\setbox0\\hbox{x}"
+  .. "\\rule[-\\dp0]{0pt}{\\dimexpr\\ht0+\\dp0\\relax}\\endgroup}"
+
+local function read_body_size(meta)
+  body_size = tonumber(pandoc.utils.stringify(meta["docx-body-size"] or ""))
+  return nil
+end
+
 function filter.Meta(meta)
   if not FORMAT:match("latex") then
     return nil
   end
-  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
+  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE .. "\n" .. RUN_STRUT) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ soul_block })
@@ -327,4 +345,4 @@ function filter.Span(el)
   return result
 end
 
-return filter
+return { { Meta = read_body_size }, filter }

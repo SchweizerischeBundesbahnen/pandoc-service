@@ -175,12 +175,12 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 24,
      "lines": 28,
-     "mean_shift": 7.26,
+     "mean_shift": 3.61,
      "pages": [
       2,
       2
      ],
-     "same_page": 23
+     "same_page": 24
     },
     "test_convert_live_doc_with_wi_table": {
      "any_page": 37,
@@ -496,9 +496,9 @@
    "total": {
     "any_page": 68.6,
     "documents": 49,
-    "mean_shift": 6.41,
+    "mean_shift": 6.33,
     "pages_as_reference": 49,
-    "same_page": 66.4
+    "same_page": 66.5
    }
   },
   "word-fonts": {
@@ -676,12 +676,12 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 26,
      "lines": 28,
-     "mean_shift": 5.52,
+     "mean_shift": 3.14,
      "pages": [
       2,
       2
      ],
-     "same_page": 25
+     "same_page": 26
     },
     "test_convert_live_doc_with_wi_table": {
      "any_page": 47,
@@ -997,9 +997,9 @@
    "total": {
     "any_page": 98.2,
     "documents": 49,
-    "mean_shift": 1.53,
+    "mean_shift": 1.48,
     "pages_as_reference": 49,
-    "same_page": 97.0
+    "same_page": 97.1
    }
   }
  }

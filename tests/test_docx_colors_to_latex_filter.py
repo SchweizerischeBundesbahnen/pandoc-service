@@ -309,3 +309,14 @@ def test_a_run_font_which_could_carry_latex_is_left_out(test_parameters: TestPar
 def test_a_run_size_is_in_postscript_points(test_parameters: TestParameters):
     latex = _md_to_latex(test_parameters.container, '[big]{custom-style="PandocColor__SZ_22"}')
     assert "\\fontsize{11bp}{13.2bp}\\selectfont" in latex, latex
+
+
+def test_a_run_larger_than_the_body_text_makes_its_line_as_high_as_its_font(test_parameters: TestParameters):
+    """Word sets a line as high as the ascent and as deep as the descent of the largest font in it."""
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", 'mkdir -p /tmp/test && printf \'[big]{custom-style="PandocColor__SZ_32"} [small]{custom-style="PandocColor__SZ_20"}\\n\' > /tmp/test/run.md'])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex -M docx-body-size=12 --lua-filter={FILTER_PATH} /tmp/test/run.md"])
+    assert exit_code == 0, output.decode()
+    flat = _flatten_whitespace(output.decode())
+    assert "\\fontsize{16bp}{19.2bp}\\selectfont \\pdcRunStrut{}big" in flat, flat
+    assert flat.count("\\pdcRunStrut") == 1, "a smaller run leaves the line of the body"
