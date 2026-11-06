@@ -45,7 +45,7 @@ def _rewrite_body_part(
     bordered_styles: frozenset[str] = frozenset(),
     style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
     toc_style_ids: frozenset[str] = frozenset(),
-    break_styles: frozenset[str] = frozenset(),
+    break_styles: frozenset[str | None] = frozenset(),
 ) -> tuple[bytes, bool]:
     """Run the page break → colour → paragraph → list → table rewrites over one
     body part, collecting any synthetic styles into the shared dicts.  Returns

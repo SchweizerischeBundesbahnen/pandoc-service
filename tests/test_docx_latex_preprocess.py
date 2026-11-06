@@ -194,6 +194,18 @@ def test_the_styles_which_break_the_page_before_their_paragraphs():
     assert page_break_styles(styles) == frozenset({"Chapter", "Part"})
 
 
+def test_the_default_paragraph_style_breaks_the_page_before_a_paragraph_without_a_style():
+    from app.docx_ooxml import parse_xml
+    from app.docx_page_break_pre_process import page_break_styles
+
+    styles = parse_xml(
+        b'<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:pPr><w:pageBreakBefore/></w:pPr></w:style>'
+        b'<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"/></w:styles>'
+    )
+    assert page_break_styles(styles) == frozenset({"Normal", None})
+
+
 def test_a_long_chain_of_styles_based_on_each_other():
     from app.docx_ooxml import parse_xml
     from app.docx_page_break_pre_process import page_break_styles

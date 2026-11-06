@@ -197,6 +197,11 @@ def test_page_break_before_from_the_style_of_the_paragraph():
     assert _paragraph_texts(xml) == ["text", f"{PAGE_BREAK_BEFORE}text"]
 
 
+def test_page_break_before_from_the_default_paragraph_style():
+    xml, _ = rewrite_part(_document(TEXT_PARAGRAPH + TEXT_PARAGRAPH), frozenset({None}))
+    assert _paragraph_texts(xml) == [f"{PAGE_BREAK_BEFORE}text", f"{PAGE_BREAK_BEFORE}text"]
+
+
 def test_page_break_before_a_paragraph_in_a_table_breaks_nothing():
     cell = "<w:tbl><w:tr><w:tc><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
     document = _document(TEXT_PARAGRAPH + cell)

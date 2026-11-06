@@ -158,8 +158,11 @@ def _turned_on(element: ET.Element | None) -> bool | None:
     return element.get(_VAL_ATTR, "true").lower() not in _OFF
 
 
-def page_break_styles(styles: ET.Element | None) -> frozenset[str]:
-    """The paragraph styles which start a new page before their paragraphs, themselves or by the style they are based on."""
+def page_break_styles(styles: ET.Element | None) -> frozenset[str | None]:
+    """The paragraph styles which start a new page before their paragraphs, themselves or by the style they are based on.
+
+    None stands for the default paragraph style, which a paragraph without a style of its own has.
+    """
     if styles is None:
         return frozenset()
     by_id = {style.get(f"{{{W_NS}}}styleId"): style for style in styles.iter(f"{{{W_NS}}}style")}
@@ -177,16 +180,21 @@ def page_break_styles(styles: ET.Element | None) -> frozenset[str]:
             based_on = by_id[current].find(f"{{{W_NS}}}basedOn")
             current = based_on.get(_VAL_ATTR) if based_on is not None else None
         found.update(dict.fromkeys(chain, found.get(current, False) if current is not None else False))
-    return frozenset(style_id for style_id, breaks in found.items() if breaks)
+    result: set[str | None] = {style_id for style_id, breaks in found.items() if breaks}
+    # Of several default paragraph styles, Word takes the last one
+    defaults = [style_id for style_id, style in by_id.items() if style.get(f"{{{W_NS}}}type") == "paragraph" and style.get(f"{{{W_NS}}}default") in ("1", "true", "on")]
+    if defaults and defaults[-1] in result:
+        result.add(None)
+    return frozenset(result)
 
 
-def _breaks_before(para: ET.Element, break_styles: frozenset[str]) -> bool:
-    """Whether Word starts a new page before the paragraph: its own property, else its style."""
+def _breaks_before(para: ET.Element, break_styles: frozenset[str | None]) -> bool:
+    """Whether Word starts a new page before the paragraph: its own property, else its style or the default one."""
     own = _turned_on(para.find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
     if own is not None:
         return own
     style = para.find(f"{_PPR_TAG}/{_PSTYLE_TAG}")
-    return style is not None and style.get(_VAL_ATTR) in break_styles
+    return (style.get(_VAL_ATTR) if style is not None else None) in break_styles
 
 
 def _mark_page_break_before(para: ET.Element) -> None:
@@ -197,7 +205,7 @@ def _mark_page_break_before(para: ET.Element) -> None:
     para.insert(list(para).index(properties) + 1 if properties is not None else 0, run)
 
 
-def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str] = frozenset()) -> bool:
+def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = frozenset()) -> bool:
     """Write the breaks of the paragraphs directly in the body as sentinels. Returns whether there were any."""
     sections = pairwise(docx_page_geometry.body_sections(body))
     changed = False
@@ -222,7 +230,7 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str] = frozenset
     return changed
 
 
-def rewrite_part(xml_bytes: bytes, break_styles: frozenset[str] = frozenset()) -> tuple[bytes, bool]:
+def rewrite_part(xml_bytes: bytes, break_styles: frozenset[str | None] = frozenset()) -> tuple[bytes, bool]:
     """Write the breaks of the body as sentinels. A part without a body has no page to break. Returns (new_bytes, changed).
 
     ``break_styles`` are the paragraph styles which start a new page before their paragraphs, see page_break_styles.
