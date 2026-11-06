@@ -393,6 +393,12 @@ def test_a_line_of_the_body_reaches_as_deep_as_the_descent_of_its_font(test_para
     assert "\\lineskip=0pt\\lineskiplimit=0pt" in preamble
 
 
+def test_the_fonts_of_the_body_load_first_in_every_run_of_tectonic(test_parameters: TestParameters):
+    """tectonic keeps glyph boxes by font number across its runs; a table of contents shifts the numbers from the second on."""
+    preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4"))
+    assert "\\AtBeginDocument{\\setbox0\\hbox{\\normalfont x\\bfseries x\\itshape x\\normalfont\\itshape x}}" in preamble
+
+
 def test_a_table_starts_below_the_descent_of_the_line_before_it(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4"))
     assert "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox" in preamble

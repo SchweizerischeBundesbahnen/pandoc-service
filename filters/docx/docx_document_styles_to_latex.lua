@@ -179,6 +179,10 @@ local function body_preamble(meta, lines)
     lines[#lines + 1] = "\\normalsize"
     if strut ~= "" then
       lines[#lines + 1] = "\\lineskip=0pt\\lineskiplimit=0pt"
+      -- tectonic keeps the glyph boxes of a font across its runs by the number of the font, and a
+      -- table of contents loads its fonts first from the second run on: a word of it then gets the box
+      -- of a glyph of another font. The fonts of the body loaded first keep their numbers in every run
+      lines[#lines + 1] = "\\AtBeginDocument{\\setbox0\\hbox{\\normalfont x\\bfseries x\\itshape x\\normalfont\\itshape x}}"
       -- Word sets the first line of a page as far down as the ascent of its font
       lines[#lines + 1] = string.format("\\setlength{\\topskip}{%gbp}", baseline - descent)
       -- A table starts below the descent of the line before it, which TeX takes from its letters

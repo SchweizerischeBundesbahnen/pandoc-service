@@ -816,7 +816,7 @@
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 5.25,
+     "mean_shift": 0.14,
      "pages": [
       2,
       2
@@ -826,7 +826,7 @@
     "test_heading_numbers_with_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 5.25,
+     "mean_shift": 0.14,
      "pages": [
       2,
       2
@@ -997,7 +997,7 @@
    "total": {
     "any_page": 95.9,
     "documents": 49,
-    "mean_shift": 3.39,
+    "mean_shift": 3.18,
     "pages_as_reference": 47,
     "same_page": 93.7
    }
