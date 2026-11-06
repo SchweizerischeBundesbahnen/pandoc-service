@@ -78,18 +78,24 @@ def test_break_between_lines_is_kept(test_parameters: TestParameters):
 
 
 def test_empty_line_is_kept(test_parameters: TestParameters):
-    """<p><br/></p> is how Polarion writes an empty line."""
-    assert _paragraphs(test_parameters, "<p>text</p><p><br/></p>") == [("text", 0), ("", 1)]
+    """<p><br/></p> is how Polarion writes an empty line: a browser shows one line, an empty paragraph in Word.
+
+    A paragraph of a break alone would show two in Word, its own line and the one the break opens."""
+    assert _paragraphs(test_parameters, "<p>text</p><p><br/></p><p>more</p>") == [("text", 0), ("", 0), ("more", 0)]
+
+
+def test_two_empty_lines_keep_one_break(test_parameters: TestParameters):
+    assert _paragraphs(test_parameters, "<p>text</p><p><br/><br/></p><p>more</p>") == [("text", 0), ("", 1), ("more", 0)]
 
 
 def test_break_after_closed_paragraph_is_kept(test_parameters: TestParameters):
     """A <br/> after </p> is an empty line of its own, not the end of the paragraph's line."""
-    assert _paragraphs(test_parameters, "<p>some paragraph</p><br/>") == [("some paragraph", 0), ("", 1)]
+    assert _paragraphs(test_parameters, "<p>some paragraph</p><br/>") == [("some paragraph", 0), ("", 0)]
 
 
 def test_break_after_closed_paragraph_before_list_is_kept(test_parameters: TestParameters):
     paragraphs = _paragraphs(test_parameters, "<div><p>some paragraph</p><br/><ul><li>Bullet</li></ul></div>")
-    assert paragraphs == [("some paragraph", 0), ("", 1), ("Bullet", 0)]
+    assert paragraphs == [("some paragraph", 0), ("", 0), ("Bullet", 0)]
 
 
 def test_break_before_empty_anchor_is_dropped(test_parameters: TestParameters):
@@ -105,7 +111,7 @@ def test_empty_anchor_after_dropped_break_stays_a_bookmark(test_parameters: Test
 
 def test_break_after_closed_paragraph_before_empty_anchor_is_kept(test_parameters: TestParameters):
     paragraphs = _paragraphs(test_parameters, '<p>some paragraph</p><br/><a id="anchor"></a>')
-    assert paragraphs == [("some paragraph", 0), ("", 1)]
+    assert paragraphs == [("some paragraph", 0), ("", 0)]
 
 
 def _png() -> str:
