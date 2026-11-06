@@ -85,7 +85,7 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 139,
      "lines": 270,
-     "mean_shift": 15.1,
+     "mean_shift": 13.57,
      "pages": [
       8,
       8
@@ -115,7 +115,7 @@
     "test_convert_live_doc_with_filter": {
      "any_page": 109,
      "lines": 201,
-     "mean_shift": 13.82,
+     "mean_shift": 12.61,
      "pages": [
       6,
       6
@@ -185,7 +185,7 @@
     "test_convert_live_doc_with_wi_table": {
      "any_page": 39,
      "lines": 47,
-     "mean_shift": 7.43,
+     "mean_shift": 7.62,
      "pages": [
       2,
       2
@@ -205,7 +205,7 @@
     "test_convert_product_specification": {
      "any_page": 139,
      "lines": 270,
-     "mean_shift": 15.1,
+     "mean_shift": 13.57,
      "pages": [
       8,
       8
@@ -215,7 +215,7 @@
     "test_convert_test_specification": {
      "any_page": 125,
      "lines": 191,
-     "mean_shift": 8.28,
+     "mean_shift": 7.92,
      "pages": [
       4,
       4
@@ -265,7 +265,7 @@
     "test_empty_line_before_bullets": {
      "any_page": 10,
      "lines": 10,
-     "mean_shift": 8.73,
+     "mean_shift": 5.51,
      "pages": [
       1,
       1
@@ -496,7 +496,7 @@
    "total": {
     "any_page": 68.0,
     "documents": 49,
-    "mean_shift": 9.6,
+    "mean_shift": 9.44,
     "pages_as_reference": 47,
     "same_page": 64.8
    }
@@ -536,7 +536,7 @@
     "test_bold_titles_and_headings": {
      "any_page": 20,
      "lines": 20,
-     "mean_shift": 4.59,
+     "mean_shift": 1.42,
      "pages": [
       1,
       1
@@ -546,7 +546,7 @@
     "test_both_link_role_direction": {
      "any_page": 10,
      "lines": 10,
-     "mean_shift": 0.51,
+     "mean_shift": 0.21,
      "pages": [
       1,
       1
@@ -556,7 +556,7 @@
     "test_convert_catalog_specification": {
      "any_page": 76,
      "lines": 77,
-     "mean_shift": 8.07,
+     "mean_shift": 7.52,
      "pages": [
       3,
       3
@@ -586,17 +586,17 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 12.04,
+     "mean_shift": 5.32,
      "pages": [
       8,
       8
      ],
-     "same_page": 252
+     "same_page": 254
     },
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 21,
      "lines": 21,
-     "mean_shift": 0.55,
+     "mean_shift": 0.31,
      "pages": [
       1,
       1
@@ -606,7 +606,7 @@
     "test_convert_live_doc_with_all_comments": {
      "any_page": 19,
      "lines": 19,
-     "mean_shift": 0.53,
+     "mean_shift": 0.32,
      "pages": [
       1,
       1
@@ -616,7 +616,7 @@
     "test_convert_live_doc_with_filter": {
      "any_page": 188,
      "lines": 201,
-     "mean_shift": 15.07,
+     "mean_shift": 12.75,
      "pages": [
       6,
       6
@@ -636,7 +636,7 @@
     "test_convert_live_doc_with_heading": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 2.52,
+     "mean_shift": 0.97,
      "pages": [
       2,
       2
@@ -646,7 +646,7 @@
     "test_convert_live_doc_with_open_and_unreferenced_comments": {
      "any_page": 17,
      "lines": 17,
-     "mean_shift": 0.57,
+     "mean_shift": 0.29,
      "pages": [
       1,
       1
@@ -656,7 +656,7 @@
     "test_convert_live_doc_with_open_comments": {
      "any_page": 16,
      "lines": 16,
-     "mean_shift": 0.56,
+     "mean_shift": 0.3,
      "pages": [
       1,
       1
@@ -686,7 +686,7 @@
     "test_convert_live_doc_with_wi_table": {
      "any_page": 45,
      "lines": 47,
-     "mean_shift": 6.61,
+     "mean_shift": 7.45,
      "pages": [
       2,
       2
@@ -696,7 +696,7 @@
     "test_convert_live_doc_without_comments_rendering": {
      "any_page": 7,
      "lines": 7,
-     "mean_shift": 0.4,
+     "mean_shift": 0.21,
      "pages": [
       1,
       1
@@ -706,17 +706,17 @@
     "test_convert_product_specification": {
      "any_page": 256,
      "lines": 270,
-     "mean_shift": 12.04,
+     "mean_shift": 5.32,
      "pages": [
       8,
       8
      ],
-     "same_page": 252
+     "same_page": 254
     },
     "test_convert_test_specification": {
      "any_page": 186,
      "lines": 191,
-     "mean_shift": 30.05,
+     "mean_shift": 29.82,
      "pages": [
       4,
       4
@@ -746,7 +746,7 @@
     "test_direct_link_role_direction": {
      "any_page": 9,
      "lines": 9,
-     "mean_shift": 0.52,
+     "mean_shift": 0.21,
      "pages": [
       1,
       1
@@ -766,7 +766,7 @@
     "test_empty_line_before_bullets": {
      "any_page": 10,
      "lines": 10,
-     "mean_shift": 5.01,
+     "mean_shift": 0.75,
      "pages": [
       1,
       1
@@ -796,7 +796,7 @@
     "test_formatting": {
      "any_page": 16,
      "lines": 21,
-     "mean_shift": 0.5,
+     "mean_shift": 0.48,
      "pages": [
       1,
       1
@@ -816,7 +816,7 @@
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 9.11,
+     "mean_shift": 6.27,
      "pages": [
       2,
       2
@@ -826,7 +826,7 @@
     "test_heading_numbers_with_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 9.11,
+     "mean_shift": 6.27,
      "pages": [
       2,
       2
@@ -836,7 +836,7 @@
     "test_heading_numbers_with_template_not_numbering_headings": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 2.52,
+     "mean_shift": 0.97,
      "pages": [
       2,
       2
@@ -856,7 +856,7 @@
     "test_image_sizes_conversion": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 7.01,
+     "mean_shift": 4.14,
      "pages": [
       1,
       1
@@ -896,7 +896,7 @@
     "test_reverse_link_role_direction": {
      "any_page": 8,
      "lines": 8,
-     "mean_shift": 0.54,
+     "mean_shift": 0.21,
      "pages": [
       1,
       1
@@ -926,7 +926,7 @@
     "test_table_sizes_conversion": {
      "any_page": 53,
      "lines": 55,
-     "mean_shift": 37.64,
+     "mean_shift": 37.13,
      "pages": [
       3,
       3
@@ -946,7 +946,7 @@
     "test_tables_conversion": {
      "any_page": 56,
      "lines": 57,
-     "mean_shift": 3.58,
+     "mean_shift": 3.31,
      "pages": [
       3,
       3
@@ -997,9 +997,9 @@
    "total": {
     "any_page": 95.8,
     "documents": 49,
-    "mean_shift": 7.91,
+    "mean_shift": 7.14,
     "pages_as_reference": 47,
-    "same_page": 92.1
+    "same_page": 92.3
    }
   }
  }

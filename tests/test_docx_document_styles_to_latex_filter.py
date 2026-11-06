@@ -169,6 +169,32 @@ def test_between_two_headings_only_their_own_spaces_count(test_parameters: TestP
     assert "\\titlespacing*{\\subsection}" not in body, "a heading before body text keeps the spacing of the preamble"
 
 
+WORD_HEADINGS = (
+    "docx-body-paragraph-skip=9",
+    "docx-body-descent=3.38",
+    "docx-style-Heading1=size:20,line:24.41,ascent:18.78,before:18,after:4",
+    "docx-style-Heading2=size:16,line:19.53,ascent:15.02,before:8,after:4",
+)
+
+
+def test_a_heading_stands_below_the_descent_of_the_line_before_as_far_as_its_ascent(test_parameters: TestParameters):
+    """The space before is 18pt less what TeX adds over Word, 2.25pt; the space after gains the descent over the body, 2.25pt."""
+    preamble = _preamble(_latex(test_parameters.container, *WORD_HEADINGS))
+    assert "\\titlespacing*{\\section}{0pt}{15.75pt}{11.25pt}" in preamble
+
+
+def test_a_heading_has_a_strut_of_the_line_of_word(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, *WORD_HEADINGS))
+    assert "\\setbox\\strutbox\\hbox{\\vrule height 18.78bp depth 5.63bp width 0pt}" in preamble
+
+
+def test_between_two_headings_their_struts_keep_their_lines_apart(test_parameters: TestParameters):
+    native = '[Header 1 ("one",[],[]) [Str "One"], Header 2 ("two",[],[]) [Str "Two"], Para [Str "Text"]]'
+    body = _latex(test_parameters.container, *WORD_HEADINGS, native=native)
+    body = body[body.index("\\begin{document}") :]
+    assert body.index("\\titlespacing*{\\section}{0pt}{15.75pt}{8pt}") < body.index("One") < body.index("\\titlespacing*{\\section}{0pt}{15.75pt}{11.25pt}")
+
+
 def test_the_items_of_a_tight_list_get_the_space_of_compact(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-list-item-space=1.8"))
     assert "\\renewcommand{\\tightlist}{\\setlength{\\itemsep}{1.8pt}\\setlength{\\parskip}{0pt}}" in preamble

@@ -283,6 +283,24 @@ end
 -- after the title makes up the difference. A table of contents has no skip.
 local body_descent = nil
 local body_skip = 0
+-- Word sets a line below the descent of the line before it, after the space
+-- between them, as far down as its own ascent. TeX sets it a line of its own
+-- font below the baseline before. The space before and after a heading makes
+-- up the difference, with a line of the body before and after it.
+local function heading_rise(style, descent_before)
+  if style.line == nil or style.ascent == nil or descent_before == nil then
+    return 0
+  end
+  return descent_before + style.ascent - style.line
+end
+
+local function heading_descent(style)
+  if style.line == nil or style.ascent == nil or body_descent == nil then
+    return 0
+  end
+  return style.line - style.ascent - body_descent
+end
+
 local function below_title(style, toc)
   local after = toc and style.own_after or style.after
   if style.line == nil or style.ascent == nil or body_descent == nil then
@@ -300,6 +318,10 @@ local function font_switch(style, family_macro, lines)
   end
   if style.size then
     parts[#parts + 1] = string.format("\\fontsize{%gbp}{%gbp}\\selectfont", style.size, style.line or style.size * LINE_SPREAD)
+    if style.line and style.ascent and style.ascent < style.line then
+      -- titlesec sets a strut in a heading: as high and as deep as Word's line of the font
+      parts[#parts + 1] = string.format("\\setbox\\strutbox\\hbox{\\vrule height %gbp depth %.4gbp width 0pt}", style.ascent, style.line - style.ascent)
+    end
   end
   if style.bold then
     parts[#parts + 1] = "\\bfseries"
@@ -361,7 +383,8 @@ local function headings_preamble(meta, lines)
       else
         lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
       end
-      lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%gpt}{%gpt}", heading.command, style.before, style.after)
+      local before, after = style.before + heading_rise(style, body_descent), style.after + heading_descent(style)
+      lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%.4gpt}{%.4gpt}", heading.command, before, after)
     end
   end
   if numbered then
@@ -558,12 +581,16 @@ local function heading_spacing(blocks)
     local style = level and heading_styles[level]
     local next = style and heading_styles[heading_level(blocks[index + 1])]
     if next then
-      local spacing = "\\titlespacing*{\\%s}{0pt}{%gpt}{%gpt}"
+      local spacing = "\\titlespacing*{\\%s}{0pt}{%.4gpt}{%.4gpt}"
       local command = HEADINGS[level].command
-      local after = math.max(style.own_after, next.own_before)
-      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, style.before, after))
+      local before = style.before + heading_rise(style, body_descent)
+      -- The struts of both reach Word's line: TeX keeps the descent of the first and the ascent of the
+      -- next apart unless the next line of its own font is deeper than that
+      local descent = style.line and style.ascent and style.line - style.ascent or body_descent
+      local after = math.max(style.own_after, next.own_before) + math.min(0, heading_rise(next, descent))
+      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, after))
       result[#result + 1] = block
-      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, style.before, style.after))
+      result[#result + 1] = pandoc.RawBlock("latex", string.format(spacing, command, before, style.after + heading_descent(style)))
     else
       result[#result + 1] = block
     end
