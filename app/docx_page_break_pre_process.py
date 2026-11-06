@@ -158,6 +158,24 @@ def _turned_on(element: ET.Element | None) -> bool | None:
     return element.get(_VAL_ATTR, "true").lower() not in _OFF
 
 
+def _resolve_chain(by_id: Mapping[str | None, ET.Element], style_id: str | None, found: dict[str, bool], fallback: bool) -> None:
+    """Add to FOUND whether each style of the chain from STYLE_ID breaks the page before, up to a style already in it.
+
+    A walk along the chain, not a recursion, which a long chain would exhaust. A loop in it breaks nothing.
+    """
+    chain: list[str] = []
+    current = style_id
+    while current is not None and current in by_id and current not in found and current not in chain:
+        own = _turned_on(by_id[current].find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
+        if own is not None:
+            found[current] = own
+            break
+        chain.append(current)
+        based_on = by_id[current].find(f"{{{W_NS}}}basedOn")
+        current = based_on.get(_VAL_ATTR) if based_on is not None else None
+    found.update(dict.fromkeys(chain, found.get(current, fallback) if current is not None else fallback))
+
+
 def page_break_styles(styles: ET.Element | None) -> frozenset[str | None]:
     """The paragraph styles which start a new page before their paragraphs, themselves or by the style they are based on.
 
@@ -170,18 +188,7 @@ def page_break_styles(styles: ET.Element | None) -> frozenset[str | None]:
     fallback = bool(_turned_on(styles.find(f"{{{W_NS}}}docDefaults/{{{W_NS}}}pPrDefault/{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}")))
     found: dict[str, bool] = {}
     for style_id in by_id:
-        # A walk along the chain, not a recursion, which a long chain would exhaust. A loop in it breaks nothing.
-        chain: list[str] = []
-        current = style_id
-        while current is not None and current in by_id and current not in found and current not in chain:
-            own = _turned_on(by_id[current].find(f"{_PPR_TAG}/{_PAGE_BREAK_BEFORE_TAG}"))
-            if own is not None:
-                found[current] = own
-                break
-            chain.append(current)
-            based_on = by_id[current].find(f"{{{W_NS}}}basedOn")
-            current = based_on.get(_VAL_ATTR) if based_on is not None else None
-        found.update(dict.fromkeys(chain, found.get(current, fallback) if current is not None else fallback))
+        _resolve_chain(by_id, style_id, found, fallback)
     result: set[str | None] = {style_id for style_id, breaks in found.items() if breaks}
     # Of several default paragraph styles, Word takes the last one
     defaults = [style_id for style_id, style in by_id.items() if style.get(f"{{{W_NS}}}type") == "paragraph" and style.get(f"{{{W_NS}}}default") in ("1", "true", "on")]
@@ -212,7 +219,7 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = fr
     changed = False
     lone_page_break: ET.Element | None = None
     replaced_breaks: list[ET.Element] = []
-    breaks_before: list[ET.Element] = []
+    breaks_before = [block for block in body if block.tag == _P_TAG and _breaks_before(block, break_styles)]
     for block in body:
         if block.tag != _P_TAG:
             if block.tag in (_TBL_TAG, _SDT_TAG):
@@ -220,9 +227,6 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = fr
             continue
         is_lone_page_break = _is_lone_page_break(block)
         changed = _mark_page_breaks(block) or changed
-        if _breaks_before(block, break_styles):
-            breaks_before.append(block)
-            changed = True
         if _closes_a_section(block):
             changed = _mark_section_end(block, sections, lone_page_break, replaced_breaks) or changed
         lone_page_break = block if is_lone_page_break else None
@@ -231,7 +235,7 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = fr
         body.insert(list(body).index(para), _page_break_before())
     for para in replaced_breaks:
         _drop_one_page_break(body, para)
-    return changed
+    return changed or bool(breaks_before)
 
 
 def rewrite_part(xml_bytes: bytes, break_styles: frozenset[str | None] = frozenset()) -> tuple[bytes, bool]:
