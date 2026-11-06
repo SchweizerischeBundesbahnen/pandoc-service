@@ -215,3 +215,13 @@ def test_the_line_under_a_header_row_is_the_border_of_word_over_the_rows(test_pa
     """Word draws a border of the default width, 2 eighths of a point, and the rows keep their pitch."""
     latex = _latex(test_parameters.container, "rl=head")
     assert "\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}" in latex
+
+
+def test_a_coloured_cell_merged_down_with_line_breaks_stays_one_cell(test_parameters: TestParameters):
+    """Its \\multirow opens in its first row and closes after its text: a row per line would part the braces."""
+    color = 'RawInline (Format "latex") "\\\\cellcolor[HTML]{F4CCCC}"'
+    merged = f'Cell ("",[],[]) AlignDefault (RowSpan 2) (ColSpan 1) [Plain [{color}, Str "one", LineBreak, Str "two"]]'
+    native = _grid_table([merged, _cell(f'Str "{OPEN}{GRID};tw=1.0000{CLOSE}a"')], [_cell('Str "b"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "pdcSplit" not in latex
+    assert "\\multirow[t]{2}{=}{one\\\\" in " ".join(latex.split()).replace("\\pdcCellRaggedright{}", "")

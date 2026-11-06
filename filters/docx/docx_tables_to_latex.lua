@@ -261,6 +261,8 @@ local COMPACT_CELL_DEPTH = "\\ifdefined\\pdcCompactCellDepth\\pdcCompactCellDept
 -- Word breaks a row between the lines of a cell; longtable breaks only between rows. A row whose one
 -- cell holds a paragraph of line breaks becomes a row per line, without lines between them, each as
 -- high as a line of the body: the space of the cell stays above the first and below the last.
+local ROW_SPAN = "pdc-row-span"   -- the rows a cell spans, which its \\multirow takes over
+local COVERED = "pdc-covered"     -- a cell which only carries the colour of the cell above
 local SPLIT = "pdc-split"      -- the attribute of a row: what follows it, see SPLIT_PREAMBLE
 local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at its end
 local has_split = false
@@ -414,8 +416,6 @@ end
 -- ---- A coloured cell merged down ----
 -- colortbl colours a cell of \\multirow in its first row only, and pandoc writes nothing in the rows
 -- below. A coloured cell merged down sets its own \\multirow, and the rows below get a cell of its colour.
-local ROW_SPAN = "pdc-row-span"   -- the rows a cell spans, which its \\multirow takes over
-local COVERED = "pdc-covered"     -- a cell which only carries the colour of the cell above
 
 -- The \\cellcolor among the switches at the start of a cell, and its position in the first block
 local function cell_color(cell)
