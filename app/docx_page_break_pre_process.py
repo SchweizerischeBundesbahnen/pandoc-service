@@ -81,7 +81,7 @@ def _closes_a_section(para: ET.Element) -> bool:
 
 
 def _is_lone_page_break(para: ET.Element) -> bool:
-    """Whether the paragraph holds a page break and nothing else, so it can go when a section break follows."""
+    """Whether the paragraph holds page breaks and nothing else, so a section break after it can replace one of them."""
     if _closes_a_section(para):
         return False
     runs = [child for child in para if child.tag != _PPR_TAG]
@@ -110,8 +110,18 @@ def _mark_section_break(para: ET.Element, section: ET.Element | None, start: str
     run.append(_sentinel_text(_section_sentinel(docx_page_geometry.section_page(section), start)))
 
 
+def _drop_one_page_break(body: ET.Element, para: ET.Element) -> None:
+    """Remove one marked page break of a paragraph which holds nothing else, and the paragraph with the last one."""
+    breaks = [(run, text) for run in para.iter(_R_TAG) for text in run.findall(_T_TAG)]
+    if len(breaks) == 1:
+        body.remove(para)
+        return
+    run, text = breaks[-1]
+    run.remove(text)
+
+
 def _mark_section_end(para: ET.Element, sections: Iterator[tuple[ET.Element | None, ET.Element | None]], lone_page_break: ET.Element | None, replaced_breaks: list[ET.Element]) -> bool:
-    """Mark the section break the paragraph holds, which replaces a lone page break before it. Returns whether it opens a page."""
+    """Mark the section break the paragraph holds, which replaces a page break of the paragraph before it. Returns whether it opens a page."""
     closed, opened = next(sections)
     start = docx_page_geometry.page_start(closed, opened)
     if start is None:
@@ -140,7 +150,7 @@ def _mark_body_breaks(body: ET.Element) -> bool:
         lone_page_break = block if is_lone_page_break else None
     # Not in the loop: removing a block while iterating the body skips the block after it.
     for para in replaced_breaks:
-        body.remove(para)
+        _drop_one_page_break(body, para)
     return changed
 
 
