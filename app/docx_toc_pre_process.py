@@ -41,7 +41,7 @@ _OUTLINE = re.compile(r'\\o\s+"\s*(\d+)\s*-\s*(\d+)\s*"')
 _LIST = re.compile(r"\\[fc]\b")
 # The entries of chosen styles or of a bookmarked part: LaTeX lists the headings of the whole document only
 _SELECTION = re.compile(r"\\[tb]\b")
-_PAGEREF = re.compile(r"^\s*PAGEREF\s+([A-Za-z0-9_]+)")
+_PAGEREF = re.compile(r"^\s*PAGEREF\s+(\w+)", re.ASCII)
 
 
 def _w(name: str) -> str:
@@ -80,32 +80,47 @@ def _events(paragraph: ET.Element) -> list[tuple[str, str]]:
     return events
 
 
+class _FieldScan:
+    """The state of the walk through the field chars of the paragraphs: how deep in fields, and the open one."""
+
+    def __init__(self) -> None:
+        self.fields: list[tuple[int, int, str]] = []
+        self.depth = 0
+        self.start = -1
+        self.instruction = ""
+        self.clean_start = False
+
+    def paragraph(self, index: int, events: list[tuple[str, str]]) -> None:
+        for position, (kind, value) in enumerate(events):
+            if kind == "begin":
+                self._begin(index, events[:position])
+            elif kind == "instr" and self.depth == 1:
+                self.instruction += value
+            elif kind == "end" and self.depth > 0:
+                self._end(index, events[position + 1 :])
+
+    def _begin(self, index: int, before: list[tuple[str, str]]) -> None:
+        if self.depth == 0:
+            self.start, self.instruction = index, ""
+            self.clean_start = all(event != "text" for event, _ in before)
+        self.depth += 1
+
+    def _end(self, index: int, after: list[tuple[str, str]]) -> None:
+        self.depth -= 1
+        clean_end = all(event != "text" for event, _ in after)
+        if self.depth == 0 and self.clean_start and clean_end and self.instruction.strip().startswith("TOC"):
+            self.fields.append((self.start, index, self.instruction.strip()))
+
+
 def _toc_fields(paragraphs: list[ET.Element]) -> list[tuple[int, int, str]]:
     """The TOC fields of the paragraphs: index of the first and last paragraph and the instruction.
 
     Only a field which its first paragraph begins and its last paragraph ends counts.
     """
-    fields: list[tuple[int, int, str]] = []
-    depth = 0
-    start = -1
-    instruction = ""
-    clean_start = False
+    scan = _FieldScan()
     for index, paragraph in enumerate(paragraphs):
-        events = _events(paragraph)
-        for position, (kind, value) in enumerate(events):
-            if kind == "begin":
-                if depth == 0:
-                    start, instruction = index, ""
-                    clean_start = all(event != "text" for event, _ in events[:position])
-                depth += 1
-            elif kind == "instr" and depth == 1:
-                instruction += value
-            elif kind == "end" and depth > 0:
-                depth -= 1
-                clean_end = all(event != "text" for event, _ in events[position + 1 :])
-                if depth == 0 and clean_start and clean_end and instruction.strip().startswith("TOC"):
-                    fields.append((start, index, instruction.strip()))
-    return fields
+        scan.paragraph(index, _events(paragraph))
+    return scan.fields
 
 
 def _marker_paragraph(style_id: str) -> ET.Element:
@@ -190,6 +205,23 @@ def _depth(instruction: str) -> int:
     return max(1, min(MAX_DEPTH, int(match.group(2))))
 
 
+def _replacements(instruction: str, field_paragraphs: list[ET.Element], used: dict[str, _StyleSpec]) -> list[ET.Element] | None:
+    """The paragraphs which replace a field, with the styles they use added to USED; None to keep the field."""
+    if _LIST.search(instruction) and not _OUTLINE.search(instruction):
+        replacements = [entry for entry in (_entry_paragraph(paragraph) for paragraph in field_paragraphs) if entry is not None]
+        if replacements:
+            used[ENTRY_STYLE] = _StyleSpec(ENTRY_STYLE)
+            # Word updates the field and keeps the paragraph which ends it as an empty line, in Normal
+            replacements.append(ET.Element(_w("p")))
+        return replacements
+    if not _whole_outline(instruction):
+        return None
+    style_id = f"{CONTENTS_STYLE}{_depth(instruction)}"
+    used[style_id] = _StyleSpec(style_id)
+    # Word fills the field with its entries and keeps the paragraph which ends it as an empty line
+    return [_marker_paragraph(style_id), ET.Element(_w("p"))]
+
+
 def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     """Rewrite the TOC fields among the paragraphs of the body; returns the part and the styles it references."""
     tree = parse_xml(xml_bytes)
@@ -206,21 +238,10 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, dict[str, _StyleSpec]]:
     used: dict[str, _StyleSpec] = {}
     for first, last, instruction in reversed(fields):
         field_paragraphs = paragraphs[first : last + 1]
-        if _LIST.search(instruction) and not _OUTLINE.search(instruction):
-            replacements = [entry for entry in (_entry_paragraph(paragraph) for paragraph in field_paragraphs) if entry is not None]
-            if replacements:
-                used[ENTRY_STYLE] = _StyleSpec(ENTRY_STYLE)
-            if replacements:
-                # Word updates the field and keeps the paragraph which ends it as an empty line, in Normal
-                replacements.append(ET.Element(_w("p")))
-        elif not _whole_outline(instruction):
+        replacements = _replacements(instruction, field_paragraphs, used)
+        if replacements is None:
             # The entries Word stored in the field stay as they are
             continue
-        else:
-            style_id = f"{CONTENTS_STYLE}{_depth(instruction)}"
-            # Word fills the field with its entries and keeps the paragraph which ends it as an empty line
-            replacements = [_marker_paragraph(style_id), ET.Element(_w("p"))]
-            used[style_id] = _StyleSpec(style_id)
         position = list(body).index(field_paragraphs[0])
         for paragraph in field_paragraphs:
             body.remove(paragraph)
