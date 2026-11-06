@@ -108,7 +108,7 @@ local function break_tex(marker)
     pending_page_setup = setup
   end
   -- The braces end the command: text can follow right after the break.
-  return pandoc.RawInline("latex", before .. "\\clearpage{}")
+  return before .. "\\clearpage{}"
 end
 
 local function note_text()
@@ -117,7 +117,7 @@ local function note_text()
 end
 
 -- The Str with each sentinel replaced by what `place` adds to the result for
--- its break. pandoc merges the sentinel run with the text next to it, so it
+-- its marker. pandoc merges the sentinel run with the text next to it, so it
 -- can stand anywhere in a Str.
 local function split_str(str, place)
   local text = str.text
@@ -137,14 +137,14 @@ local function split_str(str, place)
     if not first then
       return result
     end
-    place(result, break_tex(marker))
+    place(result, marker)
     position = last + 1
   end
 end
 
 local function expand(str)
-  return split_str(str, function(result, tex)
-    result[#result + 1] = tex
+  return split_str(str, function(result, marker)
+    result[#result + 1] = pandoc.RawInline("latex", break_tex(marker))
   end)
 end
 
@@ -185,28 +185,35 @@ local function with_breaks(block)
   return block
 end
 
--- Add the heading to `out`, with its breaks before and after it.
+local function add_breaks(markers, out)
+  for _, marker in ipairs(markers) do
+    out[#out + 1] = pandoc.RawBlock("latex", break_tex(marker))
+  end
+end
+
+-- Add the heading to `out`, with its breaks before and after it. The text is
+-- read first and the breaks written after, so on_empty_page follows the order
+-- of the output: the text after a break moved behind the heading stands before it.
 local function add_heading(header, out)
-  local after = {}
+  local leading, trailing = {}, {}
+  local was_on_empty_page = on_empty_page
   heading_has_text = false
   header = header:walk({
     Str = function(str)
-      return split_str(str, function(_, tex)
-        local block = pandoc.RawBlock("latex", tex.text)
-        if heading_has_text then
-          after[#after + 1] = block
-        else
-          out[#out + 1] = block
-        end
+      return split_str(str, function(_, marker)
+        local markers = heading_has_text and trailing or leading
+        markers[#markers + 1] = marker
       end)
     end,
   })
-  if not holds_only_breaks(header.content) then
+  on_empty_page = was_on_empty_page
+  add_breaks(leading, out)
+  local had_breaks = #leading + #trailing > 0
+  if not had_breaks or not holds_only_breaks(header.content) then
     out[#out + 1] = header
+    on_empty_page = false
   end
-  for _, block in ipairs(after) do
-    out[#out + 1] = block
-  end
+  add_breaks(trailing, out)
 end
 
 local function add_block(block, out)

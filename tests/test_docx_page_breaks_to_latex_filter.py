@@ -144,6 +144,25 @@ def test_page_break_in_the_middle_of_a_heading_goes_after_it(test_parameters: Te
     assert flat.endswith("\\clearpage{}"), flat
 
 
+def test_break_after_a_heading_with_a_moved_break_keeps_its_empty_page(test_parameters: TestParameters):
+    """The text after the moved break stands before it in the output, so the page after it is empty."""
+    native = f'[ Header 1 ( "" , [] , [] ) [ {_str(f"Title{PAGE_BREAK}tail")} ], Para [ {_str(PAGE_BREAK)} ], Para [ Str "after" ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.endswith("\\clearpage{} \\null\\clearpage{} after"), flat
+
+
+def test_second_break_moved_behind_a_heading_keeps_its_empty_page(test_parameters: TestParameters):
+    native = f'[ Header 1 ( "" , [] , [] ) [ {_str(f"Title{PAGE_BREAK}mid{PAGE_BREAK}tail")} ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.endswith("\\clearpage{} \\null\\clearpage{}"), flat
+
+
+def test_break_before_a_heading_on_an_empty_page_keeps_it(test_parameters: TestParameters):
+    native = f'[ Para [ Str "before" ], Para [ {_str(PAGE_BREAK)} ], Header 1 ( "" , [] , [] ) [ {_str(f"{PAGE_BREAK}Title")} ] ]'
+    flat = _native_to_latex(test_parameters.container, native)
+    assert flat.startswith("before \\clearpage{} \\null\\clearpage{} \\section{Title}"), flat
+
+
 def test_page_break_inside_a_span_of_a_heading_leaves_it(test_parameters: TestParameters):
     native = f'[ Header 1 ( "" , [] , [] ) [ Span ( "" , [] , [] ) [ Str "Title", {_str(PAGE_BREAK)} ] ] ]'
     flat = _native_to_latex(test_parameters.container, native)
