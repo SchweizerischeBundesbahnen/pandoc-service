@@ -145,6 +145,45 @@ def _cell_options(styles: Element) -> list[str]:
     return options
 
 
+def _font_options(font: str | None) -> list[str]:
+    """The font of the body, and the math font when it is installed."""
+    options: list[str] = []
+    if font is not None:
+        # Word kerns no text unless a style turns kerning on, which pandoc's template does not, never
+        # shrinks a space to fit one more word on the line, as TeX does,
+        # nor turns a straight quote of the text into a curly one, nor sets the ligatures of TeX and the font
+        options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
+        options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
+    if MATH_FONT in installed_families():
+        options += ["-V", f"mathfont={MATH_FONT}"]
+    return options
+
+
+def _size_options(chain: list[Element], styles: Element, font: str | None, numbering: Element | None, document: Element | None) -> list[str]:
+    """The size and the line of the body text, and the bullets of its lists, when the styles give a size."""
+    size = _half_points(chain, styles)
+    if size is None:
+        return []
+    # The class sets the sizes of its footnotes and the like from the nearest size it knows
+    nearest = min(LATEX_FONT_SIZES, key=lambda points: abs(points - size / 2))
+    options = ["-V", f"fontsize={nearest}pt", *_body_line(chain, styles, size / 2, font)]
+    bullets = _bullet_ascents(numbering, document, size / 2)
+    if any(bullets):
+        options += ["-M", "docx-list-bullet-ascents=" + ",".join(f"{ascent:g}" for ascent in bullets)]
+    return options
+
+
+def _link_options(styles: Element, theme: Element | None) -> list[str]:
+    """The colour of the links, from the Hyperlink style."""
+    link_chain = _style_chain(styles, "Hyperlink", fallback=None)
+    link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
+    if link_color is None:
+        return []
+    # The template sets hyperref up after the preamble of the filters, which defines pdcLink
+    options = ["-M", f"docx-link-color={link_color}", "-V", "colorlinks=true"]
+    return options + [item for kind in ("link", "url", "file", "cite") for item in ("-V", f"{kind}color={LINK_COLOR_NAME}")]
+
+
 def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
@@ -161,25 +200,8 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     numbering = parse_xml(parts[NUMBERING_PART]) if NUMBERING_PART in parts else None
 
     chain = _style_chain(styles, BODY_STYLE)
-    options: list[str] = []
     font = _font(chain, styles, theme)
-    if font is not None:
-        # Word kerns no text unless a style turns kerning on, which pandoc's template does not, never
-        # shrinks a space to fit one more word on the line, as TeX does,
-        # nor turns a straight quote of the text into a curly one, nor sets the ligatures of TeX and the font
-        options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
-        options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
-    if MATH_FONT in installed_families():
-        options += ["-V", f"mathfont={MATH_FONT}"]
-    size = _half_points(chain, styles)
-    if size is not None:
-        # The class sets the sizes of its footnotes and the like from the nearest size it knows
-        nearest = min(LATEX_FONT_SIZES, key=lambda points: abs(points - size / 2))
-        options += ["-V", f"fontsize={nearest}pt"]
-        options += _body_line(chain, styles, size / 2, font)
-        bullets = _bullet_ascents(numbering, document, size / 2)
-        if any(bullets):
-            options += ["-M", "docx-list-bullet-ascents=" + ",".join(f"{ascent:g}" for ascent in bullets)]
+    options = _font_options(font) + _size_options(chain, styles, font, numbering, document)
     indents = _list_indents(numbering, document)
     if indents:
         options += ["-M", "docx-list-indents=" + ",".join(f"{left:g}:{hanging:g}" for left, hanging in indents)]
@@ -192,12 +214,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
     options += _cell_options(styles)
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
-    link_chain = _style_chain(styles, "Hyperlink", fallback=None)
-    link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
-    if link_color is not None:
-        # The template sets hyperref up after the preamble of the filters, which defines pdcLink
-        options += ["-M", f"docx-link-color={link_color}", "-V", "colorlinks=true"]
-        options += [item for kind in ("link", "url", "file", "cite") for item in ("-V", f"{kind}color={LINK_COLOR_NAME}")]
+    options += _link_options(styles, theme)
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
     for style_id in DISPLAY_STYLES:
@@ -466,24 +483,22 @@ def _list_indents(numbering: Element | None, document: Element | None) -> list[t
     return indents
 
 
-def _heading_number(chain: list[Element], styles: Element, numbering: Element | None) -> dict[str, str]:
-    """The number the numbering of a heading style gives it: its text, each level in its format, and its hanging indent.
-
-    The text names the level of each part as ``{level:format}``, the format one of LaTeX's counter commands.
-    Empty for a style without numbering, or with a format or text this cannot set.
-    """
+def _heading_level(chain: list[Element], styles: Element, numbering: Element | None) -> tuple[dict[str, Element], Element] | None:
+    """The levels of the numbering of a heading style and the level it takes, or None without numbering."""
     num_pr = _first(chain, styles, "pPr", "numPr")
-    num_id = num_pr.find(_w("numId")) if num_pr is not None and numbering is not None else None
-    if num_id is None or numbering is None:
-        return {}
-    level_index = num_pr.find(_w("ilvl")) if num_pr is not None else None
+    num_id = num_pr.find(_w("numId")) if num_pr is not None else None
+    if num_pr is None or num_id is None or numbering is None:
+        return None
+    level_index = num_pr.find(_w("ilvl"))
     levels = _number_levels(numbering, num_id.get(_w("val"), ""))
     level = levels.get(level_index.get(_w("val"), "0") if level_index is not None else "0")
-    text = level.find(_w("lvlText")) if level is not None else None
-    if level is None or text is None or not _NUMBER_TEXT.match(text.get(_w("val"), "")):
-        return {}
+    return (levels, level) if level is not None else None
+
+
+def _number_text(text: str, levels: dict[str, Element]) -> str | None:
+    """The text of a number with each level as ``{level:format}``, or None for a format LaTeX has no counter for."""
     parts = []
-    for match in re.finditer(r"%([1-9])|[^%]+", text.get(_w("val"), "")):
+    for match in re.finditer(r"%([1-9])|[^%]+", text):
         if match.group(1) is None:
             parts.append(match.group(0))
             continue
@@ -491,17 +506,37 @@ def _heading_number(chain: list[Element], styles: Element, numbering: Element | 
         number_format = number_format.find(_w("numFmt")) if number_format is not None else None
         latex = NUMBER_FORMATS.get(number_format.get(_w("val"), "") if number_format is not None else "")
         if latex is None:
-            return {}
+            return None
         parts.append(f"{{{match.group(1)}:{latex}}}")
+    return "".join(parts)
+
+
+def _heading_number(chain: list[Element], styles: Element, numbering: Element | None) -> dict[str, str]:
+    """The number the numbering of a heading style gives it: its text, each level in its format, and its hanging indent.
+
+    The text names the level of each part as ``{level:format}``, the format one of LaTeX's counter commands.
+    Empty for a style without numbering, or with a format or text this cannot set.
+    """
+    found = _heading_level(chain, styles, numbering)
+    if found is None:
+        return {}
+    levels, level = found
+    text = level.find(_w("lvlText"))
+    if text is None or not _NUMBER_TEXT.match(text.get(_w("val"), "")):
+        return {}
+    number = _number_text(text.get(_w("val"), ""), levels)
+    if number is None:
+        return {}
     indent = level.find(f"{_w('pPr')}/{_w('ind')}")
     hanging = whole_number(indent.get(_w("hanging"), "0") if indent is not None else "0") or 0
-    return {"number": "".join(parts), "numberhang": f"{hanging / TWIPS_PER_POINT:g}"}
+    return {"number": number, "numberhang": f"{hanging / TWIPS_PER_POINT:g}"}
 
 
 def _hhea(family: str) -> tuple[float, float] | None:
     """The ascent and the single line of a family as shares of its size, from its hhea table; None when unreadable."""
     try:
-        result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607 - fc-match of the image, given an installed family as one argument
+        # fc-match of the image, given an installed family as one argument
+        result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607
         from fontTools.ttLib import TTFont  # noqa: PLC0415 - only a document in an installed font needs it
 
         font = TTFont(result.stdout.strip(), lazy=True, fontNumber=0)
@@ -559,7 +594,11 @@ def _theme_colors(theme: Element | None) -> dict[str, str]:
         name = slot.tag.removeprefix(f"{{{A_NS}}}")
         rgb = slot.find(f"{{{A_NS}}}srgbClr")
         system = slot.find(f"{{{A_NS}}}sysClr")
-        value = rgb.get("val", "") if rgb is not None else system.get("lastClr", "") if system is not None else ""
+        value = ""
+        if rgb is not None:
+            value = rgb.get("val", "")
+        elif system is not None:
+            value = system.get("lastClr", "")
         if HEX_COLOR.fullmatch(value):
             colors[name] = value.upper()
     return colors
