@@ -284,6 +284,22 @@ local RUN_CONTAINERS = {
   Superscript = true, Subscript = true, Link = true, Quoted = true,
 }
 
+-- How far a line of the font and the size of a run reaches above and below the baseline, as Word sets it; nil
+-- for a font without metrics.
+local function run_metrics(props)
+  if body_line == nil or body_size == nil then
+    return nil
+  end
+  local size = props.sz and tonumber(props.sz) / 2 or body_size
+  local font = props.font_hex and run_fonts[props.font_hex]
+  if props.font_hex and font == nil then
+    return nil
+  end
+  local ascent = font and font.ascent * size or body_line.ascent * size / body_size
+  local line = font and font.line * size or (body_line.ascent + body_line.descent) * size / body_size
+  return ascent, line - ascent
+end
+
 -- The font and the size of a run, as one key.
 local function run_key(inline)
   local name = inline.t == "Span" and inline.attributes["custom-style"]
@@ -321,14 +337,11 @@ local function run_line(para)
   if key == nil or mixed then
     return nil
   end
-  local size = props.sz and tonumber(props.sz) / 2 or body_size
-  local font = props.font_hex and run_fonts[props.font_hex]
-  local ascent = font and font.ascent * size or body_line.ascent * size / body_size
-  local line = font and font.line * size or (body_line.ascent + body_line.descent) * size / body_size
-  if math.abs(ascent - body_line.ascent) < 0.01 and math.abs(line - body_line.ascent - body_line.descent) < 0.01 then
+  local ascent, descent = run_metrics(props)
+  if ascent == nil or (math.abs(ascent - body_line.ascent) < 0.01 and math.abs(descent - body_line.descent) < 0.01) then
     return nil
   end
-  return string.format("{\\pdcParLine{%.4fbp}{%.4fbp}{%.4fbp}", line * body_line.multiple, ascent, line - ascent)
+  return string.format("{\\pdcParLine{%.4fbp}{%.4fbp}{%.4fbp}", (ascent + descent) * body_line.multiple, ascent, descent)
 end
 
 local function mark_run_line(para)
@@ -446,6 +459,15 @@ function filter.Span(el)
   if size_open then
     open = open .. size_open
     close = "}" .. close
+  end
+  -- A highlight box and its leaders take the strut: of the font of the run, where \\selectfont would set
+  -- one of LaTeX, 0.7 and 0.3 of the line, deeper than the font of Word
+  local ascent, descent = nil, nil
+  if props.font or size_open then
+    ascent, descent = run_metrics(props)
+  end
+  if ascent then
+    open = open .. string.format("\\setbox\\strutbox\\hbox{\\vrule height %.4fbp depth %.4fbp width 0pt}", ascent, descent)
   end
 
   -- Outer: foreground color. \textcolor is a directive (no box, no padding, no

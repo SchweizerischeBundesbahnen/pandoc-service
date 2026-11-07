@@ -358,3 +358,10 @@ def test_a_paragraph_of_runs_inside_formatting_gets_the_line_of_their_font(test_
     style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
     latex = _run_line_latex(test_parameters.container, f'*[one]{{custom-style="{style}"}}* **[two]{{custom-style="{style}"}}**')
     assert latex.startswith("{\\pdcParLine{12.8040bp}"), latex
+
+
+def test_a_run_in_another_font_and_size_gets_the_strut_of_that_font(test_parameters: TestParameters):
+    """\\selectfont would set LaTeX's strut, 0.7 and 0.3 of the line: a highlight box of it reaches deeper than Word's."""
+    style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
+    latex = _run_line_latex(test_parameters.container, f'plain [run]{{custom-style="{style}"}}')
+    assert "\\selectfont \\setbox\\strutbox\\hbox{\\vrule height 10.2080bp depth 2.5960bp width 0pt}" in latex, latex
