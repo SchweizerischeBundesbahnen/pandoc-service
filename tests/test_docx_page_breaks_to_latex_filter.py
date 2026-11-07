@@ -86,7 +86,7 @@ def test_section_break_sets_the_page(test_parameters: TestParameters):
     native = f'[ Para [ Str "before" ], Para [ {_str(LANDSCAPE)} ] ]'
     flat = _native_to_latex(test_parameters.container, native)
     assert "\\clearpage{} \\pdfpagewidth=11.6931in\\pdfpageheight=8.2681in" in flat
-    assert "\\newgeometry{layoutwidth=11.6931in,layoutheight=8.2681in,top=1.0000in,right=1.0000in,bottom=1.0000in,left=1.0000in}" in flat
+    assert "\\newgeometry{layoutwidth=11.6931in,layoutheight=8.2681in,top=1.0000in,right=1.0000in,bottom=1.0000in,left=1.0000in}\\ifdefined\\pdcPageDepth\\pdcPageDepth\\fi" in flat
 
 
 def test_page_setup_of_a_section_break_goes_after_the_div(test_parameters: TestParameters):

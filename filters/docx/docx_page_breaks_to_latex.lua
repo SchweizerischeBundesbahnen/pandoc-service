@@ -100,7 +100,9 @@ local function page_geometry(numbers)
   -- \newgeometry leaves the paper alone and measures the layout, so it gets both sizes.
   local width, height = inches(w), inches(h)
   return string.format(
-    "\\pdfpagewidth=%s\\pdfpageheight=%s\\paperwidth=%s\\paperheight=%s\\newgeometry{layoutwidth=%s,layoutheight=%s,top=%s,right=%s,bottom=%s,left=%s}",
+    "\\pdfpagewidth=%s\\pdfpageheight=%s\\paperwidth=%s\\paperheight=%s\\newgeometry{layoutwidth=%s,layoutheight=%s,top=%s,right=%s,bottom=%s,left=%s}"
+      -- The text of the new page ends where the descent of its last line reaches the bottom margin
+      .. "\\ifdefined\\pdcPageDepth\\pdcPageDepth\\fi",
     width, height, width, height, width, height, inches(top), inches(right), inches(bottom), inches(left)
   )
 end

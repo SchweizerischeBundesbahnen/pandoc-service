@@ -650,3 +650,11 @@ def test_every_line_a_break_ends_reaches_the_descent_of_the_font(test_parameters
     native = '[Para [Str "Not", Space, Str "resized:", LineBreak, Strong [Str "bold", LineBreak], Str "end"]]'
     body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
     assert "resized:\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body
+
+
+def test_a_page_ends_where_the_descent_of_its_last_line_reaches_the_margin(test_parameters: TestParameters):
+    """Word keeps the whole last line of a page above the bottom margin, TeX its baseline: the text is less high."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4")
+    preamble = _preamble(_latex(test_parameters.container, *metadata))
+    assert "\\newcommand{\\pdcPageDepth}{\\global\\advance\\textheight by -3.4bp\\relax" in preamble
+    assert "\\AddToHook{begindocument/end}{\\pdcPageDepth}" in preamble

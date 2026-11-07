@@ -222,6 +222,14 @@ local function body_preamble(meta, lines)
       lines[#lines + 1] = "\\AtBeginDocument{\\setbox0\\hbox{\\normalfont x\\bfseries x\\itshape x\\normalfont\\itshape x}}"
       -- Word sets the first line of a page as far down as the ascent of its font
       lines[#lines + 1] = string.format("\\setlength{\\topskip}{%gbp}", baseline - descent)
+      -- Word ends a page where the descent of its last line reaches the bottom margin, TeX where its
+      -- baseline does: the text is that much less high, from the start and after a section changes the page
+      lines[#lines + 1] = string.format(
+        "\\makeatletter\\newcommand{\\pdcPageDepth}{\\global\\advance\\textheight by -%gbp\\relax"
+          .. "\\global\\@colht\\textheight\\global\\@colroom\\textheight\\global\\vsize\\textheight}\\makeatother",
+        descent
+      )
+      lines[#lines + 1] = "\\AddToHook{begindocument/end}{\\pdcPageDepth}"
       -- A table starts below the descent of the line before it, which TeX takes from its letters
       lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
       -- longtable leaves the depth of its last row below the line, not in \\prevdepth: the line after it
