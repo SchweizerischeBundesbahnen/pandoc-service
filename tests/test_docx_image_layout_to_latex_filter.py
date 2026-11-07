@@ -37,13 +37,11 @@ def _image(title: str) -> str:
 @pytest.mark.parametrize(
     ("title", "expected"),
     [
-        pytest.param("{{PICLAYOUT:-6|0|19050}}", "a\\raisebox{-3pt}{" + GRAPHIC + "}\\ifdefined\\pdcLineGap\\rule[-\\dimexpr3pt+\\pdcLineGap\\relax]{0pt}{0pt}\\fi \\kern1.5pt\\relax b", id="shift-and-gap"),
+        pytest.param("{{PICLAYOUT:-6|0|19050}}", "a\\raisebox{-3pt}{" + GRAPHIC + "}\\kern1.5pt\\relax b", id="shift-and-gap"),
         pytest.param("{{PICLAYOUT:4|12700|0}}", "a\\kern1pt\\relax \\raisebox{2pt}{" + GRAPHIC + "}b", id="raise-and-left-gap"),
         pytest.param("{{PICLAYOUT:0|0|0}}", "a" + GRAPHIC + "b", id="nothing-to-do"),
         # %g would write these as 1e+04 and 7.874e-05, which TeX cannot read
-        pytest.param(
-            "{{PICLAYOUT:-40000|1|127000000}}", "a\\kern0pt\\relax \\raisebox{-16000pt}{" + GRAPHIC + "}\\ifdefined\\pdcLineGap\\rule[-\\dimexpr16000pt+\\pdcLineGap\\relax]{0pt}{0pt}\\fi \\kern10000pt\\relax b", id="extreme-values"
-        ),
+        pytest.param("{{PICLAYOUT:-40000|1|127000000}}", "a\\kern0pt\\relax \\raisebox{-16000pt}{" + GRAPHIC + "}\\kern10000pt\\relax b", id="extreme-values"),
     ],
 )
 def test_marker_sets_the_picture_in_raisebox_and_kern(test_parameters: TestParameters, title: str, expected: str):

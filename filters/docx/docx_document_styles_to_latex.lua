@@ -19,7 +19,6 @@
 --   docx-table-plain-cell-space  the same for a cell paragraph without a
 --                             style, of the Normal style
 --   docx-table-cell-margin    the left and right margin of a table cell
---   docx-body-line-gap        the line gap of the font of the body, when it has one
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
 --   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
@@ -49,7 +48,6 @@ local LIST_INDENTS = "docx-list-indents"
 local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
-local LINE_GAP = "docx-body-line-gap"
 local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
 
@@ -229,11 +227,6 @@ local function body_preamble(meta, lines)
       -- of it wherever it breaks, from the start and after a section changes the page
       lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcPageDepth}{\\global\\maxdepth=\\z@\\global\\@maxdepth=\\z@}\\makeatother"
       lines[#lines + 1] = "\\AddToHook{begindocument/end}{\\pdcPageDepth}"
-      -- The line gap of the font, which Word adds below a picture lowered below the descent of the font
-      local gap = points(meta[LINE_GAP])
-      if gap then
-        lines[#lines + 1] = string.format("\\newcommand{\\pdcLineGap}{%gbp}", gap)
-      end
       -- A table starts below the descent of the line before it, which TeX takes from its letters
       lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
       -- longtable leaves the depth of its last row below the line, not in \\prevdepth: the line after it
@@ -978,7 +971,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == LINE_GAP or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

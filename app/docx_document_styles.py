@@ -110,14 +110,11 @@ def _body_line(chain: list[Element], styles: Element, size: float, font: str | N
     if multiple is not None:
         # A line of a run in another font is as many times as high as that font's
         options += ["-M", f"docx-body-line-multiple={multiple:.4g}"]
-    ascent = ascent_ratio(font)
-    if ascent is not None:
+    top = top_ratio(font)
+    if top is not None:
         # The balloon of a comment starts at the top of its line, the line to it at the bottom
-        descent = line_ratio(font) - ascent
-        options += ["-M", f"docx-body-ascent={size * ascent:.4g}", "-M", f"docx-body-descent={size * descent:.4g}"]
-        if gap_ratio(font) > 0:
-            # A picture lowered below the descent of the font takes the line gap below it as well
-            options += ["-M", f"docx-body-line-gap={size * gap_ratio(font):.4g}"]
+        descent = line_ratio(font) - top
+        options += ["-M", f"docx-body-ascent={size * top:.4g}", "-M", f"docx-body-descent={size * descent:.4g}"]
     return options
 
 
@@ -249,9 +246,9 @@ def _run_font_options(document: Element | None) -> list[str]:
     metrics = []
     families = {family for family in (installed_family(name) for name in names) if family is not None}
     for family in sorted(families):
-        ascent = ascent_ratio(family)
-        if ascent is not None:
-            metrics.append(f"{family.encode().hex().upper()}:{ascent:.4f}:{line_ratio(family):.4f}")
+        top = top_ratio(family)
+        if top is not None:
+            metrics.append(f"{family.encode().hex().upper()}:{top:.4f}:{line_ratio(family):.4f}")
     return ["-M", "docx-run-fonts=" + ",".join(metrics)] if metrics else []
 
 
@@ -438,9 +435,9 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, number
     if size is not None:
         fields["size"] = f"{size / 2:g}"
         fields["line"] = f"{_baseline(chain, styles, size / 2, font):.4g}"
-        ascent = ascent_ratio(font)
-        if ascent is not None:
-            fields["ascent"] = f"{size / 2 * ascent:.4g}"
+        top = top_ratio(font)
+        if top is not None:
+            fields["ascent"] = f"{size / 2 * top:.4g}"
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
     color = word_color(_first(chain, styles, "rPr", "color"), theme)
@@ -491,7 +488,7 @@ def _bullet_ascents(numbering: Element | None, document: Element | None, size: f
     for index in range(4):
         fonts = levels[str(index)].find(f"{_w('rPr')}/{_w('rFonts')}") if str(index) in levels else None
         family = fonts.get(_w("ascii")) if fonts is not None else None
-        ratio = ascent_ratio(installed_family(family))
+        ratio = top_ratio(installed_family(family))
         if ratio is None and family is not None:
             ratio = BULLET_ASCENTS.get(family.strip().casefold())
         ascents.append(round(size * ratio, 2) if ratio is not None else 0)
@@ -609,9 +606,19 @@ def ascent_ratio(family: str | None) -> float | None:
 
 @functools.cache
 def gap_ratio(family: str | None) -> float:
-    """The hhea line gap of a family as a share of its size: Word adds it below the deepest thing of a line."""
+    """The hhea line gap of a family as a share of its size."""
     metrics = _hhea(family) if family is not None else None
     return metrics[2] if metrics is not None else 0
+
+
+def top_ratio(family: str | None) -> float | None:
+    """How far above the baseline a line of a family reaches, as a share of its size; None without the metrics.
+
+    Word puts the line gap of a font above its ascent: a line is as high as the highest ascent and line gap of
+    its fonts, and as deep as the deepest descent, a bullet in Symbol and a lowered picture among them.
+    """
+    ascent = ascent_ratio(family)
+    return ascent + gap_ratio(family) if ascent is not None else None
 
 
 def _line_multiple(chain: list[Element], styles: Element) -> float | None:

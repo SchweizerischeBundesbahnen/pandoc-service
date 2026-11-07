@@ -342,22 +342,20 @@ def test_the_body_size_is_in_points_and_its_line_comes_from_its_font(font_metric
 
 def test_the_body_gets_where_its_line_starts_and_ends(font_metrics):
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
-    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("10.8", "4.2")
+    # The line gap of the font above the ascent, as Word puts it
+    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("12", "3")
 
 
-def test_the_body_gets_the_line_gap_of_its_font(font_metrics):
-    """Word adds the line gap below the deepest thing of a line: a picture lowered below the descent of the font."""
-    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-line-gap"] == "1.2"
-
-
-def test_a_font_without_a_line_gap_passes_none(monkeypatch: pytest.MonkeyPatch, tmp_path):
+def test_a_font_without_a_line_gap_reaches_as_high_as_its_ascent(monkeypatch: pytest.MonkeyPatch, tmp_path):
     file = _font_file(tmp_path, 900, -250, 0)
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
     docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
-    assert "docx-body-line-gap" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("10.8", "3")
     assert docx_document_styles.gap_ratio(None) == 0
+    assert docx_document_styles.top_ratio(None) is None
 
 
 def test_a_body_font_without_metrics_gets_no_ascent():
@@ -380,7 +378,7 @@ def test_a_heading_gets_the_line_of_its_size(font_metrics):
 
 
 def test_a_heading_gets_the_ascent_of_its_font(font_metrics):
-    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "18"
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "20"
 
 
 def test_a_font_without_metrics_gets_no_ascent(monkeypatch: pytest.MonkeyPatch):
@@ -523,7 +521,7 @@ LIST_ITEM = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:num
 def test_a_bullet_reaches_as_high_as_its_font_in_the_list_of_the_document(font_metrics):
     """Word sets the line of an item as high as the bullet's font: the first level of the list the document uses."""
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets()))
-    assert options["docx-list-bullet-ascents"] == "10.8,0,0,0"
+    assert options["docx-list-bullet-ascents"] == "12,0,0,0"
 
 
 @pytest.mark.parametrize(("font", "ascents"), [("Symbol", "12.06,0,0,0"), ("wingdings", "10.79,0,0,0")])
@@ -580,7 +578,7 @@ RUN_IN_A_FONT = '<w:p><w:r><w:rPr><w:rFonts w:ascii="minor serif"/></w:rPr><w:t>
 def test_the_fonts_of_the_runs_come_with_their_line(font_metrics):
     """By the hex of the name of the family, as docx_color_pre_process names it; a font the container lacks is left out."""
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=RUN_IN_A_FONT))
-    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":0.9000:1.2500"
+    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":1.0000:1.2500"
 
 
 def test_a_document_without_fonts_of_runs_passes_none():
