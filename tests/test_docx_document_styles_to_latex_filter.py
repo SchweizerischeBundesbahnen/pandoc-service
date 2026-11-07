@@ -671,10 +671,10 @@ def test_every_line_a_break_ends_reaches_the_descent_of_the_font(test_parameters
 
 
 def test_a_page_ends_where_the_descent_of_its_last_line_reaches_the_margin(test_parameters: TestParameters):
-    """Word keeps the whole last line of a page above the bottom margin, TeX its baseline: the text is less high."""
+    """Word keeps the whole last line of a page above the bottom margin: TeX counts its whole depth, also at a penalty."""
     metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4")
     preamble = _preamble(_latex(test_parameters.container, *metadata))
-    assert "\\newcommand{\\pdcPageDepth}{\\global\\advance\\textheight by -3.4bp\\relax" in preamble
+    assert "\\newcommand{\\pdcPageDepth}{\\global\\maxdepth=\\z@\\global\\@maxdepth=\\z@}" in preamble
     assert "\\AddToHook{begindocument/end}{\\pdcPageDepth}" in preamble
 
 

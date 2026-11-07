@@ -224,13 +224,10 @@ local function body_preamble(meta, lines)
       lines[#lines + 1] = "\\AtBeginDocument{\\setbox0\\hbox{\\normalfont x\\bfseries x\\itshape x\\normalfont\\itshape x}}"
       -- Word sets the first line of a page as far down as the ascent of its font
       lines[#lines + 1] = string.format("\\setlength{\\topskip}{%gbp}", baseline - descent)
-      -- Word ends a page where the descent of its last line reaches the bottom margin, TeX where its
-      -- baseline does: the text is that much less high, from the start and after a section changes the page
-      lines[#lines + 1] = string.format(
-        "\\makeatletter\\newcommand{\\pdcPageDepth}{\\global\\advance\\textheight by -%gbp\\relax"
-          .. "\\global\\@colht\\textheight\\global\\@colroom\\textheight\\global\\vsize\\textheight}\\makeatother",
-        descent
-      )
+      -- Word ends a page where the depth of its last line reaches the bottom margin. TeX counts that depth
+      -- only up to \\maxdepth where it breaks at a penalty, as after an item of a list: none, so it counts all
+      -- of it wherever it breaks, from the start and after a section changes the page
+      lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcPageDepth}{\\global\\maxdepth=\\z@\\global\\@maxdepth=\\z@}\\makeatother"
       lines[#lines + 1] = "\\AddToHook{begindocument/end}{\\pdcPageDepth}"
       -- The line gap of the font, which Word adds below a picture lowered below the descent of the font
       local gap = points(meta[LINE_GAP])
