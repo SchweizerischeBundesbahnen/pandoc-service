@@ -252,6 +252,29 @@ local PREAMBLE = table.concat({
 -- The line and the strut of a paragraph of runs in another font than the body's, see run_line
 local PAR_LINE = "\\newcommand{\\pdcParLine}[3]{\\baselineskip=#1\\relax\\setbox\\strutbox\\hbox{\\vrule height #2 depth #3 width 0pt}}"
 
+-- A superscript and a subscript as Word sets them in the font around them, see script_ratios of
+-- app/docx_document_styles.py: \pdcScriptFont takes the size of a script, the raise and the drop of the font,
+-- its ascent, at least an em, and its descent, as shares of its size. A script is that size, rounded to a half
+-- point, its ascent meets the ascent of the text and its descent the descent, never further off the baseline than
+-- the font asks for. A font without the metrics, Latin Modern among them, keeps the scripts of LaTeX.
+local SCRIPTS = table.concat({
+  "\\makeatletter",
+  "\\newcommand{\\pdcScriptFont}[5]{\\def\\pdc@script{{#1}{#2}{#3}{#4}{#5}}}",
+  "\\newcommand{\\pdcNoScriptFont}{\\let\\pdc@script\\@undefined}",
+  "\\def\\pdc@scriptsize#1{\\dimexpr\\numexpr\\dimexpr#1\\dimexpr\\f@size pt\\relax\\relax/32768\\relax sp*32768\\relax}",
+  -- #1 the size, #2 the most the font allows, #3 the share of the rest of the size, #4 \raise or \lower
+  "\\def\\pdc@shift#1#2#3#4#5{\\begingroup\\dimen@=\\pdc@scriptsize{#1}\\dimen\\tw@=#2\\dimexpr\\f@size pt\\relax"
+    .. "\\dimen4=#3\\dimexpr\\dimexpr\\f@size pt\\relax-\\dimen@\\relax\\ifdim\\dimen4<\\dimen\\tw@\\dimen\\tw@=\\dimen4 \\fi"
+    .. "#4\\dimen\\tw@\\hbox{\\fontsize{\\dimen@}{\\z@}\\selectfont #5}\\endgroup}",
+  "\\def\\pdc@super#1#2#3#4#5#6{\\pdc@shift{#1}{#2}{#4}\\raise{#6}}",
+  "\\def\\pdc@sub#1#2#3#4#5#6{\\pdc@shift{#1}{#3}{#5}\\lower{#6}}",
+  "\\let\\pdc@oldsuper\\@textsuperscript",
+  "\\let\\pdc@oldsub\\@textsubscript",
+  "\\def\\@textsuperscript#1{\\ifdefined\\pdc@script\\expandafter\\pdc@super\\pdc@script{#1}\\else\\pdc@oldsuper{#1}\\fi}",
+  "\\def\\@textsubscript#1{\\ifdefined\\pdc@script\\expandafter\\pdc@sub\\pdc@script{#1}\\else\\pdc@oldsub{#1}\\fi}",
+  "\\makeatother",
+}, "\n")
+
 local RUN_STRUT = "\\newcommand{\\pdcRunStrut}{\\begingroup\\XeTeXuseglyphmetrics=0 \\setbox0\\hbox{x}"
   .. "\\rule[-\\dp0]{0pt}{\\dimexpr\\ht0+\\dp0\\relax}\\endgroup}"
 
@@ -259,6 +282,19 @@ local RUN_STRUT = "\\newcommand{\\pdcRunStrut}{\\begingroup\\XeTeXuseglyphmetric
 -- font, and the line of the body: see app/docx_document_styles.py
 local run_fonts = {}
 local body_line = nil
+-- The script ratios of the font of the body, as the arguments of \pdcScriptFont
+local body_script = nil
+
+local SCRIPT_FIELDS = "^:([%d.]+):([%d.]+):([%d.]+):([%d.]+):([%d.]+)$"
+
+-- The script ratios of five numbers apart by colons as the arguments of \pdcScriptFont; nil for anything else.
+local function script_arguments(field)
+  local ratios = { field:match(SCRIPT_FIELDS) }
+  if #ratios ~= 5 then
+    return nil
+  end
+  return "{" .. table.concat(ratios, "}{") .. "}"
+end
 
 local function number(meta, key)
   return tonumber(pandoc.utils.stringify(meta[key] or ""))
@@ -267,11 +303,12 @@ end
 local function read_body_size(meta)
   body_size = number(meta, "docx-body-size")
   for entry in pandoc.utils.stringify(meta["docx-run-fonts"] or ""):gmatch("[^,]+") do
-    local hex, ascent, line = entry:match("^(%x+):([%d.]+):([%d.]+)$")
+    local hex, ascent, line, script = entry:match("^(%x+):([%d.]+):([%d.]+)(.*)$")
     if hex then
-      run_fonts[hex:upper()] = { ascent = tonumber(ascent), line = tonumber(line) }
+      run_fonts[hex:upper()] = { ascent = tonumber(ascent), line = tonumber(line), script = script_arguments(script) }
     end
   end
+  body_script = script_arguments(":" .. pandoc.utils.stringify(meta["docx-body-script"] or ""))
   local ascent, descent, multiple = number(meta, "docx-body-ascent"), number(meta, "docx-body-descent"), number(meta, "docx-body-line-multiple")
   if body_size and ascent and descent and multiple then
     body_line = { ascent = ascent, descent = descent, multiple = multiple }
@@ -374,7 +411,8 @@ function filter.Meta(meta)
   if not FORMAT:match("latex") then
     return nil
   end
-  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE .. "\n" .. RUN_STRUT .. "\n" .. PAR_LINE) })
+  local scripts = SCRIPTS .. (body_script and ("\n\\pdcScriptFont" .. body_script) or "")
+  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE .. "\n" .. scripts .. "\n" .. RUN_STRUT .. "\n" .. PAR_LINE) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ soul_block })
@@ -463,7 +501,9 @@ function filter.Span(el)
 
   -- Outermost of all: the family of the run, unkerned as Word sets it.
   if props.font then
-    open = open .. "{\\fontspec{" .. props.font .. "}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]"
+    local font = props.font_hex and run_fonts[props.font_hex]
+    local script = font and font.script and ("\\pdcScriptFont" .. font.script) or "\\pdcNoScriptFont{}"
+    open = open .. "{\\fontspec{" .. props.font .. "}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]" .. script
     close = "}" .. close
   end
 
