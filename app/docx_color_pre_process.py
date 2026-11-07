@@ -295,8 +295,10 @@ def _own_style_props(style: ET.Element, theme: ET.Element | None = None) -> _Sty
     if rpr is None:
         return _StyleProps(code=code)
     fg, bg, highlight = _extract_run_colors(rpr)[:3]
-    if fg and theme is not None:
-        fg = docx_document_styles.word_color(rpr.find(_COLOR_TAG), theme) or fg
+    color = rpr.find(_COLOR_TAG)
+    if theme is not None and color is not None and color.get(f"{{{W_NS}}}themeColor"):
+        # A theme colour is the colour, also beside auto
+        fg = docx_document_styles.word_color(color, theme) or fg
     return _StyleProps(
         fg or ("" if rpr.find(_COLOR_TAG) is not None else None),
         bg or ("" if rpr.find(_SHD_TAG) is not None else None),

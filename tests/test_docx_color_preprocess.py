@@ -697,3 +697,9 @@ def test_character_style_colors_take_the_theme_colour_as_word_does():
     styles = _styles_xml(_char_style("Hyperlink", '<w:color w:val="4F81BD" w:themeColor="accent1"/>'))
     assert docx_color_pre_process.character_style_colors(styles, THEME_XML) == {"Hyperlink": docx_color_pre_process.StyleColors("156082", None, None)}
     assert docx_color_pre_process.character_style_colors(styles) == {"Hyperlink": docx_color_pre_process.StyleColors("4F81BD", None, None)}
+
+
+def test_a_theme_colour_beside_auto_is_the_colour_of_the_style():
+    """auto beside a theme colour clears nothing: Word draws the theme colour."""
+    styles = _styles_xml(_char_style("Hyperlink", '<w:color w:val="auto" w:themeColor="accent1"/>'))
+    assert docx_color_pre_process.character_style_colors(styles, THEME_XML) == {"Hyperlink": docx_color_pre_process.StyleColors("156082", None, None)}
