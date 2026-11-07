@@ -365,3 +365,9 @@ def test_a_run_in_another_font_and_size_gets_the_strut_of_that_font(test_paramet
     style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
     latex = _run_line_latex(test_parameters.container, f'plain [run]{{custom-style="{style}"}}')
     assert "\\selectfont \\setbox\\strutbox\\hbox{\\vrule height 10.2080bp depth 2.5960bp width 0pt}" in latex, latex
+
+
+def test_a_run_in_another_font_without_a_size_gets_the_strut_of_the_size_around_it(test_parameters: TestParameters):
+    """A heading sets the size of a run without one of its own: the strut follows it, not the body size."""
+    latex = _run_line_latex(test_parameters.container, f'# plain [run]{{custom-style="{_font_style("Segoe UI")}"}}')
+    assert "\\setbox\\strutbox\\hbox{\\vrule height 0.9280\\dimexpr\\csname f@size\\endcsname pt\\relax depth 0.2360\\dimexpr\\csname f@size\\endcsname pt\\relax width 0pt}" in latex, latex

@@ -461,13 +461,21 @@ function filter.Span(el)
     close = "}" .. close
   end
   -- A highlight box and its leaders take the strut: of the font of the run, where \\selectfont would set
-  -- one of LaTeX, 0.7 and 0.3 of the line, deeper than the font of Word
-  local ascent, descent = nil, nil
-  if props.font or size_open then
-    ascent, descent = run_metrics(props)
+  -- one of LaTeX, 0.7 and 0.3 of the line, deeper than the font of Word. A run without a size of its own
+  -- takes the size around it, which only TeX knows: a heading, for one.
+  local strut = nil
+  if props.sz then
+    local ascent, descent = run_metrics(props)
+    if ascent then
+      strut = string.format("height %.4fbp depth %.4fbp", ascent, descent)
+    end
+  elseif props.font_hex and run_fonts[props.font_hex] then
+    local font = run_fonts[props.font_hex]
+    strut = string.format("height %.4f\\dimexpr\\csname f@size\\endcsname pt\\relax depth %.4f\\dimexpr\\csname f@size\\endcsname pt\\relax",
+      font.ascent, font.line - font.ascent)
   end
-  if ascent then
-    open = open .. string.format("\\setbox\\strutbox\\hbox{\\vrule height %.4fbp depth %.4fbp width 0pt}", ascent, descent)
+  if strut then
+    open = open .. "\\setbox\\strutbox\\hbox{\\vrule " .. strut .. " width 0pt}"
   end
 
   -- Outer: foreground color. \textcolor is a directive (no box, no padding, no
