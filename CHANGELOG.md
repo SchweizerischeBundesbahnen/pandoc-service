@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.15.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.14.2...v2.15.0) (2026-11-07)
+
+
+### Features
+
+* lay out DOCX to PDF closer to Word ([#343](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/343)) ([005b7f0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/005b7f019d3fff0f7271a5f71afea930896a7840)), closes [#339](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/339)
+* lay out DOCX to PDF pages as Word does ([#333](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/333)) ([c840105](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c840105f188e1b5de552065f98382cb90e6293ec))
+
+
+### Bug Fixes
+
+* break a table row between the lines of its cells ([#344](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/344)) ([5d002dd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5d002ddfcc4bf1a68837cbb430931fa1cd18a285)), closes [#339](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/339)
+* break the page before a paragraph with pageBreakBefore ([#336](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/336)) ([e7d4bc2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e7d4bc21d7e2d053876e4c659d2201db2659e361)), closes [#335](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/335)
+* **deps:** update dependency tox to v4.67.8 ([bd7e735](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/bd7e7359967b7a85f433ddf30e72816142c3105f))
+* **deps:** update dependency tox-uv to v1.37.4 ([2b7d3b3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2b7d3b305598d0877091c361ca096fc8901b8e98))
+* **deps:** update dependency ty to v0.0.96 ([3a7fead](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3a7fead81be448bcb4a34bb48ef4f8aa2c9e471a))
+* run spaces, equation lines and rows of line breaks as Word sets them ([#345](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/345)) ([e0a5f61](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e0a5f61fee2c618cc1841452b1b8a4cbcfad2ab7)), closes [#339](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/339)
+
 ## [2.14.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.14.1...v2.14.2) (2026-11-06)
 
 
