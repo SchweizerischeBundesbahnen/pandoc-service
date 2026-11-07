@@ -98,7 +98,8 @@ def difference_image(reference: Image.Image, converted: Image.Image, regions: Pa
 
 
 def compare_documents(reference_pdf: Path, converted_pdf: Path | None, difference_target: Path | None = None, prefix: str = "") -> list[PageRegions]:
-    """Compare every page of the reference with the page of the conversion of its number; a page the conversion lacks matches nothing.
+    """Compare each page of the reference with the page of the conversion of its number, through the longer of the two:
+    a page one of them lacks is blank there and matches nothing.
 
     With DIFFERENCE_TARGET, each page also gets its difference image there, as PREFIX-N.webp.
     """
@@ -106,9 +107,12 @@ def compare_documents(reference_pdf: Path, converted_pdf: Path | None, differenc
     converted = pdfium.PdfDocument(converted_pdf) if converted_pdf is not None and converted_pdf.exists() else None
     pages = []
     try:
-        for number in range(len(reference)):
-            reference_image = render(reference[number])
-            converted_image = render(converted[number]) if converted is not None and number < len(converted) else Image.new("L", reference_image.size, 255)
+        for number in range(max(len(reference), len(converted) if converted is not None else 0)):
+            reference_image = render(reference[number]) if number < len(reference) else None
+            converted_image = render(converted[number]) if converted is not None and number < len(converted) else None
+            size = (reference_image or converted_image).size  # ty: ignore[unresolved-attribute]
+            reference_image = reference_image or Image.new("L", size, 255)
+            converted_image = converted_image or Image.new("L", size, 255)
             regions = compare_masks(ink(reference_image), ink(converted_image))
             pages.append(regions)
             if difference_target is not None:

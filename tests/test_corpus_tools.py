@@ -197,3 +197,14 @@ def test_fewer_regions_matched_got_worse(baseline: Path):
     corpus.write_baseline(_result(10, 0.5), "image")
     assert corpus.regressions(_result(10, 0.5, regions_matched=49), "image") == []
     assert corpus.regressions(_result(10, 0.5, regions_matched=45), "image") == ["doc: 90.0% regions matched, was 100.0%"]
+
+
+def test_a_page_the_reference_lacks_matches_nothing(tmp_path: Path):
+    from tools.corpus import regions
+
+    one, more = REFERENCE / "test_alignment.pdf", REFERENCE / "test_fit_to_page.pdf"
+    pages = regions.compare_documents(one, more, tmp_path, "doc")
+    assert len(pages) > 1
+    assert all(page.matched == 0 for page in pages[1:])
+    assert sum(page.inked for page in pages[1:]) > 0
+    assert (tmp_path / f"doc-{len(pages)}.webp").exists()

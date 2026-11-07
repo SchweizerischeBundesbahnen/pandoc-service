@@ -273,7 +273,7 @@ def page(out: Path, reference: str, docx: Path = DOCX) -> Path:
         reference_pages, sizes = _render(REFERENCES / reference / f"{name}.pdf", site / "reference", name)
         converted_pages = _render(converted, site / "converted", name)[0] if converted.exists() else []
         regions.compare_documents(REFERENCES / reference / f"{name}.pdf", converted if converted.exists() else None, site / "difference", name)
-        difference_pages = [f"{name}-{number + 1}.webp" for number in range(len(reference_pages))]
+        difference_pages = [f"{name}-{number + 1}.webp" for number in range(max(len(reference_pages), len(converted_pages)))]
         documents.append({"name": name, **document, "reference_pages": reference_pages, "converted_pages": converted_pages, "difference_pages": difference_pages, "sizes": sizes})
     data = {"reference": reference, "total": result["total"], "baseline": {variant: stored["total"] for variant, stored in baseline.items()}, "scale": SCALE, "shifted": SHIFTED, "documents": documents}
     template = PAGE_TEMPLATE.read_text()
