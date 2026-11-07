@@ -84,6 +84,12 @@ def test_empty_line_is_kept(test_parameters: TestParameters):
     assert _paragraphs(test_parameters, "<p>text</p><p><br/></p><p>more</p>") == [("text", 0), ("", 0), ("more", 0)]
 
 
+def test_an_empty_line_in_a_styled_span_is_kept(test_parameters: TestParameters):
+    """The span is empty without its break, and a later filter drops it: the paragraph must not go with it."""
+    paragraphs = _paragraphs(test_parameters, '<p>text</p><p><span style="font-size:24pt"><br/></span></p><p>more</p>')
+    assert paragraphs == [("text", 0), ("", 0), ("more", 0)]
+
+
 def test_two_empty_lines_keep_one_break(test_parameters: TestParameters):
     assert _paragraphs(test_parameters, "<p>text</p><p><br/><br/></p><p>more</p>") == [("text", 0), ("", 1), ("more", 0)]
 

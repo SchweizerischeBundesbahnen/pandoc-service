@@ -143,6 +143,19 @@ local function strip(block)
   return block
 end
 
+-- True when `inlines` holds a line break or names an anchor, at any depth: a bookmark keeps its paragraph.
+local function shows_a_line(inlines)
+  for _, inline in ipairs(inlines) do
+    if inline.t == "LineBreak" then
+      return true
+    end
+    if INLINE_CONTAINERS[inline.t] and ((inline.identifier or "") ~= "" or shows_a_line(inline.content)) then
+      return true
+    end
+  end
+  return false
+end
+
 -- A paragraph of the body of breaks alone, also inside a Div, loses one of them: an empty one becomes
 -- an empty paragraph. A list item or a cell keeps them: as an empty paragraph it would lose its marker.
 local function strip_empty_lines(blocks)
@@ -152,7 +165,8 @@ local function strip_empty_lines(blocks)
       block.content = strip_empty_lines(block.content)
     elseif (block.t == "Para" or block.t == "Plain") and not has_content(block.content) and not has_image(block.content) then
       local content = block.content
-      if strip_trailing_break(content) and #content == 0 then
+      -- Empty also when an empty container is left, a styled span, which a later filter drops
+      if strip_trailing_break(content) and not shows_a_line(content) then
         block = pandoc.RawBlock("openxml", EMPTY_PARAGRAPH)
       else
         block.content = content
