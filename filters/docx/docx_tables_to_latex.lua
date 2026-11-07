@@ -695,6 +695,25 @@ end
 
 local ROW_END = "\\pdcGridRowEnd"
 
+-- A vertical line of a grid. Word draws it on the edge between two cells and
+-- gives it no width, so the text of a cell stands where it would without it.
+local GRID_V = "!{\\pdcGridV}"
+-- The color of a cell ends half a line short of the edge, so the line of the
+-- next cell is not painted over.
+local GRID_PREAMBLE = table.concat({
+  "\\makeatletter",
+  "\\providecommand{\\pdcGridV}{\\kern-.5\\arrayrulewidth{\\ifdefined\\CT@arc@\\CT@arc@\\fi\\vrule\\@width\\arrayrulewidth}\\kern-.5\\arrayrulewidth}",
+  "\\newif\\ifpdcGrid",
+  "\\AtBeginDocument{\\ifdefined\\CT@setup\\let\\pdc@CTsetup\\CT@setup",
+  "\\def\\CT@setup{\\pdc@CTsetup\\ifpdcGrid\\advance\\@tempdimb-.5\\arrayrulewidth\\advance\\@tempdimc-.5\\arrayrulewidth\\fi}\\fi}",
+  -- A horizontal line reaches over the vertical lines at its ends, as Word draws it
+  "\\def\\pdc@hl{\\ifpdcGrid\\kern-.5\\arrayrulewidth\\fi}",
+  "\\def\\pdc@rule{\\pdc@hl\\CT@arc@\\leaders\\hrule\\@height\\arrayrulewidth\\hfill\\pdc@hl}",
+  "\\def\\pdc@extend#1{\\patchcmd#1{\\CT@arc@\\leaders\\hrule\\@height\\arrayrulewidth\\hfill}{\\pdc@rule}{\\pdc@extend#1}{}}",
+  "\\AtBeginDocument{\\ifdefined\\CT@arc@\\pdc@extend\\LT@@hline\\pdc@extend\\@cline\\fi}",
+  "\\makeatother",
+}, "\n")
+
 -- The index of the brace which closes the one at `open`.
 local function closing_brace(s, open)
   local depth = 0
@@ -746,7 +765,7 @@ local function grid_columns(spec)
       i = stop + 1
     end
   end
-  return "|" .. table.concat(columns, "|") .. "|"
+  return GRID_V .. table.concat(columns, GRID_V) .. GRID_V
 end
 
 -- A \multicolumn replaces the lines of the columns it spans: it gets its own.
@@ -760,7 +779,9 @@ local function grid_multicolumns(latex)
     end
     local first = not latex:sub(1, start - 1):match("&%s*$")
     result[#result + 1] = latex:sub(position, finish)
-    result[#result + 1] = (first and "|" or "") .. latex:sub(finish + 1, close - 1) .. "|}"
+    -- Its own lines take the place of the edges pandoc's writer gives a cell at the side of the table
+    local spec = latex:sub(finish + 1, close - 1):gsub("^@{}", ""):gsub("@{}$", "")
+    result[#result + 1] = (first and GRID_V or "") .. spec .. GRID_V .. "}"
     position = close + 1
   end
   result[#result + 1] = latex:sub(position)
@@ -1077,7 +1098,7 @@ function table_pass.Table(tbl)
     -- The lines of the cells in their colour and width, the table out to the cell margin as Word sets it
     has_cellcolor = true
     has_grid = true
-    before[#before + 1] = string.format("\\begingroup\\def\\toprule{\\hline}\\def\\midrule{}\\def\\bottomrule{}\\setlength{\\arrayrulewidth}{%gpt}\\arrayrulecolor[HTML]{%s}", layout.lw, layout.lc)
+    before[#before + 1] = string.format("\\begingroup\\pdcGridtrue\\def\\toprule{\\hline}\\def\\midrule{}\\def\\bottomrule{}\\setlength{\\arrayrulewidth}{%gpt}\\arrayrulecolor[HTML]{%s}", layout.lw, layout.lc)
     if layout.ta == nil or layout.ta == "left" then
       before[#before + 1] = "\\setlength{\\LTleft}{-\\tabcolsep}\\setlength{\\LTright}{\\fill}"
       layout.ta = nil
@@ -1173,9 +1194,10 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_cellcolor or has_align or has_split or has_cell_picture or has_wrap) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap) then return meta end
 
   local parts = {}
+  if has_grid then parts[#parts + 1] = GRID_PREAMBLE end
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end
   if has_wrap then

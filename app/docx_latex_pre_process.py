@@ -27,6 +27,7 @@ from . import (
     docx_image_layout_pre_process,
     docx_list_level_pre_process,
     docx_math_color_pre_process,
+    docx_math_style_pre_process,
     docx_page_break_pre_process,
     docx_page_geometry,
     docx_paragraph_pre_process,
@@ -81,6 +82,10 @@ def _rewrite_body_part(
         xml, changed = rewritten, True
     rewritten, table_changed = docx_table_pre_process.rewrite_part(xml, text_width_twips, bordered_styles)
     if table_changed:
+        xml, changed = rewritten, True
+    # Before the color rewrite, whose markers then hold the style markers
+    rewritten, math_style_changed = docx_math_style_pre_process.rewrite_part(xml)
+    if math_style_changed:
         xml, changed = rewritten, True
     rewritten, math_color_changed = docx_math_color_pre_process.rewrite_part(xml)
     if math_color_changed:
