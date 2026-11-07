@@ -10,6 +10,8 @@ from __future__ import annotations
 import io
 import shlex
 
+import pypdfium2 as pdfium
+import pytest
 from docx import Document
 from docx.shared import Pt
 from pypdf import PdfReader
@@ -333,10 +335,24 @@ def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameter
     assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}" in body, body
 
 
+def _numerator_top(container, equation: str) -> float:
+    """Where the first character of the PDF of a display equation stands, from the top of the page."""
+    native = f'[Para [Str "Text"], Para [Math DisplayMath "{equation}"]]'
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/cancel.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 --pdf-engine=tectonic -o /tmp/test/cancel.pdf /tmp/test/cancel.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/cancel.pdf"])
+    page = pdfium.PdfDocument(pdf)[0]
+    text = page.get_textpage()
+    return page.get_height() - text.get_charbox(text.get_text_range().index("5"))[3]
+
+
 def test_a_cancelled_term_is_as_high_as_its_box(test_parameters: TestParameters):
-    """Word strikes it out within its box: the slash of cancel.sty reaches a point beyond it."""
-    latex = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "a^{2}"]]')
-    assert "\\ht\\tw@\\ht\\@tempboxa\\dp\\tw@\\dp\\@tempboxa" in _preamble(latex)
+    """Word strikes it out within its box: the slash of cancel.sty reaches a point beyond it, which set the fraction higher."""
+    cancelled = _numerator_top(test_parameters.container, "\\\\frac{\\\\cancel{5}}{3}")
+    plain = _numerator_top(test_parameters.container, "\\\\frac{5}{3}")
+    assert cancelled == pytest.approx(plain, abs=0.05)
 
 
 def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
