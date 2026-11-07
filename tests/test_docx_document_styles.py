@@ -85,6 +85,8 @@ def test_sets_pandoc_template_like_word():
         "docx-page-numbers": "false",
         "docx-table-plain-cell-space": "10",
         "docx-paragraph-spacing": "Normal:Normal:0:10",
+        "docx-math-top": "1.006",
+        "docx-math-descent": "0.194",
     }
 
 

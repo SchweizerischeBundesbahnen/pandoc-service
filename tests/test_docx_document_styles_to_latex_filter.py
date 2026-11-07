@@ -326,6 +326,13 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
 
 
+def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameters: TestParameters):
+    """Word sets E=mc² on the line of Cambria Math, and the next line right below its descent: not a line of the body."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.381", "docx-math-top=0.9502", "docx-math-descent=0.2222")
+    body = " ".join(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "a^{2}"]]').split("\\begin{document}")[1].split())
+    assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}" in body, body
+
+
 def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,color:0F4761,number:{1:arabic},numberhang:21.6"))
     assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\color[HTML]{0F4761}\\makebox[21.6pt][l]{\\thesection}}{0pt}{\\color[HTML]{0F4761}}" in preamble

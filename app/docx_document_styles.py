@@ -50,6 +50,9 @@ A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False 
 
 # The font Word sets the equations (OMML) of every document in.
 MATH_FONT = "Cambria Math"
+# The top of the line, ascent and line gap, and the descent of Latin Modern Math, which pandoc's template sets an
+# equation in without the font of Word: tectonic reads it from its bundle, which fontconfig does not see
+LATIN_MODERN_MATH_LINE = (1.006, 0.194)
 # The open families the image has in place of fonts of Word, each as wide and as high as the font it stands for:
 # fonts/metric_fonts.py makes the Metric families, the others are metric compatible as they come
 SUBSTITUTES = {
@@ -170,8 +173,14 @@ def _font_options(font: str | None) -> list[str]:
         # nor turns a straight quote of the text into a curly one, nor sets the ligatures of TeX and the font
         options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
         options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
+    top, descent = LATIN_MODERN_MATH_LINE
     if MATH_FONT in installed_families():
         options += ["-V", f"mathfont={MATH_FONT}"]
+        math_top = top_ratio(MATH_FONT)
+        if math_top is not None:
+            top, descent = math_top, line_ratio(MATH_FONT) - math_top
+    # Word sets a line of an equation as high and as deep as the line of its font, at the least
+    options += ["-M", f"docx-math-top={top:.4g}", "-M", f"docx-math-descent={descent:.4g}"]
     return options
 
 

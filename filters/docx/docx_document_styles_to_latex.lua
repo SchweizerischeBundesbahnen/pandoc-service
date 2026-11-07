@@ -351,6 +351,8 @@ end
 
 local body_descent = nil
 local body_size, body_baseline = nil, nil
+-- The top and the descent of a line of the font of the equations, as shares of its size
+local math_top, math_descent = nil, nil
 local body_ascent = nil
 local body_skip = 0
 
@@ -569,7 +571,14 @@ local function display_equation(math)
     -- The rows of an array that far apart whatever they hold, and the array as high as its first row and
     -- as deep as its last: see EQUATION_ARRAY. Word sets the line of an equation that much above it.
     open = open .. "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{"
-    close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}\\usebox{\\pdcEquationBox}\\par}", EQUATION_TOP * body_size)
+    local line = ""
+    if math_top and math_descent and body_descent then
+      -- At the least as high and as deep as the line of the font of the equations, and the next line right below
+      -- its depth: the line skip of the body would set it a line of the body below
+      line = string.format("\\rule[-%gbp]{0pt}{%gbp}", math_descent * body_size, (math_top + math_descent) * body_size)
+    end
+    close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}%s\\usebox{\\pdcEquationBox}\\par%s}",
+      EQUATION_TOP * body_size, line, line ~= "" and "\\prevdepth\\dp\\strutbox" or "")
   end
   return pandoc.Plain({
     pandoc.RawInline("latex", open),
@@ -891,6 +900,7 @@ local function read_title(meta)
   body_descent = points(meta[DESCENT])
   body_ascent = points(meta["docx-body-ascent"])
   body_size, body_baseline = points(meta[SIZE]), points(meta[BASELINE])
+  math_top, math_descent = points(meta["docx-math-top"]), points(meta["docx-math-descent"])
   body_skip = skip or 0
   for entry in pandoc.utils.stringify(meta[PARAGRAPH_SPACING] or ""):gmatch("[^;]+") do
     local id, name, before, after = entry:match("^(%w+):([%w ]+):([%d.]+):([%d.]+)$")
