@@ -41,8 +41,8 @@ local STRIP_PATTERN = OPEN .. ".-" .. CLOSE
 local RULES = {
   none = "\\def\\toprule{}\\def\\midrule{}\\def\\bottomrule{}",
   -- The line under the header row as Word draws a border of the default width: 2 eighths of a point,
-  -- over the rows rather than between them
-  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}",
+  -- over the rows rather than between them, and as wide as the table, as longtable draws \\hline
+  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt}\\multispan{\\csname LT@cols\\endcsname}\\leaders\\hrule height 0.25pt\\hfill\\cr\\noalign{\\kern-0.125pt}}",
   grid = false,
 }
 

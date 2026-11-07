@@ -296,7 +296,7 @@ def test_the_colour_of_a_cell_leaves_the_vertical_line_whole(test_parameters: Te
 def test_the_line_under_a_header_row_is_the_border_of_word_over_the_rows(test_parameters: TestParameters):
     """Word draws a border of the default width, 2 eighths of a point, and the rows keep their pitch."""
     latex = _latex(test_parameters.container, "rl=head")
-    assert "\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}" in latex
+    assert "\\def\\midrule{\\noalign{\\kern-0.125pt}\\multispan{\\csname LT@cols\\endcsname}\\leaders\\hrule height 0.25pt\\hfill\\cr\\noalign{\\kern-0.125pt}}" in latex, "as wide as the table, not the line"
 
 
 def test_a_coloured_cell_merged_down_with_line_breaks_stays_one_cell(test_parameters: TestParameters):
