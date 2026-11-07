@@ -770,3 +770,62 @@ def test_white_lines_are_no_grid():
 def test_the_width_of_a_line_has_bounds():
     assert _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('w:sz="6"', 'w:sz="0"'))}</w:tr></w:tbl>")["lw"] == "0.25"
     assert _first_cell_kv(f"<w:tbl><w:tr>{_grid_cell(GRID_BORDERS.replace('w:sz="6"', 'w:sz="x"'))}</w:tr></w:tbl>")["lw"] == "0.5"
+
+
+def _bordered_table(rows: list[list[str]], table_borders: str) -> bytes:
+    """A table of the given rows of cells, each the inside of a <w:tc>, with the table's borders."""
+    body = "".join("<w:tr>" + "".join(f"<w:tc>{cell}</w:tc>" for cell in row) + "</w:tr>" for row in rows)
+    grid = "".join('<w:gridCol w:w="2000"/>' for _ in rows[0])
+    return (f'<w:document xmlns:w="{W_NS}"><w:body><w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblBorders>{table_borders}</w:tblBorders></w:tblPr><w:tblGrid>{grid}</w:tblGrid>{body}</w:tbl></w:body></w:document>').encode()
+
+
+def _sides(eighths: int = 4, color: str = "000000", style: str = "single") -> str:
+    return "".join(f'<w:{side} w:val="{style}" w:sz="{eighths}" w:space="0" w:color="{color}"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+
+
+def _cell_borders(xml: bytes) -> list[str | None]:
+    out, _ = docx_table_pre_process.rewrite_part(xml, 9000)
+    texts = [t.text or "" for t in ET.fromstring(out).iter(f"{{{W_NS}}}t")]
+    found = []
+    for text in texts:
+        if text.startswith(SENTINEL_OPEN):
+            payload = text[len(SENTINEL_OPEN) : text.index(SENTINEL_CLOSE)]
+            found.append(dict(item.split("=", 1) for item in payload.split(";")).get("bd"))
+    return found
+
+
+def _para(text: str) -> str:
+    return f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"
+
+
+def test_a_grid_of_one_line_names_no_sides_of_its_cells():
+    xml = _bordered_table([[_para("a"), _para("b")], [_para("c"), _para("d")]], _sides())
+    assert not any(_cell_borders(xml)), "the color and width of the table say it all"
+
+
+def test_a_cell_with_borders_of_its_own_names_the_sides_of_every_cell():
+    own = '<w:tcPr><w:tcBorders><w:bottom w:val="double" w:sz="12" w:space="0" w:color="CC0000"/></w:tcBorders></w:tcPr>'
+    xml = _bordered_table([[own + _para("a"), _para("b")], [_para("c"), _para("d")]], _sides(8, "999999"))
+    assert _cell_borders(xml) == [
+        "single.8.999999/single.8.999999/double.12.CC0000/single.8.999999",
+        "single.8.999999/single.8.999999/single.8.999999/single.8.999999",
+        "single.8.999999/single.8.999999/single.8.999999/single.8.999999",
+        "single.8.999999/single.8.999999/single.8.999999/single.8.999999",
+    ]
+
+
+def test_the_outer_and_the_inside_borders_of_a_table_meet_in_its_cells():
+    borders = (
+        '<w:top w:val="single" w:sz="12" w:color="000000"/><w:bottom w:val="single" w:sz="12" w:color="000000"/>'
+        '<w:left w:val="single" w:sz="12" w:color="000000"/><w:right w:val="single" w:sz="12" w:color="000000"/>'
+        '<w:insideH w:val="dotted" w:sz="4" w:color="FF0000"/><w:insideV w:val="dashed" w:sz="4" w:color="00FF00"/>'
+    )
+    xml = _bordered_table([[_para("a"), _para("b")]], borders)
+    assert _cell_borders(xml) == ["single.12.000000/dashed.4.00FF00/single.12.000000/single.12.000000", "single.12.000000/single.12.000000/single.12.000000/dashed.4.00FF00"]
+
+
+def test_a_cell_merged_down_takes_its_bottom_from_its_last_row():
+    restart = '<w:tcPr><w:vMerge w:val="restart"/></w:tcPr>'
+    last = '<w:tcPr><w:vMerge/><w:tcBorders><w:bottom w:val="single" w:sz="24" w:color="0000FF"/></w:tcBorders></w:tcPr>'
+    xml = _bordered_table([[restart + _para("a"), _para("b")], [last + _para(""), _para("d")]], _sides())
+    assert _cell_borders(xml)[0] == "single.4.000000/single.4.000000/single.24.0000FF/single.4.000000"

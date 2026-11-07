@@ -85,8 +85,8 @@ def _grid_table(*rows: list[str]) -> str:
 
 def test_a_grid_draws_a_line_around_every_cell(test_parameters: TestParameters):
     latex = _latex(test_parameters.container, GRID)
-    assert "\\begin{longtable}[]{!{\\pdcGridV}" in latex
-    assert latex.count("!{\\pdcGridV}") >= 3
+    assert "\\begin{longtable}[]{!{\\pdcGridV{}}" in latex
+    assert latex.count("!{\\pdcGridV{}}") >= 3
     assert "\\setlength{\\arrayrulewidth}{0.75pt}\\arrayrulecolor[HTML]{CCCCCC}" in latex
     assert "\\\\\\hline" in latex
     assert "pdcGridRowEnd" not in latex
@@ -104,7 +104,7 @@ def test_a_grid_with_a_picture_draws_its_lines_and_keeps_the_picture(test_parame
     """pandoc writes out the file of a picture, a GIF as PNG, only for an Image it sees: the picture stays one."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Image ("",[],[("width","0.2in")]) [] ("x.gif","")')])
     latex = _native_latex(test_parameters.container, native)
-    assert "\\begin{longtable}[]{!{\\pdcGridV}" in latex
+    assert "\\begin{longtable}[]{!{\\pdcGridV{}}" in latex
     assert "\\includegraphics[width=0.2in" in latex
     # The document after the filter, as the writer of LaTeX gets it
     dump = "function Pandoc(doc) io.stderr:write(pandoc.write(doc, 'native')) end"
@@ -237,8 +237,8 @@ def test_a_merged_cell_at_the_edge_of_a_table_keeps_its_margin_inside_its_lines(
     cell = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 2) [Plain [Str "{OPEN}{GRID};tw=1.0000{CLOSE}Title"]]'
     native = _grid_table([cell], [_cell('Str "a"'), _cell('Str "b"')])
     latex = _native_latex(test_parameters.container, native)
-    assert "\\multicolumn{2}{!{\\pdcGridV}>" in latex, latex
-    assert "-2\\tabcolsep\\relax}!{\\pdcGridV}}" in latex, latex
+    assert "\\multicolumn{2}{!{\\pdcGridV{}}>" in latex, latex
+    assert "-2\\tabcolsep\\relax}!{\\pdcGridV{}}}" in latex, latex
 
 
 def _bordered_pdf(test_parameters: TestParameters, eighths: int) -> bytes:
@@ -394,3 +394,71 @@ def test_a_row_under_a_cell_merged_down_stays_one_row(test_parameters: TestParam
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}merged"', rows=2), _cell('Str "a"')], [_cell('Str "b"')])
     latex = _native_latex(test_parameters.container, native)
     assert latex.count("\\pdcWrapBegin") == 0, latex
+
+
+def _bordered(sides: str) -> str:
+    return f"bd={sides}"
+
+
+def test_the_cells_of_a_grid_draw_lines_of_their_own(test_parameters: TestParameters):
+    """Word draws each side of a cell in its own style, width and color; a line between rows is as high as its widest piece."""
+    first = f'Str "{OPEN}{GRID};{_bordered("single.8.FF0000/single.8.000000/double.12.0000FF/single.8.000000")}{CLOSE}a"'
+    second = f'Str "{OPEN}{_bordered("single.8.FF0000/single.8.000000/dashed.8.00FF00/single.8.000000")}{CLOSE}b"'
+    third = f'Str "{OPEN}{_bordered("single.4.000000/single.8.000000/single.4.000000/single.8.000000")}{CLOSE}c"'
+    fourth = f'Str "{OPEN}{_bordered("single.4.000000/single.8.000000/single.4.000000/single.8.000000")}{CLOSE}d"'
+    latex = " ".join(_native_latex(test_parameters.container, _grid_table([_cell(first), _cell(second)], [_cell(third), _cell(fourth)])).split())
+    assert "\\begin{longtable}[]{!{\\pdcGridV{0}}" in latex, latex
+    assert "!{\\pdcGridV{2}}}" in latex, "the separators are numbered"
+    assert "\\pdcGVset{0}{1.0000}{000000}" in latex, "each row sets its vertical lines"
+    assert "{\\color[HTML]{FF0000}\\leaders\\hrule height1.0000pt" in latex, "the line over the table in the color of its cells"
+    assert "\\vrule height4.5000pt width0pt" in latex, "a double line of 1.5 points takes 4.5 points of height"
+    assert "{\\color[HTML]{0000FF}\\hrule height1.5000pt" in latex
+    assert "\\xleaders" in latex and "{\\color[HTML]{00FF00}\\hrule height1.0000pt width4.0000pt}" in latex, "a dashed line of 1 point: dashes of 4"
+    table = latex[latex.index("\\begin{longtable}") :]
+    assert "\\toprule" not in table and "\\hline" not in table, "the lines of the cells take the place of the rules"
+
+
+def test_a_merged_cell_of_a_grid_numbers_the_separators_of_its_columns(test_parameters: TestParameters):
+    sides = _bordered("single.8.000000/single.8.000000/single.8.000000/single.8.FF0000")
+    title = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 2) [Plain [Str "{OPEN}{GRID};{sides}{CLOSE}Title"]]'
+    native = _grid_table([title], [_cell(f'Str "{OPEN}{sides}{CLOSE}a"'), _cell(f'Str "{OPEN}{sides}{CLOSE}b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\multicolumn{2}{!{\\pdcGridV{0}}" in latex, latex
+    assert "!{\\pdcGridV{2}}}{" in latex, latex
+    assert "pdcFirstColumn" not in latex
+
+
+def _pdf_of(test_parameters: TestParameters, document: Document) -> bytes:
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text
+    return response.content
+
+
+def _two_rows(eighths: int) -> Document:
+    """A grid of two rows whose first row ends in a line of the width given in eighths of a point."""
+    document = Document()
+    table = document.add_table(rows=2, cols=1)
+    table.rows[0].cells[0].text = "Upper"
+    table.rows[1].cells[0].text = "Lower"
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    properties = table.rows[0].cells[0]._tc.get_or_add_tcPr()
+    properties.append(parse_xml(f'<w:tcBorders {nsdecls("w")}><w:bottom w:val="single" w:sz="{eighths}" w:space="0" w:color="FF0000"/></w:tcBorders>'))
+    return document
+
+
+def _top(pdf: bytes, text: str) -> float:
+    page = pdfium.PdfDocument(pdf)[0]
+    found = page.get_textpage().search(text, match_case=True).get_next()
+    assert found, text
+    return page.get_height() - page.get_textpage().get_charbox(found[0])[3]
+
+
+def test_a_wide_line_between_rows_adds_its_width_to_the_table(test_parameters: TestParameters):
+    """Word sets the row under a line of 6 points lower by the width of the line."""
+    thin, thick = _pdf_of(test_parameters, _two_rows(8)), _pdf_of(test_parameters, _two_rows(48))
+    assert abs(_top(thick, "Upper") - _top(thin, "Upper")) < 0.1
+    assert abs((_top(thick, "Lower") - _top(thin, "Lower")) - 5) < 0.3
