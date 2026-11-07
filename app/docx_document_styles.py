@@ -50,6 +50,18 @@ A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False 
 
 # The font Word sets the equations (OMML) of every document in.
 MATH_FONT = "Cambria Math"
+# The open families the image has in place of fonts of Word, each as wide and as high as the font it stands for:
+# fonts/metric_fonts.py makes the Metric families, the others are metric compatible as they come
+SUBSTITUTES = {
+    "aptos": "Metric Sans",
+    "aptos display": "Metric Sans Display",
+    "segoe ui": "Metric UI",
+    "georgia": "Metric Serif",
+    "calibri": "Carlito",
+    "arial": "Liberation Sans",
+    "times new roman": "Liberation Serif",
+    "courier new": "Liberation Mono",
+}
 # The style pandoc gives body paragraphs, then the styles it inherits from.
 BODY_STYLE = "BodyText"
 # The style pandoc gives the paragraphs of a table cell and of a tight list.
@@ -298,10 +310,10 @@ def _font(chain: list[Element], styles: Element, theme: Element | None) -> str |
     family = value if attribute == "ascii" else _theme_font(theme, value)
     if not family:
         return None
-    if family not in installed_families():
+    installed = installed_family(family)
+    if installed is None:
         logger.info("docx_document_styles: the font %r is not installed, keeping the LaTeX font", family)
-        return None
-    return family
+    return installed
 
 
 def _theme_font(theme: Element | None, slot: str | None) -> str | None:
@@ -327,12 +339,18 @@ def installed_families() -> frozenset[str]:
 def installed_family(name: str | None) -> str | None:
     """The installed family of a name, matched as fontconfig matches it, regardless of case; None without one.
 
-    A run of Polarion names its font as CSS does, in lower case: "segoe ui".
+    A run of Polarion names its font as CSS does, in lower case: "segoe ui". A font of Word the container
+    lacks gets its substitute, see SUBSTITUTES.
     """
     if not name:
         return None
     wanted = name.strip().casefold()
-    return next((family for family in sorted(installed_families()) if family.casefold() == wanted), None)
+    families = sorted(installed_families())
+    found = next((family for family in families if family.casefold() == wanted), None)
+    substitute = SUBSTITUTES.get(wanted)
+    if found is None and substitute in families:
+        return substitute
+    return found
 
 
 def _half_points(chain: list[Element], styles: Element) -> int | None:
@@ -445,7 +463,7 @@ def _bullet_ascents(numbering: Element | None, document: Element | None, size: f
     for index in range(4):
         fonts = levels[str(index)].find(f"{_w('rPr')}/{_w('rFonts')}") if str(index) in levels else None
         family = fonts.get(_w("ascii")) if fonts is not None else None
-        ratio = ascent_ratio(family) if family in installed_families() else None
+        ratio = ascent_ratio(installed_family(family))
         ascents.append(round(size * ratio, 2) if ratio is not None else 0)
     return ascents
 

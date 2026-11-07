@@ -100,6 +100,31 @@ def test_a_font_the_container_lacks_keeps_the_latex_font(installed: set[str]):
     assert "mainfont" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
 
 
+def test_a_word_font_the_container_lacks_takes_its_open_substitute(installed: set[str]):
+    installed.add("Metric Sans")
+    body = BODY_TEXT.replace("</w:pPr>", '</w:pPr><w:rPr><w:rFonts w:ascii="Aptos"/></w:rPr>')
+    assert _options(_docx(DEFAULTS + NORMAL + body))["mainfont"] == "Metric Sans"
+
+
+def test_the_word_font_goes_before_its_substitute(installed: set[str]):
+    installed.update({"Aptos", "Metric Sans"})
+    body = BODY_TEXT.replace("</w:pPr>", '</w:pPr><w:rPr><w:rFonts w:ascii="Aptos"/></w:rPr>')
+    assert _options(_docx(DEFAULTS + NORMAL + body))["mainfont"] == "Aptos"
+
+
+@pytest.mark.parametrize(
+    ("name", "substitute"),
+    [("segoe ui", "Metric UI"), ("Calibri", "Carlito"), ("Georgia", "Metric Serif"), ("Aptos Display", "Metric Sans Display"), ("Arial", "Liberation Sans")],
+)
+def test_a_font_a_run_names_takes_its_substitute(installed: set[str], name: str, substitute: str):
+    installed.add(substitute)
+    assert docx_document_styles.installed_family(name) == substitute
+
+
+def test_a_substitute_the_container_lacks_is_no_font(installed: set[str]):
+    assert docx_document_styles.installed_family("Aptos") is None
+
+
 def test_the_equations_take_cambria_math_when_it_is_installed(installed: set[str]):
     installed.add("Cambria Math")
     assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["mathfont"] == "Cambria Math"

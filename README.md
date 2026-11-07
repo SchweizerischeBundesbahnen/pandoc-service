@@ -161,11 +161,11 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | From the DOCX | In the PDF |
 |---|---|
 | `<w:pgSz>` and `<w:pgMar>` of the first section | the page size and margins of the first pages; US Letter with 1 inch margins without them |
-| the font of the Body Text style, else Normal, else the defaults, also as a theme font | the font of the body text, when the container has it |
+| the font of the Body Text style, else Normal, else the defaults, also as a theme font | the font of the body text, when the container has it or the font which stands for it, see below |
 | the font size and line spacing of that style | the size, and the line the font sets: its ascent, descent and line gap, as Word reads them; spaces neither shrink nor widen after a full stop, and neither the ligatures of TeX nor of the font; a line breaks after a hyphen as freely as after a space, and the full stop which ends a paragraph may stand in the margin; no line of a paragraph alone at the top or bottom of a page |
 | the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
 | `<w:jc>` of that style, and `<w:autoHyphenation>` | ragged right and unhyphenated, unless the style justifies and the document hyphenates |
-| `<w:rFonts>` of a run | the font of the run, when the container has it, matched regardless of case |
+| `<w:rFonts>` of a run | the font of the run, when the container has it or the font which stands for it, matched regardless of case |
 | the Title and Heading 1 to 9 styles | the font, size, colour, italics, alignment and space of the title and the headings, the title as far down the page as the ascent of its font and the next line below its descent, the number of a heading style with numbering, all nine levels of them, as Word has them; between two headings only their own space |
 | the Hyperlink style of the runs of a link, a theme colour as Word reads it | the colour of those runs; a link without it in the colour of its text |
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
@@ -181,8 +181,22 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | an equation (OMML) | in Cambria Math, when the container has it; an equation of its own paragraph as a centred line, without the empty line and the space TeX puts around a display |
 | a comment (`<w:commentReference>`) | a balloon "Commented [n]:" with its text in a grey area right of the text, with a dashed line from the commented text, on a page shrunk to make room for it, as Word for Mac prints it |
 
-The image has no Microsoft fonts. A document in a font the container lacks, Aptos or Calibri among them,
-keeps Latin Modern. Mount the fonts into `/usr/share/fonts` to use them:
+The image has no Microsoft fonts. It has open fonts which set text as wide and as high as these fonts of
+Word, so a line and a page break where Word breaks them:
+
+| Font of Word | Font of the image |
+|---|---|
+| Aptos, Aptos Display | Metric Sans, Metric Sans Display: Archivo |
+| Segoe UI | Metric UI: Selawik, its italics slanted |
+| Georgia | Metric Serif: Gelasio |
+| Calibri | Carlito |
+| Arial, Times New Roman, Courier New | Liberation Sans, Serif, Mono |
+
+The Metric fonts take the outlines of the open font and the width of each character and the line metrics
+of the font of Word. [`fonts/metric_fonts.py`](fonts/metric_fonts.py) makes them in the image build, under
+the SIL Open Font License of each open font; the licenses are in `/usr/local/share/fonts/metric`. A
+document in another font the container lacks keeps Latin Modern. Mount the fonts of Word into
+`/usr/share/fonts` to use them instead:
 
 ```bash
 docker run --detach --publish 9082:9082 --volume /path/to/fonts:/usr/share/fonts/truetype/custom:ro \

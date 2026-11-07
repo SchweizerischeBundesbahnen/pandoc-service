@@ -25,6 +25,7 @@ RUN apt-get update && \
     apt-get --yes --no-install-recommends install \
     curl \
     ca-certificates \
+    fonts-crosextra-carlito \
     fonts-dejavu \
     fonts-liberation \
     fonts-noto-cjk \
@@ -114,6 +115,31 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # set PYTHONPATH to the working dir.
 ENV PATH="${WORKING_DIR}/.venv/bin:$PATH" \
     PYTHONPATH=${WORKING_DIR}
+
+# Open fonts as wide and as high as the fonts of Word they stand for, which app/docx_document_styles.py maps
+# the fonts of Word to: fonts/metric_fonts.py makes them from the outlines of open fonts and the metrics of Word.
+# The open fonts and their licenses come from fixed commits, checked against fonts/sources.sha256.
+ARG GOOGLE_FONTS_COMMIT=86aced91de05cd4f96a06838124cca45be337b2b
+ARG SELAWIK_COMMIT=89362e84731d1f5777fa078fd4d5ebbd339e4378
+ARG SELAWIK_VERSION=1.01
+COPY fonts/metric_fonts.py fonts/word_metrics.json fonts/sources.sha256 /tmp/fonts/
+RUN google="https://raw.githubusercontent.com/google/fonts/${GOOGLE_FONTS_COMMIT}/ofl" && \
+    sources=/tmp/fonts/sources && \
+    mkdir -p "${sources}" && \
+    curl -fsSL -o "${sources}/Archivo[wdth,wght].ttf" "${google}/archivo/Archivo%5Bwdth,wght%5D.ttf" && \
+    curl -fsSL -o "${sources}/Archivo-Italic[wdth,wght].ttf" "${google}/archivo/Archivo-Italic%5Bwdth,wght%5D.ttf" && \
+    curl -fsSL -o "${sources}/Archivo-OFL.txt" "${google}/archivo/OFL.txt" && \
+    curl -fsSL -o "${sources}/Gelasio[wght].ttf" "${google}/gelasio/Gelasio%5Bwght%5D.ttf" && \
+    curl -fsSL -o "${sources}/Gelasio-Italic[wght].ttf" "${google}/gelasio/Gelasio-Italic%5Bwght%5D.ttf" && \
+    curl -fsSL -o "${sources}/Gelasio-OFL.txt" "${google}/gelasio/OFL.txt" && \
+    curl -fsSL -o "${sources}/Selawik_Release.zip" "https://github.com/microsoft/Selawik/releases/download/${SELAWIK_VERSION}/Selawik_Release.zip" && \
+    curl -fsSL -o "${sources}/Selawik-LICENSE.txt" "https://raw.githubusercontent.com/microsoft/Selawik/${SELAWIK_COMMIT}/LICENSE.txt" && \
+    sed "s|  |  ${sources}/|" /tmp/fonts/sources.sha256 > /tmp/fonts/sources.paths && \
+    sha256sum -c /tmp/fonts/sources.paths && \
+    python /tmp/fonts/metric_fonts.py build "${sources}" /tmp/fonts/word_metrics.json /usr/local/share/fonts/metric && \
+    cp "${sources}"/*.txt /usr/local/share/fonts/metric/ && \
+    fc-cache -f && \
+    rm -rf /tmp/fonts
 
 # rsvg-convert is weasysvg-convert, in a directory of its own, which pandoc gets first in PATH (app/svg_renderer.py)
 RUN mkdir -p /opt/weasysvg/bin && \

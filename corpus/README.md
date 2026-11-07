@@ -33,8 +33,8 @@ To make the Windows references:
 
 ## The two runs
 
-The documents use Aptos, Word's default font, which the image does not hold. Each reference
-therefore has two runs in `baseline.json`:
+The documents use Aptos, Word's default font, which the image does not hold: it sets them in Metric Sans,
+as wide and as high as Aptos. Each reference therefore has two runs in `baseline.json`:
 
 | Run | Fonts | Where |
 |---|---|---|
