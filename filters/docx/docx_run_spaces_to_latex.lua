@@ -31,3 +31,13 @@ function Str(str)
   end
   return inlines
 end
+
+-- pandoc reads a run of Verbatim Char as code, from its text as it is: its sentinels are spaces of the code
+function Code(code)
+  if code.text:find(SPACE, 1, true) then
+    code.text = code.text:gsub(SPACE, " ")
+    return code
+  end
+end
+
+CodeBlock = Code

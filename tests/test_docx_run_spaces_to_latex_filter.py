@@ -27,3 +27,11 @@ def test_a_space_of_a_struck_run_stays_struck(test_parameters: TestParameters):
 
 def test_text_without_the_sentinel_stays_as_it_is(test_parameters: TestParameters):
     assert _latex(test_parameters.container, '[Para [Str "a", Space, Emph [Str "b"]]]') == "a \\emph{b}"
+
+
+def test_a_space_of_a_code_run_stays_a_space(test_parameters: TestParameters):
+    """pandoc reads a run of Verbatim Char as code, from its text as it is."""
+    latex = _latex(test_parameters.container, '[Para [Str "a", Code ("",[],[]) "x\\57392", Str "b"], CodeBlock ("",[],[]) "\\57392y"]')
+    assert "\ue030" not in latex, latex
+    assert "\\texttt{x\\ }b" in latex or "\\texttt{x }b" in latex, latex
+    assert "\\begin{verbatim}\n y\n\\end{verbatim}" in latex, latex
