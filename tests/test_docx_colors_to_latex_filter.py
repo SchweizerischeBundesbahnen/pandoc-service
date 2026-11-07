@@ -371,3 +371,10 @@ def test_a_run_in_another_font_without_a_size_gets_the_strut_of_the_size_around_
     """A heading sets the size of a run without one of its own: the strut follows it, not the body size."""
     latex = _run_line_latex(test_parameters.container, f'# plain [run]{{custom-style="{_font_style("Segoe UI")}"}}')
     assert "\\setbox\\strutbox\\hbox{\\vrule height 0.9280\\dimexpr\\csname f@size\\endcsname pt\\relax depth 0.2360\\dimexpr\\csname f@size\\endcsname pt\\relax width 0pt}" in latex, latex
+
+
+def test_a_paragraph_of_runs_in_another_font_without_a_size_gets_the_line_of_the_size_around_it(test_parameters: TestParameters):
+    """A caption or a title sets the size of runs without one of their own: the line follows it, not the body size."""
+    latex = _run_line_latex(test_parameters.container, f'[one]{{custom-style="{_font_style("Segoe UI")}"}} [two]{{custom-style="{_font_style("Segoe UI")}"}}')
+    size = "\\dimexpr\\csname f@size\\endcsname pt\\relax"
+    assert latex.startswith(f"{{\\pdcParLine{{1.1640{size}}}{{0.9280{size}}}{{0.2360{size}}}"), latex

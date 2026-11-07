@@ -337,6 +337,16 @@ local function run_line(para)
   if key == nil or mixed then
     return nil
   end
+  if props.sz == nil then
+    -- Runs without a size of their own take the size of the paragraph, which only TeX knows: a caption, for one
+    local font = run_fonts[props.font_hex]
+    local body_ratio = body_line.ascent / body_size
+    if font == nil or (math.abs(font.ascent - body_ratio) < 0.0001 and math.abs(font.line - (body_line.ascent + body_line.descent) / body_size) < 0.0001) then
+      return nil
+    end
+    local size = "\\dimexpr\\csname f@size\\endcsname pt\\relax"
+    return string.format("{\\pdcParLine{%.4f%s}{%.4f%s}{%.4f%s}", font.line * body_line.multiple, size, font.ascent, size, font.line - font.ascent, size)
+  end
   local ascent, descent = run_metrics(props)
   if ascent == nil or (math.abs(ascent - body_line.ascent) < 0.01 and math.abs(descent - body_line.descent) < 0.01) then
     return nil
