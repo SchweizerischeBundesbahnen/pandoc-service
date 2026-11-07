@@ -256,3 +256,13 @@ def test_a_cell_of_the_header_row_starts_its_first_line_at_the_height_of_a_row(t
     exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/grid.native"])
     assert exit_code == 0, output.decode()
     assert "\\providecommand{\\pdcHeadStrut}{\\rule{0pt}{\\ht\\@arstrutbox}}" in output.decode()
+
+
+def test_a_header_cell_which_starts_with_a_list_gets_no_strut_line(test_parameters: TestParameters):
+    """Before a list the strut would be an empty line of its own, which Word does not draw."""
+    first = _cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Account"')
+    listed = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [BulletList [[Plain [Str "a"]]]]'
+    head = f'TableHead ("",[],[]) [Row ("",[],[]) [{first}, {listed}]]'
+    native = _grid_table([_cell('Str "a"'), _cell('Str "b"')]).replace('(TableHead ("",[],[]) [])', f"({head})")
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\pdcHeadStrut{}") == 1, latex

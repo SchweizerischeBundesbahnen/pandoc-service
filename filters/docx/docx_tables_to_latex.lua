@@ -554,8 +554,11 @@ local function process_rows(rows, layout, flags, head)
       end
       if align_latex then
         -- pandoc sets a cell of the header row on its last line: its first line gets the height of a
-        -- row strut, as Word puts the space of the cell above the first line
-        inject_raw_at_start(cell.contents, align_latex .. (head and HEAD_STRUT or ""))
+        -- row strut, as Word puts the space of the cell above the first line. Only a first block of text
+        -- has that line: before a list or a table the strut would be a line of its own
+        local first = cell.contents[1]
+        local strut = (head and first and (first.t == "Para" or first.t == "Plain")) and HEAD_STRUT or ""
+        inject_raw_at_start(cell.contents, align_latex .. strut)
         flags.align = true
         modified = true
       end
