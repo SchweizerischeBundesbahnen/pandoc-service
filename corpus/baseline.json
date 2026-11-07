@@ -411,13 +411,13 @@
     "test_formatting": {
      "any_page": 15,
      "lines": 21,
-     "mean_shift": 0.61,
+     "mean_shift": 0.52,
      "pages": [
       1,
       1
      ],
      "regions": 495,
-     "regions_matched": 429,
+     "regions_matched": 437,
      "same_page": 15,
      "words": 164,
      "words_in_place": 139
@@ -1110,13 +1110,13 @@
     "test_formatting": {
      "any_page": 18,
      "lines": 21,
-     "mean_shift": 0.29,
+     "mean_shift": 0.15,
      "pages": [
       1,
       1
      ],
-     "regions": 512,
-     "regions_matched": 457,
+     "regions": 499,
+     "regions_matched": 465,
      "same_page": 18,
      "words": 164,
      "words_in_place": 143
@@ -1391,9 +1391,9 @@
    "total": {
     "any_page": 98.7,
     "documents": 49,
-    "mean_shift": 0.53,
+    "mean_shift": 0.52,
     "pages_as_reference": 49,
-    "regions_matched": 91.2,
+    "regions_matched": 91.3,
     "same_page": 97.7,
     "words_in_place": 91.0
    }
@@ -1816,7 +1816,7 @@
       1,
       1
      ],
-     "regions": 500,
+     "regions": 487,
      "regions_matched": 470,
      "same_page": 18,
      "words": 161,
@@ -2080,7 +2080,7 @@
     "documents": 48,
     "mean_shift": 2.46,
     "pages_as_reference": 48,
-    "regions_matched": 80.9,
+    "regions_matched": 81.0,
     "same_page": 89.9,
     "words_in_place": 80.4
    }
