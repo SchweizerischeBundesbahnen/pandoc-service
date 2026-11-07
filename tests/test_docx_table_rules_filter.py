@@ -462,3 +462,20 @@ def test_a_wide_line_between_rows_adds_its_width_to_the_table(test_parameters: T
     thin, thick = _pdf_of(test_parameters, _two_rows(8)), _pdf_of(test_parameters, _two_rows(48))
     assert abs(_top(thick, "Upper") - _top(thin, "Upper")) < 0.1
     assert abs((_top(thick, "Lower") - _top(thin, "Lower")) - 5) < 0.3
+
+
+def _sized(text: str, payload: str = "") -> str:
+    start = "{\\\\fontsize{8bp}{9.6bp}\\\\selectfont \\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 7.5133bp depth 2.2541bp width 0pt}"
+    marker = f'Str "{OPEN}{payload}{CLOSE}", ' if payload else ""
+    return f'{marker}RawInline (Format "latex") "{start}", Str "{text}", RawInline (Format "latex") "}}"'
+
+
+def test_a_row_whose_cells_start_in_a_size_of_their_own_takes_the_line_of_that_size(test_parameters: TestParameters):
+    """Word sets the first line of a cell as high as its text; LaTeX as high as the body text, unless told."""
+    # Two paragraphs: the row stays one, it does not go out a line at a time
+    two = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [{_sized("b")}], Plain [{_sized("b2")}]]'
+    native = _grid_table([_cell(_sized("a", GRID)), two], [_cell('Str "c"'), _cell(_sized("d"))])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcRowLine{7.5133bp}" in latex, latex
+    assert "\\pdcRowLine{}" in latex, "a row with a cell of the body text keeps the line of the table"
+    assert "\\pdcRowLineEnd" in latex

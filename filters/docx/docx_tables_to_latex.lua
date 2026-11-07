@@ -270,6 +270,7 @@ local COVERED = "pdc-covered"     -- a cell which only carries the colour of the
 local SPLIT = "pdc-split"      -- the attribute of a row: what follows it, see SPLIT_PREAMBLE
 local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at its end
 local BORDERS = "pdc-borders"  -- the lines of a cell of a grid: top/right/bottom/left, each style.eighths.RRGGBB or -
+local WRAPPED = "pdc-wrapped"  -- the attribute of a row which goes out a line at a time
 local BACKGROUND = "pdc-background"  -- the color of a cell, for the line of a grid through a merged cell
 local has_split = false
 local SPLIT_PREAMBLE = table.concat({
@@ -583,6 +584,7 @@ local function wrap_cells(tbl)
         covered = math.max(covered, (tonumber(cell.attributes[ROW_SPAN]) or cell.row_span) - 1)
       end
       if free and wraps(row, #tbl.colspecs) then
+        row.attributes[WRAPPED] = "1"
         has_wrap = true
         wrap_columns = math.max(wrap_columns, #row.cells)
         local number = #wrap_rows + 1
@@ -718,6 +720,10 @@ local GRID_PREAMBLE = table.concat({
   -- A double line: two lines of #2 points with a gap as wide
   "\\providecommand{\\pdcGVsetdouble}[3]{\\expandafter\\gdef\\csname pdcGV#1\\endcsname{\\kern-1.5\\dimexpr#2pt\\relax{\\color[HTML]{#3}\\vrule\\@width#2pt\\kern#2pt\\vrule\\@width#2pt}\\kern-1.5\\dimexpr#2pt\\relax}}",
   "\\newif\\ifpdcGrid",
+  -- The line of the next row: #1 high, as the text its cells start with; empty for the line of the table
+  "\\ifdefined\\pdc@tablestrut\\else\\newbox\\pdc@tablestrut\\fi",
+  "\\providecommand{\\pdcRowLine}[1]{\\noalign{\\ifvoid\\pdc@tablestrut\\global\\setbox\\pdc@tablestrut\\copy\\@arstrutbox\\fi\\global\\setbox\\@arstrutbox\\hbox{\\vrule\\@height\\ifx\\relax#1\\relax\\ht\\pdc@tablestrut\\else#1\\fi\\@depth\\dp\\pdc@tablestrut\\@width\\z@}}}",
+  "\\providecommand{\\pdcRowLineEnd}{\\noalign{\\global\\setbox\\pdc@tablestrut\\box\\voidb@x}}",
   "\\AtBeginDocument{\\ifdefined\\CT@setup\\let\\pdc@CTsetup\\CT@setup",
   "\\def\\CT@setup{\\pdc@CTsetup\\ifpdcGrid\\advance\\@tempdimb-.5\\arrayrulewidth\\advance\\@tempdimc-.5\\arrayrulewidth\\fi}\\fi}",
   -- A horizontal line reaches over the vertical lines at its ends, as Word draws it
@@ -1209,6 +1215,51 @@ local function widest_separator(owners)
   return widest
 end
 
+-- The height of the first line of a cell, in big points, when its text starts in a size of its own; nil otherwise.
+local function first_line(cell)
+  local first = cell.contents[1]
+  for _, inline in ipairs(first and (first.t == "Plain" or first.t == "Para") and first.content or {}) do
+    if inline.t ~= "RawInline" then
+      return nil
+    end
+    local height = inline.text:match("\\setbox\\strutbox\\hbox{\\vrule height ([%d%.]+)bp")
+    if height then
+      return tonumber(height)
+    end
+  end
+  return nil
+end
+
+-- The line of each row of a table whose cells all start in a size of their own: Word sets the first line
+-- of a cell as high as its text, LaTeX as high as the body text. Nil for a row with a cell of the body text,
+-- and nil for the table when no row has one.
+local function row_lines(rows)
+  local lines, any = {}, false
+  for index, row in ipairs(rows) do
+    local highest, all = 0, true
+    for _, cell in ipairs(row.cells) do
+      if not cell.attributes[COVERED] then
+        local height = first_line(cell)
+        if height == nil then
+          all = false
+        else
+          highest = math.max(highest, height)
+        end
+      end
+    end
+    -- A row which goes out a line at a time sets the line of each piece itself
+    if all and highest > 0 and not row.attributes[WRAPPED] then
+      lines[index] = highest
+      any = true
+    end
+  end
+  return any and lines or nil
+end
+
+local function row_strut(lines, index)
+  return string.format("\\pdcRowLine{%s}", lines[index] and string.format("%.4fbp", lines[index]) or "")
+end
+
 -- The table with the lines of a grid, or nil when it cannot be set so.
 local function grid_table(tbl, absolute)
   local rows = all_rows(tbl)
@@ -1234,6 +1285,12 @@ local function grid_table(tbl, absolute)
     end
   end
   wrap_cells(tbl)
+  local struts = row_lines(rows)
+  if struts then
+    for index in ipairs(rows) do
+      lines[index] = lines[index] .. (rows[index + 1] and row_strut(struts, index + 1) or "\\pdcRowLineEnd")
+    end
+  end
   for index, row in ipairs(rows) do
     local last = row.cells[#row.cells]
     if last ~= nil then
@@ -1248,6 +1305,9 @@ local function grid_table(tbl, absolute)
     return nil
   end
   local rest = latex:sub(close)
+  if struts then
+    rest = "}" .. row_strut(struts, 1) .. rest:sub(2)
+  end
   if numbered then
     -- The vertical lines of the first row, and the line over it
     local top = line_row(owners, 0, columns_count)
