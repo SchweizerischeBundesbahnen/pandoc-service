@@ -45,3 +45,13 @@ def test_style_markers_become_upright_and_bold_italic(test_parameters: TestParam
     exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex --lua-filter={STYLES_FILTER_PATH} /tmp/test/style.md"])
     assert exit_code == 0, output.decode()
     assert "\\symup{d}x + \\symbfit{v}" in output.decode(), output.decode()
+
+
+def test_alphabets_of_texmath_come_from_the_math_font(test_parameters: TestParameters):
+    """unicode-math sets \\mathtt and its kin in the text font. Word sets them in the math font."""
+    container = test_parameters.container
+    md = r"$\mathbf{v} \cdot \mathit{t} + \mathsf{S} + \mathtt{code} + \mathrm{d} + \mathbb{R} + \mathcal{L}$"
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && printf '%s' '{md}' > /tmp/test/alphabets.md"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex --lua-filter={STYLES_FILTER_PATH} /tmp/test/alphabets.md"])
+    assert exit_code == 0, output.decode()
+    assert r"\symbf{v} \cdot \symit{t} + \symsf{S} + \symtt{code} + \symup{d} + \mathbb{R} + \mathcal{L}" in output.decode(), output.decode()

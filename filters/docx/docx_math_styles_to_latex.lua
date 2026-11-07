@@ -8,11 +8,17 @@
 --   PMSzzzpzzzdzzzPMSENDzzz   ->  \symup{d}
 --   PMSzzzbizzzvzzzPMSENDzzz  ->  \symbfit{v}
 --
--- \symup and \symbfit come from unicode-math, which the XeTeX template loads.
+-- texmath writes the other styles of a run as \mathit, \mathbf, \mathsf,
+-- \mathtt and \mathrm, which unicode-math sets in the text font. Word sets them
+-- in the math font, so they become \symit, \symbf, \symsf, \symtt and \symup.
+--
+-- The \sym commands come from unicode-math, which the XeTeX template loads.
 
 local MARKER = "PMSzzz(%l%l?)zzz(.-)zzzPMSENDzzz"
 
 local COMMAND = { p = "\\symup", bi = "\\symbfit" }
+
+local ALPHABET = { it = "it", bf = "bf", sf = "sf", tt = "tt", rm = "up" }
 
 local filter = {}
 
@@ -23,6 +29,11 @@ function filter.Math(el)
   local replaced, count = el.text:gsub(MARKER, function(style, letters)
     return (COMMAND[style] or "") .. "{" .. letters .. "}"
   end)
+  local alphabets
+  replaced, alphabets = replaced:gsub("\\math(%a+)%f[^%a]", function(name)
+    return ALPHABET[name] and "\\sym" .. ALPHABET[name] or nil
+  end)
+  count = count + alphabets
   if count == 0 then
     return nil
   end
