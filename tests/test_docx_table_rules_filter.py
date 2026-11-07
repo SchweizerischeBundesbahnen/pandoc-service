@@ -233,3 +233,15 @@ def test_a_coloured_cell_merged_down_with_line_breaks_stays_one_cell(test_parame
     latex = _native_latex(test_parameters.container, native)
     assert "pdcSplit" not in latex
     assert "\\multirow[t]{2}{=}{one\\\\" in " ".join(latex.split()).replace("\\pdcCellRaggedright{}", "")
+
+
+def test_a_cell_of_the_header_row_starts_its_first_line_at_the_height_of_a_row(test_parameters: TestParameters):
+    """pandoc sets a header cell on its last line: two lines of it lost the space Word puts above the first one."""
+    first = _cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Account", LineBreak, Str "type"')
+    head = f'TableHead ("",[],[]) [Row ("",[],[]) [{first}, {_cell('Str "Rights"')}]]'
+    native = _grid_table([_cell('Str "a"'), _cell('Str "b"')]).replace('(TableHead ("",[],[]) [])', f"({head})")
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\pdcCellRaggedright{}\\pdcHeadStrut{}") == 2, latex
+    exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/grid.native"])
+    assert exit_code == 0, output.decode()
+    assert "\\providecommand{\\pdcHeadStrut}{\\rule{0pt}{\\ht\\@arstrutbox}}" in output.decode()

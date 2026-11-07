@@ -229,6 +229,8 @@ local ALIGN_LATEX = {
 -- the sentinel instead (ha=justify, see app/docx_table_pre_process.py) and
 -- wins over the Cell's alignment, which for such a cell is pandoc's guess.
 local JUSTIFY_LATEX = "\\pdcCellJustify{}"
+-- The height of a row strut, for the first line of a cell of the header row
+local HEAD_STRUT = "\\pdcHeadStrut{}"
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
@@ -527,7 +529,7 @@ end
 -- Records in `flags` which kinds of injection happened, so the preamble pass
 -- loads only what the document actually uses. Returns true when anything in
 -- the rows was rewritten.
-local function process_rows(rows, layout, flags)
+local function process_rows(rows, layout, flags, head)
   local modified = false
   for _, row in ipairs(rows) do
     for _, cell in ipairs(row.cells) do
@@ -547,7 +549,9 @@ local function process_rows(rows, layout, flags)
         align_latex = (props and props.ha == "justify") and JUSTIFY_LATEX or ALIGN_LATEX[cell.alignment]
       end
       if align_latex then
-        inject_raw_at_start(cell.contents, align_latex)
+        -- pandoc sets a cell of the header row on its last line: its first line gets the height of a
+        -- row strut, as Word puts the space of the cell above the first line
+        inject_raw_at_start(cell.contents, align_latex .. (head and HEAD_STRUT or ""))
         flags.align = true
         modified = true
       end
@@ -879,7 +883,7 @@ function table_pass.Table(tbl)
   local layout = {}
   local flags = {}
 
-  if process_rows(tbl.head.rows, layout, flags) then modified = true end
+  if process_rows(tbl.head.rows, layout, flags, true) then modified = true end
   for _, body in ipairs(tbl.bodies) do
     if process_rows(body.body, layout, flags) then modified = true end
     if process_rows(body.head, layout, flags) then modified = true end
@@ -1038,6 +1042,7 @@ local ALIGN_PREAMBLE = table.concat({
   -- LaTeX justifies by default, so this restores the kernel's own glue: it
   -- exists to override a colspec that set one of the ragged modes.
   "\\providecommand{\\pdcCellJustify}{\\rightskip\\z@skip \\leftskip\\z@skip \\parindent\\z@ \\parfillskip\\@flushglue}",
+  "\\providecommand{\\pdcHeadStrut}{\\rule{0pt}{\\ht\\@arstrutbox}}",
   "\\makeatother",
 }, "\n")
 
