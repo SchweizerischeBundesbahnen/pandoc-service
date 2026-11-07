@@ -322,6 +322,8 @@ def test_a_row_longer_than_the_rest_of_the_page_breaks_between_its_lines(test_pa
     assert "w0 " in pages[0] or "w0\n" in pages[0], "the row starts on the page of the text before it"
     assert "w699" in pages[-1]
     assert len(pages) > 1
+    words = [word for word in " ".join(pages).split() if word.startswith("w") and word[1:].isdigit()]
+    assert words == [f"w{number}" for number in range(700)], "every line once, in its order"
 
 
 def test_a_row_of_cells_with_line_breaks_stays_one_row(test_parameters: TestParameters):
