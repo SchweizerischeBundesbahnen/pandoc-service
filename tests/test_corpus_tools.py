@@ -106,6 +106,38 @@ def test_a_failed_conversion_leaves_no_pdf_of_an_earlier_run(tmp_path: Path):
     assert not (tmp_path / "doc.pdf").exists()
 
 
+def test_the_free_corpus_names_open_fonts_for_the_fonts_of_word():
+    from tools.corpus import free_fonts
+
+    xml = '<w:rFonts w:ascii="segoe ui" w:hAnsi="Aptos" w:cs="Times New Roman" w:eastAsia="Aptos"/><a:latin typeface="Aptos Display"/><w:rFonts w:ascii="Symbol"/>'
+    assert free_fonts.free_part("word/document.xml", xml) == ('<w:rFonts w:ascii="DejaVu Sans" w:hAnsi="Liberation Sans" w:cs="Liberation Serif" w:eastAsia="Aptos"/><a:latin typeface="Liberation Sans"/><w:rFonts w:ascii="Symbol"/>')
+
+
+def test_the_free_corpus_sets_the_equations_in_latin_modern_math():
+    from tools.corpus import free_fonts
+
+    settings = "<w:settings><w:rsids/><w:themeFontLang/></w:settings>"
+    assert free_fonts.free_part("word/settings.xml", settings) == '<w:settings><w:rsids/><m:mathPr><m:mathFont m:val="Latin Modern Math"/></m:mathPr><w:themeFontLang/></w:settings>'
+    assert free_fonts.free_part("word/settings.xml", "<w:settings><m:mathPr/></w:settings>") == "<w:settings><m:mathPr/></w:settings>"
+
+
+def test_the_free_corpus_keeps_every_other_part(tmp_path: Path):
+    import zipfile
+
+    from tools.corpus import free_fonts
+
+    source = tmp_path / "source"
+    source.mkdir()
+    with zipfile.ZipFile(source / "a.docx", "w") as docx:
+        docx.writestr("word/styles.xml", '<w:rFonts w:ascii="Calibri"/>')
+        docx.writestr("word/media/image1.png", b"\x89PNG")
+    assert free_fonts.main([str(source), str(tmp_path / "free")]) == 0
+    with zipfile.ZipFile(tmp_path / "free" / "a.docx") as docx:
+        assert docx.read("word/styles.xml") == b'<w:rFonts w:ascii="Carlito"/>'
+        assert docx.read("word/media/image1.png") == b"\x89PNG"
+    assert free_fonts.main([]) == 2
+
+
 def test_a_word_is_in_place_within_two_points_across_and_down():
     from tools.corpus.pdf_lines import Word
 

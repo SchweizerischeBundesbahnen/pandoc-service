@@ -1,6 +1,6 @@
 """Convert the DOCX corpus with pandoc-service and compare the PDFs with the ones Word prints.
 
-    python -m tools.corpus.corpus convert --image IMAGE [--fonts DIR] --out DIR
+    python -m tools.corpus.corpus convert --image IMAGE [--fonts DIR] [--docx DIR] --out DIR
     python -m tools.corpus.corpus score --out DIR [--reference macos] [--variant NAME] [--write-baseline | --against]
     python -m tools.corpus.corpus page --out DIR [--reference macos]
     python -m tools.corpus.corpus all --image IMAGE [--fonts DIR] --out DIR [score options]
@@ -46,8 +46,8 @@ WORKERS = 4
 TOLERANCE = 0.5
 
 
-def _documents() -> list[Path]:
-    return sorted(DOCX.glob("*.docx"))
+def _documents(docx: Path = DOCX) -> list[Path]:
+    return sorted(docx.glob("*.docx"))
 
 
 def _run(*command: str) -> str:
@@ -69,8 +69,8 @@ def convert_one(client: httpx.Client, base: str, docx: Path, target: Path) -> st
     return None
 
 
-def convert(image: str, fonts: Path | None, out: Path) -> list[str]:
-    """Convert every DOCX of the corpus to a PDF in OUT/pdf with a container of IMAGE; the documents which failed."""
+def convert(image: str, fonts: Path | None, out: Path, docx: Path = DOCX) -> list[str]:
+    """Convert every DOCX of the folder DOCX to a PDF in OUT/pdf with a container of IMAGE; the documents which failed."""
     target = out / "pdf"
     target.mkdir(parents=True, exist_ok=True)
     mounts = ["--volume", f"{fonts.resolve()}:{FONT_MOUNT}:ro"] if fonts else []
@@ -89,12 +89,12 @@ def convert(image: str, fonts: Path | None, out: Path) -> list[str]:
                 time.sleep(1)
 
             failed = []
-            documents = _documents()
+            documents = _documents(docx)
             with ThreadPoolExecutor(WORKERS) as pool:
-                for docx, error in zip(documents, pool.map(lambda docx: convert_one(client, base, docx, target), documents), strict=True):
-                    print(f"{docx.stem}: {error or 'ok'}")  # noqa: T201 - a command line tool
+                for document, error in zip(documents, pool.map(lambda document: convert_one(client, base, document, target), documents), strict=True):
+                    print(f"{document.stem}: {error or 'ok'}")  # noqa: T201 - a command line tool
                     if error:
-                        failed.append(docx.stem)
+                        failed.append(document.stem)
             return failed
     finally:
         subprocess.run(["docker", "stop", container], check=False, capture_output=True)  # noqa: S603, S607 - docker with arguments of this script
@@ -262,7 +262,7 @@ def _render(pdf: Path, target: Path, prefix: str) -> tuple[list[str], list[list[
     return names, sizes
 
 
-def page(out: Path, reference: str) -> Path:
+def page(out: Path, reference: str, docx: Path = DOCX) -> Path:
     """Build OUT/site: the comparison page with the pages of the reference and of the conversion."""
     result = json.loads((out / "score.json").read_text())
     site = out / "site"
@@ -280,9 +280,9 @@ def page(out: Path, reference: str) -> Path:
     # The data sits in a script element, which only "</" can end
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     (site / "index.html").write_text(template.replace("__CORPUS_DATA__", payload))
-    for docx in _documents():
+    for document in _documents(docx):
         (site / "docx").mkdir(exist_ok=True)
-        (site / "docx" / docx.name).write_bytes(docx.read_bytes())
+        (site / "docx" / document.name).write_bytes(document.read_bytes())
     return site / "index.html"
 
 
@@ -292,6 +292,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True, help="the directory of the PDFs, the score and the page")
     parser.add_argument("--image", help="the image of pandoc-service to convert with")
     parser.add_argument("--fonts", type=Path, help="a directory of fonts the container gets, Word's own for the variant word-fonts")
+    parser.add_argument("--docx", type=Path, default=DOCX, help="the folder of the documents: corpus/docx, or corpus/docx-free with --reference macos-free")
     parser.add_argument("--reference", default="macos", help="the reference to compare with: a directory of corpus/reference")
     parser.add_argument("--variant", default="image", help="the name of the run in corpus/baseline.json: image or word-fonts")
     parser.add_argument("--write-baseline", action="store_true", help="store the score in corpus/baseline.json")
@@ -301,7 +302,7 @@ def main() -> int:
     if arguments.command in ("convert", "all"):
         if not arguments.image:
             parser.error("convert needs --image")
-        failed = convert(arguments.image, arguments.fonts, arguments.out)
+        failed = convert(arguments.image, arguments.fonts, arguments.out, arguments.docx)
     else:
         failed = []
     # A conversion which failed fails the run, apart from what got worse
@@ -319,7 +320,7 @@ def main() -> int:
         if arguments.write_baseline:
             write_baseline(result, arguments.variant)
     if arguments.command in ("page", "all"):
-        print(f"page: {page(arguments.out, arguments.reference)}")  # noqa: T201 - a command line tool
+        print(f"page: {page(arguments.out, arguments.reference, arguments.docx)}")  # noqa: T201 - a command line tool
     return status
 
 
