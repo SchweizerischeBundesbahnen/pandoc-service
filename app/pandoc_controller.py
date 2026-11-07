@@ -96,6 +96,7 @@ FILTERS = {
     "docx_caption_labels_to_latex": f"{DOCX_FILTER_PATH}/docx_caption_labels_to_latex.lua",
     "docx_empty_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_empty_paragraphs_to_latex.lua",
     "docx_page_breaks_to_latex": f"{DOCX_FILTER_PATH}/docx_page_breaks_to_latex.lua",
+    "docx_run_spaces_to_latex": f"{DOCX_FILTER_PATH}/docx_run_spaces_to_latex.lua",
     "docx_comments_to_latex": f"{DOCX_FILTER_PATH}/docx_comments_to_latex.lua",
     "docx_document_styles_to_latex": f"{DOCX_FILTER_PATH}/docx_document_styles_to_latex.lua",
     "docx_toc_to_latex": f"{DOCX_FILTER_PATH}/docx_toc_to_latex.lua",
@@ -715,7 +716,9 @@ def _build_pandoc_command(
     if apply_docx_latex_filters:
         cmd.extend(
             [
-                # First, so that a paragraph holding only a break is no blank line below.
+                # First, so every other filter sees the spaces of a formatted run inside its formatting.
+                f"--lua-filter={FILTERS['docx_run_spaces_to_latex']}",
+                # Then, so that a paragraph holding only a break is no blank line below.
                 f"--lua-filter={FILTERS['docx_page_breaks_to_latex']}",
                 # Before the rest, so the filters below see an empty line as the blank
                 # paragraph it becomes and not as an empty one.

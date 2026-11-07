@@ -166,6 +166,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | the space before and after of that style | the space between paragraphs: the larger of the two, as Word lays it out |
 | `<w:jc>` of that style, and `<w:autoHyphenation>` | ragged right and unhyphenated, unless the style justifies and the document hyphenates |
 | `<w:rFonts>` of a run | the font of the run, when the container has it or the font which stands for it, matched regardless of case; a paragraph of runs in one font and size alone gets the line of that font |
+| a space at the start or the end of a run of other formatting | the formatting of that run: struck through, underlined, and as wide as its font and size make it, as Word draws it |
 | the Title and Heading 1 to 9 styles | the font, size, colour, italics, alignment and space of the title and the headings, the title as far down the page as the ascent of its font and the next line below its descent, the number of a heading style with numbering, all nine levels of them, as Word has them; between two headings only their own space |
 | the Hyperlink style of the runs of a link, a theme colour as Word reads it | the colour of those runs; a link without it in the colour of its text |
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |

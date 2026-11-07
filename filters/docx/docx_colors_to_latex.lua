@@ -494,7 +494,9 @@ function filter.Span(el)
   -- Outer: foreground color. \textcolor is a directive (no box, no padding, no
   -- line-break inhibition); applied first so it wraps the highlight box inside.
   if props.fg then
-    open = open .. "\\textcolor[HTML]{" .. props.fg .. "}{"
+    -- {}: \\color ignores the spaces after it, and a run may start with a space of its own
+    local space = el.content[1] and el.content[1].t == "Space"
+    open = open .. "\\textcolor[HTML]{" .. props.fg .. "}{" .. (space and "{}" or "")
     close = "}" .. close
   end
 
