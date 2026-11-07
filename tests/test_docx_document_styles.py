@@ -85,9 +85,34 @@ def test_sets_pandoc_template_like_word():
         "docx-page-numbers": "false",
         "docx-table-plain-cell-space": "10",
         "docx-paragraph-spacing": "Normal:Normal:0:10",
-        "docx-math-top": "1.006",
-        "docx-math-descent": "0.194",
+        "mathfont": "latinmodern-math.otf",
+        "mathfontoptions": "Scale=1.083",
+        "docx-math-top": "0.9502",
+        "docx-math-descent": "0.2222",
     }
+
+
+M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+
+
+def test_without_cambria_math_latin_modern_math_stands_for_it_on_its_line():
+    """As high as the small letters of Cambria Math, on the line Word sets Cambria Math on."""
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("latinmodern-math.otf", "Scale=1.083", "0.9502")
+
+
+def test_cambria_math_sets_an_equation_unscaled(installed: set[str]):
+    """pandoc's template scales a font to the small letters of the body: Word does not scale its equations."""
+    installed.add("Cambria Math")
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("Cambria Math", "Scale=1", "0.9502")
+
+
+def test_the_math_font_of_the_settings_sets_an_equation_unscaled():
+    """A document which names Latin Modern Math sets its equations in it, at their size, on its line."""
+    settings = f'<m:mathPr {M}><m:mathFont m:val="Latin Modern Math"/></m:mathPr>'
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, settings=settings))
+    assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("latinmodern-math.otf", "Scale=1", "1.006")
 
 
 def test_a_font_named_in_the_style_goes_before_the_theme():
@@ -133,10 +158,6 @@ def test_a_substitute_the_container_lacks_is_no_font(installed: set[str]):
 def test_the_equations_take_cambria_math_when_it_is_installed(installed: set[str]):
     installed.add("Cambria Math")
     assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["mathfont"] == "Cambria Math"
-
-
-def test_without_cambria_math_the_equations_keep_the_latex_font():
-    assert "mathfont" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
 
 
 def test_a_name_which_is_no_installed_family_never_reaches_latex():

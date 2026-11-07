@@ -48,11 +48,21 @@ NUMBER_FORMATS = {"decimal": "arabic", "lowerLetter": "alph", "upperLetter": "Al
 _NUMBER_TEXT = re.compile(r"^(?:%[1-9]|[0-9.\-() ])*$")
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 
-# The font Word sets the equations (OMML) of every document in.
+# The font Word sets the equations (OMML) of a document in, unless its settings name another.
 MATH_FONT = "Cambria Math"
-# The top of the line, ascent and line gap, and the descent of Latin Modern Math, which pandoc's template sets an
-# equation in without the font of Word: tectonic reads it from its bundle, which fontconfig does not see
+# Latin Modern Math, which sets an equation without the font of Word: tectonic reads it from its bundle, by the
+# name of its file, which fontconfig does not see
+LATIN_MODERN_MATH = "Latin Modern Math"
+LATIN_MODERN_MATH_FILE = "latinmodern-math.otf"
+# The top of the line, ascent and line gap, and the descent of a line of Latin Modern Math and of Cambria Math,
+# as shares of their size, from the metrics of the fonts
 LATIN_MODERN_MATH_LINE = (1.006, 0.194)
+CAMBRIA_MATH_LINE = (0.9502, 0.2222)
+# The height of the small letters of each, as a share of its size: Latin Modern Math in place of Cambria Math is
+# scaled to the small letters of Cambria Math
+LATIN_MODERN_MATH_X_HEIGHT = 431 / 1000
+CAMBRIA_MATH_X_HEIGHT = 956 / 2048
+M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 # The open families the image has in place of fonts of Word, each as wide and as high as the font it stands for:
 # fonts/metric_fonts.py makes the Metric families, the others are metric compatible as they come
 SUBSTITUTES = {
@@ -164,8 +174,13 @@ def _cell_options(styles: Element) -> list[str]:
     return options
 
 
-def _font_options(font: str | None) -> list[str]:
-    """The font of the body, and the math font when it is installed."""
+def _font_options(font: str | None, math_font: str = MATH_FONT) -> list[str]:
+    """The font of the body, and the font of the equations as Word sets them: at their size, unscaled.
+
+    pandoc's template scales a font to the small letters of the body. The font of Word sets an equation as it is,
+    and so does the font a document names in its settings. Without the font of Word, Latin Modern Math stands for
+    it, as high as its small letters, on the line Word sets it on.
+    """
     options: list[str] = []
     if font is not None:
         # Word kerns no text unless a style turns kerning on, which pandoc's template does not, never
@@ -173,15 +188,30 @@ def _font_options(font: str | None) -> list[str]:
         # nor turns a straight quote of the text into a curly one, nor sets the ligatures of TeX and the font
         options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
         options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
-    top, descent = LATIN_MODERN_MATH_LINE
-    if MATH_FONT in installed_families():
-        options += ["-V", f"mathfont={MATH_FONT}"]
-        math_top = top_ratio(MATH_FONT)
+    scale = 1.0
+    if math_font in installed_families():
+        options += ["-V", f"mathfont={math_font}"]
+        top, descent = CAMBRIA_MATH_LINE if math_font == MATH_FONT else LATIN_MODERN_MATH_LINE
+        math_top = top_ratio(math_font)
         if math_top is not None:
-            top, descent = math_top, line_ratio(MATH_FONT) - math_top
+            top, descent = math_top, line_ratio(math_font) - math_top
+    elif math_font == LATIN_MODERN_MATH:
+        options += ["-V", f"mathfont={LATIN_MODERN_MATH_FILE}"]
+        top, descent = LATIN_MODERN_MATH_LINE
+    else:
+        options += ["-V", f"mathfont={LATIN_MODERN_MATH_FILE}"]
+        scale = CAMBRIA_MATH_X_HEIGHT / LATIN_MODERN_MATH_X_HEIGHT
+        top, descent = CAMBRIA_MATH_LINE
+    options += ["-V", f"mathfontoptions=Scale={scale:.4g}"]
     # Word sets a line of an equation as high and as deep as the line of its font, at the least
     options += ["-M", f"docx-math-top={top:.4g}", "-M", f"docx-math-descent={descent:.4g}"]
     return options
+
+
+def _math_font(settings: Element | None) -> str:
+    """The font the settings of a document set its equations in, Cambria Math without one."""
+    font = settings.find(f"{{{M_NS}}}mathPr/{{{M_NS}}}mathFont") if settings is not None else None
+    return (font.get(f"{{{M_NS}}}val") or MATH_FONT) if font is not None else MATH_FONT
 
 
 def _size_options(chain: list[Element], styles: Element, font: str | None, numbering: Element | None, document: Element | None) -> list[str]:
@@ -225,7 +255,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
 
     chain = _style_chain(styles, BODY_STYLE)
     font = _font(chain, styles, theme)
-    options = _font_options(font) + _size_options(chain, styles, font, numbering, document)
+    options = _font_options(font, _math_font(settings)) + _size_options(chain, styles, font, numbering, document)
     indents = _list_indents(numbering, document)
     if indents:
         options += ["-M", "docx-list-indents=" + ",".join(f"{left:g}:{hanging:g}" for left, hanging in indents)]
