@@ -1,8 +1,8 @@
 """The lines of text of a PDF, as the corpus compares a conversion with its reference.
 
-A line is a run of characters on one baseline, without a gap wider than one and
-a half times the font size: the cells of a table row and the parts of a line a
-tab separates are lines of their own. The same rule applies to both PDFs, so
+A line is a run of characters on one baseline, without a gap wider than 0.8 times
+the font size: the cells of a table row and the parts of a line a tab separates
+are lines of their own. The same rule applies to both PDFs, so
 their lines compare however each producer splits its text into objects.
 """
 
@@ -87,7 +87,7 @@ def normalized(text: str) -> str:
 
 
 def _continues(run: _Run, baseline: float, left: float, size: float) -> bool:
-    return abs(baseline - run.y) < max(1.0, 0.3 * size) and left >= run.right - 1 and left - run.right < 1.5 * max(size, run.size)
+    return abs(baseline - run.y) < max(1.0, 0.3 * size) and left >= run.right - 1 and left - run.right < 0.8 * max(size, run.size)
 
 
 def _page_runs(page: pdfium.PdfPage, number: int) -> list[_Run]:
