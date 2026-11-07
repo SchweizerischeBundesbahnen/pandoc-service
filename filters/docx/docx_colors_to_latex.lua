@@ -221,6 +221,9 @@ local filter = {}
 local PREAMBLE = table.concat({
   "\\usepackage{soul}",
   "\\usepackage[normalem]{ulem}",
+  -- ulem draws the line of a word before the word, which a highlight box then covers: Word draws it over
+  "\\makeatletter\\def\\UL@putbox{\\ifx\\UL@start\\@empty\\else\\vrule\\@width\\z@\\LA@penalty\\@M"
+    .. "{\\UL@skip\\wd\\UL@box\\box\\UL@box\\kern-\\UL@skip\\UL@leaders}\\fi}\\makeatother",
   -- Pin the underline depth/thickness for BOTH underline mechanisms so every
   -- underline sits at the same place regardless of font size or which mechanism
   -- drew it. Plain underlined text uses soul's \ul (it hyphenates); underlined
@@ -491,7 +494,9 @@ function filter.Span(el)
   -- Outer: foreground color. \textcolor is a directive (no box, no padding, no
   -- line-break inhibition); applied first so it wraps the highlight box inside.
   if props.fg then
-    open = open .. "\\textcolor[HTML]{" .. props.fg .. "}{"
+    -- {}: \\color ignores the spaces after it, and a run may start with a space of its own
+    local space = el.content[1] and el.content[1].t == "Space"
+    open = open .. "\\textcolor[HTML]{" .. props.fg .. "}{" .. (space and "{}" or "")
     close = "}" .. close
   end
 

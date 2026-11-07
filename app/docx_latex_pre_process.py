@@ -30,6 +30,7 @@ from . import (
     docx_page_break_pre_process,
     docx_page_geometry,
     docx_paragraph_pre_process,
+    docx_run_spaces_pre_process,
     docx_table_pre_process,
     docx_toc_pre_process,
 )
@@ -63,6 +64,10 @@ def _rewrite_body_part(
         if empty_lines_changed:
             xml, changed = rewritten, True
             toc_styles.update(docx_toc_pre_process.plain_styles(docx_empty_lines_pre_process.EMPTY_LINES_STYLE))
+        # Before the colour rewrite, which moves the formatting of a run into a style of its own
+        rewritten, spaces_changed = docx_run_spaces_pre_process.rewrite_part(xml)
+        if spaces_changed:
+            xml, changed = rewritten, True
         rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_style_ids)
         if color_used:
             xml, changed = rewritten, True
