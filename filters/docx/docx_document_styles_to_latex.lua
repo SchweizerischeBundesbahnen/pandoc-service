@@ -631,16 +631,17 @@ local function lower_lone_pictures(content)
   for index = 1, #content + 1 do
     local inline = content[index]
     if inline == nil or inline.t == "LineBreak" then
-      local picture, others = nil, false
+      -- A line of pictures and the spaces between them, as the line of a single one
+      local pictures, others = {}, false
       for position = start, index - 1 do
         local item = content[position]
-        if picture == nil and lone_picture(item) then
-          picture = position
+        if lone_picture(item) then
+          pictures[#pictures + 1] = position
         elseif not strut_only(item) then
           others = true
         end
       end
-      if picture and not others then
+      for _, picture in ipairs(others and {} or pictures) do
         local item = content[picture]
         if item.t == "Link" then
           item.content = pandoc.Inlines({ lowered(lone_picture(item)) })

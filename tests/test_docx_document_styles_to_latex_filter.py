@@ -618,6 +618,15 @@ def test_a_picture_alone_in_a_link_goes_down_by_the_descent_as_well(test_paramet
     assert "{\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}" in body, body
 
 
+def test_pictures_side_by_side_on_their_line_go_down_by_the_descent(test_parameters: TestParameters):
+    """Word sets a line of pictures alone as it sets a line of one: no descent of the font below them."""
+    image = 'Image ("",[],[]) [] ("x.png","")'
+    native = f'[Para [{image}, Space, Link ("",[],[]) [{image}] ("x.png","")], Para [{image}, Space, Str "text"]]'
+    body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert body.count("raisebox{-3.4bp}") == 2, body
+
+
 def test_a_picture_taller_than_a_page_runs_past_the_bottom_margin(test_parameters: TestParameters):
     """Word sets it at the top of a page below the lines before it there: TeX would leave a page empty."""
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12"))
