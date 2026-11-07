@@ -682,3 +682,11 @@ def test_the_line_gap_of_the_body_font_is_defined_for_lowered_pictures(test_para
     metadata = ("docx-body-size=12", "docx-body-baseline=13.8", "docx-body-descent=2.94", "docx-body-line-gap=0.396")
     assert "\\newcommand{\\pdcLineGap}{0.396bp}" in _preamble(_latex(test_parameters.container, *metadata))
     assert "pdcLineGap" not in _preamble(_latex(test_parameters.container, *metadata[:3]))
+
+
+def test_a_paragraph_in_the_line_of_its_runs_gets_its_struts_inside(test_parameters: TestParameters):
+    """docx_colors_to_latex opens the line of the font of the runs: the struts are of that font, so inside it."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4")
+    native = '[Para [RawInline (Format "latex") "{\\\\pdcParLine{12.8bp}{10.2bp}{2.6bp}", Str "text", RawInline (Format "latex") "\\\\par}"]]'
+    body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
+    assert "{\\pdcParLine{12.8bp}{10.2bp}{2.6bp}\\strut{}text\\strut{}\\par}" in body, body

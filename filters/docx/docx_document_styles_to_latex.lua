@@ -729,8 +729,12 @@ local function set_paragraph(para)
     -- the first and the last line of a paragraph get the strut of its font, and every line a break
     -- ends, which a picture on the next line would otherwise start right below its letters
     para.content = para.content:walk({ Inlines = strut_line_breaks })
-    para.content:insert(1, pandoc.RawInline("latex", "\\strut{}"))
-    para.content:insert(pandoc.RawInline("latex", "\\strut{}"))
+    -- A paragraph in the line of the font of its runs, which docx_colors_to_latex opens and closes, gets
+    -- its struts inside: they are of that font
+    local first, last = para.content[1], para.content[#para.content]
+    local own_line = first.t == "RawInline" and first.text:find("{\\pdcParLine", 1, true) == 1 and last.t == "RawInline" and last.text == "\\par}"
+    para.content:insert(own_line and 2 or 1, pandoc.RawInline("latex", "\\strut{}"))
+    para.content:insert(own_line and #para.content or #para.content + 1, pandoc.RawInline("latex", "\\strut{}"))
     changed = true
   end
   return changed and para or nil

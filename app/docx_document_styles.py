@@ -106,6 +106,10 @@ _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
 def _body_line(chain: list[Element], styles: Element, size: float, font: str | None) -> list[str]:
     """The size and the line of the body text, with where a line starts and ends when the font is known."""
     options = ["-M", f"docx-body-size={size:g}", "-M", f"docx-body-baseline={_baseline(chain, styles, size, font):.4g}"]
+    multiple = _line_multiple(chain, styles)
+    if multiple is not None:
+        # A line of a run in another font is as many times as high as that font's
+        options += ["-M", f"docx-body-line-multiple={multiple:.4g}"]
     ascent = ascent_ratio(font)
     if ascent is not None:
         # The balloon of a comment starts at the top of its line, the line to it at the bottom
@@ -230,7 +234,25 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
-    return options + _display_options(styles, theme, numbering)
+    return options + _run_font_options(document) + _display_options(styles, theme, numbering)
+
+
+def _run_font_options(document: Element | None) -> list[str]:
+    """The ascent and the single line of each installed font a run of the body names, by the hex of its name.
+
+    Word sets a line in the font of its text: a paragraph of runs in another font than its style's gets the line
+    of that font, see filters/docx/docx_colors_to_latex.lua. The hex is how docx_color_pre_process names the font.
+    """
+    if document is None:
+        return []
+    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for fonts in document.iter(_w("rFonts"))}
+    metrics = []
+    families = {family for family in (installed_family(name) for name in names) if family is not None}
+    for family in sorted(families):
+        ascent = ascent_ratio(family)
+        if ascent is not None:
+            metrics.append(f"{family.encode().hex().upper()}:{ascent:.4f}:{line_ratio(family):.4f}")
+    return ["-M", "docx-run-fonts=" + ",".join(metrics)] if metrics else []
 
 
 def _w(name: str) -> str:
@@ -590,6 +612,16 @@ def gap_ratio(family: str | None) -> float:
     """The hhea line gap of a family as a share of its size: Word adds it below the deepest thing of a line."""
     metrics = _hhea(family) if family is not None else None
     return metrics[2] if metrics is not None else 0
+
+
+def _line_multiple(chain: list[Element], styles: Element) -> float | None:
+    """The line spacing of a style as a multiple of the single line of its font; None for an exact or least line."""
+    found = _attribute(chain, styles, "pPr", "spacing", ("line",))
+    rule = _attribute(chain, styles, "pPr", "spacing", ("lineRule",))
+    if (rule[1] if rule is not None else "auto") != "auto":
+        return None
+    line = whole_number(found[1]) if found is not None else LINE_UNITS
+    return (line or LINE_UNITS) / LINE_UNITS
 
 
 def _baseline(chain: list[Element], styles: Element, size: float, font: str | None) -> float:

@@ -78,6 +78,7 @@ def test_sets_pandoc_template_like_word():
         "fontsize": "12pt",
         "docx-body-size": "12",
         "docx-body-baseline": "14.4",
+        "docx-body-line-multiple": "1",
         "docx-body-paragraph-skip": "9",
         "docx-body-justified": "false",
         "docx-body-hyphenated": "false",
@@ -571,3 +572,24 @@ def test_a_heading_hanging_indent_of_a_digit_python_cannot_read_hangs_nothing():
     numbering = _numbering().replace('w:hanging="432"', 'w:hanging="²"')
     fields = _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1, numbering=numbering))["docx-style-Heading1"])
     assert fields["numberhang"] == "0"
+
+
+RUN_IN_A_FONT = '<w:p><w:r><w:rPr><w:rFonts w:ascii="minor serif"/></w:rPr><w:t>text</w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Missing"/></w:rPr><w:t>x</w:t></w:r></w:p><w:sectPr/>'
+
+
+def test_the_fonts_of_the_runs_come_with_their_line(font_metrics):
+    """By the hex of the name of the family, as docx_color_pre_process names it; a font the container lacks is left out."""
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=RUN_IN_A_FONT))
+    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":0.9000:1.2500"
+
+
+def test_a_document_without_fonts_of_runs_passes_none():
+    assert "docx-run-fonts" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
+def test_the_body_passes_the_multiple_of_its_line(font_metrics):
+    body = BODY_TEXT.replace('<w:spacing w:before="180" w:after="180"/>', '<w:spacing w:before="180" w:after="180" w:line="360" w:lineRule="auto"/>')
+    assert _options(_docx(DEFAULTS + NORMAL + body))["docx-body-line-multiple"] == "1.5"
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-line-multiple"] == "1"
+    exact = BODY_TEXT.replace('<w:spacing w:before="180" w:after="180"/>', '<w:spacing w:before="180" w:after="180" w:line="300" w:lineRule="exact"/>')
+    assert "docx-body-line-multiple" not in _options(_docx(DEFAULTS + NORMAL + exact))

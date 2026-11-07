@@ -170,6 +170,7 @@ local function parse_style(name)
       props.sz = value
     elseif key == "FN" then
       props.font = font_family(value)
+      props.font_hex = value:upper()
     end
   end
   return props
@@ -245,19 +246,109 @@ local PREAMBLE = table.concat({
 
 -- A strut of the ascent and the descent of the current font: without the metrics of its glyphs, XeTeX
 -- sets a word as high as the ascent of its font and as deep as its descent
+-- The line and the strut of a paragraph of runs in another font than the body's, see run_line
+local PAR_LINE = "\\newcommand{\\pdcParLine}[3]{\\baselineskip=#1\\relax\\setbox\\strutbox\\hbox{\\vrule height #2 depth #3 width 0pt}}"
+
 local RUN_STRUT = "\\newcommand{\\pdcRunStrut}{\\begingroup\\XeTeXuseglyphmetrics=0 \\setbox0\\hbox{x}"
   .. "\\rule[-\\dp0]{0pt}{\\dimexpr\\ht0+\\dp0\\relax}\\endgroup}"
 
+-- The ascent and the single line of the font of each run, as shares of its size, by the hex of the name of the
+-- font, and the line of the body: see app/docx_document_styles.py
+local run_fonts = {}
+local body_line = nil
+
+local function number(meta, key)
+  return tonumber(pandoc.utils.stringify(meta[key] or ""))
+end
+
 local function read_body_size(meta)
-  body_size = tonumber(pandoc.utils.stringify(meta["docx-body-size"] or ""))
+  body_size = number(meta, "docx-body-size")
+  for entry in pandoc.utils.stringify(meta["docx-run-fonts"] or ""):gmatch("[^,]+") do
+    local hex, ascent, line = entry:match("^(%x+):([%d.]+):([%d.]+)$")
+    if hex then
+      run_fonts[hex:upper()] = { ascent = tonumber(ascent), line = tonumber(line) }
+    end
+  end
+  local ascent, descent, multiple = number(meta, "docx-body-ascent"), number(meta, "docx-body-descent"), number(meta, "docx-body-line-multiple")
+  if body_size and ascent and descent and multiple then
+    body_line = { ascent = ascent, descent = descent, multiple = multiple }
+  end
   return nil
+end
+
+-- What a paragraph of runs may hold besides them: the spaces and breaks between them, the LaTeX of other
+-- filters, and the formatting and the plain spans around them.
+local RUN_GAPS = { Space = true, SoftBreak = true, LineBreak = true, RawInline = true }
+local RUN_CONTAINERS = {
+  Span = true, Emph = true, Strong = true, Underline = true, Strikeout = true, SmallCaps = true,
+  Superscript = true, Subscript = true, Link = true, Quoted = true,
+}
+
+-- The font and the size of a run, as one key.
+local function run_key(inline)
+  local name = inline.t == "Span" and inline.attributes["custom-style"]
+  local props = name and parse_style(name)
+  if not props or not (props.font_hex or props.sz) then
+    return nil
+  end
+  return (props.font_hex or "") .. ":" .. (props.sz or ""), props
+end
+
+-- Word sets a line as high as the font of its text. A paragraph of runs alone, all in one font and size
+-- other than the body's, gets the line and the strut of that font, times the line spacing of its style:
+-- "{\pdcParLine{line}{ascent}{descent}", which "\par}" closes. docx_document_styles_to_latex puts the
+-- struts of the paragraph inside.
+local function run_line(para)
+  if body_line == nil then
+    return nil
+  end
+  local key, props, mixed = nil, nil, false
+  local function visit(inlines)
+    for _, inline in ipairs(inlines) do
+      local own, own_props = run_key(inline)
+      if own then
+        mixed = mixed or (key ~= nil and own ~= key)
+        key, props = own, own_props
+      elseif RUN_CONTAINERS[inline.t] then
+        visit(inline.content)
+      elseif not RUN_GAPS[inline.t] then
+        -- Text in the font of the body, a picture, an equation
+        mixed = true
+      end
+    end
+  end
+  visit(para.content)
+  if key == nil or mixed then
+    return nil
+  end
+  local size = props.sz and tonumber(props.sz) / 2 or body_size
+  local font = props.font_hex and run_fonts[props.font_hex]
+  local ascent = font and font.ascent * size or body_line.ascent * size / body_size
+  local line = font and font.line * size or (body_line.ascent + body_line.descent) * size / body_size
+  if math.abs(ascent - body_line.ascent) < 0.01 and math.abs(line - body_line.ascent - body_line.descent) < 0.01 then
+    return nil
+  end
+  return string.format("{\\pdcParLine{%.4fbp}{%.4fbp}{%.4fbp}", line * body_line.multiple, ascent, line - ascent)
+end
+
+local function mark_run_line(para)
+  if not FORMAT:match("latex") then
+    return nil
+  end
+  local open = run_line(para)
+  if open == nil then
+    return nil
+  end
+  para.content:insert(1, pandoc.RawInline("latex", open))
+  para.content:insert(pandoc.RawInline("latex", "\\par}"))
+  return para
 end
 
 function filter.Meta(meta)
   if not FORMAT:match("latex") then
     return nil
   end
-  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE .. "\n" .. RUN_STRUT) })
+  local soul_block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE .. "\n" .. RUN_STRUT .. "\n" .. PAR_LINE) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ soul_block })
@@ -413,4 +504,4 @@ function filter.Span(el)
   return result
 end
 
-return { { Meta = read_body_size }, filter }
+return { { Meta = read_body_size }, { Para = mark_run_line }, filter }
