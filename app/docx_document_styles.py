@@ -62,6 +62,8 @@ SUBSTITUTES = {
     "times new roman": "Liberation Serif",
     "courier new": "Liberation Mono",
 }
+# The hhea ascent of the fonts Word sets its bullets in, which no open font stands for: Symbol and Wingdings
+BULLET_ASCENTS = {"symbol": 1.005, "wingdings": 0.899}
 # The style pandoc gives body paragraphs, then the styles it inherits from.
 BODY_STYLE = "BodyText"
 # The style pandoc gives the paragraphs of a table cell and of a tight list.
@@ -456,7 +458,8 @@ def _bullet_ascents(numbering: Element | None, document: Element | None, size: f
     """How far above the baseline the bullet of each of the first four levels of a bulleted list reaches, in points.
 
     Word sets a line as high as the highest font in it, the bullet's among them. The levels are those of
-    the first bulleted list of the document; a level whose font is not installed gets 0.
+    the first bulleted list of the document; a level whose font is not installed gets the ascent of
+    BULLET_ASCENTS, else 0.
     """
     levels = _bullet_levels(numbering, document)
     ascents = []
@@ -464,6 +467,8 @@ def _bullet_ascents(numbering: Element | None, document: Element | None, size: f
         fonts = levels[str(index)].find(f"{_w('rPr')}/{_w('rFonts')}") if str(index) in levels else None
         family = fonts.get(_w("ascii")) if fonts is not None else None
         ratio = ascent_ratio(installed_family(family))
+        if ratio is None and family is not None:
+            ratio = BULLET_ASCENTS.get(family.strip().casefold())
         ascents.append(round(size * ratio, 2) if ratio is not None else 0)
     return ascents
 

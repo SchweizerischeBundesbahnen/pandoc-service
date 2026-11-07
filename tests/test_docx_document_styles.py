@@ -504,6 +504,13 @@ def test_a_bullet_reaches_as_high_as_its_font_in_the_list_of_the_document(font_m
     assert options["docx-list-bullet-ascents"] == "10.8,0,0,0"
 
 
+@pytest.mark.parametrize(("font", "ascents"), [("Symbol", "12.06,0,0,0"), ("wingdings", "10.79,0,0,0")])
+def test_a_bullet_in_a_symbol_font_of_word_gets_its_ascent_without_the_font(font_metrics, font: str, ascents: str):
+    """The image has no Symbol and no Wingdings, the fonts of the bullets of Word: their ascent comes from Word's."""
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets(font)))
+    assert options["docx-list-bullet-ascents"] == ascents
+
+
 def test_a_bullet_in_a_font_which_is_not_installed_gets_no_ascent(font_metrics):
     assert "docx-list-bullet-ascents" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets("Missing")))
 
