@@ -237,6 +237,7 @@ local HEAD_STRUT = "\\pdcHeadStrut{}"
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
+local has_display = false    -- set when a cell holds an equation of its own paragraph
 local has_grid = false       -- set when a table is written as raw LaTeX
 local NESTED = "pdc-nested"   -- the attribute of a table in a cell of another
 
@@ -638,6 +639,26 @@ local function add_plain_cell_space(rows, raw)
   end
 end
 
+-- An equation of its own paragraph in a cell, as Word sets it in the body: centered, in display style, on a
+-- line as high as the font of the equations. docx_document_styles_to_latex defines \\pdcDisplayLine.
+-- Returns whether it did, and whether the cell ends with one, which then sets the depth of its own line.
+local function display_equations(blocks)
+  local changed, last = false, false
+  for index, block in ipairs(blocks) do
+    local only = (block.t == "Plain" or block.t == "Para") and #block.content == 1 and block.content[1]
+    if only and only.t == "Math" and only.mathtype == "DisplayMath" then
+      blocks[index] = pandoc.Plain({
+        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcDisplayLine{"),
+        pandoc.Math("InlineMath", "\\displaystyle " .. only.text),
+        pandoc.RawInline("latex", "}"),
+      })
+      changed = true
+      last = index == #blocks
+    end
+  end
+  return changed, last
+end
+
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
 -- Injects cell background colour and per-cell alignment, and captures any
 -- table-level width/alignment (carried on the first cell) into `layout`.
@@ -654,6 +675,15 @@ local function process_rows(rows, layout, flags, head)
         modified = true
       end
       local props = consume_sentinel(cell.contents)
+      local display, ends_with_display = display_equations(cell.contents)
+      if display then
+        flags.display = true
+        modified = true
+      end
+      if ends_with_display then
+        -- The line of the equation is as deep as Word's: an end after it would start a line of its own
+        cell.attributes[NO_END] = "1"
+      end
       -- Alignment first, background second: both insert at the front, so the
       -- \cellcolor ends up ahead of the declaration, which is where colortbl
       -- wants it.
@@ -1388,6 +1418,7 @@ function table_pass.Table(tbl)
   -- so it is not loaded for a document that has no \cellcolor in it.
   if flags.cellcolor then has_cellcolor = true end
   if flags.align then has_align = true end
+  if flags.display then has_display = true end
 
   -- Table width: pandoc's DOCX reader normalises column widths to sum to 1.0
   -- (discarding the table's <w:tblW> share of the line) OR, when the DOCX
@@ -1541,9 +1572,11 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display) then return meta end
 
   local parts = {}
+  -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
+  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
   if has_grid then parts[#parts + 1] = GRID_PREAMBLE end
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end

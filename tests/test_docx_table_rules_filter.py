@@ -497,3 +497,34 @@ def test_a_grid_on_the_right_reaches_past_the_margin_by_its_cell_margin(test_par
     native = _grid_table([_cell(f'Str "{OPEN}{GRID};tw=0.4000;ta=right{CLOSE}a"'), _cell('Str "b"')])
     latex = " ".join(_native_latex(test_parameters.container, native).split())
     assert "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{-\\tabcolsep}" in latex, latex
+
+
+def test_an_equation_of_its_own_paragraph_in_a_cell_is_a_centered_line(test_parameters: TestParameters):
+    """Word sets an equation of its own paragraph in a cell as in the body: centered, on a line of the font of the equations."""
+    last = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}{GRID}{CLOSE}Formula:"], Plain [Math DisplayMath "x"]]'
+    first = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Math DisplayMath "y"], Plain [Str "after"]]'
+    latex = " ".join(_native_latex(test_parameters.container, _grid_table([last, first])).split())
+    assert "\\pdcDisplayLineEnd{\\(\\displaystyle x\\)} &" in latex, "the cell ends the line of its last equation, without an end of its own"
+    assert "\\pdcDisplayLine{\\(\\displaystyle y\\)}" in latex
+
+
+def _formula_table(display: bool) -> Document:
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "Step"
+    cell = table.rows[0].cells[1]
+    cell.paragraphs[0].add_run("Expected formula:")
+    paragraph = cell.add_paragraph()
+    if display:
+        math = '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara>'
+        paragraph._p.append(parse_xml(math))
+    else:
+        paragraph.add_run("x")
+    document.add_paragraph("After")
+    return document
+
+
+def test_a_cell_which_ends_with_an_equation_ends_its_row_there(test_parameters: TestParameters):
+    """\\centering made the end of the row a break of the line: the row got an empty line more."""
+    text, display = _pdf_of(test_parameters, _formula_table(False)), _pdf_of(test_parameters, _formula_table(True))
+    assert abs(_top(display, "After") - _top(text, "After")) < 4, (_top(display, "After"), _top(text, "After"))

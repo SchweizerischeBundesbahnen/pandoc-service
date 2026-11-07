@@ -569,7 +569,7 @@ end
 -- An equation of Word is a centred paragraph. TeX opens an empty line above
 -- a display which starts a paragraph, and its matrices take the row height
 -- of the tables: the equation is set as a centred paragraph in display style.
-local function display_equation(math)
+local function display_line()
   local open = "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{" .. ALIGNED_GAP .. "pt}"
   local close = "\\par}"
   if body_size then
@@ -586,11 +586,17 @@ local function display_equation(math)
     close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}%s\\usebox{\\pdcEquationBox}\\par%s}",
       EQUATION_TOP * body_size, line, line ~= "" and "\\prevdepth\\dp\\strutbox" or "")
   end
+  return open, close
+end
+
+-- An equation of its own paragraph, in \\pdcDisplayLine, which the preamble defines from display_line:
+-- docx_tables_to_latex sets one in a cell of a table with it as well.
+local function display_equation(math)
   return pandoc.Plain({
-    pandoc.RawInline("latex", open),
+    pandoc.RawInline("latex", "\\pdcDisplayLine{"),
     -- Word sets no limit where a sum has an empty one: TeX keeps room above or below it
     pandoc.Math("InlineMath", "\\displaystyle " .. math.text:gsub("[_^]{}", "")),
-    pandoc.RawInline("latex", close),
+    pandoc.RawInline("latex", "}"),
   })
 end
 
@@ -983,6 +989,13 @@ local function write_preamble(meta)
   body_preamble(meta, lines)
   page_preamble(meta, lines)
   table_preamble(meta, lines)
+  -- After docx_tables_to_latex, whose \\providecommand stands for it without the styles
+  local open, close = display_line()
+  lines[#lines + 1] = "\\def\\pdcDisplayLine#1{" .. open .. "#1" .. close .. "}"
+  -- The last paragraph of a cell: the cell ends it, centered, where a paragraph ended in the cell would add a line
+  local last_close = close:match("^(.-)\\par[^\\]*}$") or close:match("^(.-)\\par\\prevdepth\\dp\\strutbox}$") or ""
+  -- \\arraybackslash: the \\\\ after the cell ends the row, which \\centering would make a break of the line
+  lines[#lines + 1] = "\\def\\pdcDisplayLineEnd#1{\\par" .. open:sub(2):gsub("^\\centering", "\\centering\\arraybackslash") .. "#1" .. last_close .. "}"
   headings_preamble(meta, lines)
   title_preamble(lines)
   caption_preamble(lines)
