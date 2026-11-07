@@ -157,6 +157,14 @@ def test_a_column_takes_the_width_of_word_with_the_cell_margins_in_it(test_param
     assert "\\real{" not in latex
 
 
+def test_a_column_of_struck_text_takes_the_width_of_word(test_parameters: TestParameters):
+    """A deleted linked work item is struck through: its cell is no reason to leave the widths to pandoc."""
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}a"'), _cell('Strikeout [Str "b"]')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "p{\\dimexpr0.5000\\linewidth+0.5000\\tabcolsep+0.5000\\tabcolsep-2\\tabcolsep\\relax}" in latex
+    assert "\\real{" not in latex
+
+
 def test_a_table_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_parameters: TestParameters):
     inner = _grid_table([_cell(f'Str "{OPEN}tw=0.5000{CLOSE}x"'), _cell('Str "y"')])[1:-1]
     outer = _grid_table([_cell(f'Str "{OPEN}tw=1.0000{CLOSE}a"'), _cell('Str "b"')])

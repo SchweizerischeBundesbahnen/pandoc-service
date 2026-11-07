@@ -711,7 +711,7 @@ local GRID_BLOCKS = { Plain = true, Para = true, RawBlock = true }
 local GRID_INLINES = {
   Str = true, Space = true, SoftBreak = true, LineBreak = true, Emph = true, Strong = true,
   Underline = true, Span = true, RawInline = true, Link = true, Math = true, SmallCaps = true,
-  Superscript = true, Subscript = true, Quoted = true, Code = true, Image = true,
+  Superscript = true, Subscript = true, Quoted = true, Code = true, Image = true, Strikeout = true,
 }
 
 local function simple_cells(rows)
