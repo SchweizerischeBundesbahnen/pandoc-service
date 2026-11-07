@@ -1489,7 +1489,13 @@ function table_pass.Table(tbl)
   -- Written as LaTeX, a table gets the columns of Word; pandoc's table its own
   local nested = tbl.attributes[NESTED] ~= nil
   tbl.attributes[NESTED] = nil
-  local simple = not grid and not nested and not layout.aw and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
+  -- A table of an absolute width sets each column as wide as Word with Word's margins, when no column is
+  -- narrower than a twentieth of the line; a narrower one keeps tight margins, see word_widths
+  local wide = true
+  for _, colspec in ipairs(tbl.colspecs) do
+    wide = wide and type(colspec[2]) == "number" and colspec[2] >= 0.05
+  end
+  local simple = not grid and not nested and (not layout.aw or wide) and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
   if layout.aw and not grid and not simple then
     -- A group: the table after this one gets the padding the document sets, not 6pt
     before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"

@@ -51,7 +51,8 @@ def test_an_unknown_kind_of_lines_is_left_out(test_parameters: TestParameters):
 
 
 def test_a_narrow_absolute_table_restores_the_padding_of_the_document_after_it(test_parameters: TestParameters):
-    latex = _latex(test_parameters.container, "tw=0.3000;aw=1")
+    """Columns narrower than a twentieth of the line keep tight margins, in a group of their own."""
+    latex = _latex(test_parameters.container, "tw=0.0400;aw=1")
     assert "\\begingroup\\setlength{\\tabcolsep}{3pt}" in latex
     assert "\\setlength{\\tabcolsep}{6pt}" not in latex
     assert latex.count("\\begingroup") == latex.count("\\endgroup")
@@ -528,3 +529,19 @@ def test_a_cell_which_ends_with_an_equation_ends_its_row_there(test_parameters: 
     """\\centering made the end of the row a break of the line: the row got an empty line more."""
     text, display = _pdf_of(test_parameters, _formula_table(False)), _pdf_of(test_parameters, _formula_table(True))
     assert abs(_top(display, "After") - _top(text, "After")) < 4, (_top(display, "After"), _top(text, "After"))
+
+
+def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):
+    """A table of twips sets each column as wide as its twips, with the cell margins of Word."""
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;aw=1{CLOSE}a"'), _cell('Str "b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "p{\\dimexpr0.5000\\linewidth-2\\tabcolsep\\relax}" in latex, latex
+    assert "\\setlength{\\tabcolsep}{3pt}" not in latex
+
+
+def test_a_narrow_column_of_an_absolute_table_keeps_tight_margins(test_parameters: TestParameters):
+    columns = ", ".join(["(AlignDefault, ColWidth 0.02)"] * 2)
+    cells = [_cell(f'Str "{OPEN}tw=0.0400;aw=1{CLOSE}a"'), _cell('Str "b"')]
+    native = f'[Table ("",[],[]) (Caption Nothing []) [{columns}] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{", ".join(cells)}]]] (TableFoot ("",[],[]) [])]'
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\setlength{\\tabcolsep}{3pt}" in latex, latex
