@@ -508,6 +508,107 @@ local function split_latex(latex)
   return (latex:gsub("\\pdcSplitRow{(%a+)}(.-)\\\\", "%2\\\\\\pdcSplit%1\n"))
 end
 
+-- ---- A row Word breaks between the lines of its text ----
+-- Word breaks a row at the end of a page between any two lines of its cells, where longtable breaks
+-- only between rows. The text of each cell of such a row is set apart in a box, and the row goes out
+-- as a row per line, each line split off its box: the page may break between them. The first line
+-- keeps the space of the cell above it, the last the space below it. See WRAP_PREAMBLE.
+local has_wrap = false
+local wrap_columns = 0
+local wrap_rows = {}   -- the cells of each further line of a row, by the number in its marker
+local WRAP_END = {
+  [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\pdcWrapEnd{\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax}\\fi",
+  [COMPACT_CELL_DEPTH] = "\\ifdefined\\pdcCompactCellDepth\\pdcWrapEnd{\\dp\\pdcWrapStrut}\\fi",
+}
+local WRAP_PREAMBLE = table.concat({
+  "\\makeatletter",
+  "\\newsavebox{\\pdcWrapStrut}\\newif\\ifpdcWrapMore\\newdimen\\pdcWrapDepth",
+  -- Before the row: the rows of its lines get no strut, the strut of the row is kept
+  "\\newcommand{\\pdcWrapBegin}{\\noalign{\\global\\setbox\\pdcWrapStrut\\copy\\@arstrutbox"
+    .. "\\global\\setbox\\@arstrutbox\\hbox{}\\global\\pdcWrapDepth\\dp\\pdcWrapStrut}}",
+  -- The depth the end of a cell asks for, given to the last line of the row
+  "\\newcommand{\\pdcWrapEnd}[1]{\\ifdim#1>\\pdcWrapDepth\\global\\pdcWrapDepth#1\\relax\\fi}",
+  -- The next line of a cell in \\box0, at least #2 high and a line deep
+  "\\newcommand{\\pdcWrapSplit}[2]{\\expandafter\\ifvoid\\csname pdcWrapBox#1\\endcsname\\setbox\\z@\\hbox{}\\else"
+    .. "\\splittopskip\\ht\\strutbox\\vbadness\\@M\\vfuzz\\maxdimen\\setbox\\z@\\vsplit\\csname pdcWrapBox#1\\endcsname to\\z@"
+    .. "\\setbox\\z@\\vbox{\\unvbox\\z@}\\fi\\ifdim\\ht\\z@<#2\\ht\\z@#2\\fi\\ifdim\\dp\\z@<\\dp\\strutbox\\dp\\z@\\dp\\strutbox\\fi}",
+  -- In the last cell of a line: whether a line follows, else the line gets the depth of the end of the row
+  "\\newcommand{\\pdcWrapCheck}[1]{\\global\\pdcWrapMorefalse\\@tempcnta\\@ne"
+    .. "\\loop\\expandafter\\ifvoid\\csname pdcWrapBox\\the\\@tempcnta\\endcsname\\else\\global\\pdcWrapMoretrue\\fi"
+    .. "\\ifnum\\@tempcnta<#1\\advance\\@tempcnta\\@ne\\repeat"
+    .. "\\ifpdcWrapMore\\else\\ifdim\\dp\\z@<\\pdcWrapDepth\\dp\\z@\\pdcWrapDepth\\fi\\fi\\box\\z@}",
+  -- Word breaks a row after any line of a cell, whatever the widow control of the document
+  "\\newcommand{\\pdcWrapSet}[2]{\\global\\expandafter\\setbox\\csname pdcWrapBox#1\\endcsname\\vbox{"
+    .. "\\clubpenalty\\z@\\widowpenalty\\z@\\brokenpenalty\\z@\\interlinepenalty\\z@\\everypar{\\vrule height\\ht\\pdcWrapStrut width\\z@\\everypar{}}#2\\par}\\pdcWrapSplit{#1}{\\ht\\pdcWrapStrut}}",
+  "\\newcommand{\\pdcWrapCell}[2]{\\pdcWrapSet{#1}{#2}\\box\\z@}",
+  "\\newcommand{\\pdcWrapCellLast}[2]{\\pdcWrapSet{#1}{#2}\\pdcWrapCheck{#1}}",
+  "\\newcommand{\\pdcWrapPiece}[1]{\\pdcWrapSplit{#1}{\\ht\\strutbox}\\box\\z@}",
+  "\\newcommand{\\pdcWrapPieceLast}[1]{\\pdcWrapSplit{#1}{\\ht\\strutbox}\\pdcWrapCheck{#1}}",
+  -- After the row: a row per further line, then the strut of the table back
+  "\\newcommand{\\pdcWrapRows}[1]{\\ifpdcWrapMore\\expandafter\\@firstoftwo\\else\\expandafter\\@secondoftwo\\fi"
+    .. "{#1\\\\\\pdcWrapRows{#1}}{\\noalign{\\global\\setbox\\@arstrutbox\\copy\\pdcWrapStrut}}}",
+  "\\makeatother",
+}, "\n")
+
+-- Whether a row can go out a line at a time: a cell of one paragraph in each column, with no picture,
+-- none merged
+local function wraps(row, columns)
+  if row.attributes[SPLIT] or #row.cells ~= columns then return false end
+  for _, cell in ipairs(row.cells) do
+    if cell.row_span ~= 1 or cell.col_span ~= 1 or cell.attributes[ROW_SPAN] or cell.attributes[COVERED] then return false end
+    if #cell.contents ~= 1 or (cell.contents[1].t ~= "Plain" and cell.contents[1].t ~= "Para") then return false end
+    local last = cell.contents[1].content[#cell.contents[1].content]
+    if not (last and last.t == "RawInline" and WRAP_END[last.text]) then return false end
+    local picture = false
+    pandoc.Blocks(cell.contents):walk({ Image = function() picture = true end })
+    if picture then return false end
+  end
+  return true
+end
+
+-- The cells of each row of the bodies which can go out a line at a time, in their boxes; after its last
+-- cell a marker which wrap_latex replaces.
+local function wrap_cells(tbl)
+  for _, body in ipairs(tbl.bodies) do
+    -- The rows a cell merged down from a row above still covers
+    local covered = 0
+    for _, row in ipairs(body.body) do
+      local free = covered == 0
+      covered = math.max(covered - 1, 0)
+      for _, cell in ipairs(row.cells) do
+        covered = math.max(covered, (tonumber(cell.attributes[ROW_SPAN]) or cell.row_span) - 1)
+      end
+      if free and wraps(row, #tbl.colspecs) then
+        has_wrap = true
+        wrap_columns = math.max(wrap_columns, #row.cells)
+        local number = #wrap_rows + 1
+        local pieces = {}
+        for index, cell in ipairs(row.cells) do
+          local block = cell.contents[1]
+          local color, at = cell_color(cell)
+          local before = color and color.text or ""
+          if color then block.content:remove(at) end
+          local content = block.content
+          content[#content] = pandoc.RawInline("latex", WRAP_END[content[#content].text])
+          local last = index == #row.cells
+          local open = string.format("%s\\pdcWrapCell%s{%d}{", before, last and "Last" or "", index)
+          content:insert(1, pandoc.RawInline("latex", (index == 1 and "\\pdcWrapBegin" or "") .. open))
+          content:insert(pandoc.RawInline("latex", last and string.format("}\\pdcWrapRowEnd{%d}", number) or "}"))
+          pieces[index] = string.format("%s\\pdcWrapPiece%s{%d}", before, last and "Last" or "", index)
+        end
+        wrap_rows[number] = table.concat(pieces, "&")
+      end
+    end
+  end
+end
+
+-- The rows of the further lines after each row of wrap_cells, before the line under it.
+local function wrap_latex(latex)
+  return (latex:gsub("\\pdcWrapRowEnd{(%d+)}(.-)\\\\", function(number, between)
+    return between .. "\\\\\\pdcWrapRows{" .. wrap_rows[tonumber(number)] .. "}"
+  end))
+end
+
 local function add_plain_cell_space(rows, raw)
   raw = raw or PLAIN_CELL_SPACE
   for _, row in ipairs(rows) do
@@ -843,6 +944,7 @@ local function grid_table(tbl, absolute)
     return nil
   end
   local lines = grid_row_lines(rows, #tbl.colspecs)
+  wrap_cells(tbl)
   for index, row in ipairs(rows) do
     local last = row.cells[#row.cells]
     if last ~= nil then
@@ -866,7 +968,7 @@ local function grid_table(tbl, absolute)
   if latex:find(ROW_END, 1, true) then
     return nil
   end
-  return grid_block(split_latex(latex), rows)
+  return grid_block(split_latex(wrap_latex(latex)), rows)
 end
 
 -- ---- Pass 1: Table processing ----
@@ -1018,7 +1120,13 @@ function table_pass.Table(tbl)
     after[#after + 1] = "\\endgroup"
     return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
   end
-  local raw = simple and grid_block(split_latex(edge_widths(word_widths(pandoc.write(pandoc.Pandoc({ tbl }), LATEX), layout.aw))), rows)
+  local raw = nil
+  if simple then
+    -- A copy: pandoc writes the table itself when this does not
+    local copy = tbl:clone()
+    wrap_cells(copy)
+    raw = grid_block(split_latex(wrap_latex(edge_widths(word_widths(pandoc.write(pandoc.Pandoc({ copy }), LATEX), layout.aw)))), rows)
+  end
   if raw then
     has_grid = true
     return { pandoc.RawBlock("latex", table.concat(before)), raw, pandoc.RawBlock("latex", table.concat(after)) }
@@ -1062,11 +1170,18 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_cellcolor or has_align or has_split or has_cell_picture) then return meta end
+  if not (has_cellcolor or has_align or has_split or has_cell_picture or has_wrap) then return meta end
 
   local parts = {}
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end
+  if has_wrap then
+    local boxes = {}
+    for index = 1, wrap_columns do
+      boxes[index] = string.format("\\expandafter\\newbox\\csname pdcWrapBox%d\\endcsname", index)
+    end
+    parts[#parts + 1] = WRAP_PREAMBLE .. "\n" .. table.concat(boxes)
+  end
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
   local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })

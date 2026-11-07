@@ -8,6 +8,13 @@ markdown table whose first cell carries the sentinel.
 
 from __future__ import annotations
 
+import io
+
+from docx import Document
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
+from pypdf import PdfReader
+
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
@@ -113,7 +120,8 @@ def test_a_grid_with_a_picture_draws_its_lines_and_keeps_the_picture(test_parame
 def test_the_text_of_a_cell_without_a_style_stands_at_its_top(test_parameters: TestParameters):
     """Word sets the space of Normal below the text of the cell: it goes into the depth of the cell."""
     latex = _latex(test_parameters.container, "tw=1.0000")
-    assert latex.count("\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}") == 4
+    assert latex.count("\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}") == 2, "the header row"
+    assert latex.count("\\pdcWrapEnd{\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax}") == 2, "the body row, which goes out a line at a time"
 
 
 def test_a_table_of_compact_paragraphs_gets_no_space_below_its_text(test_parameters: TestParameters):
@@ -266,3 +274,58 @@ def test_a_header_cell_which_starts_with_a_list_gets_no_strut_line(test_paramete
     native = _grid_table([_cell('Str "a"'), _cell('Str "b"')]).replace('(TableHead ("",[],[]) [])', f"({head})")
     latex = _native_latex(test_parameters.container, native)
     assert latex.count("\\pdcHeadStrut{}") == 1, latex
+
+
+def test_a_row_of_paragraphs_goes_out_a_line_at_a_time_which_a_page_may_break(test_parameters: TestParameters):
+    """Word breaks a row between any two lines of its cells; longtable only between rows."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}Label"'), _cell('Str "a", Space, Str "long", Space, Str "text"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcWrapBegin\\pdcWrapCell{1}{\\pdcCellRaggedright{}Label" in latex, latex
+    assert "\\pdcWrapCellLast{2}{\\pdcCellRaggedright{}a long text" in latex, latex
+    assert "\\\\\\pdcWrapRows{\\pdcWrapPiece{1}&\\pdcWrapPieceLast{2}}\\hline" in latex, "the line under the row after its last line"
+    assert "\\pdcWrapRowEnd" not in latex
+
+
+def test_a_coloured_cell_keeps_its_colour_in_every_line_of_its_row(test_parameters: TestParameters):
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID};bg=F4CCCC{CLOSE}Label"'), _cell('Str "text"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcWrapBegin\\cellcolor[HTML]{F4CCCC}\\pdcWrapCell{1}{" in latex, latex
+    assert "\\pdcWrapRows{\\cellcolor[HTML]{F4CCCC}\\pdcWrapPiece{1}&" in latex, latex
+
+
+def test_a_row_with_a_picture_stays_one_row(test_parameters: TestParameters):
+    picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(picture)])
+    assert "pdcWrap" not in _native_latex(test_parameters.container, native)
+
+
+def test_a_row_longer_than_the_rest_of_the_page_breaks_between_its_lines(test_parameters: TestParameters):
+    document = Document()
+    document.add_paragraph("Before the table.")
+    # pandoc reads the first row as the header, which repeats on each page and does not break
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Name"
+    table.rows[0].cells[1].text = "Text"
+    table.rows[1].cells[0].text = "Label"
+    table.rows[1].cells[1].text = " ".join(f"w{number}" for number in range(700))
+    properties = table._tbl.tblPr
+    for width in properties.findall("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tblW"):
+        properties.remove(width)
+    properties.append(parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>'))
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text
+    pages = [page.extract_text() for page in PdfReader(io.BytesIO(response.content)).pages]
+    assert "Before the table." in pages[0]
+    assert "w0 " in pages[0] or "w0\n" in pages[0], "the row starts on the page of the text before it"
+    assert "w699" in pages[-1]
+    assert len(pages) > 1
+
+
+def test_a_row_under_a_cell_merged_down_stays_one_row(test_parameters: TestParameters):
+    """Its first cell is not the first column: a row of its lines could not start there."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}merged"', rows=2), _cell('Str "a"')], [_cell('Str "b"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\pdcWrapBegin") == 0, latex

@@ -171,6 +171,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
 | a cell paragraph without a style | rows as tall as a paragraph of the Normal style, its text at the top and the space below it, as Word sets them |
 | a table whose cells draw every side, `<w:tcBorders>` or `<w:tblBorders>` | a grid of lines in their colour and width, none inside a merged cell, the table out to the cell margin; a table with a picture, a list or a note in a cell keeps LaTeX's rules |
+| a row of a table taller than the rest of the page | a break between two lines of its cells, as Word breaks it; a row with a picture or a merged cell goes to the next page whole |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it; under a table with only the space before of its style, above one with only its space after |
 | an empty paragraph, one of line breaks only, a line break at the start or the end of a paragraph | an empty line, and one more for each line break, as Word shows them |
 | a page break, a section on a new page, `<w:pageBreakBefore>` | a new page |
