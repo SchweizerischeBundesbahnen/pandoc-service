@@ -81,6 +81,7 @@ FILTERS = {
     "docx_text_decorations": f"{DOCX_FILTER_PATH}/docx_text_decorations.lua",
     "docx_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_colors_to_latex.lua",
     "docx_math_colors_to_latex": f"{DOCX_FILTER_PATH}/docx_math_colors_to_latex.lua",
+    "docx_math_styles_to_latex": f"{DOCX_FILTER_PATH}/docx_math_styles_to_latex.lua",
     "docx_image_layout_to_latex": f"{DOCX_FILTER_PATH}/docx_image_layout_to_latex.lua",
     "docx_paragraphs_to_latex": f"{DOCX_FILTER_PATH}/docx_paragraphs_to_latex.lua",
     "docx_lists_to_latex": f"{DOCX_FILTER_PATH}/docx_lists_to_latex.lua",
@@ -118,6 +119,7 @@ ALLOWED_PANDOC_OPTIONS: dict[str, str] = {
         f"--lua-filter={FILTERS['docx_text_decorations']}",
         f"--lua-filter={FILTERS['docx_colors_to_latex']}",
         f"--lua-filter={FILTERS['docx_math_colors_to_latex']}",
+        f"--lua-filter={FILTERS['docx_math_styles_to_latex']}",
         f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
         f"--lua-filter={FILTERS['docx_lists_to_latex']}",
         f"--lua-filter={FILTERS['docx_tables_to_latex']}",
@@ -734,6 +736,7 @@ def _build_pandoc_command(
                 # After docx_colors_to_latex, which boxes a highlighted run only while it holds no raw LaTeX.
                 f"--lua-filter={FILTERS['docx_image_layout_to_latex']}",
                 f"--lua-filter={FILTERS['docx_math_colors_to_latex']}",
+                f"--lua-filter={FILTERS['docx_math_styles_to_latex']}",
                 f"--lua-filter={FILTERS['docx_paragraphs_to_latex']}",
                 f"--lua-filter={FILTERS['docx_lists_to_latex']}",
                 f"--lua-filter={FILTERS['docx_tables_to_latex']}",

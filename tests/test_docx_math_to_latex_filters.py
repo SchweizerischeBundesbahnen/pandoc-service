@@ -1,4 +1,4 @@
-"""Tests for ``filters/docx/docx_math_colors_to_latex.lua``: the color markers of math runs become color groups."""
+"""Tests for the filters ``docx_math_colors_to_latex.lua`` and ``docx_math_styles_to_latex.lua``: the markers of math runs become LaTeX."""
 
 from __future__ import annotations
 
@@ -32,3 +32,16 @@ def test_colored_operators_keep_their_spacing(test_parameters: TestParameters):
     latex = _md_to_latex(test_parameters, md)
     assert "\\mathbin{\\color[HTML]{FF0000}+}" in latex, latex
     assert "\\mathrel{\\color[HTML]{0000FF}=}" in latex, latex
+
+
+STYLES_FILTER_PATH = "/usr/local/share/pandoc/filters/docx/docx_math_styles_to_latex.lua"
+
+
+def test_style_markers_become_upright_and_bold_italic(test_parameters: TestParameters):
+    """texmath sets an upright d of "dx" italic and a bold italic v upright. Word sets them as marked."""
+    container = test_parameters.container
+    md = "$PMSzzzpzzzdzzzPMSENDzzzx + PMSzzzbizzzvzzzPMSENDzzz$"
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && printf '%s' '{md}' > /tmp/test/style.md"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex --lua-filter={STYLES_FILTER_PATH} /tmp/test/style.md"])
+    assert exit_code == 0, output.decode()
+    assert "\\symup{d}x + \\symbfit{v}" in output.decode(), output.decode()

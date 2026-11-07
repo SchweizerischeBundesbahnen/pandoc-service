@@ -181,6 +181,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field, and the empty line Word leaves after it |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
 | an equation (OMML) | in Cambria Math, when the container has it; an equation of its own paragraph as a centred line, without the empty line and the space TeX puts around a display |
+| an upright or bold italic letter of an equation (`m:sty` `p`, `bi`), a colored operator | upright, bold italic, and an operator with its space, as Word sets them |
 | a comment (`<w:commentReference>`) | a balloon "Commented [n]:" with its text in a grey area right of the text, with a dashed line from the commented text, on a page shrunk to make room for it, as Word for Mac prints it |
 
 The image has no Microsoft fonts. It has open fonts which set text as wide and as high as these fonts of
