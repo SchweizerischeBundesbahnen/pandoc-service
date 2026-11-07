@@ -221,6 +221,9 @@ local filter = {}
 local PREAMBLE = table.concat({
   "\\usepackage{soul}",
   "\\usepackage[normalem]{ulem}",
+  -- ulem draws the line of a word before the word, which a highlight box then covers: Word draws it over
+  "\\makeatletter\\def\\UL@putbox{\\ifx\\UL@start\\@empty\\else\\vrule\\@width\\z@\\LA@penalty\\@M"
+    .. "{\\UL@skip\\wd\\UL@box\\box\\UL@box\\kern-\\UL@skip\\UL@leaders}\\fi}\\makeatother",
   -- Pin the underline depth/thickness for BOTH underline mechanisms so every
   -- underline sits at the same place regardless of font size or which mechanism
   -- drew it. Plain underlined text uses soul's \ul (it hyphenates); underlined

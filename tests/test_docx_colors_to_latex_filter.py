@@ -378,3 +378,10 @@ def test_a_paragraph_of_runs_in_another_font_without_a_size_gets_the_line_of_the
     latex = _run_line_latex(test_parameters.container, f'[one]{{custom-style="{_font_style("Segoe UI")}"}} [two]{{custom-style="{_font_style("Segoe UI")}"}}')
     size = "\\dimexpr\\csname f@size\\endcsname pt\\relax"
     assert latex.startswith(f"{{\\pdcParLine{{1.1640{size}}}{{0.9280{size}}}{{0.2360{size}}}"), latex
+
+
+def test_ulem_draws_its_line_over_the_word(test_parameters: TestParameters):
+    """Word draws a strike-through over a highlight: ulem drew the line first, and the box of the highlight covered it."""
+    preprocessed = docx_color_pre_process.preprocess(FIXTURE_PATH.read_bytes())
+    flat = _flatten_whitespace(_md_to_latex_standalone(test_parameters.container, preprocessed))
+    assert "{\\UL@skip\\wd\\UL@box\\box\\UL@box\\kern-\\UL@skip\\UL@leaders}" in flat, flat
