@@ -227,3 +227,34 @@ def test_the_document_defaults_break_the_page_before_every_style_which_keeps_the
         b'<w:style w:styleId="Plain"><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr></w:style></w:styles>'
     )
     assert page_break_styles(styles) == frozenset({"Normal", "Heading1", None})
+
+
+def test_preprocess_keeps_the_entries_of_a_list_of_figures_uncolored():
+    """The table of contents rewrite runs first and gives an entry a style of its own: the color rewrite still knows it."""
+    styles = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="156082"/></w:rPr></w:style>'
+        b"</w:styles>"
+    )
+    entry = (
+        b'<w:hyperlink w:anchor="_Toc1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>Figure 1 First</w:t></w:r><w:r><w:tab/></w:r>'
+        b'<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>'
+        b'<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:hyperlink>'
+    )
+    document = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+        b'<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\h \\z \\f F </w:instrText></w:r>'
+        b'<w:r><w:fldChar w:fldCharType="separate"/></w:r>' + entry + b'<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+        b"</w:body></w:document>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("word/document.xml", document)
+        zf.writestr("word/styles.xml", styles)
+
+    result = docx_latex_pre_process.preprocess(buffer.getvalue())
+
+    with zipfile.ZipFile(io.BytesIO(result)) as zf:
+        body = zf.read("word/document.xml")
+    assert b"PandocToc__ENTRY" in body, "the table of contents rewrite ran"
+    assert b"PandocColor__FG_156082" not in body
