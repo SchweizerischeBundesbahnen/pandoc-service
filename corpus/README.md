@@ -62,7 +62,7 @@ Open it in Word by hand, answer Yes, then save it as PDF.
 
 ## The numbers
 
-A line is a run of text on one baseline, without a gap wider than 1.5 times the font size: the
+A line is a run of text on one baseline, without a gap wider than 0.8 times the font size: the
 cells of a table row are lines of their own. The same rule reads both PDFs.
 
 | Number | Meaning |

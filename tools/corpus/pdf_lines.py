@@ -1,8 +1,8 @@
 """The lines of text of a PDF, as the corpus compares a conversion with its reference.
 
-A line is a run of characters on one baseline, without a gap wider than one and
-a half times the font size: the cells of a table row and the parts of a line a
-tab separates are lines of their own. The same rule applies to both PDFs, so
+A line is a run of characters on one baseline, without a gap wider than 0.8 times
+the font size: the cells of a table row and the parts of a line a tab separates
+are lines of their own. The same rule applies to both PDFs, so
 their lines compare however each producer splits its text into objects.
 """
 
