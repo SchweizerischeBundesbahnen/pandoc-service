@@ -22,6 +22,27 @@
 
 local MARKER = "PMCzzz(%x%x%x%x%x%x)zzz(.-)zzzPMCENDzzz"
 
+-- A group is an ordinary atom to TeX, so a colored operator in one would lose
+-- its spacing: "a+b" instead of "a + b". These keep their class.
+local BINARY = {}
+for op in ("+ - * \\pm \\mp \\times \\div \\cdot \\ast \\circ \\bullet \\cup \\cap \\wedge \\vee \\setminus \\oplus \\otimes"):gmatch("%S+") do
+  BINARY[op] = true
+end
+local RELATION = {}
+for op in ("= < > \\leq \\geq \\neq \\ne \\le \\ge \\approx \\equiv \\sim \\simeq \\cong \\propto \\in \\notin \\ni \\subset \\supset \\subseteq \\supseteq \\to \\rightarrow \\leftarrow \\Rightarrow \\Leftarrow \\leftrightarrow \\Leftrightarrow \\mapsto \\perp \\parallel \\mid"):gmatch("%S+") do
+  RELATION[op] = true
+end
+
+local function colored(color, content)
+  local op = content:match("^%s*(.-)%s*$")
+  if BINARY[op] then
+    return "\\mathbin{\\color[HTML]{" .. color .. "}" .. op .. "}"
+  elseif RELATION[op] then
+    return "\\mathrel{\\color[HTML]{" .. color .. "}" .. op .. "}"
+  end
+  return "{\\color[HTML]{" .. color .. "} " .. content .. "}"
+end
+
 local filter = {}
 
 function filter.Math(el)
@@ -31,7 +52,7 @@ function filter.Math(el)
   if not FORMAT:match("latex") then
     return nil
   end
-  local replaced, count = el.text:gsub(MARKER, "{\\color[HTML]{%1} %2}")
+  local replaced, count = el.text:gsub(MARKER, colored)
   if count == 0 then
     return nil
   end

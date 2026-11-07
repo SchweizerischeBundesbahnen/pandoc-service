@@ -399,10 +399,14 @@ def _tag_cell_properties(tbl: ET.Element) -> bool:
     Returns True when any cell was modified.
     """
     changed = False
+    # The lines of each cell of a grid whose cells draw lines of their own
+    borders = _cell_borders(tbl) if _grid_lines(tbl) is not None else None
 
     for tc in tbl.iter(_TC_TAG):
         tcpr = tc.find(_TCPR_TAG)
         props = _cell_properties(tc, tcpr)
+        if borders is not None and tc in borders:
+            props["bd"] = borders[tc]
         if not props:
             continue
 
@@ -540,6 +544,84 @@ def _grid_lines(tbl: ET.Element) -> tuple[str, float] | None:
         # White lines on white paper: nothing to draw
         return None
     return _normalize_hex(raw_color) or "000000", _line_width(sides[0])
+
+
+# The styles of a border which LaTeX draws as Word does; any other draws as a single line.
+_BORDER_STYLES = frozenset({"single", "dashed", "dotted", "double"})
+_VMERGE_TAG = f"{{{W_NS}}}vMerge"
+
+
+def _side_value(side: ET.Element | None) -> str:
+    """A border as the filter reads it: ``style.eighths.RRGGBB``, or ``-`` for none."""
+    if side is None or side.get(_VAL_ATTR) in _NO_BORDER:
+        return "-"
+    style = side.get(_VAL_ATTR) if side.get(_VAL_ATTR) in _BORDER_STYLES else "single"
+    try:
+        eighths = int(side.get(f"{{{W_NS}}}sz") or "4")
+    except ValueError:
+        eighths = 4
+    eighths = min(max(eighths, 2), 48)
+    color = _normalize_hex(side.get(f"{{{W_NS}}}color")) or ("FFFFFF" if (side.get(f"{{{W_NS}}}color") or "").upper() == "FFFFFF" else "000000")
+    return f"{style}.{eighths}.{color}"
+
+
+def _span(tc: ET.Element) -> int:
+    gridspan = tc.find(f"{_TCPR_TAG}/{_GRIDSPAN_TAG}")
+    value = gridspan.get(_VAL_ATTR) if gridspan is not None else None
+    return int(value) if value is not None and _is_positive_int(value) else 1
+
+
+def _continues_merge(tc: ET.Element) -> bool:
+    vmerge = tc.find(f"{_TCPR_TAG}/{_VMERGE_TAG}")
+    return vmerge is not None and vmerge.get(_VAL_ATTR) in (None, "continue")
+
+
+def _cell_borders(tbl: ET.Element) -> dict[ET.Element, str] | None:
+    """The sides of each cell of a grid, top, right, bottom and left, when they are not all alike.
+
+    A side is the cell's own border, else the table's: its outer border at the
+    edge of the table, the inside one between two cells. A cell merged down to
+    later rows takes its bottom from the last of them, the cell pandoc keeps.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    table_borders = tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None
+    rows = tbl.findall(_TR_TAG)
+    columns = _table_column_count(tbl)
+    # Each cell pandoc keeps, with its row and column, its span and the cell and row it ends with
+    cells: list[list] = []
+    open_merges: dict[int, list] = {}
+    for index, tr in enumerate(rows):
+        column = 0
+        for tc in tr.findall(_TC_TAG):
+            span = _span(tc)
+            if _continues_merge(tc) and column in open_merges:
+                open_merges[column][4:6] = [tc, index]
+            else:
+                entry = [tc, index, column, span, tc, index]
+                cells.append(entry)
+                open_merges[column] = entry
+            column += span
+
+    def side(tc: ET.Element, name: str, inner: str, edge: bool) -> str:
+        own = tc.find(f"{_TCPR_TAG}/{{{W_NS}}}tcBorders/{{{W_NS}}}{name}")
+        if own is None and table_borders is not None:
+            own = table_borders.find(f"{{{W_NS}}}{name if edge else inner}")
+        return _side_value(own)
+
+    sides: dict[ET.Element, str] = {}
+    for tc, row, column, span, last_tc, last_row in cells:
+        sides[tc] = "/".join(
+            (
+                side(tc, "top", "insideH", row == 0),
+                side(tc, "right", "insideV", column + span >= columns),
+                side(last_tc, "bottom", "insideH", last_row == len(rows) - 1),
+                side(tc, "left", "insideV", column == 0),
+            ),
+        )
+    if len({border for value in sides.values() for border in value.split("/")}) <= 1:
+        # One border on every side of every cell: the lines of the table say it all
+        return None
+    return sides
 
 
 # The bit of the hexadecimal w:val of <w:tblLook> which turns the formatting of the first row on.

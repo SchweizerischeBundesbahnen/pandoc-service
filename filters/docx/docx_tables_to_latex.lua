@@ -41,8 +41,9 @@ local STRIP_PATTERN = OPEN .. ".-" .. CLOSE
 local RULES = {
   none = "\\def\\toprule{}\\def\\midrule{}\\def\\bottomrule{}",
   -- The line under the header row as Word draws a border of the default width: 2 eighths of a point,
-  -- over the rows rather than between them
-  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}",
+  -- over the rows rather than between them, and as wide as the table with the margins of its cells, which
+  -- pandoc's writer leaves out at the edges: across the columns, as longtable draws \\hline, and a margin further
+  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt}\\multispan{\\csname LT@cols\\endcsname}\\kern-\\tabcolsep\\leaders\\hrule height 0.25pt\\hfill\\kern-\\tabcolsep\\cr\\noalign{\\kern-0.125pt}}",
   grid = false,
 }
 
@@ -85,6 +86,8 @@ local function parse_payload(payload)
       if n and n > 0 and n <= 6 then
         props.lw = n
       end
+    elseif key == "bd" and value:match("^[%a%d%./%-]+$") then
+      props.bd = value
     end
   end
   return props
@@ -234,6 +237,7 @@ local HEAD_STRUT = "\\pdcHeadStrut{}"
 
 local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
+local has_display = false    -- set when a cell holds an equation of its own paragraph
 local has_grid = false       -- set when a table is written as raw LaTeX
 local NESTED = "pdc-nested"   -- the attribute of a table in a cell of another
 
@@ -267,6 +271,9 @@ local ROW_SPAN = "pdc-row-span"   -- the rows a cell spans, which its \\multirow
 local COVERED = "pdc-covered"     -- a cell which only carries the colour of the cell above
 local SPLIT = "pdc-split"      -- the attribute of a row: what follows it, see SPLIT_PREAMBLE
 local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at its end
+local BORDERS = "pdc-borders"  -- the lines of a cell of a grid: top/right/bottom/left, each style.eighths.RRGGBB or -
+local WRAPPED = "pdc-wrapped"  -- the attribute of a row which goes out a line at a time
+local BACKGROUND = "pdc-background"  -- the color of a cell, for the line of a grid through a merged cell
 local has_split = false
 local SPLIT_PREAMBLE = table.concat({
   "\\makeatletter",
@@ -579,6 +586,7 @@ local function wrap_cells(tbl)
         covered = math.max(covered, (tonumber(cell.attributes[ROW_SPAN]) or cell.row_span) - 1)
       end
       if free and wraps(row, #tbl.colspecs) then
+        row.attributes[WRAPPED] = "1"
         has_wrap = true
         wrap_columns = math.max(wrap_columns, #row.cells)
         local number = #wrap_rows + 1
@@ -631,6 +639,26 @@ local function add_plain_cell_space(rows, raw)
   end
 end
 
+-- An equation of its own paragraph in a cell, as Word sets it in the body: centered, in display style, on a
+-- line as high as the font of the equations. docx_document_styles_to_latex defines \\pdcDisplayLine.
+-- Returns whether it did, and whether the cell ends with one, which then sets the depth of its own line.
+local function display_equations(blocks)
+  local changed, last = false, false
+  for index, block in ipairs(blocks) do
+    local only = (block.t == "Plain" or block.t == "Para") and #block.content == 1 and block.content[1]
+    if only and only.t == "Math" and only.mathtype == "DisplayMath" then
+      blocks[index] = pandoc.Plain({
+        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcDisplayLine{"),
+        pandoc.Math("InlineMath", "\\displaystyle " .. only.text),
+        pandoc.RawInline("latex", "}"),
+      })
+      changed = true
+      last = index == #blocks
+    end
+  end
+  return changed, last
+end
+
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
 -- Injects cell background colour and per-cell alignment, and captures any
 -- table-level width/alignment (carried on the first cell) into `layout`.
@@ -647,6 +675,15 @@ local function process_rows(rows, layout, flags, head)
         modified = true
       end
       local props = consume_sentinel(cell.contents)
+      local display, ends_with_display = display_equations(cell.contents)
+      if display then
+        flags.display = true
+        modified = true
+      end
+      if ends_with_display then
+        -- The line of the equation is as deep as Word's: an end after it would start a line of its own
+        cell.attributes[NO_END] = "1"
+      end
       -- Alignment first, background second: both insert at the front, so the
       -- \cellcolor ends up ahead of the declaration, which is where colortbl
       -- wants it.
@@ -668,6 +705,7 @@ local function process_rows(rows, layout, flags, head)
       end
       if props then
         if props.bg then
+          cell.attributes[BACKGROUND] = props.bg
           inject_cellcolor(cell.contents, props.bg)
           flags.cellcolor = true
           modified = true
@@ -679,6 +717,7 @@ local function process_rows(rows, layout, flags, head)
         if props.cc then layout.cc = true end
         if props.lc then layout.lc = props.lc end
         if props.lw then layout.lw = props.lw end
+        if props.bd then cell.attributes[BORDERS] = props.bd end
       end
     end
   end
@@ -694,6 +733,37 @@ end
 -- columns whose cell ends there, so a merged cell keeps no line inside it.
 
 local ROW_END = "\\pdcGridRowEnd"
+
+-- A vertical line of a grid. Word draws it on the edge between two cells and
+-- gives it no width, so the text of a cell stands where it would without it.
+-- The separator after column `index`, 0 for the edge before the first: a grid whose cells draw
+-- lines of their own sets each one for every row, see cell_lines.
+local function grid_v(index)
+  return string.format("!{\\pdcGridV{%s}}", index or "")
+end
+-- The color of a cell ends half a line short of the edge, so the line of the
+-- next cell is not painted over.
+local GRID_PREAMBLE = table.concat({
+  "\\makeatletter",
+  "\\providecommand{\\pdcGridV}[1]{\\ifcsname pdcGV#1\\endcsname\\csname pdcGV#1\\endcsname\\else\\kern-.5\\arrayrulewidth{\\ifdefined\\CT@arc@\\CT@arc@\\fi\\vrule\\@width\\arrayrulewidth}\\kern-.5\\arrayrulewidth\\fi}",
+  -- The line of the separator #1 in the rows which follow: #2 points wide in the color #3, none without a width
+  "\\providecommand{\\pdcGVset}[3]{\\expandafter\\gdef\\csname pdcGV#1\\endcsname{\\ifx\\relax#2\\relax\\else\\kern-.5\\dimexpr#2pt\\relax{\\color[HTML]{#3}\\vrule\\@width#2pt}\\kern-.5\\dimexpr#2pt\\relax\\fi}}",
+  -- A double line: two lines of #2 points with a gap as wide
+  "\\providecommand{\\pdcGVsetdouble}[3]{\\expandafter\\gdef\\csname pdcGV#1\\endcsname{\\kern-1.5\\dimexpr#2pt\\relax{\\color[HTML]{#3}\\vrule\\@width#2pt\\kern#2pt\\vrule\\@width#2pt}\\kern-1.5\\dimexpr#2pt\\relax}}",
+  "\\newif\\ifpdcGrid",
+  -- The line of the next row: #1 high, as the text its cells start with; empty for the line of the table
+  "\\ifdefined\\pdc@tablestrut\\else\\newbox\\pdc@tablestrut\\fi",
+  "\\providecommand{\\pdcRowLine}[1]{\\noalign{\\ifvoid\\pdc@tablestrut\\global\\setbox\\pdc@tablestrut\\copy\\@arstrutbox\\fi\\global\\setbox\\@arstrutbox\\hbox{\\vrule\\@height\\ifx\\relax#1\\relax\\ht\\pdc@tablestrut\\else#1\\fi\\@depth\\dp\\pdc@tablestrut\\@width\\z@}}}",
+  "\\providecommand{\\pdcRowLineEnd}{\\noalign{\\global\\setbox\\pdc@tablestrut\\box\\voidb@x}}",
+  "\\AtBeginDocument{\\ifdefined\\CT@setup\\let\\pdc@CTsetup\\CT@setup",
+  "\\def\\CT@setup{\\pdc@CTsetup\\ifpdcGrid\\advance\\@tempdimb-.5\\arrayrulewidth\\advance\\@tempdimc-.5\\arrayrulewidth\\fi}\\fi}",
+  -- A horizontal line reaches over the vertical lines at its ends, as Word draws it
+  "\\def\\pdc@hl{\\ifpdcGrid\\kern-.5\\arrayrulewidth\\fi}",
+  "\\def\\pdc@rule{\\pdc@hl\\CT@arc@\\leaders\\hrule\\@height\\arrayrulewidth\\hfill\\pdc@hl}",
+  "\\def\\pdc@extend#1{\\patchcmd#1{\\CT@arc@\\leaders\\hrule\\@height\\arrayrulewidth\\hfill}{\\pdc@rule}{\\pdc@extend#1}{}}",
+  "\\AtBeginDocument{\\ifdefined\\CT@arc@\\pdc@extend\\LT@@hline\\pdc@extend\\@cline\\fi}",
+  "\\makeatother",
+}, "\n")
 
 -- The index of the brace which closes the one at `open`.
 local function closing_brace(s, open)
@@ -729,8 +799,9 @@ local function column_end(body, i)
   return stop
 end
 
--- The column specification of pandoc's writer with a line around every column.
-local function grid_columns(spec)
+-- The column specification of pandoc's writer with a line around every column, each separator
+-- numbered when the cells of the grid draw lines of their own.
+local function grid_columns(spec, numbered)
   local body = spec:gsub("^%s*@{}", ""):gsub("@{}%s*$", "")
   local columns = {}
   local i = 1
@@ -746,8 +817,15 @@ local function grid_columns(spec)
       i = stop + 1
     end
   end
-  return "|" .. table.concat(columns, "|") .. "|"
+  local parts = { grid_v(numbered and 0) }
+  for index, column in ipairs(columns) do
+    parts[#parts + 1] = column .. grid_v(numbered and index)
+  end
+  return table.concat(parts)
 end
+
+-- The mark of the first column of a merged cell, which numbers the separators of its \multicolumn.
+local FIRST_COLUMN = "\\pdcFirstColumn"
 
 -- A \multicolumn replaces the lines of the columns it spans: it gets its own.
 local function grid_multicolumns(latex)
@@ -760,8 +838,13 @@ local function grid_multicolumns(latex)
     end
     local first = not latex:sub(1, start - 1):match("&%s*$")
     result[#result + 1] = latex:sub(position, finish)
-    result[#result + 1] = (first and "|" or "") .. latex:sub(finish + 1, close - 1) .. "|}"
-    position = close + 1
+    -- Its own lines take the place of the edges pandoc's writer gives a cell at the side of the table
+    local spec = latex:sub(finish + 1, close - 1):gsub("^@{}", ""):gsub("@{}$", "")
+    local span = tonumber(latex:sub(start, finish):match("{(%d+)}"))
+    local mark_start, mark_end, column = latex:find("^%s*%%?%s*" .. FIRST_COLUMN:gsub("\\", "%%\\") .. "{(%d+)}", close + 2)
+    column = tonumber(column)
+    result[#result + 1] = (first and grid_v(column and column - 1) or "") .. spec .. grid_v(column and column - 1 + span) .. "}{"
+    position = column and mark_end + 1 or close + 2
   end
   result[#result + 1] = latex:sub(position)
   return table.concat(result)
@@ -940,14 +1023,305 @@ local function edge_widths(latex)
   return table.concat(result)
 end
 
+-- ---- The lines of each cell of a grid ----
+--
+-- Word draws the sides of each cell in their own style, width and color. A
+-- line between two rows is a row of its own, as high as the widest of its
+-- pieces, which Word adds to the height of the table. A vertical line stays a
+-- separator of the columns, whose color and width each row sets before it.
+-- LaTeX has no dashed vertical rule: a dashed or dotted side of a cell is drawn
+-- as a single line.
+
+-- A side of a cell: its style, its width in points and its color; nil for none.
+local function parse_side(text)
+  local style, eighths, color = (text or ""):match("^(%a+)%.(%d+)%.(%x+)$")
+  if style == nil then
+    return nil
+  end
+  return { style = style, width = tonumber(eighths) / 8, color = color }
+end
+
+-- How much of the height of a line between two rows a side takes: a double line is two lines and a gap.
+local function band(side)
+  if side == nil then
+    return 0
+  end
+  return side.style == "double" and 3 * side.width or side.width
+end
+
+-- The one of two sides which meet that Word draws: the wider, of two alike the second, the top of
+-- the cell below or the left of the cell after.
+local function stronger(first, second)
+  if band(first) > band(second) then
+    return first
+  end
+  return second or first
+end
+
+-- The cell over each column of each row, with the sides of it.
+local function cell_owners(rows, columns)
+  local owners, carry = {}, {}
+  for index, row in ipairs(rows) do
+    local owned, column = {}, 1
+    for c = 1, columns do
+      if carry[c] and carry[c].rows > 0 then
+        owned[c] = carry[c].owner
+        carry[c].rows = carry[c].rows - 1
+      end
+    end
+    for _, cell in ipairs(row.cells) do
+      if not cell.attributes[COVERED] then
+        while column <= columns and owned[column] do
+          column = column + 1
+        end
+        local sides = {}
+        for side in ((cell.attributes[BORDERS] or "") .. "/"):gmatch("([^/]*)/") do
+          sides[#sides + 1] = parse_side(side)
+        end
+        local owner = { cell = cell, column = column, top = sides[1], right = sides[2], bottom = sides[3], left = sides[4], background = cell.attributes[BACKGROUND] }
+        local span = tonumber(cell.attributes[ROW_SPAN]) or cell.row_span
+        for c = column, math.min(column + cell.col_span - 1, columns) do
+          owned[c] = owner
+          carry[c] = { owner = owner, rows = span - 1 }
+        end
+        column = column + cell.col_span
+      end
+    end
+    owners[index] = owned
+  end
+  return owners
+end
+
+local function points(value)
+  return string.format("%.4fpt", value)
+end
+
+-- The vertical line which crosses a line between rows: zero wide, centred on the edge of a column.
+local function crossing(side, height)
+  if side == nil then
+    return ""
+  end
+  if side.style == "double" then
+    local rule = string.format("\\vrule height%s depth0pt width%s", points(height), points(side.width))
+    return string.format("\\kern-%s{\\color[HTML]{%s}%s\\kern%s%s}\\kern-%s", points(1.5 * side.width), side.color, rule, points(side.width), rule, points(1.5 * side.width))
+  end
+  return string.format("\\kern-%s{\\color[HTML]{%s}\\vrule height%s depth0pt width%s}\\kern-%s",
+    points(side.width / 2), side.color, points(height), points(side.width), points(side.width / 2))
+end
+
+-- A piece of a line between two rows, in a cell of a row of its own: `height` is the height of that row,
+-- `reach` how far the piece reaches past its edges, `before` and `after` the vertical lines which cross
+-- it, and `background` the color Word fills the rest of the row with: of the cell below, or of a
+-- merged cell the line runs through.
+local function line_piece(side, height, reach, before, after, background)
+  local strut = string.format("\\vrule height%s width0pt depth0pt", points(height))
+  local function colored(color, latex)
+    return string.format("{\\color[HTML]{%s}%s}", color, latex)
+  end
+  -- The rows of a piece of the line, top first, in boxes which overlap their neighbours a little, so
+  -- no seam shows between them: `width` is the step of the boxes.
+  local function boxes(width, rows, leaders)
+    local overlap = width + 0.25
+    local parts = {}
+    for _, row in ipairs(rows) do
+      if row.color then
+        parts[#parts + 1] = colored(row.color, string.format("\\hrule height%s width%s", points(row.height), points(row.width or overlap)))
+      else
+        parts[#parts + 1] = string.format("\\kern%s", points(row.height))
+      end
+    end
+    local rest = height
+    for _, row in ipairs(rows) do
+      rest = rest - row.height
+    end
+    if rest > 0 then
+      parts[#parts + 1] = background and colored(background, string.format("\\hrule height%s width%s", points(rest), points(overlap))) or string.format("\\kern%s", points(rest))
+    end
+    local box = string.format("\\hbox to%s{\\vbox{%s}\\hss}", points(width), table.concat(parts))
+    if leaders == "\\leaders" then
+      -- Aligned boxes leave a gap at the ends of the piece: a box of its own closes each
+      return string.format("\\rlap{%s}\\leaders%s\\hfill\\llap{%s}", box, box, box)
+    end
+    return string.format("%s%s\\hfill", leaders, box)
+  end
+  local fill = "\\hfill"
+  if side ~= nil then
+    local w = side.width
+    if side.style == "dashed" or side.style == "dotted" then
+      local step = side.style == "dashed" and 8 * w or 2 * w
+      fill = boxes(step, { { color = side.color, height = w, width = step / 2 } }, "\\xleaders")
+    elseif side.style == "double" then
+      fill = boxes(3, { { color = side.color, height = w }, { height = w }, { color = side.color, height = w } }, "\\leaders")
+    elseif background ~= nil and w < height then
+      fill = boxes(3, { { color = side.color, height = w } }, "\\leaders")
+    else
+      fill = colored(side.color, string.format("\\leaders\\hrule height%s depth%s\\hfill", points(height), points(w - height)))
+    end
+  elseif background ~= nil then
+    fill = colored(background, string.format("\\leaders\\vrule height%s depth0pt\\hfill", points(height)))
+  end
+  return string.format("\\omit%s%s\\kern%s%s\\kern%s%s", strut, crossing(before, height), points(-reach[1]), fill, points(-reach[2]), crossing(after, height))
+end
+
+-- The side of a cell which Word draws on the edge after column `c` of a row, nil for none.
+local function edge_side(owned, c)
+  local left, right = owned[c], owned[c + 1]
+  if left ~= nil and left == right then
+    return nil
+  end
+  return stronger(left and left.right, right and right.left)
+end
+
+-- The line between row `index` and the next, as a row of its own; empty when no cell draws one.
+local function line_row(owners, index, columns)
+  local above, below = owners[index] or {}, owners[index + 1] or {}
+  local sides, height = {}, 0
+  for c = 1, columns do
+    local up, down = above[c], below[c]
+    if up ~= nil and up == down then
+      sides[c] = nil
+    else
+      sides[c] = stronger(up and up.bottom, down and down.top)
+    end
+    height = math.max(height, band(sides[c]))
+  end
+  if height == 0 then
+    return ""
+  end
+  local pieces = {}
+  for c = 1, columns do
+    local before = stronger(edge_side(above, c - 1), edge_side(below, c - 1))
+    local after = c == columns and stronger(edge_side(above, c), edge_side(below, c)) or nil
+    -- At the edges of the table the line reaches over the vertical lines
+    local background = below[c] and below[c].background or nil
+    local reach = { 0, 0 }
+    if sides[c] ~= nil then
+      reach = { c == 1 and before and before.width / 2 or 0, after and after.width / 2 or 0 }
+    elseif background ~= nil then
+      -- The color of the cell starts after the vertical line its piece draws first
+      reach = { -(before and before.width / 2 or 0), 0 }
+    end
+    pieces[c] = line_piece(sides[c], height, reach, before, after, background)
+  end
+  return "\\noalign{\\penalty10000}" .. table.concat(pieces, "&") .. "\\cr"
+end
+
+-- The vertical lines of row `index`: the separator before each column and after the last.
+local function separator_lines(owners, index, columns)
+  local owned, parts = owners[index] or {}, {}
+  for c = 0, columns do
+    local side = edge_side(owned, c)
+    if side then
+      local command = side.style == "double" and "\\pdcGVsetdouble" or "\\pdcGVset"
+      parts[#parts + 1] = string.format("%s{%d}{%.4f}{%s}", command, c, side.width, side.color)
+    else
+      parts[#parts + 1] = string.format("\\pdcGVset{%d}{}{}", c)
+    end
+  end
+  return "\\noalign{" .. table.concat(parts) .. "}"
+end
+
+-- Whether a cell of the table draws lines of its own.
+local function draws_cell_lines(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      if cell.attributes[BORDERS] then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- The widest vertical line of a table, which the color of its cells keeps clear of.
+local function widest_separator(owners)
+  local widest = 0
+  for _, owned in ipairs(owners) do
+    for _, owner in pairs(owned) do
+      for _, name in ipairs({ "left", "right" }) do
+        widest = math.max(widest, owner[name] and owner[name].width or 0)
+      end
+    end
+  end
+  return widest
+end
+
+-- The height of the first line of a cell, in big points, when its text starts in a size of its own; nil otherwise.
+local function first_line(cell)
+  local first = cell.contents[1]
+  for _, inline in ipairs(first and (first.t == "Plain" or first.t == "Para") and first.content or {}) do
+    if inline.t ~= "RawInline" then
+      return nil
+    end
+    local height = inline.text:match("\\setbox\\strutbox\\hbox{\\vrule height ([%d%.]+)bp")
+    if height then
+      return tonumber(height)
+    end
+  end
+  return nil
+end
+
+-- The line of each row of a table whose cells all start in a size of their own: Word sets the first line
+-- of a cell as high as its text, LaTeX as high as the body text. Nil for a row with a cell of the body text,
+-- and nil for the table when no row has one.
+local function row_lines(rows)
+  local lines, any = {}, false
+  for index, row in ipairs(rows) do
+    local highest, all = 0, true
+    for _, cell in ipairs(row.cells) do
+      if not cell.attributes[COVERED] then
+        local height = first_line(cell)
+        if height == nil then
+          all = false
+        else
+          highest = math.max(highest, height)
+        end
+      end
+    end
+    -- A row which goes out a line at a time sets the line of each piece itself
+    if all and highest > 0 and not row.attributes[WRAPPED] then
+      lines[index] = highest
+      any = true
+    end
+  end
+  return any and lines or nil
+end
+
+local function row_strut(lines, index)
+  return string.format("\\pdcRowLine{%s}", lines[index] and string.format("%.4fbp", lines[index]) or "")
+end
+
 -- The table with the lines of a grid, or nil when it cannot be set so.
 local function grid_table(tbl, absolute)
   local rows = all_rows(tbl)
   if #tbl.colspecs == 0 or not simple_cells(rows) then
     return nil
   end
-  local lines = grid_row_lines(rows, #tbl.colspecs)
+  local columns_count = #tbl.colspecs
+  local lines = grid_row_lines(rows, columns_count)
+  local numbered = draws_cell_lines(rows)
+  local owners = numbered and cell_owners(rows, columns_count)
+  if numbered then
+    for index, row in ipairs(rows) do
+      local split = row.attributes[SPLIT]
+      local line = (split and split ~= "End") and "" or line_row(owners, index, columns_count)
+      lines[index] = line .. (rows[index + 1] and separator_lines(owners, index + 1, columns_count) or "")
+      -- A merged cell names its first column, which numbers the separators of its \multicolumn
+      for _, owner in pairs(owners[index]) do
+        if owner.cell.col_span > 1 and not owner.marked then
+          owner.marked = true
+          inject_raw_at_start(owner.cell.contents, string.format("%s{%d}", FIRST_COLUMN, owner.column))
+        end
+      end
+    end
+  end
   wrap_cells(tbl)
+  local struts = row_lines(rows)
+  if struts then
+    for index in ipairs(rows) do
+      lines[index] = lines[index] .. (rows[index + 1] and row_strut(struts, index + 1) or "\\pdcRowLineEnd")
+    end
+  end
   for index, row in ipairs(rows) do
     local last = row.cells[#row.cells]
     if last ~= nil then
@@ -957,19 +1331,34 @@ local function grid_table(tbl, absolute)
   local latex = pandoc.write(pandoc.Pandoc({ tbl }), LATEX)
   local _, open = latex:find("\\begin{longtable}[]{", 1, true)
   local close = open and closing_brace(latex, open)
-  local columns = close and grid_columns(latex:sub(open + 1, close - 1))
+  local columns = close and grid_columns(latex:sub(open + 1, close - 1), numbered)
   if columns == nil then
     return nil
   end
-  latex = edge_widths(word_widths(grid_multicolumns(latex:sub(1, open) .. columns .. latex:sub(close)), absolute))
+  local rest = latex:sub(close)
+  if struts then
+    rest = "}" .. row_strut(struts, 1) .. rest:sub(2)
+  end
+  if numbered then
+    -- The vertical lines of the first row, and the line over it
+    local top = line_row(owners, 0, columns_count)
+    rest = rest:gsub("^}", "}" .. separator_lines(owners, 1, columns_count)):gsub("\\toprule", function()
+      return top
+    end)
+  end
+  latex = edge_widths(word_widths(grid_multicolumns(latex:sub(1, open) .. columns .. rest), absolute))
   -- Word sets the text of a merged cell at its top
   latex = latex:gsub("\\multirow{", "\\multirow[t]{")
   -- Each row ends with the line under it
   latex = latex:gsub("%s*\\pdcGridRowEnd{(%d+)}(.-)\\\\", function(index, between)
     return between .. "\\\\" .. (lines[tonumber(index)] or "")
   end)
-  if latex:find(ROW_END, 1, true) then
+  if latex:find(ROW_END, 1, true) or latex:find(FIRST_COLUMN, 1, true) then
     return nil
+  end
+  if numbered then
+    -- The color of a cell keeps clear of the widest vertical line
+    latex = string.format("\\setlength{\\arrayrulewidth}{%s}", points(widest_separator(owners))) .. latex
   end
   return grid_block(split_latex(wrap_latex(latex)), rows)
 end
@@ -1029,6 +1418,7 @@ function table_pass.Table(tbl)
   -- so it is not loaded for a document that has no \cellcolor in it.
   if flags.cellcolor then has_cellcolor = true end
   if flags.align then has_align = true end
+  if flags.display then has_display = true end
 
   -- Table width: pandoc's DOCX reader normalises column widths to sum to 1.0
   -- (discarding the table's <w:tblW> share of the line) OR, when the DOCX
@@ -1077,9 +1467,15 @@ function table_pass.Table(tbl)
     -- The lines of the cells in their colour and width, the table out to the cell margin as Word sets it
     has_cellcolor = true
     has_grid = true
-    before[#before + 1] = string.format("\\begingroup\\def\\toprule{\\hline}\\def\\midrule{}\\def\\bottomrule{}\\setlength{\\arrayrulewidth}{%gpt}\\arrayrulecolor[HTML]{%s}", layout.lw, layout.lc)
+    before[#before + 1] = string.format("\\begingroup\\pdcGridtrue\\def\\toprule{\\hline}\\def\\midrule{}\\def\\bottomrule{}\\setlength{\\arrayrulewidth}{%gpt}\\arrayrulecolor[HTML]{%s}", layout.lw, layout.lc)
     if layout.ta == nil or layout.ta == "left" then
       before[#before + 1] = "\\setlength{\\LTleft}{-\\tabcolsep}\\setlength{\\LTright}{\\fill}"
+      layout.ta = nil
+      after[#after + 1] = RESET_GLUE
+    end
+    if layout.ta == "right" then
+      -- As far out past the right margin as a table on the left past the left one
+      before[#before + 1] = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{-\\tabcolsep}"
       layout.ta = nil
       after[#after + 1] = RESET_GLUE
     end
@@ -1093,7 +1489,13 @@ function table_pass.Table(tbl)
   -- Written as LaTeX, a table gets the columns of Word; pandoc's table its own
   local nested = tbl.attributes[NESTED] ~= nil
   tbl.attributes[NESTED] = nil
-  local simple = not grid and not nested and not layout.aw and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
+  -- A table of an absolute width sets each column as wide as Word with Word's margins, when no column is
+  -- narrower than a twentieth of the line; a narrower one keeps tight margins, see word_widths
+  local wide = true
+  for _, colspec in ipairs(tbl.colspecs) do
+    wide = wide and type(colspec[2]) == "number" and colspec[2] >= 0.05
+  end
+  local simple = not grid and not nested and (not layout.aw or wide) and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
   if layout.aw and not grid and not simple then
     -- A group: the table after this one gets the padding the document sets, not 6pt
     before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"
@@ -1161,6 +1563,9 @@ local ALIGN_PREAMBLE = table.concat({
   -- exists to override a colspec that set one of the ragged modes.
   "\\providecommand{\\pdcCellJustify}{\\rightskip\\z@skip \\leftskip\\z@skip \\parindent\\z@ \\parfillskip\\@flushglue}",
   "\\providecommand{\\pdcHeadStrut}{\\rule{0pt}{\\ht\\@arstrutbox}}",
+  -- Word sets the text of a merged cell at its top: pandoc's \\multirow, without a position, centres it
+  "\\AtBeginDocument{\\ifdefined\\multirow\\ifdefined\\pdc@multirow\\else\\let\\pdc@multirow\\multirow"
+    .. "\\renewcommand{\\multirow}{\\@ifnextchar[\\pdc@multirow{\\pdc@multirow[t]}}\\fi\\fi}",
   "\\makeatother",
 }, "\n")
 
@@ -1173,9 +1578,12 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_cellcolor or has_align or has_split or has_cell_picture or has_wrap) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display) then return meta end
 
   local parts = {}
+  -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
+  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
+  if has_grid then parts[#parts + 1] = GRID_PREAMBLE end
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end
   if has_wrap then

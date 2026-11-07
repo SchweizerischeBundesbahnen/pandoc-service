@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 
-from . import docx_document_styles
+from . import docx_document_styles, docx_toc_pre_process
 from .docx_ooxml import STYLES_PART, W_NS, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 if TYPE_CHECKING:
@@ -426,7 +426,8 @@ def _table_of_contents_runs(tree: ET.Element, toc_styles: Collection[str]) -> se
     for paragraph in tree.iter(_P_TAG):
         pstyle = paragraph.find(_PSTYLE_PATH)
         style_id = pstyle.get(_VAL_ATTR, "") if pstyle is not None else ""
-        if style_id in toc_styles or (style_id.startswith("TOC") and style_id[3:].isdigit()) or style_id == _TABLE_OF_FIGURES_STYLE:
+        # docx_toc_pre_process runs first and gives an entry a style of its own
+        if style_id in toc_styles or (style_id.startswith("TOC") and style_id[3:].isdigit()) or style_id in (_TABLE_OF_FIGURES_STYLE, docx_toc_pre_process.ENTRY_STYLE):
             runs.update(id(run) for run in paragraph.iter(_R_TAG))
     return runs
 

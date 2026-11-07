@@ -63,7 +63,8 @@ Open it in Word by hand, answer Yes, then save it as PDF.
 ## The numbers
 
 A line is a run of text on one baseline, without a gap wider than 0.8 times the font size: the
-cells of a table row are lines of their own. The same rule reads both PDFs.
+cells of a table row are lines of their own. The same rule reads both PDFs. A line of an equation
+does not count: its letters have no characters in either PDF, so its text matches other equations.
 
 | Number | Meaning |
 |---|---|

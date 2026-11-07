@@ -311,9 +311,10 @@ def test_the_full_stop_which_ends_a_paragraph_hangs_in_the_margin(test_parameter
 
 def test_an_equation_alone_is_a_centred_paragraph(test_parameters: TestParameters):
     native = '[Para [Math DisplayMath "a^{2}"], Para [Str "Text", Space, Math DisplayMath "b"]]'
-    body = _latex(test_parameters.container, native=native)
-    body = body[body.index("\\begin{document}") :]
-    assert "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{1.35pt}\\(\\displaystyle a^{2}\\)\\par}" in body
+    latex = _latex(test_parameters.container, native=native)
+    body = latex[latex.index("\\begin{document}") :]
+    assert "\\def\\pdcDisplayLine#1{{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{1.35pt}#1\\par}}" in _preamble(latex)
+    assert "\\pdcDisplayLine{\\(\\displaystyle a^{2}\\)}" in body
     assert "\\[b\\]" in body, "an equation within text stays a display"
 
 
@@ -324,15 +325,17 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     assert "\\newcommand{\\pdcEquationRow}{14.1bp}\\newcommand{\\pdcEquationGap}{3bp}" in _preamble(latex)
     assert "\\lineskip\\pdcEquationGap\\baselineskip\\pdcEquationRow\\lineskiplimit\\z@" in _preamble(latex), "rows which would overlap keep a gap"
     assert "\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}" in _preamble(latex)
-    body = " ".join(latex[latex.index("\\begin{document}") :].split())
-    assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
+    assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{#1}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in _preamble(latex)
 
 
 def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameters: TestParameters):
     """Word sets E=mc² on the line of Cambria Math, and the next line right below its descent: not a line of the body."""
     metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.381", "docx-math-top=0.9502", "docx-math-descent=0.2222")
-    body = " ".join(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "a^{2}"]]').split("\\begin{document}")[1].split())
-    assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}" in body, body
+    preamble = _preamble(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "a^{2}"]]'))
+    assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}}" in preamble, preamble
+    # The last paragraph of a cell: the cell ends the paragraph, and the row with it
+    last = "\\def\\pdcDisplayLineEnd#1{\\par\\centering\\arraybackslash"
+    assert last in preamble and "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}}" in preamble, preamble
 
 
 def _numerator_top(container, equation: str) -> float:

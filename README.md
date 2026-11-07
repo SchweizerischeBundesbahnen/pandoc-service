@@ -172,6 +172,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | a table of a style without borders, and the Compact style of its cells | no lines but the one under a header row, rows as tall as Word's, and the cell margins of the default table style |
 | a cell paragraph without a style | rows as tall as a paragraph of the Normal style, its text at the top and the space below it, as Word sets them |
 | a table whose cells draw every side, `<w:tcBorders>` or `<w:tblBorders>` | a grid of lines in their colour and width, none inside a merged cell, the table out to the cell margin; a table with a picture, a list or a note in a cell keeps LaTeX's rules |
+| a cell with sides of its own: a style, width or color other than the rest of the grid | each side as Word draws it: single, dashed, dotted or double, a line between rows as high as its widest piece; a dashed or dotted vertical side as a single line |
 | a row of a table taller than the rest of the page | a break between two lines of its cells, as Word breaks it; a row with a picture or a merged cell goes to the next page whole |
 | a paragraph of the Caption style | in the font of the Caption style, where the DOCX puts it; under a table with only the space before of its style, above one with only its space after |
 | an empty paragraph, one of line breaks only, a line break at the start or the end of a paragraph | an empty line, and one more for each line break, as Word shows them |
@@ -181,6 +182,7 @@ A PDF of a DOCX takes these from the document, so it lays the text out closer to
 | a table of contents field (`TOC \o`) | LaTeX's table of contents of its depth, with dot leaders, as Word fills the field, and the empty line Word leaves after it |
 | a list of figures or tables (`TOC \f`, `TOC \c`) | its entries, with the page LaTeX sets each caption on |
 | an equation (OMML) | in Cambria Math, when the container has it; an equation of its own paragraph as a centred line, without the empty line and the space TeX puts around a display |
+| an upright or bold italic letter of an equation (`m:sty` `p`, `bi`), a colored operator | upright, bold italic, and an operator with its space, as Word sets them |
 | a comment (`<w:commentReference>`) | a balloon "Commented [n]:" with its text in a grey area right of the text, with a dashed line from the commented text, on a page shrunk to make room for it, as Word for Mac prints it |
 
 The image has no Microsoft fonts. It has open fonts which set text as wide and as high as these fonts of

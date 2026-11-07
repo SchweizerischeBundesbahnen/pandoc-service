@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 
+import pypdfium2 as pdfium
 from docx import Document
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
@@ -50,7 +51,8 @@ def test_an_unknown_kind_of_lines_is_left_out(test_parameters: TestParameters):
 
 
 def test_a_narrow_absolute_table_restores_the_padding_of_the_document_after_it(test_parameters: TestParameters):
-    latex = _latex(test_parameters.container, "tw=0.3000;aw=1")
+    """Columns narrower than a twentieth of the line keep tight margins, in a group of their own."""
+    latex = _latex(test_parameters.container, "tw=0.0400;aw=1")
     assert "\\begingroup\\setlength{\\tabcolsep}{3pt}" in latex
     assert "\\setlength{\\tabcolsep}{6pt}" not in latex
     assert latex.count("\\begingroup") == latex.count("\\endgroup")
@@ -84,8 +86,8 @@ def _grid_table(*rows: list[str]) -> str:
 
 def test_a_grid_draws_a_line_around_every_cell(test_parameters: TestParameters):
     latex = _latex(test_parameters.container, GRID)
-    assert "\\begin{longtable}[]{|" in latex
-    assert latex.count("|") >= 3
+    assert "\\begin{longtable}[]{!{\\pdcGridV{}}" in latex
+    assert latex.count("!{\\pdcGridV{}}") >= 3
     assert "\\setlength{\\arrayrulewidth}{0.75pt}\\arrayrulecolor[HTML]{CCCCCC}" in latex
     assert "\\\\\\hline" in latex
     assert "pdcGridRowEnd" not in latex
@@ -103,7 +105,7 @@ def test_a_grid_with_a_picture_draws_its_lines_and_keeps_the_picture(test_parame
     """pandoc writes out the file of a picture, a GIF as PNG, only for an Image it sees: the picture stays one."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Image ("",[],[("width","0.2in")]) [] ("x.gif","")')])
     latex = _native_latex(test_parameters.container, native)
-    assert "\\begin{longtable}[]{|" in latex
+    assert "\\begin{longtable}[]{!{\\pdcGridV{}}" in latex
     assert "\\includegraphics[width=0.2in" in latex
     # The document after the filter, as the writer of LaTeX gets it
     dump = "function Pandoc(doc) io.stderr:write(pandoc.write(doc, 'native')) end"
@@ -231,17 +233,72 @@ def test_a_coloured_cell_merged_down_colours_the_rows_it_spans(test_parameters: 
     assert "\\cline{2-2}" in latex, "no line inside the merged cell"
 
 
-def test_a_merged_cell_at_the_edge_of_a_table_takes_its_margin_back(test_parameters: TestParameters):
+def test_a_merged_cell_at_the_edge_of_a_table_keeps_its_margin_inside_its_lines(test_parameters: TestParameters):
+    """Without a margin at the edge, the colour of the cell would reach past the line of the table."""
     cell = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 2) [Plain [Str "{OPEN}{GRID};tw=1.0000{CLOSE}Title"]]'
     native = _grid_table([cell], [_cell('Str "a"'), _cell('Str "b"')])
     latex = _native_latex(test_parameters.container, native)
-    assert "-0\\tabcolsep\\relax}@{}|}" in latex, latex
+    assert "\\multicolumn{2}{!{\\pdcGridV{}}>" in latex, latex
+    assert "-2\\tabcolsep\\relax}!{\\pdcGridV{}}}" in latex, latex
+
+
+def _bordered_pdf(test_parameters: TestParameters, eighths: int) -> bytes:
+    """A table of two shaded cells with black borders of the width given in eighths of a point."""
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    for cell, text in zip(table.rows[0].cells, ("Left", "Right"), strict=True):
+        cell.text = text
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="FF0000"/>'))
+    sides = "".join(f'<w:{side} w:val="single" w:sz="{eighths}" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    properties = table._tbl.tblPr
+    properties.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    properties.append(parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>'))
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text
+    return response.content
+
+
+def _text_left(pdf: bytes, text: str) -> float:
+    page = pdfium.PdfDocument(pdf)[0]
+    found = page.get_textpage().search(text, match_case=True).get_next()
+    assert found, text
+    return page.get_textpage().get_charbox(found[0])[0]
+
+
+def test_the_vertical_lines_of_a_grid_take_no_room_from_the_text(test_parameters: TestParameters):
+    """Word draws a vertical border over the edge between two cells: the text stands where it would without it."""
+    thin, thick = _bordered_pdf(test_parameters, 4), _bordered_pdf(test_parameters, 48)
+    for text in ("Left", "Right"):
+        assert abs(_text_left(thick, text) - _text_left(thin, text)) < 0.1, text
+
+
+def test_the_colour_of_a_cell_leaves_the_vertical_line_whole(test_parameters: TestParameters):
+    """colortbl paints a cell over the half of the line before it which lies in the cell."""
+    pdf = _bordered_pdf(test_parameters, 48)
+    page = pdfium.PdfDocument(pdf)[0]
+    textpage = page.get_textpage()
+    found = textpage.search("Right", match_case=True).get_next()
+    left, bottom, _, top = textpage.get_charbox(found[0])
+    scale = 4
+    image = page.render(scale=scale).to_pil().convert("RGB")
+    row = (page.get_height() - (bottom + top) / 2) * scale
+    # The widest black run on the row between the two words: the line between the cells, 6 points wide
+    run, widest = 0, 0
+    for x in range(round(_text_left(pdf, "Left") * scale), round(left * scale)):
+        red, green, blue = image.getpixel((x, round(row)))
+        run = run + 1 if red < 80 and green < 80 and blue < 80 else 0
+        widest = max(widest, run)
+    assert widest >= 5.5 * scale, widest / scale
 
 
 def test_the_line_under_a_header_row_is_the_border_of_word_over_the_rows(test_parameters: TestParameters):
     """Word draws a border of the default width, 2 eighths of a point, and the rows keep their pitch."""
     latex = _latex(test_parameters.container, "rl=head")
-    assert "\\def\\midrule{\\noalign{\\kern-0.125pt\\hrule height 0.25pt\\kern-0.125pt}}" in latex
+    rule = "\\def\\midrule{\\noalign{\\kern-0.125pt}\\multispan{\\csname LT@cols\\endcsname}\\kern-\\tabcolsep\\leaders\\hrule height 0.25pt\\hfill\\kern-\\tabcolsep\\cr\\noalign{\\kern-0.125pt}}"
+    assert rule in latex, "as wide as the table, not the line"
 
 
 def test_a_coloured_cell_merged_down_with_line_breaks_stays_one_cell(test_parameters: TestParameters):
@@ -339,3 +396,152 @@ def test_a_row_under_a_cell_merged_down_stays_one_row(test_parameters: TestParam
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}merged"', rows=2), _cell('Str "a"')], [_cell('Str "b"')])
     latex = _native_latex(test_parameters.container, native)
     assert latex.count("\\pdcWrapBegin") == 0, latex
+
+
+def _bordered(sides: str) -> str:
+    return f"bd={sides}"
+
+
+def test_the_cells_of_a_grid_draw_lines_of_their_own(test_parameters: TestParameters):
+    """Word draws each side of a cell in its own style, width and color; a line between rows is as high as its widest piece."""
+    first = f'Str "{OPEN}{GRID};{_bordered("single.8.FF0000/single.8.000000/double.12.0000FF/single.8.000000")}{CLOSE}a"'
+    second = f'Str "{OPEN}{_bordered("single.8.FF0000/single.8.000000/dashed.8.00FF00/single.8.000000")}{CLOSE}b"'
+    third = f'Str "{OPEN}{_bordered("single.4.000000/single.8.000000/single.4.000000/single.8.000000")}{CLOSE}c"'
+    fourth = f'Str "{OPEN}{_bordered("single.4.000000/single.8.000000/single.4.000000/single.8.000000")}{CLOSE}d"'
+    latex = " ".join(_native_latex(test_parameters.container, _grid_table([_cell(first), _cell(second)], [_cell(third), _cell(fourth)])).split())
+    assert "\\begin{longtable}[]{!{\\pdcGridV{0}}" in latex, latex
+    assert "!{\\pdcGridV{2}}}" in latex, "the separators are numbered"
+    assert "\\pdcGVset{0}{1.0000}{000000}" in latex, "each row sets its vertical lines"
+    assert "{\\color[HTML]{FF0000}\\leaders\\hrule height1.0000pt" in latex, "the line over the table in the color of its cells"
+    assert "\\vrule height4.5000pt width0pt" in latex, "a double line of 1.5 points takes 4.5 points of height"
+    assert "{\\color[HTML]{0000FF}\\hrule height1.5000pt" in latex
+    assert "\\xleaders" in latex and "{\\color[HTML]{00FF00}\\hrule height1.0000pt width4.0000pt}" in latex, "a dashed line of 1 point: dashes of 4"
+    table = latex[latex.index("\\begin{longtable}") :]
+    assert "\\toprule" not in table and "\\hline" not in table, "the lines of the cells take the place of the rules"
+
+
+def test_a_merged_cell_of_a_grid_numbers_the_separators_of_its_columns(test_parameters: TestParameters):
+    sides = _bordered("single.8.000000/single.8.000000/single.8.000000/single.8.FF0000")
+    title = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 2) [Plain [Str "{OPEN}{GRID};{sides}{CLOSE}Title"]]'
+    native = _grid_table([title], [_cell(f'Str "{OPEN}{sides}{CLOSE}a"'), _cell(f'Str "{OPEN}{sides}{CLOSE}b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\multicolumn{2}{!{\\pdcGridV{0}}" in latex, latex
+    assert "!{\\pdcGridV{2}}}{" in latex, latex
+    assert "pdcFirstColumn" not in latex
+
+
+def _pdf_of(test_parameters: TestParameters, document: Document) -> bytes:
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text
+    return response.content
+
+
+def _two_rows(eighths: int) -> Document:
+    """A grid of two rows whose first row ends in a line of the width given in eighths of a point."""
+    document = Document()
+    table = document.add_table(rows=2, cols=1)
+    table.rows[0].cells[0].text = "Upper"
+    table.rows[1].cells[0].text = "Lower"
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    properties = table.rows[0].cells[0]._tc.get_or_add_tcPr()
+    properties.append(parse_xml(f'<w:tcBorders {nsdecls("w")}><w:bottom w:val="single" w:sz="{eighths}" w:space="0" w:color="FF0000"/></w:tcBorders>'))
+    return document
+
+
+def _top(pdf: bytes, text: str) -> float:
+    page = pdfium.PdfDocument(pdf)[0]
+    found = page.get_textpage().search(text, match_case=True).get_next()
+    assert found, text
+    return page.get_height() - page.get_textpage().get_charbox(found[0])[3]
+
+
+def test_a_wide_line_between_rows_adds_its_width_to_the_table(test_parameters: TestParameters):
+    """Word sets the row under a line of 6 points lower by the width of the line."""
+    thin, thick = _pdf_of(test_parameters, _two_rows(8)), _pdf_of(test_parameters, _two_rows(48))
+    assert abs(_top(thick, "Upper") - _top(thin, "Upper")) < 0.1
+    assert abs((_top(thick, "Lower") - _top(thin, "Lower")) - 5) < 0.3
+
+
+def _sized(text: str, payload: str = "") -> str:
+    start = "{\\\\fontsize{8bp}{9.6bp}\\\\selectfont \\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 7.5133bp depth 2.2541bp width 0pt}"
+    marker = f'Str "{OPEN}{payload}{CLOSE}", ' if payload else ""
+    return f'{marker}RawInline (Format "latex") "{start}", Str "{text}", RawInline (Format "latex") "}}"'
+
+
+def test_a_row_whose_cells_start_in_a_size_of_their_own_takes_the_line_of_that_size(test_parameters: TestParameters):
+    """Word sets the first line of a cell as high as its text; LaTeX as high as the body text, unless told."""
+    # Two paragraphs: the row stays one, it does not go out a line at a time
+    two = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [{_sized("b")}], Plain [{_sized("b2")}]]'
+    native = _grid_table([_cell(_sized("a", GRID)), two], [_cell('Str "c"'), _cell(_sized("d"))])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcRowLine{7.5133bp}" in latex, latex
+    assert "\\pdcRowLine{}" in latex, "a row with a cell of the body text keeps the line of the table"
+    assert "\\pdcRowLineEnd" in latex
+
+
+def test_a_merged_cell_without_a_position_starts_at_its_top(test_parameters: TestParameters):
+    """pandoc writes \\multirow without a position, which centres the text: Word sets it at the top of the cell."""
+    native = _grid_table([_cell('Str "a"', rows=2), _cell('Str "b"')], [_cell('Str "c"')])
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/merged.native << 'EOF'\n{native}\nEOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/merged.native"])
+    assert exit_code == 0, output.decode()
+    assert "\\renewcommand{\\multirow}{\\@ifnextchar[\\pdc@multirow{\\pdc@multirow[t]}}" in output.decode()
+
+
+def test_a_grid_on_the_right_reaches_past_the_margin_by_its_cell_margin(test_parameters: TestParameters):
+    """Word sets a table on the right out past the right margin, as one on the left past the left one."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID};tw=0.4000;ta=right{CLOSE}a"'), _cell('Str "b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{-\\tabcolsep}" in latex, latex
+
+
+def test_an_equation_of_its_own_paragraph_in_a_cell_is_a_centered_line(test_parameters: TestParameters):
+    """Word sets an equation of its own paragraph in a cell as in the body: centered, on a line of the font of the equations."""
+    last = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}{GRID}{CLOSE}Formula:"], Plain [Math DisplayMath "x"]]'
+    first = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Math DisplayMath "y"], Plain [Str "after"]]'
+    latex = " ".join(_native_latex(test_parameters.container, _grid_table([last, first])).split())
+    assert "\\pdcDisplayLineEnd{\\(\\displaystyle x\\)} &" in latex, "the cell ends the line of its last equation, without an end of its own"
+    assert "\\pdcDisplayLine{\\(\\displaystyle y\\)}" in latex
+
+
+def _formula_table(display: bool) -> Document:
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "Step"
+    cell = table.rows[0].cells[1]
+    cell.paragraphs[0].add_run("Expected formula:")
+    paragraph = cell.add_paragraph()
+    if display:
+        math = '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara>'
+        paragraph._p.append(parse_xml(math))
+    else:
+        paragraph.add_run("x")
+    document.add_paragraph("After")
+    return document
+
+
+def test_a_cell_which_ends_with_an_equation_ends_its_row_there(test_parameters: TestParameters):
+    """\\centering made the end of the row a break of the line: the row got an empty line more."""
+    text, display = _pdf_of(test_parameters, _formula_table(False)), _pdf_of(test_parameters, _formula_table(True))
+    assert abs(_top(display, "After") - _top(text, "After")) < 4, (_top(display, "After"), _top(text, "After"))
+
+
+def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):
+    """A table of twips sets each column as wide as its twips, with the cell margins of Word."""
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;aw=1{CLOSE}a"'), _cell('Str "b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "p{\\dimexpr0.5000\\linewidth-2\\tabcolsep\\relax}" in latex, latex
+    assert "\\setlength{\\tabcolsep}{3pt}" not in latex
+
+
+def test_a_narrow_column_of_an_absolute_table_keeps_tight_margins(test_parameters: TestParameters):
+    columns = ", ".join(["(AlignDefault, ColWidth 0.02)"] * 2)
+    cells = [_cell(f'Str "{OPEN}tw=0.0400;aw=1{CLOSE}a"'), _cell('Str "b"')]
+    native = f'[Table ("",[],[]) (Caption Nothing []) [{columns}] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{", ".join(cells)}]]] (TableFoot ("",[],[]) [])]'
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\setlength{\\tabcolsep}{3pt}" in latex, latex
