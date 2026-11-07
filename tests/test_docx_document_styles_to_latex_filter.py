@@ -333,6 +333,12 @@ def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameter
     assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}" in body, body
 
 
+def test_a_cancelled_term_is_as_high_as_its_box(test_parameters: TestParameters):
+    """Word strikes it out within its box: the slash of cancel.sty reaches a point beyond it."""
+    latex = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "a^{2}"]]')
+    assert "\\ht\\tw@\\ht\\@tempboxa\\dp\\tw@\\dp\\@tempboxa" in _preamble(latex)
+
+
 def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,color:0F4761,number:{1:arabic},numberhang:21.6"))
     assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\color[HTML]{0F4761}\\makebox[21.6pt][l]{\\thesection}}{0pt}{\\color[HTML]{0F4761}}" in preamble

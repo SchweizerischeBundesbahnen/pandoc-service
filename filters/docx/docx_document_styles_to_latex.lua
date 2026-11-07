@@ -171,6 +171,12 @@ local EQUATION_ARRAY = table.concat({
   "\\newcommand{\\pdcInnerFrac}[2]{\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}}",
   "\\newcommand{\\pdcEquationFrac}[2]{\\genfrac{}{}{}{0}{\\let\\frac\\pdcInnerFrac #1}{\\let\\frac\\pdcInnerFrac #2}}",
   "\\newcommand{\\pdcEquationArrays}{\\def\\@array[##1]##2{\\pdcEquationArray[##1]{##2}}}",
+  -- Word strikes a cancelled term out within its box: the slash of cancel.sty reaches a point beyond it,
+  -- above and below, which set a fraction of it higher than in Word
+  "\\ifdefined\\@can@slash\\renewcommand\\@cancel[3]{\\OriginalPictureCmds\\@begin@tempboxa\\hbox{\\m@th$#2{#3}$}\\dimen@\\height"
+    .. "\\setbox\\@tempboxa\\hbox{$\\m@th\\vcenter{\\box\\@tempboxa}$}\\advance\\dimen@-\\height\\unitlength\\p@\\canc@thinlines"
+    .. "{\\/\\setbox\\tw@\\hbox{\\ooalign{#1\\hfil\\copy\\@tempboxa\\hfil\\cr}}\\ht\\tw@\\ht\\@tempboxa\\dp\\tw@\\dp\\@tempboxa"
+    .. "\\raise\\dimen@\\box\\tw@}\\@end@tempboxa}\\fi",
   "\\makeatother",
 }, "\n")
 
