@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 
+import pypdfium2 as pdfium
 from docx import Document
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
@@ -84,8 +85,8 @@ def _grid_table(*rows: list[str]) -> str:
 
 def test_a_grid_draws_a_line_around_every_cell(test_parameters: TestParameters):
     latex = _latex(test_parameters.container, GRID)
-    assert "\\begin{longtable}[]{|" in latex
-    assert latex.count("|") >= 3
+    assert "\\begin{longtable}[]{!{\\pdcGridV}" in latex
+    assert latex.count("!{\\pdcGridV}") >= 3
     assert "\\setlength{\\arrayrulewidth}{0.75pt}\\arrayrulecolor[HTML]{CCCCCC}" in latex
     assert "\\\\\\hline" in latex
     assert "pdcGridRowEnd" not in latex
@@ -103,7 +104,7 @@ def test_a_grid_with_a_picture_draws_its_lines_and_keeps_the_picture(test_parame
     """pandoc writes out the file of a picture, a GIF as PNG, only for an Image it sees: the picture stays one."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Image ("",[],[("width","0.2in")]) [] ("x.gif","")')])
     latex = _native_latex(test_parameters.container, native)
-    assert "\\begin{longtable}[]{|" in latex
+    assert "\\begin{longtable}[]{!{\\pdcGridV}" in latex
     assert "\\includegraphics[width=0.2in" in latex
     # The document after the filter, as the writer of LaTeX gets it
     dump = "function Pandoc(doc) io.stderr:write(pandoc.write(doc, 'native')) end"
@@ -231,11 +232,65 @@ def test_a_coloured_cell_merged_down_colours_the_rows_it_spans(test_parameters: 
     assert "\\cline{2-2}" in latex, "no line inside the merged cell"
 
 
-def test_a_merged_cell_at_the_edge_of_a_table_takes_its_margin_back(test_parameters: TestParameters):
+def test_a_merged_cell_at_the_edge_of_a_table_keeps_its_margin_inside_its_lines(test_parameters: TestParameters):
+    """Without a margin at the edge, the colour of the cell would reach past the line of the table."""
     cell = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 2) [Plain [Str "{OPEN}{GRID};tw=1.0000{CLOSE}Title"]]'
     native = _grid_table([cell], [_cell('Str "a"'), _cell('Str "b"')])
     latex = _native_latex(test_parameters.container, native)
-    assert "-0\\tabcolsep\\relax}@{}|}" in latex, latex
+    assert "\\multicolumn{2}{!{\\pdcGridV}>" in latex, latex
+    assert "-2\\tabcolsep\\relax}!{\\pdcGridV}}" in latex, latex
+
+
+def _bordered_pdf(test_parameters: TestParameters, eighths: int) -> bytes:
+    """A table of two shaded cells with black borders of the width given in eighths of a point."""
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    for cell, text in zip(table.rows[0].cells, ("Left", "Right"), strict=True):
+        cell.text = text
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="FF0000"/>'))
+    sides = "".join(f'<w:{side} w:val="single" w:sz="{eighths}" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    properties = table._tbl.tblPr
+    properties.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    properties.append(parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>'))
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text
+    return response.content
+
+
+def _text_left(pdf: bytes, text: str) -> float:
+    page = pdfium.PdfDocument(pdf)[0]
+    found = page.get_textpage().search(text, match_case=True).get_next()
+    assert found, text
+    return page.get_textpage().get_charbox(found[0])[0]
+
+
+def test_the_vertical_lines_of_a_grid_take_no_room_from_the_text(test_parameters: TestParameters):
+    """Word draws a vertical border over the edge between two cells: the text stands where it would without it."""
+    thin, thick = _bordered_pdf(test_parameters, 4), _bordered_pdf(test_parameters, 48)
+    for text in ("Left", "Right"):
+        assert abs(_text_left(thick, text) - _text_left(thin, text)) < 0.1, text
+
+
+def test_the_colour_of_a_cell_leaves_the_vertical_line_whole(test_parameters: TestParameters):
+    """colortbl paints a cell over the half of the line before it which lies in the cell."""
+    pdf = _bordered_pdf(test_parameters, 48)
+    page = pdfium.PdfDocument(pdf)[0]
+    textpage = page.get_textpage()
+    found = textpage.search("Right", match_case=True).get_next()
+    left, bottom, _, top = textpage.get_charbox(found[0])
+    scale = 4
+    image = page.render(scale=scale).to_pil().convert("RGB")
+    row = (page.get_height() - (bottom + top) / 2) * scale
+    # The widest black run on the row between the two words: the line between the cells, 6 points wide
+    run, widest = 0, 0
+    for x in range(round(_text_left(pdf, "Left") * scale), round(left * scale)):
+        red, green, blue = image.getpixel((x, round(row)))
+        run = run + 1 if red < 80 and green < 80 and blue < 80 else 0
+        widest = max(widest, run)
+    assert widest >= 5.5 * scale, widest / scale
 
 
 def test_the_line_under_a_header_row_is_the_border_of_word_over_the_rows(test_parameters: TestParameters):
