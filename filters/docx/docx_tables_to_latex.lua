@@ -1442,6 +1442,12 @@ function table_pass.Table(tbl)
       layout.ta = nil
       after[#after + 1] = RESET_GLUE
     end
+    if layout.ta == "right" then
+      -- As far out past the right margin as a table on the left past the left one
+      before[#before + 1] = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{-\\tabcolsep}"
+      layout.ta = nil
+      after[#after + 1] = RESET_GLUE
+    end
   end
   -- A group, so the rules come back for the next table
   local rules = layout.rl and RULES[layout.rl]

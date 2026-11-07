@@ -490,3 +490,10 @@ def test_a_merged_cell_without_a_position_starts_at_its_top(test_parameters: Tes
     exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/merged.native"])
     assert exit_code == 0, output.decode()
     assert "\\renewcommand{\\multirow}{\\@ifnextchar[\\pdc@multirow{\\pdc@multirow[t]}}" in output.decode()
+
+
+def test_a_grid_on_the_right_reaches_past_the_margin_by_its_cell_margin(test_parameters: TestParameters):
+    """Word sets a table on the right out past the right margin, as one on the left past the left one."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID};tw=0.4000;ta=right{CLOSE}a"'), _cell('Str "b"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{-\\tabcolsep}" in latex, latex
