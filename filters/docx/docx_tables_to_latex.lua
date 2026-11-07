@@ -41,8 +41,9 @@ local STRIP_PATTERN = OPEN .. ".-" .. CLOSE
 local RULES = {
   none = "\\def\\toprule{}\\def\\midrule{}\\def\\bottomrule{}",
   -- The line under the header row as Word draws a border of the default width: 2 eighths of a point,
-  -- over the rows rather than between them, and as wide as the table, as longtable draws \\hline
-  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt}\\multispan{\\csname LT@cols\\endcsname}\\leaders\\hrule height 0.25pt\\hfill\\cr\\noalign{\\kern-0.125pt}}",
+  -- over the rows rather than between them, and as wide as the table with the margins of its cells, which
+  -- pandoc's writer leaves out at the edges: across the columns, as longtable draws \\hline, and a margin further
+  head = "\\def\\toprule{}\\def\\bottomrule{}\\def\\midrule{\\noalign{\\kern-0.125pt}\\multispan{\\csname LT@cols\\endcsname}\\kern-\\tabcolsep\\leaders\\hrule height 0.25pt\\hfill\\kern-\\tabcolsep\\cr\\noalign{\\kern-0.125pt}}",
   grid = false,
 }
 
