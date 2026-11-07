@@ -163,7 +163,7 @@ def apply_metrics(font: TTFont, metrics: dict[str, Any], slant: float = 0) -> No
     for table in HINTING:
         if table in font:
             del font[table]
-    _table(font, "head").flags &= ~(1 << 3)  # no hinting changes the advances anymore
+    _table(font, "head").flags &= ~(1 << 4)  # no hinting changes the advances anymore
 
 
 def rename(font: TTFont, family: str, style: str) -> None:

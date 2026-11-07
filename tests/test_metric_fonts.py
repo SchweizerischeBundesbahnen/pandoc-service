@@ -113,6 +113,14 @@ def test_the_hinting_goes_with_the_old_outlines(word: TTFont, source: TTFont):
     assert "prep" not in source
 
 
+def test_the_advances_no_longer_depend_on_hinting(word: TTFont, source: TTFont):
+    """Bit 4 of the flags says instructions may alter the advance widths; bit 3, integer sizes, stays as it was."""
+    source["head"].flags |= (1 << 4) | (1 << 3)
+    metric_fonts.apply_metrics(source, metric_fonts.word_metrics(word, source))
+    assert not source["head"].flags & (1 << 4)
+    assert source["head"].flags & (1 << 3)
+
+
 def test_the_font_takes_the_name_of_its_family_alone(source: TTFont):
     metric_fonts.rename(source, "Metric Sans", "Bold Italic")
     names = source["name"]
