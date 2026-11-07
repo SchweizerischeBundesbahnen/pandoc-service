@@ -333,10 +333,14 @@ end
 -- below it: a cell of TeX lines up with the others at the baseline of its first line, the bottom of
 -- such a picture. See CELL_PICTURE_PREAMBLE.
 local has_cell_picture = false
+-- Below a picture taller than the line, the space a row has below the descent of the font of a line:
+-- Word sets a picture alone on its line without the descent, and the space of the cell below it
 local CELL_PICTURE_PREAMBLE = table.concat({
   "\\newsavebox{\\pdcCellPictureBox}",
-  "\\newcommand{\\pdcCellPicture}[1]{\\sbox{\\pdcCellPictureBox}{#1}\\ifdim\\ht\\pdcCellPictureBox>\\ht\\strutbox"
-    .. "\\raisebox{\\dimexpr\\ht\\strutbox-\\ht\\pdcCellPictureBox\\relax}{\\usebox{\\pdcCellPictureBox}}\\else\\usebox{\\pdcCellPictureBox}\\fi}",
+  "\\makeatletter\\newcommand{\\pdcCellPicture}[1]{\\sbox{\\pdcCellPictureBox}{#1}\\ifdim\\ht\\pdcCellPictureBox>\\ht\\strutbox"
+    .. "\\raisebox{\\dimexpr\\ht\\strutbox-\\ht\\pdcCellPictureBox\\relax}{\\usebox{\\pdcCellPictureBox}}"
+    .. "\\ifdim\\dp\\@arstrutbox>\\dp\\strutbox\\rule[\\dimexpr\\ht\\strutbox-\\ht\\pdcCellPictureBox-\\dp\\@arstrutbox+\\dp\\strutbox\\relax]{0pt}{0pt}\\fi"
+    .. "\\else\\usebox{\\pdcCellPictureBox}\\fi}\\makeatother",
 }, "\n")
 
 local function hang_pictures(rows)

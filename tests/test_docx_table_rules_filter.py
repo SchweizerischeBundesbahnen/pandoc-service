@@ -201,6 +201,17 @@ def test_a_picture_alone_on_its_line_hangs_from_the_top_of_the_cell(test_paramet
     assert latex.count("pdcCellPicture{") == 1, "the label stays as it is"
 
 
+def test_a_picture_of_a_cell_keeps_the_space_of_the_row_below_it(test_parameters: TestParameters):
+    """Word sets it without the descent of the font, and below it the space the cell has below a line."""
+    picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(picture)])
+    _native_latex(test_parameters.container, native)
+    exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/grid.native"])
+    assert exit_code == 0, output.decode()
+    rule = "\\ifdim\\dp\\@arstrutbox>\\dp\\strutbox\\rule[\\dimexpr\\ht\\strutbox-\\ht\\pdcCellPictureBox-\\dp\\@arstrutbox+\\dp\\strutbox\\relax]{0pt}{0pt}\\fi"
+    assert rule in output.decode()
+
+
 def test_a_coloured_cell_merged_down_colours_the_rows_it_spans(test_parameters: TestParameters):
     """colortbl colours a \\multirow in its first row only, and pandoc writes nothing in the rows below."""
     color = 'RawInline (Format "latex") "\\\\cellcolor[HTML]{F4CCCC}"'
