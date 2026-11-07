@@ -2060,6 +2060,20 @@
      "words": 50,
      "words_in_place": 39
     },
+    "test_toc_tof_tot_without_gaps_conversion": {
+     "any_page": 15,
+     "lines": 15,
+     "mean_shift": 0.22,
+     "pages": [
+      1,
+      1
+     ],
+     "regions": 557,
+     "regions_matched": 538,
+     "same_page": 15,
+     "words": 57,
+     "words_in_place": 56
+    },
     "test_wi_alignment_and_indentation": {
      "any_page": 9,
      "lines": 9,
@@ -2077,12 +2091,12 @@
    },
    "total": {
     "any_page": 92.0,
-    "documents": 48,
-    "mean_shift": 2.46,
-    "pages_as_reference": 48,
-    "regions_matched": 81.0,
-    "same_page": 89.9,
-    "words_in_place": 80.4
+    "documents": 49,
+    "mean_shift": 2.41,
+    "pages_as_reference": 49,
+    "regions_matched": 81.1,
+    "same_page": 90.0,
+    "words_in_place": 80.5
    }
   }
  }

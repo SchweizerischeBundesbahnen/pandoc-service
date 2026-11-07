@@ -56,8 +56,9 @@ and the equations in Latin Modern Math. Word and the image then set them in the 
 2. Install the fonts of the image on the Mac, the same files: Liberation, DejaVu, Carlito and `latinmodern-math.otf`.
 3. Export them with Word as above, into `reference/macos-free/`.
 
-`tools/corpus/free_fonts.py` lists the open font of each font of Word. Word closes
-`test_toc_tof_tot_without_gaps_conversion` after it updates its fields, so it has no reference here.
+`tools/corpus/free_fonts.py` lists the open font of each font of Word. The script cannot export
+`test_toc_tof_tot_without_gaps_conversion`: it does not see the document again after Word updates its fields.
+Open it in Word by hand, answer Yes, then save it as PDF.
 
 ## The numbers
 
