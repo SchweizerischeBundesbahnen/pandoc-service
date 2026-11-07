@@ -324,6 +324,12 @@ def test_a_row_longer_than_the_rest_of_the_page_breaks_between_its_lines(test_pa
     assert len(pages) > 1
 
 
+def test_a_row_of_cells_with_line_breaks_stays_one_row(test_parameters: TestParameters):
+    """pandoc sets such a cell in a minipage: a row of its lines could not start before it."""
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a", LineBreak, Str "b"'), _cell('Str "c", LineBreak, Str "d"')])
+    assert "pdcWrap" not in _native_latex(test_parameters.container, native)
+
+
 def test_a_row_under_a_cell_merged_down_stays_one_row(test_parameters: TestParameters):
     """Its first cell is not the first column: a row of its lines could not start there."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}merged"', rows=2), _cell('Str "a"')], [_cell('Str "b"')])
