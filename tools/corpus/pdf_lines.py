@@ -87,7 +87,7 @@ def normalized(text: str) -> str:
 
 
 def _continues(run: _Run, baseline: float, left: float, size: float) -> bool:
-    return abs(baseline - run.y) < max(1.0, 0.3 * size) and left >= run.right - 1 and left - run.right < 1.5 * max(size, run.size)
+    return abs(baseline - run.y) < max(1.0, 0.3 * size) and left >= run.right - 1 and left - run.right < 0.8 * max(size, run.size)
 
 
 def _page_runs(page: pdfium.PdfPage, number: int) -> list[_Run]:

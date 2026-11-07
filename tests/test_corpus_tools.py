@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from tools.corpus import corpus
-from tools.corpus.pdf_lines import Line, document_lines, normalized
+from tools.corpus.pdf_lines import Line, _continues, _Run, document_lines, normalized
 
 
 def test_text_is_compared_with_single_spaces_and_short_leaders():
@@ -43,6 +43,13 @@ def test_the_lines_of_word_are_runs_on_one_baseline():
     assert [line.text for line in lines[:3]] == ["Attribute Name Alignment Test", "EL-101 - User name must be validated when a new user account is created", "Linked Work"]
     assert lines[1].y == pytest.approx(126.5, abs=0.1)
     assert lines[2].x == pytest.approx(73, abs=0.1)
+
+
+def test_the_next_cell_on_the_baseline_starts_a_line_of_its_own():
+    """TeX writes the lines of a row which breaks between its lines cell after cell: two cell margins lie between."""
+    run = _Run(0, 72, 700, 200, 12)
+    assert _continues(run, 700, 204, 12), "the next word, a space on"
+    assert not _continues(run, 700, 210.8, 12), "the next cell, two margins of 5.4 points on"
 
 
 def test_a_pdf_without_text_has_no_lines(tmp_path: Path):
