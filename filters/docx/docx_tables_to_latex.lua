@@ -550,8 +550,8 @@ local WRAP_PREAMBLE = table.concat({
   "\\makeatother",
 }, "\n")
 
--- Whether a row can go out a line at a time: a cell of one paragraph in each column, with no picture
--- and no line break, none merged
+-- Whether a row can go out a line at a time: a cell of one paragraph in each column, with no picture,
+-- none merged
 local function wraps(row, columns)
   if row.attributes[SPLIT] or #row.cells ~= columns then return false end
   for _, cell in ipairs(row.cells) do
@@ -559,10 +559,9 @@ local function wraps(row, columns)
     if #cell.contents ~= 1 or (cell.contents[1].t ~= "Plain" and cell.contents[1].t ~= "Para") then return false end
     local last = cell.contents[1].content[#cell.contents[1].content]
     if not (last and last.t == "RawInline" and WRAP_END[last.text]) then return false end
-    -- pandoc sets a cell of a line break in a minipage, before which \pdcWrapBegin cannot start the row
-    local apart = false
-    pandoc.Blocks(cell.contents):walk({ Image = function() apart = true end, LineBreak = function() apart = true end })
-    if apart then return false end
+    local picture = false
+    pandoc.Blocks(cell.contents):walk({ Image = function() picture = true end })
+    if picture then return false end
   end
   return true
 end
@@ -589,6 +588,9 @@ local function wrap_cells(tbl)
           local color, at = cell_color(cell)
           local before = color and color.text or ""
           if color then block.content:remove(at) end
+          -- pandoc sets a cell of a line break in a minipage, before which \pdcWrapBegin cannot start the row:
+          -- the box of the cell breaks the line itself, with the strut of a line of Word before it
+          block.content = block.content:walk({ LineBreak = function() return pandoc.RawInline("latex", "\\strut\\newline{}") end })
           local content = block.content
           content[#content] = pandoc.RawInline("latex", WRAP_END[content[#content].text])
           local last = index == #row.cells
