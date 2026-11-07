@@ -60,3 +60,11 @@ def test_a_limit_without_an_expression_stays_a_limit():
     doc = _doc("<m:limLow><m:lim><m:r><m:t>⏟</m:t></m:r></m:lim></m:limLow>")
     apply_group_characters(doc)
     assert "groupChr" not in _math(doc)
+
+
+def test_the_brace_keeps_the_colour_of_its_run():
+    """apply_math_colors colours the run of the brace: the group character carries it in its control properties."""
+    brace = '<m:r><w:rPr><w:color w:val="FF0000"/></w:rPr><m:t>⏟</m:t></m:r>'
+    doc = _doc(f"<m:limLow>{EXPRESSION}<m:lim>{brace}</m:lim></m:limLow>")
+    apply_group_characters(doc)
+    assert '<m:vertJc m:val="top"/><m:ctrlPr><w:rPr><w:color w:val="FF0000"/></w:rPr></m:ctrlPr></m:groupChrPr>' in _math(doc)

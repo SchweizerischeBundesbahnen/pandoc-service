@@ -13,6 +13,7 @@ below the expression for a lower limit, above it for an upper one.
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 from lxml import etree
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from docx.document import Document as DocumentObject
 
 M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"  # NOSONAR OOXML math namespace identifier (ECMA-376), never dereferenced
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR OOXML namespace identifier (ECMA-376), never dereferenced
 
 _M = f"{{{M_NS}}}"
 _VAL = f"{_M}val"
@@ -39,27 +41,32 @@ def apply_group_characters(doc: DocumentObject) -> None:
         _rewrite(limit)
 
 
-def _brace(limit: etree._Element, braces: frozenset[str]) -> str | None:
-    """The brace a limit holds and nothing else, or None."""
+def _brace(limit: etree._Element, braces: frozenset[str]) -> tuple[str, etree._Element] | None:
+    """The brace a limit holds and nothing else, with its run, or None."""
     lim = limit.find(f"{_M}lim")
     runs = list(lim) if lim is not None else []
     if len(runs) != 1 or runs[0].tag != f"{_M}r":
         return None
     text = "".join(t.text or "" for t in runs[0].iter(f"{_M}t")).strip()
-    return text if text in braces else None
+    return (text, runs[0]) if text in braces else None
 
 
 def _rewrite(limit: etree._Element) -> None:
     braces, position, alignment = _LIMITS[limit.tag]
-    brace = _brace(limit, braces)
+    found = _brace(limit, braces)
     expression = limit.find(f"{_M}e")
-    if brace is None or expression is None:
+    if found is None or expression is None:
         return
+    brace, run = found
     group = etree.Element(f"{_M}groupChr")
     properties = etree.SubElement(group, f"{_M}groupChrPr")
     etree.SubElement(properties, f"{_M}chr").set(_VAL, brace)
     etree.SubElement(properties, f"{_M}pos").set(_VAL, position)
     etree.SubElement(properties, f"{_M}vertJc").set(_VAL, alignment)
+    # The formatting of the run of the brace, its colour among it, goes to the group character
+    run_properties = run.find(f"{{{W_NS}}}rPr")
+    if run_properties is not None:
+        etree.SubElement(properties, f"{_M}ctrlPr").append(copy.deepcopy(run_properties))
     group.append(expression)
     group.tail = limit.tail
     parent = limit.getparent()
