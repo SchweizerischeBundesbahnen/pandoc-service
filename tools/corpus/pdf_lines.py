@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 # A line shorter than this is a page number, a bullet or a stray letter: too common to match by its text
 MIN_LENGTH = 4
+# A glyph without a character, as the letters of an equation come out: a line with one has no text to match by
+UNREADABLE = "\ufffd"
 LINE_BREAKS = frozenset({0x0A, 0x0D, 0xFFFE, 0})
 
 
@@ -58,7 +60,9 @@ class _Run:
 
     def line(self) -> Line | None:
         text = normalized("".join(self.characters))
-        return Line(self.page, round(self.x, 2), round(self.y, 2), round(self.right - self.x, 2), text) if len(text) >= MIN_LENGTH else None
+        if len(text) < MIN_LENGTH or UNREADABLE in text:
+            return None
+        return Line(self.page, round(self.x, 2), round(self.y, 2), round(self.right - self.x, 2), text)
 
     def words(self) -> list[Word]:
         """The words of the run, split at its spaces."""

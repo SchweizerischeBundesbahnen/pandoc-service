@@ -34,6 +34,12 @@ def test_a_line_matches_the_nearest_line_of_its_text_on_its_page():
     assert anywhere == 3
 
 
+def test_a_line_of_glyphs_without_characters_is_not_compared():
+    """The letters of an equation have no characters in either PDF: "a + b" and "c + d" both read "\ufffd + \ufffd"."""
+    assert _Run(0, 72, 100, 120, 12, list("\ufffd + \ufffd"), [None] * 5).line() is None
+    assert _Run(0, 72, 100, 120, 12, list("a + b"), [None] * 5).line() is not None
+
+
 REFERENCE = Path(__file__).resolve().parents[1] / "corpus" / "reference" / "macos"
 
 
