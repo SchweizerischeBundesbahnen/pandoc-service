@@ -111,6 +111,9 @@ def _body_line(chain: list[Element], styles: Element, size: float, font: str | N
         # The balloon of a comment starts at the top of its line, the line to it at the bottom
         descent = line_ratio(font) - ascent
         options += ["-M", f"docx-body-ascent={size * ascent:.4g}", "-M", f"docx-body-descent={size * descent:.4g}"]
+        if gap_ratio(font) > 0:
+            # A picture lowered below the descent of the font takes the line gap below it as well
+            options += ["-M", f"docx-body-line-gap={size * gap_ratio(font):.4g}"]
     return options
 
 
@@ -547,8 +550,8 @@ def _heading_number(chain: list[Element], styles: Element, numbering: Element | 
     return {"number": number, "numberhang": f"{hanging / TWIPS_PER_POINT:g}"}
 
 
-def _hhea(family: str) -> tuple[float, float] | None:
-    """The ascent and the single line of a family as shares of its size, from its hhea table; None when unreadable."""
+def _hhea(family: str) -> tuple[float, float, float] | None:
+    """The ascent, the single line and the line gap of a family as shares of its size, from its hhea table; None when unreadable."""
     try:
         # fc-match of the image, given an installed family as one argument
         result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607
@@ -558,7 +561,7 @@ def _hhea(family: str) -> tuple[float, float] | None:
         # fontTools makes the fields of a table at run time, which a type checker does not see
         hhea: Any = font["hhea"]
         head: Any = font["head"]
-        return hhea.ascent / head.unitsPerEm, (hhea.ascent - hhea.descent + hhea.lineGap) / head.unitsPerEm
+        return hhea.ascent / head.unitsPerEm, (hhea.ascent - hhea.descent + hhea.lineGap) / head.unitsPerEm, hhea.lineGap / head.unitsPerEm
     except Exception:  # noqa: BLE001 - a font fontTools cannot read gets LaTeX's line
         logger.info("docx_document_styles: no line metrics for %r, using %s", family, DEFAULT_LINE_RATIO)
         return None
@@ -580,6 +583,13 @@ def ascent_ratio(family: str | None) -> float | None:
     """The hhea ascent of a family as a share of its size: Word sets the first line of a page that far down."""
     metrics = _hhea(family) if family is not None else None
     return metrics[0] if metrics is not None else None
+
+
+@functools.cache
+def gap_ratio(family: str | None) -> float:
+    """The hhea line gap of a family as a share of its size: Word adds it below the deepest thing of a line."""
+    metrics = _hhea(family) if family is not None else None
+    return metrics[2] if metrics is not None else 0
 
 
 def _baseline(chain: list[Element], styles: Element, size: float, font: str | None) -> float:

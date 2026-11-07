@@ -8,7 +8,8 @@
 --
 -- This filter restores the title and sets the picture as Word does:
 --
---   position (<w:position>)          -> \raisebox{<pt>}{...}, negative lowers it
+--   position (<w:position>)          -> \raisebox{<pt>}{...}, negative lowers it and
+--                                     takes the line gap of the font below it
 --   left/right (<wp:effectExtent>)   -> \kern<pt> before/after it: a kern, not glue,
 --                                     since Word breaks no line between a picture
 --                                     and the text right next to it
@@ -43,6 +44,10 @@ function Image(el)
     result[#result + 1] = pandoc.RawInline("latex", "\\raisebox{" .. points(position / 2) .. "}{")
     result[#result + 1] = el
     result[#result + 1] = pandoc.RawInline("latex", "}")
+    if position < 0 then
+      -- Word adds the line gap of the font below a picture it lowers, as below the descent of the font
+      result[#result + 1] = pandoc.RawInline("latex", "\\ifdefined\\pdcLineGap\\rule[-\\dimexpr" .. points(-position / 2) .. "+\\pdcLineGap\\relax]{0pt}{0pt}\\fi ")
+    end
   else
     result[#result + 1] = el
   end

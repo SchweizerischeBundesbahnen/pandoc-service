@@ -658,3 +658,9 @@ def test_a_page_ends_where_the_descent_of_its_last_line_reaches_the_margin(test_
     preamble = _preamble(_latex(test_parameters.container, *metadata))
     assert "\\newcommand{\\pdcPageDepth}{\\global\\advance\\textheight by -3.4bp\\relax" in preamble
     assert "\\AddToHook{begindocument/end}{\\pdcPageDepth}" in preamble
+
+
+def test_the_line_gap_of_the_body_font_is_defined_for_lowered_pictures(test_parameters: TestParameters):
+    metadata = ("docx-body-size=12", "docx-body-baseline=13.8", "docx-body-descent=2.94", "docx-body-line-gap=0.396")
+    assert "\\newcommand{\\pdcLineGap}{0.396bp}" in _preamble(_latex(test_parameters.container, *metadata))
+    assert "pdcLineGap" not in _preamble(_latex(test_parameters.container, *metadata[:3]))

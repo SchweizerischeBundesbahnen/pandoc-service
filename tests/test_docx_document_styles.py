@@ -55,10 +55,12 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
 
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", missing)
     yield
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -320,10 +322,12 @@ def font_metrics(monkeypatch: pytest.MonkeyPatch, tmp_path):
     file = _font_file(tmp_path, 900, -250, 100)
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
     yield
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
 
 
 def test_the_line_of_a_font_is_its_hhea_ascent_descent_and_gap(font_metrics):
@@ -338,6 +342,21 @@ def test_the_body_size_is_in_points_and_its_line_comes_from_its_font(font_metric
 def test_the_body_gets_where_its_line_starts_and_ends(font_metrics):
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
     assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("10.8", "4.2")
+
+
+def test_the_body_gets_the_line_gap_of_its_font(font_metrics):
+    """Word adds the line gap below the deepest thing of a line: a picture lowered below the descent of the font."""
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-line-gap"] == "1.2"
+
+
+def test_a_font_without_a_line_gap_passes_none(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    file = _font_file(tmp_path, 900, -250, 0)
+    docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
+    assert "docx-body-line-gap" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert docx_document_styles.gap_ratio(None) == 0
 
 
 def test_a_body_font_without_metrics_gets_no_ascent():
@@ -365,12 +384,14 @@ def test_a_heading_gets_the_ascent_of_its_font(font_metrics):
 
 def test_a_font_without_metrics_gets_no_ascent(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout="/no/such/font.ttf"))
     try:
         assert docx_document_styles.ascent_ratio("Minor Serif") is None
         assert docx_document_styles.ascent_ratio(None) is None
     finally:
         docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
 
 
 def test_a_font_without_metrics_gets_the_line_of_latex(monkeypatch: pytest.MonkeyPatch):
