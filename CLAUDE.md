@@ -98,6 +98,12 @@ The filters lie in a folder per format they read, as the image installs them und
 
 A request may still name a filter by its path before the folders: `ALLOWED_PANDOC_OPTIONS` maps it to the new one.
 
+### Fonts of Word
+The image has open fonts in place of the fonts of Word, each as wide and as high: `SUBSTITUTES` in `app/docx_document_styles.py` maps the names.
+- `fonts/metric_fonts.py build` makes the Metric families in the image build: open outlines with the advances and line metrics of `fonts/word_metrics.json`.
+- `fonts/metric_fonts.py extract` writes that file from the fonts of Word. Run it by hand only; never commit a font of Word.
+- The Dockerfile downloads the open fonts from fixed commits and checks them against `fonts/sources.sha256`.
+
 ### SVG to PNG conversion
 - Runs only for `source_format == "html"`, before pandoc.
 - Density is a device scale factor: per-request `scale_factor` query param (overrides `DEVICE_SCALE_FACTOR` env, default 1.0). docx-exporter sends its "Image density" setting via this param.

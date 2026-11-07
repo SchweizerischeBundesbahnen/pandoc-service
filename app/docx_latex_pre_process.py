@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from . import (
     docx_color_pre_process,
+    docx_document_styles,
     docx_empty_lines_pre_process,
     docx_image_layout_pre_process,
     docx_list_level_pre_process,
@@ -120,7 +121,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
     # The paragraph styles which start a new page before their paragraphs
     break_styles = docx_page_break_pre_process.page_break_styles(styles)
     # The colors of the character styles (a link's Hyperlink style), read once for every part
-    style_colors = docx_color_pre_process.character_style_colors(entries[STYLES_PART]) if has_styles else None
+    style_colors = docx_color_pre_process.character_style_colors(entries[STYLES_PART], entries.get(docx_document_styles.THEME_PART)) if has_styles else None
     toc_style_ids = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
 
     for part in body_parts:

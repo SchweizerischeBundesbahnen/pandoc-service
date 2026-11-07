@@ -328,3 +328,53 @@ def test_a_long_highlight_keeps_its_background_word_by_word(test_parameters: Tes
     text = " ".join(["highlighted"] * 8)
     flat = _md_to_latex(test_parameters.container, f'[{text}]{{custom-style="PandocColor__BG_FFFF00"}}\n')
     assert flat.count("\\colorbox[HTML]{FFFF00}") == 8, flat
+
+
+def _run_line_latex(container: Container, md: str) -> str:
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/line.md << 'EOF'\n{md}\nEOF"])
+    metadata = "-M docx-body-size=12 -M docx-body-ascent=11.27 -M docx-body-descent=3.38 -M docx-body-line-multiple=1"
+    fonts = f"-M docx-run-fonts={b'Segoe UI'.hex().upper()}:0.9280:1.1640"
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex {metadata} {fonts} --lua-filter={FILTER_PATH} /tmp/test/line.md"])
+    assert exit_code == 0, output.decode()
+    return _flatten_whitespace(output.decode())
+
+
+def test_a_paragraph_of_runs_in_another_font_gets_the_line_of_that_font(test_parameters: TestParameters):
+    """Word sets a line as high as the font of its text: Segoe UI at 11 points, 12.8 points, not the body's 14.65."""
+    style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
+    latex = _run_line_latex(test_parameters.container, f'[one]{{custom-style="{style}"}} [two]{{custom-style="{style}"}}')
+    assert latex.startswith("{\\pdcParLine{12.8040bp}{10.2080bp}{2.5960bp}"), latex
+    assert latex.endswith("\\par}"), latex
+
+
+def test_a_paragraph_with_text_in_the_body_font_keeps_its_line(test_parameters: TestParameters):
+    style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
+    assert "pdcParLine" not in _run_line_latex(test_parameters.container, f'plain [run]{{custom-style="{style}"}}')
+    other = f"PandocColor__SZ_24__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
+    assert "pdcParLine" not in _run_line_latex(test_parameters.container, f'[one]{{custom-style="{style}"}} [two]{{custom-style="{other}"}}')
+
+
+def test_a_paragraph_of_runs_inside_formatting_gets_the_line_of_their_font(test_parameters: TestParameters):
+    style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
+    latex = _run_line_latex(test_parameters.container, f'*[one]{{custom-style="{style}"}}* **[two]{{custom-style="{style}"}}**')
+    assert latex.startswith("{\\pdcParLine{12.8040bp}"), latex
+
+
+def test_a_run_in_another_font_and_size_gets_the_strut_of_that_font(test_parameters: TestParameters):
+    """\\selectfont would set LaTeX's strut, 0.7 and 0.3 of the line: a highlight box of it reaches deeper than Word's."""
+    style = f"PandocColor__SZ_22__{_font_style('Segoe UI').removeprefix('PandocColor__')}"
+    latex = _run_line_latex(test_parameters.container, f'plain [run]{{custom-style="{style}"}}')
+    assert "\\selectfont \\setbox\\strutbox\\hbox{\\vrule height 10.2080bp depth 2.5960bp width 0pt}" in latex, latex
+
+
+def test_a_run_in_another_font_without_a_size_gets_the_strut_of_the_size_around_it(test_parameters: TestParameters):
+    """A heading sets the size of a run without one of its own: the strut follows it, not the body size."""
+    latex = _run_line_latex(test_parameters.container, f'# plain [run]{{custom-style="{_font_style("Segoe UI")}"}}')
+    assert "\\setbox\\strutbox\\hbox{\\vrule height 0.9280\\dimexpr\\csname f@size\\endcsname pt\\relax depth 0.2360\\dimexpr\\csname f@size\\endcsname pt\\relax width 0pt}" in latex, latex
+
+
+def test_a_paragraph_of_runs_in_another_font_without_a_size_gets_the_line_of_the_size_around_it(test_parameters: TestParameters):
+    """A caption or a title sets the size of runs without one of their own: the line follows it, not the body size."""
+    latex = _run_line_latex(test_parameters.container, f'[one]{{custom-style="{_font_style("Segoe UI")}"}} [two]{{custom-style="{_font_style("Segoe UI")}"}}')
+    size = "\\dimexpr\\csname f@size\\endcsname pt\\relax"
+    assert latex.startswith(f"{{\\pdcParLine{{1.1640{size}}}{{0.9280{size}}}{{0.2360{size}}}"), latex

@@ -124,7 +124,7 @@ local function preamble(mag, area, balloon, ascent, descent)
     "\\newcount\\pdc@n",
     "\\newdimen\\pdc@next\\newdimen\\pdc@top\\newdimen\\pdc@ax\\newdimen\\pdc@ay\\newdimen\\pdc@h\\newdimen\\pdc@limit",
     "\\newbox\\pdc@text\\newbox\\pdc@box",
-    "\\AtBeginDocument{\\IfFontExistsTF{Times New Roman}{\\newfontfamily\\pdc@labelfont{Times New Roman}}{\\IfFontExistsTF{Liberation Serif}{\\newfontfamily\\pdc@labelfont{Liberation Serif}}{\\let\\pdc@labelfont\\rmfamily}}}",
+    "\\AtBeginDocument{\\IfFontExistsTF{Times New Roman}{\\newfontfamily\\pdc@labelfont{Times New Roman}[Scale=1]}{\\IfFontExistsTF{Liberation Serif}{\\newfontfamily\\pdc@labelfont{Liberation Serif}[Scale=1]}{\\let\\pdc@labelfont\\rmfamily}}}",
     -- The grey markup area, on every page
     string.format("\\AddToHook{shipout/background}{\\put(0,0){\\special{pdf:content q %s g %s %s %s %s re f Q}}}", GREY, bp(area[1]), bp(-area[2] - area[4]), bp(area[3]), bp(area[4])),
     -- The balloon of a comment: its frame, then its text

@@ -15,8 +15,10 @@ Style-name encoding (parseable, deterministic, segments are optional):
 
 Limitations
 -----------
-* Theme colors (``<w:color w:themeColor="accent1"/>``) are not resolved
-  against ``word/theme/theme1.xml``; theme-colored runs stay uncolored.
+* Theme colors (``<w:color w:themeColor="accent1"/>``) of a run are not
+  resolved against ``word/theme/theme1.xml``: the run takes the value written
+  beside them, and without one stays uncolored. A character style takes the
+  theme color, as Word draws it.
 * A character style's colors (``<w:rStyle w:val="Hyperlink"/>`` pointing at
   a style with ``<w:color>``, followed through ``basedOn``) are applied to a
   run that has no direct color of its own, the way Word draws it: pandoc
@@ -80,7 +82,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
         # if many runs reference it.
     needed_styles: dict[str, _StyleSpec] = {}
 
-    style_colors = character_style_colors(entries[STYLES_PART])
+    style_colors = character_style_colors(entries[STYLES_PART], entries.get(docx_document_styles.THEME_PART))
     toc_styles = table_of_contents_styles(entries[STYLES_PART])
     for part in enumerate_body_parts(entries.keys()):
         rewritten, part_styles = rewrite_part(entries[part], style_colors, toc_styles)
@@ -286,13 +288,17 @@ class _StyleProps:
         )
 
 
-def _own_style_props(style: ET.Element) -> _StyleProps:
+def _own_style_props(style: ET.Element, theme: ET.Element | None = None) -> _StyleProps:
     name = style.find(_NAME_TAG)
     code = name is not None and name.get(_VAL_ATTR, "").lower() == _CODE_STYLE_NAME
     rpr = style.find(_RPR_TAG)
     if rpr is None:
         return _StyleProps(code=code)
     fg, bg, highlight = _extract_run_colors(rpr)[:3]
+    color = rpr.find(_COLOR_TAG)
+    if theme is not None and color is not None and color.get(f"{{{W_NS}}}themeColor"):
+        # A theme colour is the colour, also beside auto
+        fg = docx_document_styles.word_color(color, theme) or fg
     return _StyleProps(
         fg or ("" if rpr.find(_COLOR_TAG) is not None else None),
         bg or ("" if rpr.find(_SHD_TAG) is not None else None),
@@ -301,7 +307,7 @@ def _own_style_props(style: ET.Element) -> _StyleProps:
     )
 
 
-def _read_character_styles(root: ET.Element) -> tuple[dict[str, _StyleProps], dict[str, str]]:
+def _read_character_styles(root: ET.Element, theme: ET.Element | None = None) -> tuple[dict[str, _StyleProps], dict[str, str]]:
     """The character styles of ``styles.xml`` with what each says itself, and
     the style each is based on. Synthetic styles of an earlier pass are skipped."""
     own: dict[str, _StyleProps] = {}
@@ -312,7 +318,7 @@ def _read_character_styles(root: ET.Element) -> tuple[dict[str, _StyleProps], di
         style_id = style.get(_STYLE_ID_ATTR)
         if not style_id or style_id.startswith(_GENERATED_STYLE_PREFIX):
             continue
-        own[style_id] = _own_style_props(style)
+        own[style_id] = _own_style_props(style, theme)
         parent = style.find(_BASED_ON_TAG)
         if parent is not None and parent.get(_VAL_ATTR):
             based_on[style_id] = parent.get(_VAL_ATTR, "")
@@ -345,14 +351,14 @@ def _resolve_based_on(own: Mapping[str, _StyleProps], based_on: Mapping[str, str
     return resolved
 
 
-def character_style_colors(styles_xml: bytes) -> dict[str, StyleColors]:
+def character_style_colors(styles_xml: bytes, theme_xml: bytes | None = None) -> dict[str, StyleColors]:
     """Map each character style of ``styles.xml`` that draws with a color to
     those colors, following its ``basedOn`` chain.
 
     A style's own property wins over the one it inherits, as in Word, and that
-    includes clearing it with ``auto`` or ``none``. The concrete ``w:val`` is
-    used even when the color names a theme color too (Word writes both), so
-    ``accent1`` styles resolve without reading the theme. Styles without any
+    includes clearing it with ``auto`` or ``none``. A color which names a theme
+    color takes it from THEME_XML, as Word draws it; without a theme, the
+    concrete ``w:val`` written beside it. Styles without any
     color are left out, and so are the styles of code (see the module
     docstring) and the synthetic styles of an earlier pass, whose runs are
     rewritten already.
@@ -360,7 +366,7 @@ def character_style_colors(styles_xml: bytes) -> dict[str, StyleColors]:
     root = parse_xml(styles_xml)
     if root is None:
         return {}
-    own, based_on = _read_character_styles(root)
+    own, based_on = _read_character_styles(root, parse_xml(theme_xml) if theme_xml else None)
 
     colors: dict[str, StyleColors] = {}
     for style_id, props in _resolve_based_on(own, based_on).items():

@@ -55,10 +55,12 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
 
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", missing)
     yield
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -76,6 +78,7 @@ def test_sets_pandoc_template_like_word():
         "fontsize": "12pt",
         "docx-body-size": "12",
         "docx-body-baseline": "14.4",
+        "docx-body-line-multiple": "1",
         "docx-body-paragraph-skip": "9",
         "docx-body-justified": "false",
         "docx-body-hyphenated": "false",
@@ -98,6 +101,31 @@ def test_the_major_theme_font_is_read_for_majorhansi():
 def test_a_font_the_container_lacks_keeps_the_latex_font(installed: set[str]):
     installed.clear()
     assert "mainfont" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
+def test_a_word_font_the_container_lacks_takes_its_open_substitute(installed: set[str]):
+    installed.add("Metric Sans")
+    body = BODY_TEXT.replace("</w:pPr>", '</w:pPr><w:rPr><w:rFonts w:ascii="Aptos"/></w:rPr>')
+    assert _options(_docx(DEFAULTS + NORMAL + body))["mainfont"] == "Metric Sans"
+
+
+def test_the_word_font_goes_before_its_substitute(installed: set[str]):
+    installed.update({"Aptos", "Metric Sans"})
+    body = BODY_TEXT.replace("</w:pPr>", '</w:pPr><w:rPr><w:rFonts w:ascii="Aptos"/></w:rPr>')
+    assert _options(_docx(DEFAULTS + NORMAL + body))["mainfont"] == "Aptos"
+
+
+@pytest.mark.parametrize(
+    ("name", "substitute"),
+    [("segoe ui", "Metric UI"), ("Calibri", "Carlito"), ("Georgia", "Metric Serif"), ("Aptos Display", "Metric Sans Display"), ("Arial", "Liberation Sans")],
+)
+def test_a_font_a_run_names_takes_its_substitute(installed: set[str], name: str, substitute: str):
+    installed.add(substitute)
+    assert docx_document_styles.installed_family(name) == substitute
+
+
+def test_a_substitute_the_container_lacks_is_no_font(installed: set[str]):
+    assert docx_document_styles.installed_family("Aptos") is None
 
 
 def test_the_equations_take_cambria_math_when_it_is_installed(installed: set[str]):
@@ -295,10 +323,12 @@ def font_metrics(monkeypatch: pytest.MonkeyPatch, tmp_path):
     file = _font_file(tmp_path, 900, -250, 100)
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
     yield
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
 
 
 def test_the_line_of_a_font_is_its_hhea_ascent_descent_and_gap(font_metrics):
@@ -312,7 +342,20 @@ def test_the_body_size_is_in_points_and_its_line_comes_from_its_font(font_metric
 
 def test_the_body_gets_where_its_line_starts_and_ends(font_metrics):
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
-    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("10.8", "4.2")
+    # The line gap of the font above the ascent, as Word puts it
+    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("12", "3")
+
+
+def test_a_font_without_a_line_gap_reaches_as_high_as_its_ascent(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    file = _font_file(tmp_path, 900, -250, 0)
+    docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["docx-body-ascent"], options["docx-body-descent"]) == ("10.8", "3")
+    assert docx_document_styles.gap_ratio(None) == 0
+    assert docx_document_styles.top_ratio(None) is None
 
 
 def test_a_body_font_without_metrics_gets_no_ascent():
@@ -335,17 +378,19 @@ def test_a_heading_gets_the_line_of_its_size(font_metrics):
 
 
 def test_a_heading_gets_the_ascent_of_its_font(font_metrics):
-    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "18"
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "20"
 
 
 def test_a_font_without_metrics_gets_no_ascent(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout="/no/such/font.ttf"))
     try:
         assert docx_document_styles.ascent_ratio("Minor Serif") is None
         assert docx_document_styles.ascent_ratio(None) is None
     finally:
         docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
 
 
 def test_a_font_without_metrics_gets_the_line_of_latex(monkeypatch: pytest.MonkeyPatch):
@@ -365,11 +410,11 @@ def test_the_latin_modern_body_gets_the_line_of_latex(installed: set[str]):
 HYPERLINK = '<w:style w:type="character" w:styleId="Hyperlink"><w:rPr><w:color w:val="4F81BD" w:themeColor="accent1"/></w:rPr></w:style>'
 
 
-def test_links_take_the_theme_colour_of_the_hyperlink_style_as_word_does():
+def test_links_get_no_colour_of_their_own():
+    """Word colours the text of a link only by its runs: the Hyperlink style, which docx_color_pre_process carries over."""
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HYPERLINK))
-    assert options["docx-link-color"] == "156082"
-    assert options["colorlinks"] == "true"
-    assert {options[f"{kind}color"] for kind in ("link", "url", "file", "cite")} == {"pdcLink"}
+    assert "docx-link-color" not in options
+    assert "colorlinks" not in options
 
 
 def test_a_theme_shade_darkens_as_word_does():
@@ -476,7 +521,14 @@ LIST_ITEM = '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:num
 def test_a_bullet_reaches_as_high_as_its_font_in_the_list_of_the_document(font_metrics):
     """Word sets the line of an item as high as the bullet's font: the first level of the list the document uses."""
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets()))
-    assert options["docx-list-bullet-ascents"] == "10.8,0,0,0"
+    assert options["docx-list-bullet-ascents"] == "12,0,0,0"
+
+
+@pytest.mark.parametrize(("font", "ascents"), [("Symbol", "12.06,0,0,0"), ("wingdings", "10.79,0,0,0")])
+def test_a_bullet_in_a_symbol_font_of_word_gets_its_ascent_without_the_font(font_metrics, font: str, ascents: str):
+    """The image has no Symbol and no Wingdings, the fonts of the bullets of Word: their ascent comes from Word's."""
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=LIST_ITEM, numbering=_bullets(font)))
+    assert options["docx-list-bullet-ascents"] == ascents
 
 
 def test_a_bullet_in_a_font_which_is_not_installed_gets_no_ascent(font_metrics):
@@ -518,3 +570,24 @@ def test_a_heading_hanging_indent_of_a_digit_python_cannot_read_hangs_nothing():
     numbering = _numbering().replace('w:hanging="432"', 'w:hanging="²"')
     fields = _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + NUMBERED_HEADING1, numbering=numbering))["docx-style-Heading1"])
     assert fields["numberhang"] == "0"
+
+
+RUN_IN_A_FONT = '<w:p><w:r><w:rPr><w:rFonts w:ascii="minor serif"/></w:rPr><w:t>text</w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Missing"/></w:rPr><w:t>x</w:t></w:r></w:p><w:sectPr/>'
+
+
+def test_the_fonts_of_the_runs_come_with_their_line(font_metrics):
+    """By the hex of the name of the family, as docx_color_pre_process names it; a font the container lacks is left out."""
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=RUN_IN_A_FONT))
+    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":1.0000:1.2500"
+
+
+def test_a_document_without_fonts_of_runs_passes_none():
+    assert "docx-run-fonts" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
+def test_the_body_passes_the_multiple_of_its_line(font_metrics):
+    body = BODY_TEXT.replace('<w:spacing w:before="180" w:after="180"/>', '<w:spacing w:before="180" w:after="180" w:line="360" w:lineRule="auto"/>')
+    assert _options(_docx(DEFAULTS + NORMAL + body))["docx-body-line-multiple"] == "1.5"
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-line-multiple"] == "1"
+    exact = BODY_TEXT.replace('<w:spacing w:before="180" w:after="180"/>', '<w:spacing w:before="180" w:after="180" w:line="300" w:lineRule="exact"/>')
+    assert "docx-body-line-multiple" not in _options(_docx(DEFAULTS + NORMAL + exact))

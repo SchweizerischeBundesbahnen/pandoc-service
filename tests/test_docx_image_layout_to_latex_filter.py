@@ -37,14 +37,15 @@ def _image(title: str) -> str:
 @pytest.mark.parametrize(
     ("title", "expected"),
     [
-        pytest.param("{{PICLAYOUT:-6|0|19050}}", "a\\raisebox{-3pt}{" + GRAPHIC + "}\\hspace{1.5pt}b", id="shift-and-gap"),
-        pytest.param("{{PICLAYOUT:4|12700|0}}", "a\\hspace{1pt}\\raisebox{2pt}{" + GRAPHIC + "}b", id="raise-and-left-gap"),
+        pytest.param("{{PICLAYOUT:-6|0|19050}}", "a\\raisebox{-3pt}{" + GRAPHIC + "}\\kern1.5pt\\relax b", id="shift-and-gap"),
+        pytest.param("{{PICLAYOUT:4|12700|0}}", "a\\kern1pt\\relax \\raisebox{2pt}{" + GRAPHIC + "}b", id="raise-and-left-gap"),
         pytest.param("{{PICLAYOUT:0|0|0}}", "a" + GRAPHIC + "b", id="nothing-to-do"),
         # %g would write these as 1e+04 and 7.874e-05, which TeX cannot read
-        pytest.param("{{PICLAYOUT:-40000|1|127000000}}", "a\\hspace{0pt}\\raisebox{-16000pt}{" + GRAPHIC + "}\\hspace{10000pt}b", id="extreme-values"),
+        pytest.param("{{PICLAYOUT:-40000|1|127000000}}", "a\\kern0pt\\relax \\raisebox{-16000pt}{" + GRAPHIC + "}\\kern10000pt\\relax b", id="extreme-values"),
     ],
 )
-def test_marker_sets_the_picture_in_raisebox_and_hspace(test_parameters: TestParameters, title: str, expected: str):
+def test_marker_sets_the_picture_in_raisebox_and_kern(test_parameters: TestParameters, title: str, expected: str):
+    """A kern, not glue: Word breaks no line between a picture and the text right next to it."""
     assert expected in _native_to_latex(test_parameters.container, _image(title))
 
 
@@ -59,7 +60,7 @@ def test_image_without_a_marker_is_left_alone(test_parameters: TestParameters):
     latex = _native_to_latex(test_parameters.container, _image("Draft"))
 
     assert "\\raisebox" not in latex
-    assert "\\hspace" not in latex
+    assert "\\kern" not in latex
 
 
 def _png_data_uri(width: int, height: int) -> str:
@@ -85,5 +86,5 @@ def test_icon_layout_survives_from_html_through_docx_into_latex(test_parameters:
     text = " ".join(latex.text.split())
     # A quarter of pandoc's default 12pt body text down, the 2px margin after
     assert "\\raisebox{-3pt}{" in text, text
-    assert "\\hspace{1.5pt}" in text, text
+    assert "\\kern1.5pt" in text, text
     assert "PICLAYOUT" not in text

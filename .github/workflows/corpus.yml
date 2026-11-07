@@ -36,6 +36,10 @@ jobs:
           status=0
           uv run python -m tools.corpus.corpus all --image pandoc-service:corpus --out out/corpus/image --variant image --against || status=$?
           cat out/corpus/image/report.md >> "$GITHUB_STEP_SUMMARY"
+          uv run python -m tools.corpus.corpus all --image pandoc-service:corpus --docx corpus/docx-free --reference macos-free --out out/corpus/free --variant image --against || status=$?
+          cat out/corpus/free/report.md >> "$GITHUB_STEP_SUMMARY"
+          # The free-font corpus is published under free/ of the page
+          cp -r out/corpus/free/site out/corpus/image/site/free
           if [ "$status" -ne 0 ]; then echo "::warning::The corpus got worse than corpus/baseline.json, see the summary"; fi
       - name: 📦 Upload the page
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

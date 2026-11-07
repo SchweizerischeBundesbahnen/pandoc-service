@@ -20,10 +20,13 @@
 -- line the same way. It also looks past empty containers after the break,
 -- such as an empty anchor (<br/><a id="..."></a>), and keeps them.
 --
--- A paragraph that holds nothing but line breaks is left alone: <p><br/></p>
--- is how Polarion writes an empty line, and the break is what keeps it. A
--- <br/> after a closed block (<p>text</p><br/>) is such a paragraph too, so it
--- stays an empty line.
+-- A paragraph of the body that holds nothing but line breaks loses one of them
+-- as well, but not a list item or a table cell, which would lose its marker:
+-- <p><br/></p> is how Polarion writes an empty line, which a browser shows as
+-- one line. Word shows a paragraph of a break alone as two, its own line and
+-- the one the break opens, so the line becomes an empty paragraph. pandoc's
+-- DOCX writer leaves out an empty paragraph, so it goes in as OpenXML. A
+-- <br/> after a closed block (<p>text</p><br/>) is such a paragraph too.
 --
 -- A paragraph that holds an image keeps its break too. Without it, an image
 -- paragraph next to a caption holds nothing but the image, and when the DOCX
@@ -128,6 +131,9 @@ local function has_image(inlines)
   return false
 end
 
+-- An empty paragraph of the body text, which pandoc's DOCX writer would leave out.
+local EMPTY_PARAGRAPH = '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr></w:p>'
+
 local function strip(block)
   local content = block.content
   if not has_content(content) or has_image(content) or not strip_trailing_break(content) then
@@ -137,10 +143,44 @@ local function strip(block)
   return block
 end
 
-function Para(el)
-  return strip(el)
+-- True when `inlines` holds a line break or names an anchor, at any depth: a bookmark keeps its paragraph.
+local function shows_a_line(inlines)
+  for _, inline in ipairs(inlines) do
+    if inline.t == "LineBreak" then
+      return true
+    end
+    if INLINE_CONTAINERS[inline.t] and ((inline.identifier or "") ~= "" or shows_a_line(inline.content)) then
+      return true
+    end
+  end
+  return false
 end
 
-function Plain(el)
-  return strip(el)
+-- A paragraph of the body of breaks alone, also inside a Div, loses one of them: an empty one becomes
+-- an empty paragraph. A list item or a cell keeps them: as an empty paragraph it would lose its marker.
+local function strip_empty_lines(blocks)
+  local result = pandoc.Blocks({})
+  for _, block in ipairs(blocks) do
+    if block.t == "Div" then
+      block.content = strip_empty_lines(block.content)
+    elseif (block.t == "Para" or block.t == "Plain") and not has_content(block.content) and not has_image(block.content) then
+      local content = block.content
+      -- Empty also when an empty container is left, a styled span, which a later filter drops
+      if strip_trailing_break(content) and not shows_a_line(content) then
+        block = pandoc.RawBlock("openxml", EMPTY_PARAGRAPH)
+      else
+        block.content = content
+      end
+    end
+    result:insert(block)
+  end
+  return result
 end
+
+return {
+  { Para = strip, Plain = strip },
+  { Pandoc = function(doc)
+      doc.blocks = strip_empty_lines(doc.blocks)
+      return doc
+    end },
+}

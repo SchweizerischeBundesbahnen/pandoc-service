@@ -19,7 +19,6 @@
 --   docx-table-plain-cell-space  the same for a cell paragraph without a
 --                             style, of the Normal style
 --   docx-table-cell-margin    the left and right margin of a table cell
---   docx-link-color           the colour of the Hyperlink style
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
 --   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
@@ -49,7 +48,6 @@ local LIST_INDENTS = "docx-list-indents"
 local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
-local LINK_COLOR = "docx-link-color"
 local PAGE_NUMBERS = "docx-page-numbers"
 local STYLE_PREFIX = "docx-style-"
 
@@ -133,14 +131,8 @@ local function table_preamble(meta, lines)
   end
 end
 
--- Links in the colour of the Hyperlink style, the pages without a number when the document has none.
+-- The pages without a number when the document has none.
 local function page_preamble(meta, lines)
-  local color = meta[LINK_COLOR] and pandoc.utils.stringify(meta[LINK_COLOR]) or ""
-  if color:match("^%x%x%x%x%x%x$") then
-    lines[#lines + 1] = "\\usepackage{xcolor}"
-    -- The service passes colorlinks and the colours of the template as pdcLink, set up after this preamble
-    lines[#lines + 1] = string.format("\\definecolor{pdcLink}{HTML}{%s}", color)
-  end
   -- Word sets a picture taller than what a page holds at the top of a page, below the lines before it
   -- there, and lets it run past the bottom margin: TeX gets a picture that much shorter, the rest below
   lines[#lines + 1] = "\\newsavebox{\\pdcPictureBox}\\newlength{\\pdcPictureRoom}"
@@ -230,6 +222,11 @@ local function body_preamble(meta, lines)
       lines[#lines + 1] = "\\AtBeginDocument{\\setbox0\\hbox{\\normalfont x\\bfseries x\\itshape x\\normalfont\\itshape x}}"
       -- Word sets the first line of a page as far down as the ascent of its font
       lines[#lines + 1] = string.format("\\setlength{\\topskip}{%gbp}", baseline - descent)
+      -- Word ends a page where the depth of its last line reaches the bottom margin. TeX counts that depth
+      -- only up to \\maxdepth where it breaks at a penalty, as after an item of a list: none, so it counts all
+      -- of it wherever it breaks, from the start and after a section changes the page
+      lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcPageDepth}{\\global\\maxdepth=\\z@\\global\\@maxdepth=\\z@}\\makeatother"
+      lines[#lines + 1] = "\\AddToHook{begindocument/end}{\\pdcPageDepth}"
       -- A table starts below the descent of the line before it, which TeX takes from its letters
       lines[#lines + 1] = "\\AddToHook{env/longtable/before}{\\par\\ifdim\\prevdepth>-1000pt\\ifdim\\prevdepth<\\dp\\strutbox\\vspace{\\dimexpr\\dp\\strutbox-\\prevdepth\\relax}\\fi\\fi}"
       -- longtable leaves the depth of its last row below the line, not in \\prevdepth: the line after it
@@ -397,8 +394,9 @@ local function below_title(style, toc)
   return toc and after or after - body_skip
 end
 
--- The LaTeX which switches to the font, size, weight, shape and colour of a style.
-local function font_switch(style, family_macro, lines)
+-- The LaTeX which switches to the font, size, weight, shape and colour of a style. With colour_apart the
+-- colour comes back on its own, the second result.
+local function font_switch(style, family_macro, lines, colour_apart)
   local parts = { "\\normalfont" }
   if style.font then
     lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{%s}", family_macro, style.font)
@@ -417,10 +415,11 @@ local function font_switch(style, family_macro, lines)
   if style.italic then
     parts[#parts + 1] = "\\itshape"
   end
-  if style.color then
-    parts[#parts + 1] = string.format("\\color[HTML]{%s}", style.color)
+  local colour = style.color and string.format("\\color[HTML]{%s}", style.color) or ""
+  if not colour_apart then
+    parts[#parts + 1] = colour
   end
-  return table.concat(parts)
+  return table.concat(parts), colour
 end
 
 -- Whether the document has a heading below level 5, which pandoc writes as a plain paragraph.
@@ -458,7 +457,9 @@ local function headings_preamble(meta, lines)
     local style = style_fields(meta[STYLE_PREFIX .. heading.style], points(meta[SKIP]))
     if style and (deep_used or not heading.deep) then
       packages()
-      local switch = font_switch(style, "docxHeadingFont" .. heading.letter, lines)
+      -- The colour goes inside the line of the heading: in the format, before the line, it leaves a colour
+      -- special on the page between the heading and what follows, where TeX may then break the page
+      local switch, colour = font_switch(style, "docxHeadingFont" .. heading.letter, lines, true)
       if style.number then
         -- The number of the numbering of the style, in its hanging indent, as Word sets it
         numbered = level
@@ -467,9 +468,9 @@ local function headings_preamble(meta, lines)
         if style.number_hang == 0 then
           label = string.format("\\the%s\\quad", heading.command)
         end
-        lines[#lines + 1] = string.format("\\titleformat{\\%s}[hang]{%s%s}{%s}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align], label)
+        lines[#lines + 1] = string.format("\\titleformat{\\%s}[hang]{%s%s}{%s%s}{0pt}{%s}", heading.command, switch, TITLESEC_ALIGN[style.align], colour, label, colour)
       else
-        lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{}", heading.command, switch, TITLESEC_ALIGN[style.align])
+        lines[#lines + 1] = string.format("\\titleformat{\\%s}[block]{%s%s}{}{0pt}{%s}", heading.command, switch, TITLESEC_ALIGN[style.align], colour)
       end
       lines[#lines + 1] = string.format("\\titlespacing*{\\%s}{0pt}{%s}{%.4gpt}", heading.command, space_before(style), style.after)
     end
@@ -588,26 +589,56 @@ end
 -- Word sets a line of only a picture on the bottom of the picture, without the descent of the font,
 -- and the next line right below it: the picture goes down by the descent, which the next line then
 -- keeps between the baselines.
+-- The picture an inline is, or the one a link holds alone, as a picture links to its file.
+local function lone_picture(item)
+  if item.t == "Image" then
+    return item
+  end
+  if item.t ~= "Link" then
+    return nil
+  end
+  local picture = nil
+  for _, inner in ipairs(item.content) do
+    if inner.t == "Image" and picture == nil then
+      picture = inner
+    elseif not strut_only(inner) then
+      return nil
+    end
+  end
+  return picture
+end
+
+local function lowered(picture)
+  return pandoc.Span({
+    pandoc.RawInline("latex", string.format("\\raisebox{-%gbp}{", body_descent)),
+    picture,
+    pandoc.RawInline("latex", "}"),
+  })
+end
+
 local function lower_lone_pictures(content)
   local start = 1
   for index = 1, #content + 1 do
     local inline = content[index]
     if inline == nil or inline.t == "LineBreak" then
-      local picture, others = nil, false
+      -- A line of pictures and the spaces between them, as the line of a single one
+      local pictures, others = {}, false
       for position = start, index - 1 do
         local item = content[position]
-        if item.t == "Image" and picture == nil then
-          picture = position
+        if lone_picture(item) then
+          pictures[#pictures + 1] = position
         elseif not strut_only(item) then
           others = true
         end
       end
-      if picture and not others then
-        content[picture] = pandoc.Span({
-          pandoc.RawInline("latex", string.format("\\raisebox{-%gbp}{", body_descent)),
-          content[picture],
-          pandoc.RawInline("latex", "}"),
-        })
+      for _, picture in ipairs(others and {} or pictures) do
+        local item = content[picture]
+        if item.t == "Link" then
+          item.content = pandoc.Inlines({ lowered(lone_picture(item)) })
+          content[picture] = item
+        else
+          content[picture] = lowered(item)
+        end
       end
       start = index + 1
     end
@@ -652,6 +683,18 @@ last_word = function(inlines)
   return nil
 end
 
+-- A strut before each line break of the inlines, at any depth.
+local function strut_line_breaks(inlines)
+  local result = pandoc.Inlines({})
+  for _, inline in ipairs(inlines) do
+    if inline.t == "LineBreak" then
+      result:insert(pandoc.RawInline("latex", "\\strut{}"))
+    end
+    result:insert(inline)
+  end
+  return result
+end
+
 local function set_paragraph(para)
   if not FORMAT:match("latex") then
     return nil
@@ -676,9 +719,15 @@ local function set_paragraph(para)
   if body_descent ~= nil and visible then
     lower_lone_pictures(para.content)
     -- Every line of Word reaches the ascent and the descent of its font, whatever its letters:
-    -- the first and the last line of a paragraph get the strut of its font
-    para.content:insert(1, pandoc.RawInline("latex", "\\strut{}"))
-    para.content:insert(pandoc.RawInline("latex", "\\strut{}"))
+    -- the first and the last line of a paragraph get the strut of its font, and every line a break
+    -- ends, which a picture on the next line would otherwise start right below its letters
+    para.content = para.content:walk({ Inlines = strut_line_breaks })
+    -- A paragraph in the line of the font of its runs, which docx_colors_to_latex opens and closes, gets
+    -- its struts inside: they are of that font
+    local first, last = para.content[1], para.content[#para.content]
+    local own_line = first.t == "RawInline" and first.text:find("{\\pdcParLine", 1, true) == 1 and last.t == "RawInline" and last.text == "\\par}"
+    para.content:insert(own_line and 2 or 1, pandoc.RawInline("latex", "\\strut{}"))
+    para.content:insert(own_line and #para.content or #para.content + 1, pandoc.RawInline("latex", "\\strut{}"))
     changed = true
   end
   return changed and para or nil
@@ -922,7 +971,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == LINK_COLOR or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

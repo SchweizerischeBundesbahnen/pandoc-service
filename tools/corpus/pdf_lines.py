@@ -35,6 +35,16 @@ class Line:
     text: str
 
 
+@dataclass(frozen=True)
+class Word:
+    """A word of a page: its text and where its baseline starts, in points from the top left."""
+
+    page: int
+    x: float
+    y: float
+    text: str
+
+
 @dataclass
 class _Run:
     page: int
@@ -43,10 +53,26 @@ class _Run:
     right: float
     size: float
     characters: list[str] = field(default_factory=list)
+    # Where each character starts, a space where the run has none
+    lefts: list[float | None] = field(default_factory=list)
 
     def line(self) -> Line | None:
         text = normalized("".join(self.characters))
         return Line(self.page, round(self.x, 2), round(self.y, 2), round(self.right - self.x, 2), text) if len(text) >= MIN_LENGTH else None
+
+    def words(self) -> list[Word]:
+        """The words of the run, split at its spaces."""
+        words, characters, start = [], "", None
+        for character, left in [*zip(self.characters, self.lefts, strict=True), (" ", None)]:
+            if character.isspace():
+                text = normalized(characters)
+                if text and start is not None:
+                    words.append(Word(self.page, round(start, 2), round(self.y, 2), text))
+                characters, start = "", None
+                continue
+            characters += character
+            start = left if start is None else start
+        return words
 
 
 def normalized(text: str) -> str:
@@ -64,8 +90,8 @@ def _continues(run: _Run, baseline: float, left: float, size: float) -> bool:
     return abs(baseline - run.y) < max(1.0, 0.3 * size) and left >= run.right - 1 and left - run.right < 1.5 * max(size, run.size)
 
 
-def page_lines(page: pdfium.PdfPage, number: int) -> list[Line]:
-    """The lines of one page, in the order of its characters."""
+def _page_runs(page: pdfium.PdfPage, number: int) -> list[_Run]:
+    """The runs of characters of one page, in the order of its characters."""
     textpage = page.get_textpage()
     height = page.get_height()
     origin_x, origin_y = ctypes.c_double(), ctypes.c_double()
@@ -80,6 +106,7 @@ def page_lines(page: pdfium.PdfPage, number: int) -> list[Line]:
             # A space carries no place of its own that both producers agree on
             if current is not None:
                 current.characters.append(" ")
+                current.lefts.append(None)
             continue
         pdfium_c.FPDFText_GetCharOrigin(textpage.raw, index, origin_x, origin_y)
         left, _bottom, right, _top = textpage.get_charbox(index)
@@ -89,11 +116,22 @@ def page_lines(page: pdfium.PdfPage, number: int) -> list[Line]:
         baseline = height - origin_y.value
         if current is not None and _continues(current, baseline, left, size):
             current.characters.append(character)
+            current.lefts.append(left)
             current.right = max(current.right, right)
             continue
-        current = _Run(number, left, baseline, right, size, [character])
+        current = _Run(number, left, baseline, right, size, [character], [left])
         runs.append(current)
-    return [line for line in (run.line() for run in runs) if line is not None]
+    return runs
+
+
+def page_lines(page: pdfium.PdfPage, number: int) -> list[Line]:
+    """The lines of one page, in the order of its characters."""
+    return [line for line in (run.line() for run in _page_runs(page, number)) if line is not None]
+
+
+def page_words(page: pdfium.PdfPage, number: int) -> list[Word]:
+    """The words of one page, in the order of its characters."""
+    return [word for run in _page_runs(page, number) for word in run.words()]
 
 
 def document_lines(path: Path) -> list[list[Line]]:
@@ -101,5 +139,14 @@ def document_lines(path: Path) -> list[list[Line]]:
     document = pdfium.PdfDocument(path)
     try:
         return [page_lines(document[number], number) for number in range(len(document))]
+    finally:
+        document.close()
+
+
+def document_words(path: Path) -> list[list[Word]]:
+    """The words of each page of a PDF."""
+    document = pdfium.PdfDocument(path)
+    try:
+        return [page_words(document[number], number) for number in range(len(document))]
     finally:
         document.close()

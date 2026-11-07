@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from app.html_table_layout import TableLayout
 
 from app import docx_table_columns, html_image_sizes
+from app.docx_math_braces_post_process import apply_group_characters
 from app.docx_math_color_post_process import apply_math_colors
 from app.docx_numbers import whole_number
 from app.docx_paragraph_indent import ParagraphIndents
@@ -125,6 +126,7 @@ def process(
     _replace_table_properties(doc, table_layouts)
     _separate_adjacent_tables(doc)
     apply_math_colors(doc)
+    apply_group_characters(doc)
     _fit_images_to_text_width(doc)
     _cap_image_heights(doc)
     # After the cap, which can make a picture lower: vertical-align: middle centers on its height.

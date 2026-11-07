@@ -123,7 +123,8 @@ def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParame
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=font:DejaVu Sans,size:20,line:24.4,bold:false,italic:true,color:0F4761,before:18,after:9,align:center"))
     assert "\\usepackage{titlesec}" in preamble
     assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{DejaVu Sans}" in preamble
-    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\color[HTML]{0F4761}\\filcenter}{}{0pt}{}" in preamble
+    # The colour inside the line of the heading: before it, its special would let TeX break the page after the heading
+    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\filcenter}{}{0pt}{\\color[HTML]{0F4761}}" in preamble
     assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
 
 
@@ -142,7 +143,7 @@ def test_a_heading_below_level_5_gets_a_level_of_its_own(test_parameters: TestPa
 
 def test_a_deep_heading_takes_the_format_of_its_style(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading7=size:12,italic:true,color:595959,before:2,after:0", native=DEEP_HEADINGS))
-    assert "\\titleformat{\\pdcHeadingG}[block]{\\normalfont\\fontsize{12bp}{14.4bp}\\selectfont\\itshape\\color[HTML]{595959}\\filright}{}{0pt}{}" in preamble
+    assert "\\titleformat{\\pdcHeadingG}[block]{\\normalfont\\fontsize{12bp}{14.4bp}\\selectfont\\itshape\\filright}{}{0pt}{\\color[HTML]{595959}}" in preamble
     assert "\\titlespacing*{\\pdcHeadingG}{0pt}{2pt}{0pt}" in preamble
 
 
@@ -325,6 +326,11 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{\\(\\displaystyle a^{2}\\)}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in body
 
 
+def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,color:0F4761,number:{1:arabic},numberhang:21.6"))
+    assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\color[HTML]{0F4761}\\makebox[21.6pt][l]{\\thesection}}{0pt}{\\color[HTML]{0F4761}}" in preamble
+
+
 def test_a_numbered_heading_style_sets_its_number_in_its_hanging_indent(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,number:{1:Roman},numberhang:21.6", "docx-style-Heading2=size:16,number:{1:Roman}.{2:arabic}"))
     assert "\\renewcommand{\\thesection}{\\Roman{section}}" in preamble
@@ -447,15 +453,6 @@ def test_without_the_descent_a_row_of_compact_shares_its_space_by_the_stretch(te
 
 def test_a_body_size_without_its_line_is_left_out(test_parameters: TestParameters):
     assert "\\renewcommand{\\normalsize}" not in _preamble(_latex(test_parameters.container, "docx-body-size=12"))
-
-
-def test_the_link_colour_is_defined_for_the_template(test_parameters: TestParameters):
-    preamble = _preamble(_latex(test_parameters.container, "docx-link-color=156082"))
-    assert "\\definecolor{pdcLink}{HTML}{156082}" in preamble
-
-
-def test_a_link_colour_which_is_no_hex_colour_is_left_out(test_parameters: TestParameters):
-    assert "pdcLink" not in _latex(test_parameters.container, "docx-link-color=}\\evil")
 
 
 def test_a_document_without_headers_has_no_page_numbers(test_parameters: TestParameters):
@@ -608,8 +605,26 @@ def test_a_picture_alone_on_its_line_goes_down_by_the_descent(test_parameters: T
     native = f'[Para [Str "Text", LineBreak, {image}, LineBreak, Str "After"], Para [Str "Icon", Space, {image}]]'
     body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native=native)
     body = " ".join(body[body.index("\\begin{document}") :].split())
-    assert "Text\\\\ {\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}\\\\ After" in body
+    assert "Text\\strut{}\\\\ {\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}\\strut{}\\\\ After" in body
     assert body.count("raisebox") == 1, "a picture next to text stays on the baseline"
+
+
+def test_a_picture_alone_in_a_link_goes_down_by_the_descent_as_well(test_parameters: TestParameters):
+    """A picture of Polarion links to its file: alone on its line it stands as low as one without a link."""
+    image = 'Image ("",[],[]) [] ("x.png","")'
+    native = f'[Para [Link ("",[],[]) [{image}] ("x.png","")]]'
+    body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert "{\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}" in body, body
+
+
+def test_pictures_side_by_side_on_their_line_go_down_by_the_descent(test_parameters: TestParameters):
+    """Word sets a line of pictures alone as it sets a line of one: no descent of the font below them."""
+    image = 'Image ("",[],[]) [] ("x.png","")'
+    native = f'[Para [{image}, Space, Link ("",[],[]) [{image}] ("x.png","")], Para [{image}, Space, Str "text"]]'
+    body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert body.count("raisebox{-3.4bp}") == 2, body
 
 
 def test_a_picture_taller_than_a_page_runs_past_the_bottom_margin(test_parameters: TestParameters):
@@ -645,3 +660,27 @@ def test_an_equation_without_the_size_of_the_body_keeps_the_fractions_of_latex(t
     latex = _latex(test_parameters.container, native='[Para [Math DisplayMath "\\\\frac{a}{b}"]]')
     assert "pdcEquation" not in latex
     assert "\\frac{a}{b}" in latex
+
+
+def test_every_line_a_break_ends_reaches_the_descent_of_the_font(test_parameters: TestParameters):
+    """Word sets a picture on the next line below the descent of the font, whatever the letters before the break."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.64", "docx-body-ascent=11.28", "docx-body-descent=3.36")
+    native = '[Para [Str "Not", Space, Str "resized:", LineBreak, Strong [Str "bold", LineBreak], Str "end"]]'
+    body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
+    assert "resized:\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body
+
+
+def test_a_page_ends_where_the_descent_of_its_last_line_reaches_the_margin(test_parameters: TestParameters):
+    """Word keeps the whole last line of a page above the bottom margin: TeX counts its whole depth, also at a penalty."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4")
+    preamble = _preamble(_latex(test_parameters.container, *metadata))
+    assert "\\newcommand{\\pdcPageDepth}{\\global\\maxdepth=\\z@\\global\\@maxdepth=\\z@}" in preamble
+    assert "\\AddToHook{begindocument/end}{\\pdcPageDepth}" in preamble
+
+
+def test_a_paragraph_in_the_line_of_its_runs_gets_its_struts_inside(test_parameters: TestParameters):
+    """docx_colors_to_latex opens the line of the font of the runs: the struts are of that font, so inside it."""
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4")
+    native = '[Para [RawInline (Format "latex") "{\\\\pdcParLine{12.8bp}{10.2bp}{2.6bp}", Str "text", RawInline (Format "latex") "\\\\par}"]]'
+    body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
+    assert "{\\pdcParLine{12.8bp}{10.2bp}{2.6bp}\\strut{}text\\strut{}\\par}" in body, body

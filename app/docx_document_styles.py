@@ -50,6 +50,20 @@ A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"  # NOSONAR False 
 
 # The font Word sets the equations (OMML) of every document in.
 MATH_FONT = "Cambria Math"
+# The open families the image has in place of fonts of Word, each as wide and as high as the font it stands for:
+# fonts/metric_fonts.py makes the Metric families, the others are metric compatible as they come
+SUBSTITUTES = {
+    "aptos": "Metric Sans",
+    "aptos display": "Metric Sans Display",
+    "segoe ui": "Metric UI",
+    "georgia": "Metric Serif",
+    "calibri": "Carlito",
+    "arial": "Liberation Sans",
+    "times new roman": "Liberation Serif",
+    "courier new": "Liberation Mono",
+}
+# The hhea ascent of the fonts Word sets its bullets in, which no open font stands for: Symbol and Wingdings
+BULLET_ASCENTS = {"symbol": 1.005, "wingdings": 0.899}
 # The style pandoc gives body paragraphs, then the styles it inherits from.
 BODY_STYLE = "BodyText"
 # The style pandoc gives the paragraphs of a table cell and of a tight list.
@@ -85,8 +99,6 @@ THEME_SLOTS = {
     "followedHyperlink": "folHlink",
 }
 HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
-# The colour filters/docx/docx_document_styles_to_latex.lua defines as the colour of the Hyperlink style.
-LINK_COLOR_NAME = "pdcLink"
 
 _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
 
@@ -94,11 +106,15 @@ _UNREADABLE_DOCX = (zipfile.BadZipFile, KeyError)
 def _body_line(chain: list[Element], styles: Element, size: float, font: str | None) -> list[str]:
     """The size and the line of the body text, with where a line starts and ends when the font is known."""
     options = ["-M", f"docx-body-size={size:g}", "-M", f"docx-body-baseline={_baseline(chain, styles, size, font):.4g}"]
-    ascent = ascent_ratio(font)
-    if ascent is not None:
+    multiple = _line_multiple(chain, styles)
+    if multiple is not None:
+        # A line of a run in another font is as many times as high as that font's
+        options += ["-M", f"docx-body-line-multiple={multiple:.4g}"]
+    top = top_ratio(font)
+    if top is not None:
         # The balloon of a comment starts at the top of its line, the line to it at the bottom
-        descent = line_ratio(font) - ascent
-        options += ["-M", f"docx-body-ascent={size * ascent:.4g}", "-M", f"docx-body-descent={size * descent:.4g}"]
+        descent = line_ratio(font) - top
+        options += ["-M", f"docx-body-ascent={size * top:.4g}", "-M", f"docx-body-descent={size * descent:.4g}"]
     return options
 
 
@@ -173,17 +189,6 @@ def _size_options(chain: list[Element], styles: Element, font: str | None, numbe
     return options
 
 
-def _link_options(styles: Element, theme: Element | None) -> list[str]:
-    """The colour of the links, from the Hyperlink style."""
-    link_chain = _style_chain(styles, "Hyperlink", fallback=None)
-    link_color = _color(_first(link_chain, styles, "rPr", "color"), theme) if link_chain else None
-    if link_color is None:
-        return []
-    # The template sets hyperref up after the preamble of the filters, which defines pdcLink
-    options = ["-M", f"docx-link-color={link_color}", "-V", "colorlinks=true"]
-    return options + [item for kind in ("link", "url", "file", "cite") for item in ("-V", f"{kind}color={LINK_COLOR_NAME}")]
-
-
 def _display_options(styles: Element, theme: Element | None, numbering: Element | None) -> list[str]:
     """The fields of the title, the headings and the caption, each style that has any."""
     options: list[str] = []
@@ -224,10 +229,27 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
     options += _cell_options(styles)
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
-    options += _link_options(styles, theme)
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
-    return options + _display_options(styles, theme, numbering)
+    return options + _run_font_options(document) + _display_options(styles, theme, numbering)
+
+
+def _run_font_options(document: Element | None) -> list[str]:
+    """The ascent and the single line of each installed font a run of the body names, by the hex of its name.
+
+    Word sets a line in the font of its text: a paragraph of runs in another font than its style's gets the line
+    of that font, see filters/docx/docx_colors_to_latex.lua. The hex is how docx_color_pre_process names the font.
+    """
+    if document is None:
+        return []
+    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for fonts in document.iter(_w("rFonts"))}
+    metrics = []
+    families = {family for family in (installed_family(name) for name in names) if family is not None}
+    for family in sorted(families):
+        top = top_ratio(family)
+        if top is not None:
+            metrics.append(f"{family.encode().hex().upper()}:{top:.4f}:{line_ratio(family):.4f}")
+    return ["-M", "docx-run-fonts=" + ",".join(metrics)] if metrics else []
 
 
 def _w(name: str) -> str:
@@ -312,10 +334,10 @@ def _font(chain: list[Element], styles: Element, theme: Element | None) -> str |
     family = value if attribute == "ascii" else _theme_font(theme, value)
     if not family:
         return None
-    if family not in installed_families():
+    installed = installed_family(family)
+    if installed is None:
         logger.info("docx_document_styles: the font %r is not installed, keeping the LaTeX font", family)
-        return None
-    return family
+    return installed
 
 
 def _theme_font(theme: Element | None, slot: str | None) -> str | None:
@@ -341,12 +363,18 @@ def installed_families() -> frozenset[str]:
 def installed_family(name: str | None) -> str | None:
     """The installed family of a name, matched as fontconfig matches it, regardless of case; None without one.
 
-    A run of Polarion names its font as CSS does, in lower case: "segoe ui".
+    A run of Polarion names its font as CSS does, in lower case: "segoe ui". A font of Word the container
+    lacks gets its substitute, see SUBSTITUTES.
     """
     if not name:
         return None
     wanted = name.strip().casefold()
-    return next((family for family in sorted(installed_families()) if family.casefold() == wanted), None)
+    families = sorted(installed_families())
+    found = next((family for family in families if family.casefold() == wanted), None)
+    substitute = SUBSTITUTES.get(wanted)
+    if found is None and substitute in families:
+        return substitute
+    return found
 
 
 def _half_points(chain: list[Element], styles: Element) -> int | None:
@@ -407,12 +435,12 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, number
     if size is not None:
         fields["size"] = f"{size / 2:g}"
         fields["line"] = f"{_baseline(chain, styles, size / 2, font):.4g}"
-        ascent = ascent_ratio(font)
-        if ascent is not None:
-            fields["ascent"] = f"{size / 2 * ascent:.4g}"
+        top = top_ratio(font)
+        if top is not None:
+            fields["ascent"] = f"{size / 2 * top:.4g}"
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
-    color = _color(_first(chain, styles, "rPr", "color"), theme)
+    color = word_color(_first(chain, styles, "rPr", "color"), theme)
     if color is not None:
         fields["color"] = color
     for side in ("before", "after"):
@@ -452,14 +480,17 @@ def _bullet_ascents(numbering: Element | None, document: Element | None, size: f
     """How far above the baseline the bullet of each of the first four levels of a bulleted list reaches, in points.
 
     Word sets a line as high as the highest font in it, the bullet's among them. The levels are those of
-    the first bulleted list of the document; a level whose font is not installed gets 0.
+    the first bulleted list of the document; a level whose font is not installed gets the ascent of
+    BULLET_ASCENTS, else 0.
     """
     levels = _bullet_levels(numbering, document)
     ascents = []
     for index in range(4):
         fonts = levels[str(index)].find(f"{_w('rPr')}/{_w('rFonts')}") if str(index) in levels else None
         family = fonts.get(_w("ascii")) if fonts is not None else None
-        ratio = ascent_ratio(family) if family in installed_families() else None
+        ratio = top_ratio(installed_family(family))
+        if ratio is None and family is not None:
+            ratio = BULLET_ASCENTS.get(family.strip().casefold())
         ascents.append(round(size * ratio, 2) if ratio is not None else 0)
     return ascents
 
@@ -538,8 +569,8 @@ def _heading_number(chain: list[Element], styles: Element, numbering: Element | 
     return {"number": number, "numberhang": f"{hanging / TWIPS_PER_POINT:g}"}
 
 
-def _hhea(family: str) -> tuple[float, float] | None:
-    """The ascent and the single line of a family as shares of its size, from its hhea table; None when unreadable."""
+def _hhea(family: str) -> tuple[float, float, float] | None:
+    """The ascent, the single line and the line gap of a family as shares of its size, from its hhea table; None when unreadable."""
     try:
         # fc-match of the image, given an installed family as one argument
         result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607
@@ -549,7 +580,7 @@ def _hhea(family: str) -> tuple[float, float] | None:
         # fontTools makes the fields of a table at run time, which a type checker does not see
         hhea: Any = font["hhea"]
         head: Any = font["head"]
-        return hhea.ascent / head.unitsPerEm, (hhea.ascent - hhea.descent + hhea.lineGap) / head.unitsPerEm
+        return hhea.ascent / head.unitsPerEm, (hhea.ascent - hhea.descent + hhea.lineGap) / head.unitsPerEm, hhea.lineGap / head.unitsPerEm
     except Exception:  # noqa: BLE001 - a font fontTools cannot read gets LaTeX's line
         logger.info("docx_document_styles: no line metrics for %r, using %s", family, DEFAULT_LINE_RATIO)
         return None
@@ -571,6 +602,33 @@ def ascent_ratio(family: str | None) -> float | None:
     """The hhea ascent of a family as a share of its size: Word sets the first line of a page that far down."""
     metrics = _hhea(family) if family is not None else None
     return metrics[0] if metrics is not None else None
+
+
+@functools.cache
+def gap_ratio(family: str | None) -> float:
+    """The hhea line gap of a family as a share of its size."""
+    metrics = _hhea(family) if family is not None else None
+    return metrics[2] if metrics is not None else 0
+
+
+def top_ratio(family: str | None) -> float | None:
+    """How far above the baseline a line of a family reaches, as a share of its size; None without the metrics.
+
+    Word puts the line gap of a font above its ascent: a line is as high as the highest ascent and line gap of
+    its fonts, and as deep as the deepest descent, a bullet in Symbol and a lowered picture among them.
+    """
+    ascent = ascent_ratio(family)
+    return ascent + gap_ratio(family) if ascent is not None else None
+
+
+def _line_multiple(chain: list[Element], styles: Element) -> float | None:
+    """The line spacing of a style as a multiple of the single line of its font; None for an exact or least line."""
+    found = _attribute(chain, styles, "pPr", "spacing", ("line",))
+    rule = _attribute(chain, styles, "pPr", "spacing", ("lineRule",))
+    if (rule[1] if rule is not None else "auto") != "auto":
+        return None
+    line = whole_number(found[1]) if found is not None else LINE_UNITS
+    return (line or LINE_UNITS) / LINE_UNITS
 
 
 def _baseline(chain: list[Element], styles: Element, size: float, font: str | None) -> float:
@@ -610,7 +668,7 @@ def _theme_colors(theme: Element | None) -> dict[str, str]:
     return colors
 
 
-def _color(element: Element | None, theme: Element | None) -> str | None:
+def word_color(element: Element | None, theme: Element | None) -> str | None:
     """The colour of a <w:color> as six hex digits: the theme colour when it names one, as Word reads it, else its value."""
     if element is None:
         return None

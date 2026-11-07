@@ -55,6 +55,13 @@ def test_the_page_is_shrunk_by_the_magnification_given(test_parameters: TestPara
     assert "\\paperwidth*1000/747" in latex
 
 
+def test_the_label_of_a_balloon_keeps_its_size_whatever_the_font_of_the_body(test_parameters: TestParameters):
+    """Word draws the label at a fixed size: fontspec would scale it to the height of x of the font of the body."""
+    latex = _native_to_latex(test_parameters.container, f'[ Para [ Str "text" , {_comment(0, "remark")} ] ]')
+    assert "\\newfontfamily\\pdc@labelfont{Times New Roman}[Scale=1]" in latex
+    assert "\\newfontfamily\\pdc@labelfont{Liberation Serif}[Scale=1]" in latex
+
+
 def test_comments_are_numbered_in_the_order_of_the_document(test_parameters: TestParameters):
     native = f'[ Header 1 ( "h" , [] , [] ) [ Str "Title" , {_comment(5, "first")} ] , Para [ Str "text" , {_comment(2, "second")} ] ]'
     latex = _native_to_latex(test_parameters.container, native)

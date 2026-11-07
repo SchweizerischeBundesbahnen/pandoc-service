@@ -157,6 +157,14 @@ def test_a_column_takes_the_width_of_word_with_the_cell_margins_in_it(test_param
     assert "\\real{" not in latex
 
 
+def test_a_column_of_struck_text_takes_the_width_of_word(test_parameters: TestParameters):
+    """A deleted linked work item is struck through: its cell is no reason to leave the widths to pandoc."""
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}a"'), _cell('Strikeout [Str "b"]')])
+    latex = _native_latex(test_parameters.container, native)
+    assert "p{\\dimexpr0.5000\\linewidth+0.5000\\tabcolsep+0.5000\\tabcolsep-2\\tabcolsep\\relax}" in latex
+    assert "\\real{" not in latex
+
+
 def test_a_table_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_parameters: TestParameters):
     inner = _grid_table([_cell(f'Str "{OPEN}tw=0.5000{CLOSE}x"'), _cell('Str "y"')])[1:-1]
     outer = _grid_table([_cell(f'Str "{OPEN}tw=1.0000{CLOSE}a"'), _cell('Str "b"')])
@@ -193,6 +201,17 @@ def test_a_picture_alone_on_its_line_hangs_from_the_top_of_the_cell(test_paramet
     assert latex.count("pdcCellPicture{") == 1, "the label stays as it is"
 
 
+def test_a_picture_of_a_cell_keeps_the_space_of_the_row_below_it(test_parameters: TestParameters):
+    """Word sets it without the descent of the font, and below it the space the cell has below a line."""
+    picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(picture)])
+    _native_latex(test_parameters.container, native)
+    exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/grid.native"])
+    assert exit_code == 0, output.decode()
+    rule = "\\ifdim\\dp\\@arstrutbox>\\dp\\strutbox\\rule[\\dimexpr\\ht\\strutbox-\\ht\\pdcCellPictureBox-\\dp\\@arstrutbox+\\dp\\strutbox\\relax]{0pt}{0pt}\\fi"
+    assert rule in output.decode()
+
+
 def test_a_coloured_cell_merged_down_colours_the_rows_it_spans(test_parameters: TestParameters):
     """colortbl colours a \\multirow in its first row only, and pandoc writes nothing in the rows below."""
     color = 'RawInline (Format "latex") "\\\\cellcolor[HTML]{F4CCCC}"'
@@ -225,3 +244,25 @@ def test_a_coloured_cell_merged_down_with_line_breaks_stays_one_cell(test_parame
     latex = _native_latex(test_parameters.container, native)
     assert "pdcSplit" not in latex
     assert "\\multirow[t]{2}{=}{one\\\\" in " ".join(latex.split()).replace("\\pdcCellRaggedright{}", "")
+
+
+def test_a_cell_of_the_header_row_starts_its_first_line_at_the_height_of_a_row(test_parameters: TestParameters):
+    """pandoc sets a header cell on its last line: two lines of it lost the space Word puts above the first one."""
+    first = _cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Account", LineBreak, Str "type"')
+    head = f'TableHead ("",[],[]) [Row ("",[],[]) [{first}, {_cell('Str "Rights"')}]]'
+    native = _grid_table([_cell('Str "a"'), _cell('Str "b"')]).replace('(TableHead ("",[],[]) [])', f"({head})")
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\pdcCellRaggedright{}\\pdcHeadStrut{}") == 2, latex
+    exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/grid.native"])
+    assert exit_code == 0, output.decode()
+    assert "\\providecommand{\\pdcHeadStrut}{\\rule{0pt}{\\ht\\@arstrutbox}}" in output.decode()
+
+
+def test_a_header_cell_which_starts_with_a_list_gets_no_strut_line(test_parameters: TestParameters):
+    """Before a list the strut would be an empty line of its own, which Word does not draw."""
+    first = _cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Account"')
+    listed = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [BulletList [[Plain [Str "a"]]]]'
+    head = f'TableHead ("",[],[]) [Row ("",[],[]) [{first}, {listed}]]'
+    native = _grid_table([_cell('Str "a"'), _cell('Str "b"')]).replace('(TableHead ("",[],[]) [])', f"({head})")
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\pdcHeadStrut{}") == 1, latex
