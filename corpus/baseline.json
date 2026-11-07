@@ -1405,13 +1405,13 @@
     "test_adjacent_tables_conversion": {
      "any_page": 14,
      "lines": 14,
-     "mean_shift": 0.41,
+     "mean_shift": 0.07,
      "pages": [
       1,
       1
      ],
-     "regions": 140,
-     "regions_matched": 127,
+     "regions": 145,
+     "regions_matched": 138,
      "same_page": 14,
      "words": 28,
      "words_in_place": 28
@@ -1419,13 +1419,13 @@
     "test_alignment": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 0.61,
+     "mean_shift": 0.14,
      "pages": [
       1,
       1
      ],
-     "regions": 60,
-     "regions_matched": 54,
+     "regions": 66,
+     "regions_matched": 59,
      "same_page": 4,
      "words": 7,
      "words_in_place": 7
@@ -1433,13 +1433,13 @@
     "test_attribute_name_alignment": {
      "any_page": 6,
      "lines": 12,
-     "mean_shift": 0.82,
+     "mean_shift": 0.38,
      "pages": [
       1,
       1
      ],
-     "regions": 247,
-     "regions_matched": 233,
+     "regions": 259,
+     "regions_matched": 247,
      "same_page": 6,
      "words": 88,
      "words_in_place": 88
@@ -1447,13 +1447,13 @@
     "test_bold_titles_and_headings": {
      "any_page": 20,
      "lines": 20,
-     "mean_shift": 0.65,
+     "mean_shift": 0.21,
      "pages": [
       1,
       1
      ],
-     "regions": 372,
-     "regions_matched": 331,
+     "regions": 378,
+     "regions_matched": 344,
      "same_page": 20,
      "words": 78,
      "words_in_place": 78
@@ -1461,13 +1461,13 @@
     "test_both_link_role_direction": {
      "any_page": 8,
      "lines": 10,
-     "mean_shift": 0.71,
+     "mean_shift": 0.34,
      "pages": [
       1,
       1
      ],
-     "regions": 140,
-     "regions_matched": 130,
+     "regions": 152,
+     "regions_matched": 139,
      "same_page": 8,
      "words": 41,
      "words_in_place": 41
@@ -1475,13 +1475,13 @@
     "test_convert_catalog_specification": {
      "any_page": 68,
      "lines": 79,
-     "mean_shift": 0.52,
+     "mean_shift": 0.22,
      "pages": [
       3,
       3
      ],
-     "regions": 1789,
-     "regions_matched": 1703,
+     "regions": 1761,
+     "regions_matched": 1726,
      "same_page": 68,
      "words": 453,
      "words_in_place": 449
@@ -1489,13 +1489,13 @@
     "test_convert_external_resources_happy_path": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 0.51,
+     "mean_shift": 0.1,
      "pages": [
       1,
       1
      ],
-     "regions": 423,
-     "regions_matched": 406,
+     "regions": 434,
+     "regions_matched": 423,
      "same_page": 6,
      "words": 61,
      "words_in_place": 61
@@ -1503,13 +1503,13 @@
     "test_convert_external_resources_refused_image": {
      "any_page": 7,
      "lines": 7,
-     "mean_shift": 0.52,
+     "mean_shift": 0.09,
      "pages": [
       1,
       1
      ],
-     "regions": 310,
-     "regions_matched": 293,
+     "regions": 320,
+     "regions_matched": 310,
      "same_page": 7,
      "words": 60,
      "words_in_place": 60
@@ -1517,27 +1517,27 @@
     "test_convert_live_doc_no_filter": {
      "any_page": 252,
      "lines": 292,
-     "mean_shift": 0.59,
+     "mean_shift": 0.2,
      "pages": [
       8,
       8
      ],
-     "regions": 7683,
-     "regions_matched": 7398,
+     "regions": 7624,
+     "regions_matched": 7503,
      "same_page": 252,
      "words": 2134,
-     "words_in_place": 2099
+     "words_in_place": 2112
     },
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 21,
      "lines": 21,
-     "mean_shift": 0.77,
+     "mean_shift": 0.82,
      "pages": [
       1,
       1
      ],
      "regions": 436,
-     "regions_matched": 374,
+     "regions_matched": 371,
      "same_page": 21,
      "words": 104,
      "words_in_place": 91
@@ -1545,13 +1545,13 @@
     "test_convert_live_doc_with_all_comments": {
      "any_page": 19,
      "lines": 19,
-     "mean_shift": 0.8,
+     "mean_shift": 0.86,
      "pages": [
       1,
       1
      ],
      "regions": 382,
-     "regions_matched": 321,
+     "regions_matched": 318,
      "same_page": 19,
      "words": 94,
      "words_in_place": 81
@@ -1559,27 +1559,27 @@
     "test_convert_live_doc_with_filter": {
      "any_page": 209,
      "lines": 224,
-     "mean_shift": 12.01,
+     "mean_shift": 9.28,
      "pages": [
       6,
       6
      ],
-     "regions": 6278,
-     "regions_matched": 3335,
-     "same_page": 199,
+     "regions": 5967,
+     "regions_matched": 4095,
+     "same_page": 200,
      "words": 1434,
-     "words_in_place": 715
+     "words_in_place": 975
     },
     "test_convert_live_doc_with_formulas": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 3.52,
+     "mean_shift": 3.4,
      "pages": [
       1,
       1
      ],
-     "regions": 69,
-     "regions_matched": 36,
+     "regions": 73,
+     "regions_matched": 40,
      "same_page": 6,
      "words": 25,
      "words_in_place": 8
@@ -1587,13 +1587,13 @@
     "test_convert_live_doc_with_heading": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 0.52,
+     "mean_shift": 0.09,
      "pages": [
       2,
       2
      ],
-     "regions": 561,
-     "regions_matched": 554,
+     "regions": 564,
+     "regions_matched": 558,
      "same_page": 25,
      "words": 79,
      "words_in_place": 74
@@ -1601,13 +1601,13 @@
     "test_convert_live_doc_with_open_and_unreferenced_comments": {
      "any_page": 17,
      "lines": 17,
-     "mean_shift": 0.47,
+     "mean_shift": 0.53,
      "pages": [
       1,
       1
      ],
      "regions": 383,
-     "regions_matched": 283,
+     "regions_matched": 280,
      "same_page": 17,
      "words": 80,
      "words_in_place": 79
@@ -1615,13 +1615,13 @@
     "test_convert_live_doc_with_open_comments": {
      "any_page": 16,
      "lines": 16,
-     "mean_shift": 0.48,
+     "mean_shift": 0.55,
      "pages": [
       1,
       1
      ],
      "regions": 330,
-     "regions_matched": 255,
+     "regions_matched": 252,
      "same_page": 16,
      "words": 75,
      "words_in_place": 74
@@ -1629,13 +1629,13 @@
     "test_convert_live_doc_with_svg_images": {
      "any_page": 6,
      "lines": 6,
-     "mean_shift": 0.48,
+     "mean_shift": 0.12,
      "pages": [
       2,
       2
      ],
-     "regions": 335,
-     "regions_matched": 321,
+     "regions": 341,
+     "regions_matched": 331,
      "same_page": 6,
      "words": 32,
      "words_in_place": 32
@@ -1643,13 +1643,13 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 28,
      "lines": 28,
-     "mean_shift": 4.1,
+     "mean_shift": 4.27,
      "pages": [
       2,
       2
      ],
-     "regions": 911,
-     "regions_matched": 231,
+     "regions": 917,
+     "regions_matched": 240,
      "same_page": 28,
      "words": 96,
      "words_in_place": 18
@@ -1657,27 +1657,27 @@
     "test_convert_live_doc_with_wi_table": {
      "any_page": 50,
      "lines": 50,
-     "mean_shift": 4.71,
+     "mean_shift": 4.82,
      "pages": [
       2,
       2
      ],
-     "regions": 706,
-     "regions_matched": 441,
+     "regions": 721,
+     "regions_matched": 432,
      "same_page": 47,
      "words": 147,
-     "words_in_place": 96
+     "words_in_place": 94
     },
     "test_convert_live_doc_without_comments_rendering": {
      "any_page": 7,
      "lines": 7,
-     "mean_shift": 0.68,
+     "mean_shift": 0.2,
      "pages": [
       1,
       1
      ],
-     "regions": 157,
-     "regions_matched": 147,
+     "regions": 165,
+     "regions_matched": 156,
      "same_page": 7,
      "words": 32,
      "words_in_place": 32
@@ -1685,27 +1685,27 @@
     "test_convert_product_specification": {
      "any_page": 252,
      "lines": 292,
-     "mean_shift": 0.59,
+     "mean_shift": 0.2,
      "pages": [
       8,
       8
      ],
-     "regions": 7683,
-     "regions_matched": 7398,
+     "regions": 7624,
+     "regions_matched": 7503,
      "same_page": 252,
      "words": 2134,
-     "words_in_place": 2099
+     "words_in_place": 2112
     },
     "test_convert_test_specification": {
      "any_page": 185,
      "lines": 194,
-     "mean_shift": 25.03,
+     "mean_shift": 25.26,
      "pages": [
       4,
       4
      ],
-     "regions": 3417,
-     "regions_matched": 1032,
+     "regions": 3426,
+     "regions_matched": 1050,
      "same_page": 171,
      "words": 678,
      "words_in_place": 137
@@ -1713,41 +1713,41 @@
     "test_deleted_linked_work_item": {
      "any_page": 11,
      "lines": 17,
-     "mean_shift": 1.3,
+     "mean_shift": 0.88,
      "pages": [
       1,
       1
      ],
-     "regions": 216,
-     "regions_matched": 146,
+     "regions": 223,
+     "regions_matched": 179,
      "same_page": 11,
      "words": 60,
-     "words_in_place": 37
+     "words_in_place": 43
     },
     "test_deleted_linked_work_item_filtered_by_role": {
      "any_page": 11,
      "lines": 15,
-     "mean_shift": 1.29,
+     "mean_shift": 0.88,
      "pages": [
       1,
       1
      ],
-     "regions": 173,
-     "regions_matched": 121,
+     "regions": 181,
+     "regions_matched": 156,
      "same_page": 11,
      "words": 42,
-     "words_in_place": 28
+     "words_in_place": 33
     },
     "test_direct_link_role_direction": {
      "any_page": 8,
      "lines": 9,
-     "mean_shift": 0.71,
+     "mean_shift": 0.34,
      "pages": [
       1,
       1
      ],
-     "regions": 122,
-     "regions_matched": 113,
+     "regions": 134,
+     "regions_matched": 122,
      "same_page": 8,
      "words": 31,
      "words_in_place": 31
@@ -1755,13 +1755,13 @@
     "test_embedded_images_conversion": {
      "any_page": 19,
      "lines": 19,
-     "mean_shift": 0.44,
+     "mean_shift": 0.09,
      "pages": [
       3,
       3
      ],
-     "regions": 1306,
-     "regions_matched": 1286,
+     "regions": 1314,
+     "regions_matched": 1304,
      "same_page": 19,
      "words": 217,
      "words_in_place": 217
@@ -1769,13 +1769,13 @@
     "test_empty_line_before_bullets": {
      "any_page": 10,
      "lines": 10,
-     "mean_shift": 0.54,
+     "mean_shift": 0.17,
      "pages": [
       1,
       1
      ],
-     "regions": 150,
-     "regions_matched": 137,
+     "regions": 170,
+     "regions_matched": 149,
      "same_page": 10,
      "words": 35,
      "words_in_place": 35
@@ -1783,13 +1783,13 @@
     "test_figure_caption_followed_by_table_conversion": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 0.5,
+     "mean_shift": 0.2,
      "pages": [
       2,
       2
      ],
-     "regions": 656,
-     "regions_matched": 631,
+     "regions": 651,
+     "regions_matched": 626,
      "same_page": 25,
      "words": 87,
      "words_in_place": 79
@@ -1797,13 +1797,13 @@
     "test_fit_to_page": {
      "any_page": 35,
      "lines": 35,
-     "mean_shift": 0.38,
+     "mean_shift": 0.09,
      "pages": [
       11,
       11
      ],
-     "regions": 1663,
-     "regions_matched": 1481,
+     "regions": 1665,
+     "regions_matched": 1490,
      "same_page": 32,
      "words": 74,
      "words_in_place": 66
@@ -1811,13 +1811,13 @@
     "test_formatting": {
      "any_page": 18,
      "lines": 20,
-     "mean_shift": 0.43,
+     "mean_shift": 0.33,
      "pages": [
       1,
       1
      ],
-     "regions": 495,
-     "regions_matched": 463,
+     "regions": 500,
+     "regions_matched": 470,
      "same_page": 18,
      "words": 161,
      "words_in_place": 140
@@ -1825,13 +1825,13 @@
     "test_formulas_conversion": {
      "any_page": 77,
      "lines": 81,
-     "mean_shift": 55.99,
+     "mean_shift": 56.03,
      "pages": [
       4,
       4
      ],
-     "regions": 2151,
-     "regions_matched": 241,
+     "regions": 2140,
+     "regions_matched": 252,
      "same_page": 69,
      "words": 651,
      "words_in_place": 33
@@ -1839,13 +1839,13 @@
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 0.52,
+     "mean_shift": 0.09,
      "pages": [
       2,
       2
      ],
-     "regions": 574,
-     "regions_matched": 561,
+     "regions": 575,
+     "regions_matched": 566,
      "same_page": 24,
      "words": 78,
      "words_in_place": 73
@@ -1853,13 +1853,13 @@
     "test_heading_numbers_with_numbered_template": {
      "any_page": 24,
      "lines": 25,
-     "mean_shift": 0.52,
+     "mean_shift": 0.09,
      "pages": [
       2,
       2
      ],
-     "regions": 574,
-     "regions_matched": 561,
+     "regions": 575,
+     "regions_matched": 566,
      "same_page": 24,
      "words": 78,
      "words_in_place": 73
@@ -1867,13 +1867,13 @@
     "test_heading_numbers_with_template_not_numbering_headings": {
      "any_page": 25,
      "lines": 25,
-     "mean_shift": 0.52,
+     "mean_shift": 0.09,
      "pages": [
       2,
       2
      ],
-     "regions": 570,
-     "regions_matched": 565,
+     "regions": 572,
+     "regions_matched": 570,
      "same_page": 25,
      "words": 79,
      "words_in_place": 74
@@ -1881,13 +1881,13 @@
     "test_icons": {
      "any_page": 9,
      "lines": 11,
-     "mean_shift": 0.66,
+     "mean_shift": 0.23,
      "pages": [
       1,
       1
      ],
-     "regions": 162,
-     "regions_matched": 151,
+     "regions": 163,
+     "regions_matched": 158,
      "same_page": 9,
      "words": 32,
      "words_in_place": 32
@@ -1895,13 +1895,13 @@
     "test_image_sizes_conversion": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 0.75,
+     "mean_shift": 0.12,
      "pages": [
       1,
       1
      ],
-     "regions": 327,
-     "regions_matched": 317,
+     "regions": 330,
+     "regions_matched": 327,
      "same_page": 4,
      "words": 14,
      "words_in_place": 14
@@ -1909,27 +1909,27 @@
     "test_images_and_tables_conversion": {
      "any_page": 32,
      "lines": 32,
-     "mean_shift": 0.66,
+     "mean_shift": 0.33,
      "pages": [
       5,
       5
      ],
-     "regions": 1752,
-     "regions_matched": 1672,
+     "regions": 1755,
+     "regions_matched": 1692,
      "same_page": 32,
      "words": 76,
-     "words_in_place": 73
+     "words_in_place": 76
     },
     "test_indentation": {
      "any_page": 5,
      "lines": 5,
-     "mean_shift": 0.6,
+     "mean_shift": 0.15,
      "pages": [
       1,
       1
      ],
-     "regions": 65,
-     "regions_matched": 55,
+     "regions": 71,
+     "regions_matched": 64,
      "same_page": 5,
      "words": 9,
      "words_in_place": 9
@@ -1937,13 +1937,13 @@
     "test_irregular_lists": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 1.24,
+     "mean_shift": 1.06,
      "pages": [
       1,
       1
      ],
-     "regions": 60,
-     "regions_matched": 44,
+     "regions": 66,
+     "regions_matched": 52,
      "same_page": 4,
      "words": 12,
      "words_in_place": 9
@@ -1951,13 +1951,13 @@
     "test_reverse_link_role_direction": {
      "any_page": 7,
      "lines": 8,
-     "mean_shift": 0.6,
+     "mean_shift": 0.24,
      "pages": [
       1,
       1
      ],
-     "regions": 106,
-     "regions_matched": 96,
+     "regions": 118,
+     "regions_matched": 105,
      "same_page": 7,
      "words": 24,
      "words_in_place": 24
@@ -1965,13 +1965,13 @@
     "test_svg_pictures_png_only": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 0.4,
+     "mean_shift": 0.06,
      "pages": [
       1,
       1
      ],
-     "regions": 303,
-     "regions_matched": 290,
+     "regions": 290,
+     "regions_matched": 280,
      "same_page": 4,
      "words": 41,
      "words_in_place": 41
@@ -1979,13 +1979,13 @@
     "test_svg_pictures_with_svg": {
      "any_page": 4,
      "lines": 4,
-     "mean_shift": 0.4,
+     "mean_shift": 0.06,
      "pages": [
       1,
       1
      ],
-     "regions": 309,
-     "regions_matched": 289,
+     "regions": 296,
+     "regions_matched": 279,
      "same_page": 4,
      "words": 41,
      "words_in_place": 41
@@ -1993,13 +1993,13 @@
     "test_table_sizes_conversion": {
      "any_page": 55,
      "lines": 56,
-     "mean_shift": 1.42,
+     "mean_shift": 1.37,
      "pages": [
       3,
       3
      ],
-     "regions": 923,
-     "regions_matched": 597,
+     "regions": 925,
+     "regions_matched": 606,
      "same_page": 53,
      "words": 224,
      "words_in_place": 196
@@ -2007,13 +2007,13 @@
     "test_tables_and_figures_captions_conversion": {
      "any_page": 42,
      "lines": 42,
-     "mean_shift": 0.51,
+     "mean_shift": 0.15,
      "pages": [
       3,
       3
      ],
-     "regions": 786,
-     "regions_matched": 669,
+     "regions": 793,
+     "regions_matched": 691,
      "same_page": 42,
      "words": 119,
      "words_in_place": 101
@@ -2021,27 +2021,27 @@
     "test_tables_conversion": {
      "any_page": 51,
      "lines": 57,
-     "mean_shift": 1.38,
+     "mean_shift": 1.04,
      "pages": [
       3,
       3
      ],
-     "regions": 665,
-     "regions_matched": 495,
+     "regions": 666,
+     "regions_matched": 524,
      "same_page": 51,
      "words": 228,
-     "words_in_place": 170
+     "words_in_place": 182
     },
     "test_test_case_tables": {
      "any_page": 18,
      "lines": 20,
-     "mean_shift": 1.65,
+     "mean_shift": 1.29,
      "pages": [
       1,
       1
      ],
-     "regions": 253,
-     "regions_matched": 148,
+     "regions": 260,
+     "regions_matched": 167,
      "same_page": 18,
      "words": 53,
      "words_in_place": 27
@@ -2049,13 +2049,13 @@
     "test_test_case_tables_with_preserved_styles": {
      "any_page": 18,
      "lines": 19,
-     "mean_shift": 0.75,
+     "mean_shift": 0.35,
      "pages": [
       1,
       1
      ],
-     "regions": 268,
-     "regions_matched": 236,
+     "regions": 275,
+     "regions_matched": 256,
      "same_page": 18,
      "words": 50,
      "words_in_place": 39
@@ -2063,13 +2063,13 @@
     "test_wi_alignment_and_indentation": {
      "any_page": 9,
      "lines": 9,
-     "mean_shift": 0.59,
+     "mean_shift": 0.16,
      "pages": [
       1,
       1
      ],
-     "regions": 141,
-     "regions_matched": 125,
+     "regions": 155,
+     "regions_matched": 140,
      "same_page": 9,
      "words": 22,
      "words_in_place": 22
@@ -2078,11 +2078,11 @@
    "total": {
     "any_page": 92.0,
     "documents": 48,
-    "mean_shift": 2.8,
+    "mean_shift": 2.46,
     "pages_as_reference": 48,
-    "regions_matched": 77.5,
+    "regions_matched": 80.9,
     "same_page": 89.9,
-    "words_in_place": 77.5
+    "words_in_place": 80.4
    }
   }
  }
