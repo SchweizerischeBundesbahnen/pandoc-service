@@ -90,6 +90,10 @@ function filter.Div(el)
     result[#result + 1] = block
   end
   result[#result + 1] = pandoc.RawBlock("latex", "\\par}")
+  if base == "Caption" or base == "PandocCaption" then
+    -- A caption stays one: docx_tables_to_latex sets it next to its table, docx_document_styles_to_latex in its font
+    return pandoc.Div(result, { ["custom-style"] = "PandocCaption" })
+  end
   -- The style the paragraph had, for the space docx_document_styles_to_latex puts around it
   return pandoc.Div(result, { ["pdc-style"] = base })
 end
