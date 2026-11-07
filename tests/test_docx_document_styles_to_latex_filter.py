@@ -609,6 +609,15 @@ def test_a_picture_alone_on_its_line_goes_down_by_the_descent(test_parameters: T
     assert body.count("raisebox") == 1, "a picture next to text stays on the baseline"
 
 
+def test_a_picture_alone_in_a_link_goes_down_by_the_descent_as_well(test_parameters: TestParameters):
+    """A picture of Polarion links to its file: alone on its line it stands as low as one without a link."""
+    image = 'Image ("",[],[]) [] ("x.png","")'
+    native = f'[Para [Link ("",[],[]) [{image}] ("x.png","")]]'
+    body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", native=native)
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    assert "{\\raisebox{-3.4bp}{\\pandocbounded{\\includegraphics[keepaspectratio]{x.png}}}}" in body, body
+
+
 def test_a_picture_taller_than_a_page_runs_past_the_bottom_margin(test_parameters: TestParameters):
     """Word sets it at the top of a page below the lines before it there: TeX would leave a page empty."""
     preamble = _preamble(_latex(test_parameters.container, "docx-body-size=12"))

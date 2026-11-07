@@ -599,6 +599,33 @@ end
 -- Word sets a line of only a picture on the bottom of the picture, without the descent of the font,
 -- and the next line right below it: the picture goes down by the descent, which the next line then
 -- keeps between the baselines.
+-- The picture an inline is, or the one a link holds alone, as a picture links to its file.
+local function lone_picture(item)
+  if item.t == "Image" then
+    return item
+  end
+  if item.t ~= "Link" then
+    return nil
+  end
+  local picture = nil
+  for _, inner in ipairs(item.content) do
+    if inner.t == "Image" and picture == nil then
+      picture = inner
+    elseif not strut_only(inner) then
+      return nil
+    end
+  end
+  return picture
+end
+
+local function lowered(picture)
+  return pandoc.Span({
+    pandoc.RawInline("latex", string.format("\\raisebox{-%gbp}{", body_descent)),
+    picture,
+    pandoc.RawInline("latex", "}"),
+  })
+end
+
 local function lower_lone_pictures(content)
   local start = 1
   for index = 1, #content + 1 do
@@ -607,18 +634,20 @@ local function lower_lone_pictures(content)
       local picture, others = nil, false
       for position = start, index - 1 do
         local item = content[position]
-        if item.t == "Image" and picture == nil then
+        if picture == nil and lone_picture(item) then
           picture = position
         elseif not strut_only(item) then
           others = true
         end
       end
       if picture and not others then
-        content[picture] = pandoc.Span({
-          pandoc.RawInline("latex", string.format("\\raisebox{-%gbp}{", body_descent)),
-          content[picture],
-          pandoc.RawInline("latex", "}"),
-        })
+        local item = content[picture]
+        if item.t == "Link" then
+          item.content = pandoc.Inlines({ lowered(lone_picture(item)) })
+          content[picture] = item
+        else
+          content[picture] = lowered(item)
+        end
       end
       start = index + 1
     end
