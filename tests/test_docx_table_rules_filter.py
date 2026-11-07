@@ -479,3 +479,13 @@ def test_a_row_whose_cells_start_in_a_size_of_their_own_takes_the_line_of_that_s
     assert "\\pdcRowLine{7.5133bp}" in latex, latex
     assert "\\pdcRowLine{}" in latex, "a row with a cell of the body text keeps the line of the table"
     assert "\\pdcRowLineEnd" in latex
+
+
+def test_a_merged_cell_without_a_position_starts_at_its_top(test_parameters: TestParameters):
+    """pandoc writes \\multirow without a position, which centres the text: Word sets it at the top of the cell."""
+    native = _grid_table([_cell('Str "a"', rows=2), _cell('Str "b"')], [_cell('Str "c"')])
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/merged.native << 'EOF'\n{native}\nEOF"])
+    exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -s -f native -t latex --lua-filter={FILTER_PATH} /tmp/test/merged.native"])
+    assert exit_code == 0, output.decode()
+    assert "\\renewcommand{\\multirow}{\\@ifnextchar[\\pdc@multirow{\\pdc@multirow[t]}}" in output.decode()

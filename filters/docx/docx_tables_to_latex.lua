@@ -1519,6 +1519,9 @@ local ALIGN_PREAMBLE = table.concat({
   -- exists to override a colspec that set one of the ragged modes.
   "\\providecommand{\\pdcCellJustify}{\\rightskip\\z@skip \\leftskip\\z@skip \\parindent\\z@ \\parfillskip\\@flushglue}",
   "\\providecommand{\\pdcHeadStrut}{\\rule{0pt}{\\ht\\@arstrutbox}}",
+  -- Word sets the text of a merged cell at its top: pandoc's \\multirow, without a position, centres it
+  "\\AtBeginDocument{\\ifdefined\\multirow\\ifdefined\\pdc@multirow\\else\\let\\pdc@multirow\\multirow"
+    .. "\\renewcommand{\\multirow}{\\@ifnextchar[\\pdc@multirow{\\pdc@multirow[t]}}\\fi\\fi}",
   "\\makeatother",
 }, "\n")
 
