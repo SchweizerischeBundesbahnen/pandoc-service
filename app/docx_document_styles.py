@@ -88,6 +88,9 @@ DISPLAY_STYLES = ("Title", *(f"Heading{level}" for level in range(1, 10)), "Capt
 # The sizes LaTeX's article class sets its text in. Word's 12 pt is the default of pandoc's template.
 LATEX_FONT_SIZES = (10, 11, 12)
 TWIPS_PER_POINT = 20
+# U+2010 HYPHEN and U+00AD SOFT HYPHEN, which a font maps to the glyph of U+002D: xdvipdfmx writes U+2010, a
+# hyphen as well, and leaves the soft hyphen out
+HYPHENS = frozenset({0x2010, 0xAD})
 # Word lays a paragraph out justified only for these values of <w:jc>.
 JUSTIFIED = frozenset({"both", "distribute"})
 ALIGNMENTS = {"left": "left", "start": "left", "center": "center", "right": "right", "end": "right", "both": "left", "distribute": "left"}
@@ -277,7 +280,39 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         options += ["-M", "docx-page-numbers=false"]
     options += _toc_indent_options(styles)
     runs = [part for part in (document, *(parse_xml(parts[name]) for name in RUN_PARTS if name in parts)) if part is not None]
-    return options + _run_font_options(runs) + _display_options(styles, theme, numbering)
+    return options + _run_font_options(runs) + _actual_text_options(font, runs) + _display_options(styles, theme, numbering)
+
+
+def _actual_text_options(font: str | None, parts: list[Element]) -> list[str]:
+    """The characters a reader of the PDF gets wrong in a font of the body or of a run, by the hex of their code point.
+
+    See shared_characters. filters/docx/docx_document_styles_to_latex.lua sets each with its own text in the PDF.
+    """
+    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for part in parts for fonts in part.iter(_w("rFonts"))}
+    families = {family for family in (font, *(installed_family(name) for name in names)) if family is not None}
+    characters = sorted({character for family in families for character in shared_characters(family)})
+    return ["-M", "docx-actual-text=" + ",".join(f"{ord(character):04X}" for character in characters)] if characters else []
+
+
+@functools.cache
+def shared_characters(family: str) -> str:
+    """The printable ASCII characters whose glyph the family maps a higher code point to as well.
+
+    xdvipdfmx writes the highest code point of a glyph into the PDF: the ( of Segoe UI copies out as U+FD3E,
+    ORNATE LEFT PARENTHESIS, the ; of Arial as U+037E, GREEK QUESTION MARK, the - of Cambria as U+2011,
+    NON-BREAKING HYPHEN. See HYPHENS for the code points it passes by.
+    """
+    try:
+        cmap = _font_file(family).getBestCmap()
+    except Exception:  # noqa: BLE001 - a font fontTools cannot read keeps what xdvipdfmx writes
+        return ""
+    if not cmap:
+        return ""
+    highest: dict[str, int] = {}
+    for code, glyph in cmap.items():
+        if code not in HYPHENS:
+            highest[glyph] = max(highest.get(glyph, code), code)
+    return "".join(chr(code) for code in range(0x21, 0x7F) if code in cmap and highest.get(cmap[code], code) > code)
 
 
 def _toc_indent_options(styles: Element) -> list[str]:

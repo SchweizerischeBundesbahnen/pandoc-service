@@ -59,12 +59,14 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.ascent_ratio.cache_clear()
     docx_document_styles.gap_ratio.cache_clear()
     docx_document_styles.script_ratios.cache_clear()
+    docx_document_styles.shared_characters.cache_clear()
     monkeypatch.setattr(subprocess, "run", missing)
     yield
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
     docx_document_styles.gap_ratio.cache_clear()
     docx_document_styles.script_ratios.cache_clear()
+    docx_document_styles.shared_characters.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -705,3 +707,25 @@ def test_the_body_passes_the_multiple_of_its_line(font_metrics):
     assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-line-multiple"] == "1"
     exact = BODY_TEXT.replace('<w:spacing w:before="180" w:after="180"/>', '<w:spacing w:before="180" w:after="180" w:line="300" w:lineRule="exact"/>')
     assert "docx-body-line-multiple" not in _options(_docx(DEFAULTS + NORMAL + exact))
+
+
+class _CmapFont:
+    """A font of which only the character map is read."""
+
+    def __init__(self, cmap: dict[int, str]) -> None:
+        self.cmap = cmap
+
+    def getBestCmap(self) -> dict[int, str]:  # noqa: N802 - the method of fontTools
+        return self.cmap
+
+
+def test_a_character_whose_glyph_a_higher_code_point_shares_gets_its_own_text(monkeypatch: pytest.MonkeyPatch):
+    """Segoe UI maps ( and U+FD3E to one glyph, which xdvipdfmx writes as U+FD3E. It passes the hyphens by."""
+    cmap = {0x28: "parenleft", 0xFD3E: "parenleft", 0x2D: "hyphen", 0x2010: "hyphen", 0xAD: "hyphen", 0x41: "A"}
+    monkeypatch.setattr(docx_document_styles, "_font_file", lambda _family: _CmapFont(cmap))
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-actual-text"] == "0028"
+
+
+def test_a_font_of_no_shared_glyph_passes_no_actual_text(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(docx_document_styles, "_font_file", lambda _family: _CmapFont({0x28: "parenleft", 0x2D: "hyphen", 0x2010: "hyphen"}))
+    assert "docx-actual-text" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
