@@ -333,6 +333,17 @@ def test_a_header_cell_which_starts_with_a_list_gets_no_strut_line(test_paramete
     assert latex.count("\\pdcHeadStrut{}") == 1, latex
 
 
+def test_the_last_line_of_a_cell_is_as_deep_as_the_font_of_its_text(test_parameters: TestParameters):
+    """The run closes its group before the end of the cell: the space below it measures the strut of the run."""
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 13.1483bp depth 3.9445bp width 0pt}"
+    run = f'RawInline (Format "latex") "{{\\\\fontsize{{14bp}}{{16.8bp}}\\\\selectfont {strut}", Str "Large", RawInline (Format "latex") "}}"'
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Body"'), _cell(run)])
+    latex = _native_latex(test_parameters.container, native)
+    expected = "Large}\\setbox\\strutbox\\hbox{\\vrule height 13.1483bp depth 3.9445bp width 0pt}\\ifdefined\\pdcPlainCellSpace"
+    assert expected in latex, latex
+    assert latex.count("depth 3.9445bp") == 2, "a cell of the body text keeps the strut of the body"
+
+
 def test_a_row_of_paragraphs_goes_out_a_line_at_a_time_which_a_page_may_break(test_parameters: TestParameters):
     """Word breaks a row between any two lines of its cells; longtable only between rows."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}Label"'), _cell('Str "a", Space, Str "long", Space, Str "text"')])

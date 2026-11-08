@@ -620,6 +620,22 @@ local function wrap_latex(latex)
   end))
 end
 
+local RUN_STRUT = "\\setbox\\strutbox\\hbox{\\vrule height [%d%.]+bp depth [%d%.]+bp width 0pt}"
+
+-- The strut of the last run of a paragraph which starts in a size of its own, see docx_colors_to_latex: the run
+-- closes its group before the end of the cell, whose space below then measures the strut of the body.
+local function last_run_strut(block)
+  local strut = nil
+  for _, inline in ipairs(block.content) do
+    if inline.t == "RawInline" then
+      strut = inline.text:match(RUN_STRUT) or strut
+    elseif strut == nil then
+      return nil
+    end
+  end
+  return strut
+end
+
 local function add_plain_cell_space(rows, raw)
   raw = raw or PLAIN_CELL_SPACE
   for _, row in ipairs(rows) do
@@ -633,6 +649,11 @@ local function add_plain_cell_space(rows, raw)
       if last == nil then
         cell.contents = { pandoc.Plain({ pandoc.RawInline("latex", raw) }) }
       elseif last and (last.t == "Plain" or last.t == "Para") then
+        -- Word ends the last line as deep as the font of its text
+        local strut = raw == PLAIN_CELL_SPACE and last_run_strut(last)
+        if strut then
+          last.content:insert(pandoc.RawInline("latex", strut))
+        end
         last.content:insert(pandoc.RawInline("latex", raw))
       end
     end
