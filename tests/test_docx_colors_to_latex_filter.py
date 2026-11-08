@@ -465,3 +465,22 @@ def test_scripts_take_the_size_and_the_shift_word_gives_them(test_parameters: Te
     assert abs(size - 7.5) < 0.05, size
     assert abs(superscript - base - 3.5) < 0.05, superscript - base
     assert abs(base - subscript - 0.825) < 0.05, base - subscript
+
+
+def test_a_paragraph_may_start_with_a_script(test_parameters: TestParameters):
+    """A superscript first in a paragraph starts the paragraph, as a letter does.
+
+    A body font that is not installed gives the paragraph no strut, so the script of a run is first.
+    """
+    document = Document()
+    document.styles["Normal"].font.name = "No Such Font"
+    paragraph = document.add_paragraph()
+    script = paragraph.add_run("1")
+    script.font.superscript = True
+    script.font.name = "DejaVu Sans"
+    paragraph.add_run(" Source")
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text[-300:]

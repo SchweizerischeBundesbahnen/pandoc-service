@@ -262,8 +262,9 @@ local SCRIPTS = table.concat({
   "\\newcommand{\\pdcScriptFont}[5]{\\def\\pdc@script{{#1}{#2}{#3}{#4}{#5}}}",
   "\\newcommand{\\pdcNoScriptFont}{\\let\\pdc@script\\@undefined}",
   "\\def\\pdc@scriptsize#1{\\dimexpr\\numexpr\\dimexpr#1\\dimexpr\\f@size pt\\relax\\relax/32768\\relax sp*32768\\relax}",
-  -- #1 the size, #2 the most the font allows, #3 the share of the rest of the size, #4 \raise or \lower
-  "\\def\\pdc@shift#1#2#3#4#5{\\begingroup\\dimen@=\\pdc@scriptsize{#1}\\dimen\\tw@=#2\\dimexpr\\f@size pt\\relax"
+  -- #1 the size, #2 the most the font allows, #3 the share of the rest of the size, #4 \raise or \lower.
+  -- \raise starts no paragraph, a script first in one does
+  "\\def\\pdc@shift#1#2#3#4#5{\\leavevmode\\begingroup\\dimen@=\\pdc@scriptsize{#1}\\dimen\\tw@=#2\\dimexpr\\f@size pt\\relax"
     .. "\\dimen4=#3\\dimexpr\\dimexpr\\f@size pt\\relax-\\dimen@\\relax\\ifdim\\dimen4<\\dimen\\tw@\\dimen\\tw@=\\dimen4 \\fi"
     .. "#4\\dimen\\tw@\\hbox{\\fontsize{\\dimen@}{\\z@}\\selectfont #5}\\endgroup}",
   "\\def\\pdc@super#1#2#3#4#5#6{\\pdc@shift{#1}{#2}{#4}\\raise{#6}}",
