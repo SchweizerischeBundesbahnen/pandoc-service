@@ -110,3 +110,9 @@ def test_a_script_after_the_colored_argument_of_a_command_stays_out_of_it(test_p
     """The power of a root of a colored x belongs to the root: inside the argument it would be the power of x."""
     latex = _md_to_latex(test_parameters, f"${command}{{{_marked('FF0000', 'x')}}}^{{{_marked('FF0000', '2')}}}$")
     assert f"{command}{{{{\\color[HTML]{{FF0000}} x}}}}^{{{{\\color[HTML]{{FF0000}} 2}}}}" in latex, latex
+
+
+def test_a_colored_base_after_a_colored_letter_takes_its_script(test_parameters: TestParameters):
+    """E = mc²: the group of the m before the c is no argument."""
+    latex = _md_to_latex(test_parameters, f"${_marked('0000FF', 'm')}{{{_marked('0000FF', 'c')}}}^{{{_marked('0000FF', '2')}}}$")
+    assert "{\\color[HTML]{0000FF} m}{\\color[HTML]{0000FF} c^{{\\color[HTML]{0000FF} 2}}}" in latex, latex
