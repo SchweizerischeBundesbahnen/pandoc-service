@@ -8,12 +8,17 @@ markdown table whose first cell carries the sentinel.
 
 from __future__ import annotations
 
+import ctypes
 import io
 
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+from docx.shared import Pt
+from PIL import Image
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -333,6 +338,47 @@ def test_a_header_cell_which_starts_with_a_list_gets_no_strut_line(test_paramete
     assert latex.count("\\pdcHeadStrut{}") == 1, latex
 
 
+def test_the_last_line_of_a_cell_is_as_deep_as_the_font_of_its_text(test_parameters: TestParameters):
+    """The run closes its group before the end of the cell: the space below it measures the strut of the run."""
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 13.1483bp depth 3.9445bp width 0pt}"
+    run = f'RawInline (Format "latex") "{{\\\\fontsize{{14bp}}{{16.8bp}}\\\\selectfont {strut}", Str "Large", RawInline (Format "latex") "}}"'
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Body"'), _cell(run)])
+    latex = _native_latex(test_parameters.container, native)
+    expected = "Large}\\setbox\\strutbox\\hbox{\\vrule height 13.1483bp depth 3.9445bp width 0pt}\\ifdefined\\pdcPlainCellSpace"
+    assert expected in latex, latex
+    assert latex.count("depth 3.9445bp") == 2, "a cell of the body text keeps the strut of the body"
+
+
+def test_a_cell_which_ends_after_its_run_ends_as_deep_as_the_body(test_parameters: TestParameters):
+    """A run of 14 points, then text of the body: the last line is of the body, not of the run."""
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 13.1483bp depth 3.9445bp width 0pt}"
+    run = f'RawInline (Format "latex") "{{\\\\fontsize{{14bp}}{{16.8bp}}\\\\selectfont {strut}", Str "Large", RawInline (Format "latex") "}}"'
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Body"'), _cell(f'{run}, Space, Str "small"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("depth 3.9445bp") == 1, latex
+
+
+def test_a_cell_which_ends_in_a_run_inside_text_ends_as_deep_as_the_run(test_parameters: TestParameters):
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 13.1483bp depth 3.9445bp width 0pt}"
+    run = f'RawInline (Format "latex") "{{\\\\fontsize{{14bp}}{{16.8bp}}\\\\selectfont {strut}", Str "Large", RawInline (Format "latex") "}}"'
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Body"'), _cell(f'Str "small", Space, {run}')])
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("depth 3.9445bp") == 2, latex
+
+
+def test_a_row_which_goes_out_a_line_at_a_time_starts_at_the_line_of_its_text(test_parameters: TestParameters):
+    """Its first line is as high as the font of its cells, not of the body, as in any other row."""
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 10.3308bp depth 3.0993bp width 0pt}"
+
+    def run(text: str) -> str:
+        return f'RawInline (Format "latex") "{{\\\\fontsize{{11bp}}{{13.2bp}}\\\\selectfont {strut}", Str "{text}", RawInline (Format "latex") "}}"'
+
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}", {run("Label")}'), _cell(run("Text"))])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcWrapBegin" in latex, latex
+    assert "\\pdcRowLine{10.3308bp}" in latex, latex
+
+
 def test_a_row_of_paragraphs_goes_out_a_line_at_a_time_which_a_page_may_break(test_parameters: TestParameters):
     """Word breaks a row between any two lines of its cells; longtable only between rows."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}Label"'), _cell('Str "a", Space, Str "long", Space, Str "text"')])
@@ -353,6 +399,19 @@ def test_a_coloured_cell_keeps_its_colour_in_every_line_of_its_row(test_paramete
 def test_a_row_with_a_picture_stays_one_row(test_parameters: TestParameters):
     picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(picture)])
+    assert "pdcWrap" not in _native_latex(test_parameters.container, native)
+
+
+def test_a_row_with_a_picture_in_its_text_goes_out_a_line_at_a_time(test_parameters: TestParameters):
+    """An icon in a line of text keeps to its line: Word breaks the row between its lines all the same."""
+    picture = 'Image ("",[],[("width","0.16667in"),("height","0.16667in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "has", Space, {picture}, Space, Str "parent"')])
+    assert "pdcWrap" in _native_latex(test_parameters.container, native)
+
+
+def test_a_row_with_a_picture_alone_on_a_line_stays_one_row(test_parameters: TestParameters):
+    picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "Label:", LineBreak, Span ("",[],[]) [{picture}]')])
     assert "pdcWrap" not in _native_latex(test_parameters.container, native)
 
 
@@ -545,3 +604,41 @@ def test_a_narrow_column_of_an_absolute_table_keeps_tight_margins(test_parameter
     native = f'[Table ("",[],[]) (Caption Nothing []) [{columns}] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{", ".join(cells)}]]] (TableFoot ("",[],[]) [])]'
     latex = " ".join(_native_latex(test_parameters.container, native).split())
     assert "\\setlength{\\tabcolsep}{3pt}" in latex, latex
+
+
+def _baseline(pdf: bytes, text: str) -> float:
+    """The height of the baseline of the first character of the text given, in points from the top of the page."""
+    page = pdfium.PdfDocument(pdf)[0]
+    textpage = page.get_textpage()
+    found = textpage.search(text, match_case=True).get_next()
+    assert found, text
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    return page.get_height() - y.value
+
+
+def test_the_space_of_a_cell_goes_below_a_picture_lowered_below_the_descent(test_parameters: TestParameters):
+    """A picture of 12 points lowered by 3 makes the line deeper than the descent of Liberation Sans, 2.54 points."""
+    document = Document()
+    normal = document.styles["Normal"]
+    normal.font.name = "Liberation Sans"
+    normal.font.size = Pt(12)
+    normal.paragraph_format.space_after = Pt(10)
+    # The styles of pandoc's reference document, which give a cell without a style the space of Normal
+    document.styles.add_style("Compact", WD_STYLE_TYPE.PARAGRAPH)
+    table = document.add_table(rows=3, cols=1)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    table.rows[0].cells[0].text = "Upper"
+    paragraph = table.rows[1].cells[0].paragraphs[0]
+    paragraph.add_run("Icon ")
+    png = io.BytesIO()
+    Image.new("RGB", (16, 16), (40, 90, 170)).save(png, format="PNG")
+    picture = paragraph.add_run()
+    picture.add_picture(io.BytesIO(png.getvalue()), width=Pt(12), height=Pt(12))
+    picture._r.get_or_add_rPr().append(parse_xml(f'<w:position {nsdecls("w")} w:val="-6"/>'))
+    table.rows[2].cells[0].text = "Lower"
+    pdf = _pdf_of(test_parameters, document)
+    plain = _baseline(pdf, "Icon") - _baseline(pdf, "Upper")
+    lowered = _baseline(pdf, "Lower") - _baseline(pdf, "Icon")
+    assert abs(lowered - plain - (3 - 0.2119 * 12)) < 0.1, (plain, lowered)
