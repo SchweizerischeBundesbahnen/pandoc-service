@@ -16,6 +16,7 @@ import pypdfium2.raw as pdfium_c
 from docx import Document
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
+from docx.shared import Pt
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -185,3 +186,24 @@ def test_the_page_of_an_entry_ends_at_the_tab_of_word(test_parameters: TestParam
     right = textpage.get_charbox(index, loose=True)[2]
     section = document.sections[0]
     assert abs(right - (section.page_width.pt - section.right_margin.pt - 0.5)) < 0.1
+
+
+def test_the_page_of_an_entry_ends_at_the_tab_whatever_its_leader(test_parameters: TestParameters):
+    """The dots of a leader in Carlito put the page of each entry up to 0.65pt off the tab, each by its own amount."""
+    document = Document()
+    document.styles["Normal"].font.name = "Carlito"
+    document.styles["Normal"].font.size = Pt(12)
+    _toc_field_paragraph(document)
+    for text in ("Alpha", "A much longer heading text", "Mid"):
+        document.add_heading(text, level=1)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    text = textpage.get_text_range()
+    pages = [found.start(1) for found in re.finditer(r"\.\s*(1)", text)]
+    assert len(pages) == 3, text
+    section = document.sections[0]
+    tab = section.page_width.pt - section.right_margin.pt - 0.5
+    assert [round(textpage.get_charbox(index, loose=True)[2] - tab, 1) for index in pages] == [0, 0, 0]

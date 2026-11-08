@@ -66,7 +66,9 @@ local function tableofcontents_preamble()
   local lines = {
     "\\usepackage{titletoc}",
     "\\makeatletter",
-    "\\newcommand{\\pdcTocLeader}{\\leaders\\hbox to 0.275em{\\hss.\\hss}\\hfill}",
+    -- xdvipdfmx writes the dots and what follows them into one text object of the PDF, and the rounding of
+    -- each step adds up to a point past the end of the leader: an empty special starts the page in its own
+    "\\newcommand{\\pdcTocLeader}{\\leaders\\hbox to 0.275em{\\hss.\\hss}\\hfill\\special{pdf:content }}",
     "\\newcommand{\\pdcTableOfContents}[1]{\\par\\begingroup\\hypersetup{linkcolor=black}\\setcounter{tocdepth}{#1}\\setlength{\\parskip}{0pt}\\@starttoc{toc}\\endgroup\\vspace{-\\parskip}}",
     "\\newcommand{\\pdcTocEntryBegin}{\\par\\begingroup\\hypersetup{linkcolor=black}\\setlength{\\parskip}{0pt}}",
     "\\newcommand{\\pdcTocEntryEnd}{\\par\\endgroup\\vspace{5pt}}",
