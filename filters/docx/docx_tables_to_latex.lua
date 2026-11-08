@@ -653,15 +653,29 @@ end
 
 local RUN_STRUT = "\\setbox\\strutbox\\hbox{\\vrule height [%d%.]+bp depth [%d%.]+bp width 0pt}"
 
--- The strut of the last run of a paragraph which starts in a size of its own, see docx_colors_to_latex: the run
--- closes its group before the end of the cell, whose space below then measures the strut of the body.
+-- The strut of the run in a size of its own which holds the last text of a paragraph, see docx_colors_to_latex:
+-- the run closes its group before the end of the cell, whose space below then measures the strut of the body.
+-- Nil when the last text is outside every such run.
 local function last_run_strut(block)
+  local struts, depth = {}, 0
   local strut = nil
   for _, inline in ipairs(block.content) do
     if inline.t == "RawInline" then
-      strut = inline.text:match(RUN_STRUT) or strut
-    elseif strut == nil then
-      return nil
+      local _, opened = inline.text:gsub("{", "")
+      local _, closed = inline.text:gsub("}", "")
+      depth = depth + opened - closed
+      for level in pairs(struts) do
+        if level > depth then struts[level] = nil end
+      end
+      struts[depth] = inline.text:match(RUN_STRUT) or struts[depth]
+    elseif inline.t ~= "Space" and inline.t ~= "SoftBreak" then
+      strut = nil
+      for level = depth, 1, -1 do
+        if struts[level] then
+          strut = struts[level]
+          break
+        end
+      end
     end
   end
   return strut

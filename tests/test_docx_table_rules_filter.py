@@ -349,6 +349,23 @@ def test_the_last_line_of_a_cell_is_as_deep_as_the_font_of_its_text(test_paramet
     assert latex.count("depth 3.9445bp") == 2, "a cell of the body text keeps the strut of the body"
 
 
+def test_a_cell_which_ends_after_its_run_ends_as_deep_as_the_body(test_parameters: TestParameters):
+    """A run of 14 points, then text of the body: the last line is of the body, not of the run."""
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 13.1483bp depth 3.9445bp width 0pt}"
+    run = f'RawInline (Format "latex") "{{\\\\fontsize{{14bp}}{{16.8bp}}\\\\selectfont {strut}", Str "Large", RawInline (Format "latex") "}}"'
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Body"'), _cell(f'{run}, Space, Str "small"')])
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("depth 3.9445bp") == 1, latex
+
+
+def test_a_cell_which_ends_in_a_run_inside_text_ends_as_deep_as_the_run(test_parameters: TestParameters):
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 13.1483bp depth 3.9445bp width 0pt}"
+    run = f'RawInline (Format "latex") "{{\\\\fontsize{{14bp}}{{16.8bp}}\\\\selectfont {strut}", Str "Large", RawInline (Format "latex") "}}"'
+    native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;rl=none{CLOSE}Body"'), _cell(f'Str "small", Space, {run}')])
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("depth 3.9445bp") == 2, latex
+
+
 def test_a_row_which_goes_out_a_line_at_a_time_starts_at_the_line_of_its_text(test_parameters: TestParameters):
     """Its first line is as high as the font of its cells, not of the body, as in any other row."""
     strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 10.3308bp depth 3.0993bp width 0pt}"
