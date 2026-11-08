@@ -240,6 +240,9 @@ local has_align = false      -- set when at least one cell gets an alignment swi
 local has_display = false    -- set when a cell holds an equation of its own paragraph
 local has_grid = false       -- set when a table is written as raw LaTeX
 local has_head = false       -- set when a table has a header row, see HEAD_PREAMBLE
+-- The characters of docx-actual-text, with the hex of their code point: see actual_text
+local ACTUAL_TEXT = "docx-actual-text"
+local actual_texts = {}
 local NESTED = "pdc-nested"   -- the attribute of a table in a cell of another
 
 -- True when a cell renders nothing, so there is nothing to align.
@@ -1452,6 +1455,35 @@ local ALIGN_GLUE = {
 }
 local RESET_GLUE = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{\\fill}"
 
+-- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI for
+-- U+FD3E, which the font maps to the same glyph. Each such character carries its own text: an /ActualText
+-- around it. docx_document_styles_to_latex does the same for the text outside the tables this writes as LaTeX.
+local function actual_text(str)
+  local pieces, text, changed = {}, "", false
+  for _, code in utf8.codes(str.text) do
+    local character = utf8.char(code)
+    local hex = actual_texts[character]
+    if hex then
+      if text ~= "" then
+        pieces[#pieces + 1] = pandoc.Str(text)
+      end
+      local written = pandoc.write(pandoc.Pandoc({ pandoc.Plain({ pandoc.Str(character) }) }), LATEX):gsub("%s+$", "")
+      pieces[#pieces + 1] = pandoc.RawInline("latex", string.format(
+        "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF%s>>>BDC}%s\\special{pdf:content EMC}}{%s}", hex, written, written))
+      text, changed = "", true
+    else
+      text = text .. character
+    end
+  end
+  if not changed then
+    return nil
+  end
+  if text ~= "" then
+    pieces[#pieces + 1] = pandoc.Str(text)
+  end
+  return pieces
+end
+
 local table_pass = {}
 
 function table_pass.Table(tbl)
@@ -1470,6 +1502,14 @@ function table_pass.Table(tbl)
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
   hang_pictures(all_rows(tbl))
+  if next(actual_texts) then
+    for _, row in ipairs(all_rows(tbl)) do
+      for _, cell in ipairs(row.cells) do
+        cell.contents = pandoc.Blocks(cell.contents):walk({ Str = actual_text })
+      end
+    end
+    modified = true
+  end
 
   -- A table written as LaTeX, a grid or one of simple cells, breaks a row as Word does
   local grid_lines = layout.rl == "grid" and layout.lc and layout.lw
@@ -1725,6 +1765,13 @@ function caption_pass.Table(tbl)
     end
   end
   return inner and tbl or nil
+end
+
+function caption_pass.Meta(meta)
+  for hex in pandoc.utils.stringify(meta[ACTUAL_TEXT] or ""):gmatch("%x%x%x%x") do
+    actual_texts[utf8.char(tonumber(hex, 16))] = hex
+  end
+  return nil
 end
 
 function caption_pass.Blocks(blocks)

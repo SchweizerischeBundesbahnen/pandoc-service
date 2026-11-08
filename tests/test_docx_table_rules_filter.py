@@ -677,3 +677,15 @@ def test_a_column_narrower_than_its_margins_keeps_the_width_of_word(test_paramet
         pdfium_c.FPDFText_GetCharOrigin(textpage.raw, text.index(digit), ctypes.byref(x), ctypes.byref(y))
         origins.append(x.value)
     assert [round(right - left, 1) for left, right in itertools.pairwise(origins)] == [12.5, 12.5]
+
+
+def test_the_hyphen_of_a_shared_glyph_in_a_table_copies_out_as_a_hyphen(test_parameters: TestParameters):
+    """Noto Sans CJK maps - and U+2011 to one glyph: a table written as LaTeX gives its cells their own text as well."""
+    document = Document()
+    document.styles["Normal"].font.name = "Noto Sans CJK SC"
+    table = document.add_table(rows=1, cols=1)
+    table.rows[0].cells[0].text = "e-mail"
+    width = table._tbl.tblPr.find(qn("w:tblW"))
+    width.set(qn("w:w"), "2000")
+    width.set(qn("w:type"), "dxa")
+    assert "e-mail" in pdfium.PdfDocument(_pdf_of(test_parameters, document))[0].get_textpage().get_text_range()
