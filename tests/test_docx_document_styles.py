@@ -588,6 +588,28 @@ def test_each_level_of_a_list_is_indented_past_the_level_above_it():
     assert _options(_docx(DEFAULTS + NORMAL, section=LIST_ITEM, numbering=numbering))["docx-list-indents"] == "36:18,36:18,36:9,36:18"
 
 
+def _toc_style(level: int, indent: str = "", style_id: str | None = None) -> str:
+    return f'<w:style w:type="paragraph" w:styleId="{style_id or f"TOC{level}"}"><w:name w:val="toc {level}"/><w:basedOn w:val="Normal"/><w:pPr>{indent}</w:pPr></w:style>'
+
+
+def test_each_toc_style_of_the_document_passes_its_left_indent():
+    """Word keeps the indent of a TOC style the document has: none is no indent."""
+    styles = _toc_style(1) + _toc_style(2, '<w:ind w:left="720"/>') + _toc_style(3, '<w:ind w:start="567"/>')
+    assert _options(_docx(DEFAULTS + NORMAL + styles))["docx-toc-indents"] == "1:0,2:36,3:28.35"
+
+
+def test_a_localised_toc_style_is_found_by_its_name():
+    assert _options(_docx(DEFAULTS + NORMAL + _toc_style(2, '<w:ind w:left="720"/>', style_id="Verzeichnis2")))["docx-toc-indents"] == "2:36"
+
+
+def test_a_toc_style_of_an_indent_python_cannot_read_is_left_to_word():
+    assert "docx-toc-indents" not in _options(_docx(DEFAULTS + NORMAL + _toc_style(2, '<w:ind w:left="²"/>')))
+
+
+def test_a_document_without_a_toc_style_passes_no_toc_indents():
+    assert "docx-toc-indents" not in _options(_docx(DEFAULTS + NORMAL))
+
+
 def test_a_list_with_a_level_not_past_the_one_above_gets_the_indents_of_latex():
     numbering = _indented((720, 360), (720, 360), (2160, 360), (2880, 360))
     assert "docx-list-indents" not in _options(_docx(DEFAULTS + NORMAL, section=LIST_ITEM, numbering=numbering))

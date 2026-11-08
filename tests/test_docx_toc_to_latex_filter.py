@@ -185,6 +185,24 @@ def test_a_level_of_the_table_of_contents_is_indented_by_the_size_of_the_body(te
     assert abs(x.value - document.sections[0].left_margin.pt - 10) < 0.3
 
 
+def test_a_level_keeps_the_indent_of_the_toc_style_of_the_document(test_parameters: TestParameters):
+    """Word keeps the indent of a TOC style the docx has: 720 twips set the entry 36pt right of the margin."""
+    document = Document()
+    document.styles.element.append(parse_xml(f'<w:style {nsdecls("w")} w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>'))
+    _toc_field_paragraph(document)
+    document.add_heading("Alpha", level=2)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    found = textpage.search("Alpha", match_case=True).get_next()
+    assert found
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    assert abs(x.value - document.sections[0].left_margin.pt - 36) < 0.3
+
+
 def test_the_page_of_an_entry_ends_at_the_tab_of_word(test_parameters: TestParameters):
     """Word sets the page at a right tab 10 twips short of the margin, 0.5pt."""
     document = Document()

@@ -275,8 +275,33 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
+    options += _toc_indent_options(styles)
     runs = [part for part in (document, *(parse_xml(parts[name]) for name in RUN_PARTS if name in parts)) if part is not None]
     return options + _run_font_options(runs) + _display_options(styles, theme, numbering)
+
+
+def _toc_indent_options(styles: Element) -> list[str]:
+    """The left indent of each TOC style the document has, in points, by its level.
+
+    Word keeps the indent of a TOC style the document has. A TOC style it lacks, Word adds with
+    an indent of the size of the body per level, see filters/docx/docx_toc_to_latex.lua.
+    """
+    indents = []
+    for level in range(1, 10):
+        style = next((style for style in styles.iter(_w("style")) if _is_toc_style(style, level)), None)
+        if style is None:
+            continue
+        found = _attribute(_style_chain(styles, style.get(_w("styleId"), ""), fallback=None), styles, "pPr", "ind", ("left", "start"))
+        left = whole_number(found[1]) if found is not None else 0
+        if left is not None:
+            indents.append(f"{level}:{left / TWIPS_PER_POINT:g}")
+    return ["-M", "docx-toc-indents=" + ",".join(indents)] if indents else []
+
+
+def _is_toc_style(style: Element, level: int) -> bool:
+    """Whether the style is the TOC style of the level, by its id or, in a localised Word, by its name "toc 1"."""
+    name = style.find(_w("name"))
+    return style.get(_w("styleId")) == f"TOC{level}" or (name is not None and (name.get(_w("val")) or "").lower() == f"toc {level}")
 
 
 def _run_font_options(parts: list[Element]) -> list[str]:

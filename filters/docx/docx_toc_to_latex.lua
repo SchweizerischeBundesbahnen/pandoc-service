@@ -16,7 +16,9 @@
 -- leader of dots to the page number at the right tab, which Word puts
 -- 10 twips short of the right margin, and each level
 -- of the table of contents indented by the size of the body text further,
--- down to the ninth.
+-- down to the ninth. Word keeps the indent of a TOC style the docx has:
+-- app/docx_document_styles.py passes it as docx-toc-indents, level:points
+-- separated by commas.
 -- An entry of a heading numbered by its style starts with the number, and its
 -- text follows at the tab Word sets, see \pdcTocNumber.
 -- The empty line Word leaves after a table of contents, see
@@ -29,6 +31,7 @@
 local CONTENTS = "PandocToc__CONTENTS_"
 local ENTRY = "PandocToc__ENTRY"
 local MARKER = "PDCPAGEREF"
+local INDENTS = "docx-toc-indents"
 
 -- Word measures the number of an entry in its own default font, Aptos 12pt,
 -- whatever the font of the document: the advance widths of Aptos, in 2048ths
@@ -62,7 +65,7 @@ end
 -- the margin which leaves 12pt after the number, as wide as Aptos 12pt sets it.
 -- It does not measure a space. An empty number, of a level which only counts
 -- for the numbers below it, sets nothing.
-local function tableofcontents_preamble()
+local function tableofcontents_preamble(indents)
   local levels = { "section", "subsection", "subsubsection", "paragraph", "subparagraph", "pdcHeadingF", "pdcHeadingG", "pdcHeadingH", "pdcHeadingI" }
   local lines = {
     "\\usepackage{titletoc}",
@@ -89,7 +92,7 @@ local function tableofcontents_preamble()
     "\\contentsmargin{0pt}",
   }
   for depth, command in ipairs(levels) do
-    local indent = string.format("\\pdcTocIndent{%d}", depth - 1)
+    local indent = indents[depth] and string.format("%gbp", indents[depth]) or string.format("\\pdcTocIndent{%d}", depth - 1)
     lines[#lines + 1] = string.format("\\titlecontents{%s}[%s]{}{\\pdcTocNumber{%s}{\\thecontentslabel}}{}{\\pdcTocLeader\\thecontentspage\\kern0.5bp}[\\vspace{5pt}]", command, indent, indent)
   end
   return table.concat(lines, "\n") .. "\n"
@@ -136,11 +139,25 @@ function Div(div)
   return nil
 end
 
-function Meta(meta)
-  if not used then
-    return nil
+-- The indent of each TOC style the docx has, in points, by its level, from docx-toc-indents.
+local function style_indents(meta)
+  local indents = {}
+  local value = meta[INDENTS]
+  if value ~= nil then
+    for level, points in pandoc.utils.stringify(value):gmatch("(%d):([%d.]+)") do
+      indents[tonumber(level)] = tonumber(points)
+    end
   end
-  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", tableofcontents_preamble()) })
+  return indents
+end
+
+function Meta(meta)
+  local indents = style_indents(meta)
+  meta[INDENTS] = nil
+  if not used then
+    return meta
+  end
+  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", tableofcontents_preamble(indents)) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ block })
