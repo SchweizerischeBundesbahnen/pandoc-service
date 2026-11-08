@@ -372,6 +372,25 @@ def test_a_cancelled_term_is_as_high_as_its_box(test_parameters: TestParameters)
     assert cancelled == pytest.approx(plain, abs=0.05)
 
 
+def _origin_distance(container, equation: str) -> float:
+    """How far right of the origin of the 1 of a display equation the origin of its 0 stands, in the PDF."""
+    native = f'[Para [Math DisplayMath "{equation}"]]'
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/matrix.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 --pdf-engine=tectonic -o /tmp/test/matrix.pdf /tmp/test/matrix.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/matrix.pdf"])
+    text = pdfium.PdfDocument(pdf)[0].get_textpage()
+    characters = text.get_text_range()
+    return text.get_charbox(characters.index("0"))[0] - text.get_charbox(characters.index("1"))[0]
+
+
+def test_the_columns_of_a_matrix_stand_an_em_apart(test_parameters: TestParameters):
+    """Word sets the columns of a matrix 12pt apart in a body of 12pt, TeX two \\arraycolsep, 10pt."""
+    matrix = _origin_distance(test_parameters.container, "\\\\begin{matrix} 1 & 0 \\\\end{matrix}")
+    assert matrix - _origin_distance(test_parameters.container, "10") == pytest.approx(12, abs=0.05)
+
+
 def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,color:0F4761,number:{1:arabic},numberhang:21.6"))
     assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\color[HTML]{0F4761}\\makebox[21.6pt][l]{\\thesection}}{0pt}{\\color[HTML]{0F4761}}" in preamble

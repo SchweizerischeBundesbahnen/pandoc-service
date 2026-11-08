@@ -43,6 +43,84 @@ local function colored(color, content)
   return "{\\color[HTML]{" .. color .. "} " .. content .. "}"
 end
 
+-- A colored base of a script is a group to TeX, and with an OpenType math font TeX raises the script of a group
+-- from its top, higher than from a letter: Word sets a colored b² as a black one. texmath writes the base in a
+-- group of its own, {{\color[HTML]{FF0000} b}}^{...}: a script of colored content moves into the group of the
+-- base, at its letter. A script of black content stays out, which the color of the base would reach.
+local COLOR_GROUP = "^{\\color%[HTML%]{%x+}"
+
+local function colored_script(script)
+  local inner = script:match("^{(%b{})}$")
+  return inner ~= nil and inner:match(COLOR_GROUP) ~= nil
+end
+
+-- Where the group or optional argument which closes at the position given opens, its { or [.
+local function opening(tex, position)
+  local close = tex:sub(position, position)
+  local open = close == "}" and "{" or "["
+  local depth = 0
+  for index = position, 1, -1 do
+    local char = tex:sub(index, index)
+    if char == close and tex:sub(index - 1, index - 1) ~= "\\" then
+      depth = depth + 1
+    elseif char == open and tex:sub(index - 1, index - 1) ~= "\\" then
+      depth = depth - 1
+      if depth == 0 then
+        return index
+      end
+    end
+  end
+  return nil
+end
+
+-- What stands before the position given, without the spaces.
+local function preceding(tex, position)
+  return (tex:sub(1, position - 1):gsub("%s+$", ""))
+end
+
+-- Whether the group or optional argument which starts at the position given is an argument of a command: it
+-- follows the command, or an argument of it, \frac{a}{...}, \sqrt[3]{...}.
+local function argument(tex, position)
+  local before = preceding(tex, position)
+  local last = before:sub(-1)
+  if before:match("\\%a+$") then
+    return true
+  end
+  if last == "}" or last == "]" then
+    local open = opening(before, #before)
+    return open ~= nil and argument(before, open)
+  end
+  return false
+end
+
+-- Whether a group which starts at the position given stands on its own, and so can be the base of a script. A
+-- group after _ or ^ is a script itself, \int_{{\color[HTML]{008000} 0}}^{...}, and an argument belongs to its
+-- command with its script, \sqrt{{\color[HTML]{FF0000} x}}^{...}. A group after a colored letter stands on its
+-- own, {\color[HTML]{FF0000} m}{{\color[HTML]{FF0000} c}}^{...}.
+local function standalone(tex, position)
+  local last = preceding(tex, position):sub(-1)
+  return last ~= "_" and last ~= "^" and not argument(tex, position)
+end
+
+local function scripts_into_bases(tex)
+  local function into_base(position, base, ...)
+    if not standalone(tex, position) or not base:match(COLOR_GROUP) then
+      return nil
+    end
+    local scripts = { ... }
+    local inside = base:sub(1, -2)
+    for index = 1, #scripts, 2 do
+      if not colored_script(scripts[index + 1]) then
+        return nil
+      end
+      inside = inside .. scripts[index] .. scripts[index + 1]
+    end
+    return inside .. "}"
+  end
+  tex = tex:gsub("(){(%b{})}([_^])(%b{})([_^])(%b{})", into_base)
+  return (tex:gsub("(){(%b{})}([_^])(%b{})", into_base))
+end
+
 local filter = {}
 
 function filter.Math(el)
@@ -56,7 +134,7 @@ function filter.Math(el)
   if count == 0 then
     return nil
   end
-  el.text = replaced
+  el.text = scripts_into_bases(replaced)
   return el
 end
 

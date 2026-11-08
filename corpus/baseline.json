@@ -425,16 +425,16 @@
     "test_formulas_conversion": {
      "any_page": 34,
      "lines": 37,
-     "mean_shift": 4.05,
+     "mean_shift": 3.26,
      "pages": [
       4,
       4
      ],
-     "regions": 1685,
-     "regions_matched": 550,
+     "regions": 1633,
+     "regions_matched": 647,
      "same_page": 34,
      "words": 617,
-     "words_in_place": 171
+     "words_in_place": 230
     },
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 25,
@@ -692,11 +692,11 @@
    "total": {
     "any_page": 96.3,
     "documents": 49,
-    "mean_shift": 0.34,
+    "mean_shift": 0.32,
     "pages_as_reference": 49,
-    "regions_matched": 92.2,
+    "regions_matched": 92.5,
     "same_page": 95.9,
-    "words_in_place": 93.1
+    "words_in_place": 93.6
    }
   },
   "word-fonts": {
@@ -895,7 +895,7 @@
      "regions_matched": 560,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 84
+     "words_in_place": 85
     },
     "test_convert_live_doc_with_open_and_unreferenced_comments": {
      "any_page": 19,
@@ -1124,16 +1124,16 @@
     "test_formulas_conversion": {
      "any_page": 34,
      "lines": 37,
-     "mean_shift": 1.49,
+     "mean_shift": 0.6,
      "pages": [
       4,
       4
      ],
-     "regions": 1558,
-     "regions_matched": 1034,
+     "regions": 1486,
+     "regions_matched": 1331,
      "same_page": 34,
      "words": 617,
-     "words_in_place": 387
+     "words_in_place": 525
     },
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 25,
@@ -1147,7 +1147,7 @@
      "regions_matched": 569,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 84
+     "words_in_place": 85
     },
     "test_heading_numbers_with_numbered_template": {
      "any_page": 25,
@@ -1161,7 +1161,7 @@
      "regions_matched": 569,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 84
+     "words_in_place": 85
     },
     "test_heading_numbers_with_template_not_numbering_headings": {
      "any_page": 25,
@@ -1175,7 +1175,7 @@
      "regions_matched": 568,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 84
+     "words_in_place": 85
     },
     "test_icons": {
      "any_page": 13,
@@ -1391,11 +1391,11 @@
    "total": {
     "any_page": 99.5,
     "documents": 49,
-    "mean_shift": 0.26,
+    "mean_shift": 0.24,
     "pages_as_reference": 49,
-    "regions_matched": 96.3,
+    "regions_matched": 97.1,
     "same_page": 99.1,
-    "words_in_place": 96.8
+    "words_in_place": 98.2
    }
   }
  },
@@ -1526,7 +1526,7 @@
      "regions_matched": 7508,
      "same_page": 386,
      "words": 2148,
-     "words_in_place": 2138
+     "words_in_place": 2139
     },
     "test_convert_live_doc_with_all_and_unreferenced_comments": {
      "any_page": 23,
@@ -1568,7 +1568,7 @@
      "regions_matched": 5419,
      "same_page": 261,
      "words": 1448,
-     "words_in_place": 1446
+     "words_in_place": 1447
     },
     "test_convert_live_doc_with_formulas": {
      "any_page": 5,
@@ -1596,7 +1596,7 @@
      "regions_matched": 561,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 85
+     "words_in_place": 84
     },
     "test_convert_live_doc_with_open_and_unreferenced_comments": {
      "any_page": 19,
@@ -1694,7 +1694,7 @@
      "regions_matched": 7508,
      "same_page": 386,
      "words": 2148,
-     "words_in_place": 2138
+     "words_in_place": 2139
     },
     "test_convert_test_specification": {
      "any_page": 203,
@@ -1705,10 +1705,10 @@
       4
      ],
      "regions": 2620,
-     "regions_matched": 2601,
+     "regions_matched": 2600,
      "same_page": 203,
      "words": 684,
-     "words_in_place": 684
+     "words_in_place": 683
     },
     "test_deleted_linked_work_item": {
      "any_page": 23,
@@ -1825,16 +1825,16 @@
     "test_formulas_conversion": {
      "any_page": 35,
      "lines": 36,
-     "mean_shift": 14.79,
+     "mean_shift": 3.05,
      "pages": [
       4,
       4
      ],
-     "regions": 1819,
-     "regions_matched": 731,
+     "regions": 1603,
+     "regions_matched": 983,
      "same_page": 35,
      "words": 651,
-     "words_in_place": 258
+     "words_in_place": 376
     },
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 25,
@@ -1848,7 +1848,7 @@
      "regions_matched": 572,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 85
+     "words_in_place": 84
     },
     "test_heading_numbers_with_numbered_template": {
      "any_page": 25,
@@ -1862,7 +1862,7 @@
      "regions_matched": 572,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 85
+     "words_in_place": 84
     },
     "test_heading_numbers_with_template_not_numbering_headings": {
      "any_page": 25,
@@ -1876,7 +1876,7 @@
      "regions_matched": 570,
      "same_page": 25,
      "words": 85,
-     "words_in_place": 85
+     "words_in_place": 84
     },
     "test_icons": {
      "any_page": 13,
@@ -2092,11 +2092,11 @@
    "total": {
     "any_page": 99.4,
     "documents": 49,
-    "mean_shift": 0.59,
+    "mean_shift": 0.35,
     "pages_as_reference": 49,
-    "regions_matched": 94.3,
+    "regions_matched": 95.3,
     "same_page": 99.3,
-    "words_in_place": 95.0
+    "words_in_place": 96.1
    }
   }
  }
