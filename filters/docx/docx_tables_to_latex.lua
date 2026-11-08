@@ -239,6 +239,7 @@ local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
 local has_display = false    -- set when a cell holds an equation of its own paragraph
 local has_grid = false       -- set when a table is written as raw LaTeX
+local has_head = false       -- set when a table has a header row, see HEAD_PREAMBLE
 local NESTED = "pdc-nested"   -- the attribute of a table in a cell of another
 
 -- True when a cell renders nothing, so there is nothing to align.
@@ -828,6 +829,18 @@ local GRID_PREAMBLE = table.concat({
   "\\def\\pdc@rule{\\pdc@hl\\CT@arc@\\leaders\\hrule\\@height\\arrayrulewidth\\hfill\\pdc@hl}",
   "\\def\\pdc@extend#1{\\patchcmd#1{\\CT@arc@\\leaders\\hrule\\@height\\arrayrulewidth\\hfill}{\\pdc@rule}{\\pdc@extend#1}{}}",
   "\\AtBeginDocument{\\ifdefined\\CT@arc@\\pdc@extend\\LT@@hline\\pdc@extend\\@cline\\fi}",
+  "\\makeatother",
+}, "\n")
+
+-- Word sets the header row of a table at the foot of a page where it fits, and repeats it above the rows on the
+-- next page. longtable starts a table on the next page unless its first row fits as well, and keeps the two together.
+local HEAD_PREAMBLE = table.concat({
+  "\\usepackage{etoolbox}",
+  "\\makeatletter",
+  "\\AtBeginDocument{\\ifdefined\\LT@start"
+    .. "\\patchcmd\\LT@start{\\advance\\dimen@\\ht\\ifdim\\ht\\@arstrutbox>\\ht\\tw@\\@arstrutbox\\else\\tw@\\fi"
+    .. "\\advance\\dimen@\\dp\\ifdim\\dp\\@arstrutbox>\\dp\\tw@\\@arstrutbox\\else\\tw@\\fi}{}{}{}"
+    .. "\\patchcmd\\LT@start{\\fi\\nobreak}{\\fi\\penalty\\z@}{}{}\\fi}",
   "\\makeatother",
 }, "\n")
 
@@ -1445,6 +1458,7 @@ local table_pass = {}
 
 function table_pass.Table(tbl)
   if not FORMAT:match("latex") then return nil end
+  if #tbl.head.rows > 0 then has_head = true end
 
   local modified = false
   local layout = {}
@@ -1644,7 +1658,7 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head) then return meta end
 
   local parts = {}
   -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
@@ -1661,6 +1675,7 @@ function preamble_pass.Meta(meta)
   end
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
+  if has_head then parts[#parts + 1] = HEAD_PREAMBLE end
   local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })
   local existing = meta["header-includes"]
   if existing == nil then

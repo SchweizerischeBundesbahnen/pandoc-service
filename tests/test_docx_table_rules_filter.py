@@ -642,3 +642,26 @@ def test_the_space_of_a_cell_goes_below_a_picture_lowered_below_the_descent(test
     plain = _baseline(pdf, "Icon") - _baseline(pdf, "Upper")
     lowered = _baseline(pdf, "Lower") - _baseline(pdf, "Icon")
     assert abs(lowered - plain - (3 - 0.2119 * 12)) < 0.1, (plain, lowered)
+
+
+def test_a_header_row_which_fits_at_the_foot_of_a_page_stays_there(test_parameters: TestParameters):
+    """Word sets the header row where it fits, at the foot of the page, and repeats it above the row on the next page.
+
+    longtable moved the whole table to the next page unless its first row fitted as well.
+    """
+    document = Document()
+    for number in range(23):
+        document.add_paragraph(f"Filler {number}")
+    # A last line which leaves room for the header row, not for the row below it
+    document.add_paragraph().add_run("Last").font.size = Pt(15.75)
+    table = document.add_table(rows=2, cols=2)
+    for index, text in enumerate(("Head A", "Head B")):
+        table.rows[0].cells[index].text = text
+    for index, text in enumerate(("Body A", "Body B")):
+        table.rows[1].cells[index].text = text
+    table.rows[0]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+    document.add_paragraph("After")
+    pdf = pdfium.PdfDocument(_pdf_of(test_parameters, document))
+    pages = [pdf[index].get_textpage().get_text_range().split() for index in range(len(pdf))]
+    assert pages[0][-4:] == ["Head", "A", "Head", "B"], pages
+    assert pages[1][:8] == ["Head", "A", "Head", "B", "Body", "A", "Body", "B"], pages
