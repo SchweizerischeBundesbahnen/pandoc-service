@@ -36,9 +36,10 @@ from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 
 SELAWIK = "Selawik_Release.zip"
-# The tables of the vertical metrics of a font, with the fields Word reads, and the heights of x and the capitals,
-# which fontspec scales another font to
-VERTICAL = {"hhea": ("ascent", "descent", "lineGap"), "OS/2": ("sTypoAscender", "sTypoDescender", "sTypoLineGap", "usWinAscent", "usWinDescent", "sxHeight", "sCapHeight")}
+# The tables of the vertical metrics of a font, with the fields Word reads, the heights of x and the capitals,
+# which fontspec scales another font to, and the size and the shift of the scripts, which Word sets them by
+SCRIPTS = ("ySuperscriptYSize", "ySuperscriptYOffset", "ySubscriptYSize", "ySubscriptYOffset")
+VERTICAL = {"hhea": ("ascent", "descent", "lineGap"), "OS/2": ("sTypoAscender", "sTypoDescender", "sTypoLineGap", "usWinAscent", "usWinDescent", "sxHeight", "sCapHeight", *SCRIPTS)}
 USE_TYPO_METRICS = 1 << 7
 ITALIC_BITS = 0b1100001  # italic, bold and regular of OS/2 fsSelection
 # The tables of hinting, which no longer fit the changed outlines

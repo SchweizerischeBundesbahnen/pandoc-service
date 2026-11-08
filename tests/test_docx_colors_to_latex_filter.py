@@ -19,9 +19,15 @@ We use a LaTeX target rather than PDF so the test does not depend on
 
 from __future__ import annotations
 
+import ctypes
+import io
 from pathlib import Path
 
+import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from docker.models.containers import Container
+from docx import Document
+from docx.shared import Pt
 
 from app import docx_color_pre_process
 from tests.test_container import TestParameters
@@ -297,7 +303,7 @@ def _font_style(family: str) -> str:
 
 def test_a_run_font_becomes_fontspec_as_word_sets_it(test_parameters: TestParameters):
     latex = _md_to_latex(test_parameters.container, f'[in Segoe]{{custom-style="{_font_style("Segoe UI")}"}}')
-    assert "{\\fontspec{Segoe UI}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]in Segoe}" in latex, latex
+    assert "{\\fontspec{Segoe UI}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]\\pdcNoScriptFont{}in Segoe}" in latex, latex
 
 
 def test_a_run_font_which_could_carry_latex_is_left_out(test_parameters: TestParameters):
@@ -333,7 +339,7 @@ def test_a_long_highlight_keeps_its_background_word_by_word(test_parameters: Tes
 def _run_line_latex(container: Container, md: str) -> str:
     container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/line.md << 'EOF'\n{md}\nEOF"])
     metadata = "-M docx-body-size=12 -M docx-body-ascent=11.27 -M docx-body-descent=3.38 -M docx-body-line-multiple=1"
-    fonts = f"-M docx-run-fonts={b'Segoe UI'.hex().upper()}:0.9280:1.1640"
+    fonts = f"-M docx-run-fonts={b'Segoe UI'.hex().upper()}:0.9280:1.1640:0.6499:0.4771:0.1382:1.0791:0.2510"
     exit_code, output = container.exec_run(["sh", "-c", f"{PANDOC_PATH} -f markdown -t latex {metadata} {fonts} --lua-filter={FILTER_PATH} /tmp/test/line.md"])
     assert exit_code == 0, output.decode()
     return _flatten_whitespace(output.decode())
@@ -391,3 +397,99 @@ def test_ulem_draws_its_line_over_the_word(test_parameters: TestParameters):
     preprocessed = docx_color_pre_process.preprocess(FIXTURE_PATH.read_bytes())
     flat = _flatten_whitespace(_md_to_latex_standalone(test_parameters.container, preprocessed))
     assert "{\\UL@skip\\wd\\UL@box\\box\\UL@box\\kern-\\UL@skip\\UL@leaders}" in flat, flat
+
+
+def test_a_run_font_sets_its_scripts_as_word_does(test_parameters: TestParameters):
+    """A superscript in a run takes the size and the raise of the font of the run, not of the body."""
+    latex = _run_line_latex(test_parameters.container, f'plain [run^1^]{{custom-style="{_font_style("Segoe UI")}"}}')
+    assert "Ligatures={TeXOff,NoCommon}]\\pdcScriptFont{0.6499}{0.4771}{0.1382}{1.0791}{0.2510}\\setbox" in latex, latex
+
+
+def test_the_body_font_sets_the_scripts_of_the_document(test_parameters: TestParameters):
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'x^1^\\n' > /tmp/test/script.md"])
+    command = f"{PANDOC_PATH} -f markdown -t latex -s -M docx-body-script=0.7000:0.4800:0.1396:1.0000:0.2358 --lua-filter={FILTER_PATH} /tmp/test/script.md"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    assert "\n\\pdcScriptFont{0.7000}{0.4800}{0.1396}{1.0000}{0.2358}\n" in output.decode(), output.decode()
+
+
+def test_a_body_script_field_which_could_carry_latex_is_left_out(test_parameters: TestParameters):
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", "mkdir -p /tmp/test && printf 'x^1^\\n' > /tmp/test/script.md"])
+    command = f"{PANDOC_PATH} -f markdown -t latex -s -M 'docx-body-script=1:2:3:4:5}}\\input{{y}}' --lua-filter={FILTER_PATH} /tmp/test/script.md"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    assert "\\pdcScriptFont{" not in output.decode().replace("\\newcommand{\\pdcScriptFont}", ""), output.decode()
+
+
+def _scripts_docx(font: str, half_points: int) -> bytes:
+    """A paragraph in the font and size given with a superscript and a subscript, as Word writes them."""
+    document = Document()
+    style = document.styles["Normal"]
+    style.font.name = font
+    style.font.size = Pt(half_points / 2)
+    paragraph = document.add_paragraph("Base")
+    paragraph.add_run("X").font.superscript = True
+    paragraph.add_run(" low")
+    paragraph.add_run("Z").font.subscript = True
+    docx = io.BytesIO()
+    document.save(docx)
+    return docx.getvalue()
+
+
+def _character(pdf: bytes, text: str) -> tuple[float, float]:
+    """The size of the first character given and the height of its baseline, in points."""
+    page = pdfium.PdfDocument(pdf)[0]
+    textpage = page.get_textpage()
+    found = textpage.search(text, match_case=True).get_next()
+    assert found, text
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    return pdfium_c.FPDFText_GetFontSize(textpage.raw, found[0]), y.value
+
+
+def test_scripts_take_the_size_and_the_shift_word_gives_them(test_parameters: TestParameters):
+    """DejaVu Sans at 11 points, as Word for Mac sets it: scripts of 7.5 points, 3.5 up and 0.83 down.
+
+    Word sets a script at 0.7 of the size, the size of a script of the font, rounded to a half point. The
+    superscript rises until its ascent meets the ascent of the text, an em, and the subscript sinks until the
+    descents meet, 0.236 of the size.
+    """
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", _scripts_docx("DejaVu Sans", 22), mime)})
+    assert response.status_code == 200, response.text
+    _, base = _character(response.content, "Base")
+    size, superscript = _character(response.content, "X")
+    _, subscript = _character(response.content, "Z")
+    assert abs(size - 7.5) < 0.05, size
+    assert abs(superscript - base - 3.5) < 0.05, superscript - base
+    assert abs(base - subscript - 0.825) < 0.05, base - subscript
+
+
+def test_a_script_takes_a_half_point_of_word(test_parameters: TestParameters):
+    """Word rounds a script to a half PostScript point: DejaVu Sans at 12.5 points has scripts of 8.5, not 9 points of TeX."""
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", _scripts_docx("DejaVu Sans", 25), mime)})
+    assert response.status_code == 200, response.text
+    size, _ = _character(response.content, "X")
+    assert abs(size - 8.5) < 0.05, size
+
+
+def test_a_paragraph_may_start_with_a_script(test_parameters: TestParameters):
+    """A superscript first in a paragraph starts the paragraph, as a letter does.
+
+    A body font that is not installed gives the paragraph no strut, so the script of a run is first.
+    """
+    document = Document()
+    document.styles["Normal"].font.name = "No Such Font"
+    paragraph = document.add_paragraph()
+    script = paragraph.add_run("1")
+    script.font.superscript = True
+    script.font.name = "DejaVu Sans"
+    paragraph.add_run(" Source")
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text[-300:]

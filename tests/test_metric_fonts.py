@@ -152,3 +152,12 @@ def test_build_writes_each_style_from_its_source(tmp_path: Path, word: TTFont, s
 
 def test_without_a_command_it_shows_how_to_call_it():
     assert metric_fonts.main([]) == 2
+
+
+def test_the_scripts_of_the_open_font_are_the_scripts_of_word(word: TTFont, source: TTFont):
+    """Word sizes and shifts a superscript and a subscript by the OS/2 table of its font."""
+    os2 = word["OS/2"]
+    os2.ySuperscriptYSize, os2.ySuperscriptYOffset, os2.ySubscriptYSize, os2.ySubscriptYOffset = 1229, 717, 1229, 154
+    metric_fonts.apply_metrics(source, metric_fonts.word_metrics(word, source))
+    scripts = tuple(getattr(source["OS/2"], name) for name in metric_fonts.SCRIPTS)
+    assert scripts == tuple(round(value * 1000 / 2048) for value in (1229, 717, 1229, 154))

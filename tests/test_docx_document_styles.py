@@ -25,9 +25,11 @@ NORMAL = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w
 BODY_TEXT = '<w:style w:type="paragraph" w:styleId="BodyText"><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="180" w:after="180"/></w:pPr></w:style>'
 
 
-def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>", numbering: str | None = None) -> bytes:
+def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>", numbering: str | None = None, footnotes: str | None = None) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as package:
+        if footnotes is not None:
+            package.writestr("word/footnotes.xml", f"<w:footnotes {W}>{footnotes}</w:footnotes>")
         if numbering is not None:
             package.writestr("word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>")
         package.writestr("word/document.xml", f"<w:document {W}><w:body>{section}</w:body></w:document>")
@@ -56,11 +58,13 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
     docx_document_styles.gap_ratio.cache_clear()
+    docx_document_styles.script_ratios.cache_clear()
     monkeypatch.setattr(subprocess, "run", missing)
     yield
     docx_document_styles.line_ratio.cache_clear()
     docx_document_styles.ascent_ratio.cache_clear()
     docx_document_styles.gap_ratio.cache_clear()
+    docx_document_styles.script_ratios.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -321,8 +325,8 @@ def test_a_colour_which_is_no_hex_colour_is_left_out():
     assert "color" not in _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + heading))["docx-style-Heading1"])
 
 
-def _font_file(path, ascent: int, descent: int, line_gap: int) -> str:
-    """A font of 1000 units an em with the hhea metrics given."""
+def _font_file(path, ascent: int, descent: int, line_gap: int, scripts: tuple[int, int, int] | None = None) -> str:
+    """A font of 1000 units an em with the hhea metrics given, and the size, raise and drop of its scripts."""
     from fontTools.fontBuilder import FontBuilder
     from fontTools.pens.ttGlyphPen import TTGlyphPen
 
@@ -333,7 +337,8 @@ def _font_file(path, ascent: int, descent: int, line_gap: int) -> str:
     builder.setupHorizontalMetrics({".notdef": (500, 0)})
     builder.setupHorizontalHeader(ascent=ascent, descent=descent, lineGap=line_gap)
     builder.setupNameTable({"familyName": "Test", "styleName": "Regular"})
-    builder.setupOS2()
+    size, lift, drop = scripts or (0, 0, 0)
+    builder.setupOS2(ySuperscriptYSize=size, ySuperscriptYOffset=lift, ySubscriptYSize=size, ySubscriptYOffset=drop)
     builder.setupPost()
     file = path / "test.ttf"
     builder.save(str(file))
@@ -402,6 +407,11 @@ def test_a_heading_gets_the_line_of_its_size(font_metrics):
 
 def test_a_heading_gets_the_ascent_of_its_font(font_metrics):
     assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "20"
+
+
+def test_a_heading_gets_the_scripts_of_its_font(script_metrics):
+    """Apart by slashes: a colon parts the name of a field from its value."""
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["script"] == "0.6500/0.4770/0.1380/1.0790/0.2510"
 
 
 def test_a_font_without_metrics_gets_no_ascent(monkeypatch: pytest.MonkeyPatch):
@@ -602,6 +612,60 @@ def test_the_fonts_of_the_runs_come_with_their_line(font_metrics):
     """By the hex of the name of the family, as docx_color_pre_process names it; a font the container lacks is left out."""
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=RUN_IN_A_FONT))
     assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":1.0000:1.2500"
+
+
+@pytest.fixture
+def script_metrics(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """fc-match answers with a font whose scripts are 0.65 of its size, 0.477 up and 0.138 down."""
+    file = _font_file(tmp_path, 1079, -251, 0, (650, 477, 138))
+    docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
+    docx_document_styles.script_ratios.cache_clear()
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
+    yield
+    docx_document_styles.line_ratio.cache_clear()
+    docx_document_styles.ascent_ratio.cache_clear()
+    docx_document_styles.gap_ratio.cache_clear()
+    docx_document_styles.script_ratios.cache_clear()
+
+
+def test_the_body_font_passes_how_word_sets_its_scripts(script_metrics):
+    """The size and the shifts of the OS/2 table, the hhea ascent and the descent, as shares of the size."""
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))["docx-body-script"] == "0.6500:0.4770:0.1380:1.0790:0.2510"
+
+
+def test_a_superscript_rises_to_an_em_at_the_least(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """Word sets the ascent of a superscript an em above the baseline in a font of a lower ascent: Arial, Times New Roman."""
+    file = _font_file(tmp_path, 905, -212, 33, (650, 477, 138))
+    docx_document_styles.script_ratios.cache_clear()
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
+    try:
+        assert docx_document_styles.script_ratios("Minor Serif") == pytest.approx((0.65, 0.477, 0.138, 1.0, 0.212))
+    finally:
+        docx_document_styles.script_ratios.cache_clear()
+
+
+def test_the_fonts_of_the_runs_come_with_their_scripts(script_metrics):
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, section=RUN_IN_A_FONT))
+    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":1.0790:1.3300:0.6500:0.4770:0.1380:1.0790:0.2510"
+
+
+def test_a_font_without_script_metrics_passes_none(font_metrics):
+    """A font which gives its scripts no size keeps the scripts of LaTeX."""
+    docx_document_styles.script_ratios.cache_clear()
+    try:
+        assert "docx-body-script" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+        assert docx_document_styles.script_ratios(None) is None
+    finally:
+        docx_document_styles.script_ratios.cache_clear()
+
+
+def test_the_fonts_of_the_runs_of_the_notes_come_with_their_scripts(script_metrics):
+    """A font only a footnote names is set as Word sets it, as a font of the body is."""
+    footnote = '<w:footnote w:id="1"><w:p><w:r><w:rPr><w:rFonts w:ascii="minor serif"/></w:rPr><w:t>note</w:t></w:r></w:p></w:footnote>'
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, footnotes=footnote))
+    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":1.0790:1.3300:0.6500:0.4770:0.1380:1.0790:0.2510"
 
 
 def test_a_document_without_fonts_of_runs_passes_none():

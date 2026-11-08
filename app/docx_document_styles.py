@@ -42,6 +42,8 @@ DOCUMENT_PART = "word/document.xml"
 THEME_PART = "word/theme/theme1.xml"
 SETTINGS_PART = "word/settings.xml"
 NUMBERING_PART = "word/numbering.xml"
+# The parts besides the document whose runs pandoc sets, each with the fonts docx_color_pre_process names
+RUN_PARTS = ("word/footnotes.xml", "word/endnotes.xml", "word/comments.xml")
 # The LaTeX counter command of each number format of Word a heading may carry.
 NUMBER_FORMATS = {"decimal": "arabic", "lowerLetter": "alph", "upperLetter": "Alph", "lowerRoman": "roman", "upperRoman": "Roman"}
 # The text of a number: its level placeholders, digits and the punctuation around them.
@@ -242,7 +244,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
-            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART, NUMBERING_PART) if name in package.namelist()}
+            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART, NUMBERING_PART, *RUN_PARTS) if name in package.namelist()}
     except _UNREADABLE_DOCX:
         return []
     styles = parse_xml(parts[STYLES_PART]) if STYLES_PART in parts else None
@@ -256,6 +258,9 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     chain = _style_chain(styles, BODY_STYLE)
     font = _font(chain, styles, theme)
     options = _font_options(font, _math_font(settings)) + _size_options(chain, styles, font, numbering, document)
+    script = script_field(font)
+    if script is not None:
+        options += ["-M", f"docx-body-script={script}"]
     indents = _list_indents(numbering, document)
     if indents:
         options += ["-M", "docx-list-indents=" + ",".join(f"{left:g}:{hanging:g}" for left, hanging in indents)]
@@ -270,24 +275,24 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
-    return options + _run_font_options(document) + _display_options(styles, theme, numbering)
+    runs = [part for part in (document, *(parse_xml(parts[name]) for name in RUN_PARTS if name in parts)) if part is not None]
+    return options + _run_font_options(runs) + _display_options(styles, theme, numbering)
 
 
-def _run_font_options(document: Element | None) -> list[str]:
-    """The ascent and the single line of each installed font a run of the body names, by the hex of its name.
+def _run_font_options(parts: list[Element]) -> list[str]:
+    """The ascent, the single line and the script ratios of each installed font a run names, by the hex of its name.
 
     Word sets a line in the font of its text: a paragraph of runs in another font than its style's gets the line
     of that font, see filters/docx/docx_colors_to_latex.lua. The hex is how docx_color_pre_process names the font.
     """
-    if document is None:
-        return []
-    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for fonts in document.iter(_w("rFonts"))}
+    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for part in parts for fonts in part.iter(_w("rFonts"))}
     metrics = []
     families = {family for family in (installed_family(name) for name in names) if family is not None}
     for family in sorted(families):
         top = top_ratio(family)
         if top is not None:
-            metrics.append(f"{family.encode().hex().upper()}:{top:.4f}:{line_ratio(family):.4f}")
+            script = script_field(family)
+            metrics.append(f"{family.encode().hex().upper()}:{top:.4f}:{line_ratio(family):.4f}" + (f":{script}" if script else ""))
     return ["-M", "docx-run-fonts=" + ",".join(metrics)] if metrics else []
 
 
@@ -477,6 +482,10 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, number
         top = top_ratio(font)
         if top is not None:
             fields["ascent"] = f"{size / 2 * top:.4g}"
+    script = script_field(font)
+    if "font" in fields and script is not None:
+        # Apart by slashes: a colon parts the name of a field from its value
+        fields["script"] = script.replace(":", "/")
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
     color = word_color(_first(chain, styles, "rPr", "color"), theme)
@@ -608,14 +617,19 @@ def _heading_number(chain: list[Element], styles: Element, numbering: Element | 
     return {"number": number, "numberhang": f"{hanging / TWIPS_PER_POINT:g}"}
 
 
+def _font_file(family: str) -> Any:
+    """The regular font of an installed family, as fontTools reads it."""
+    # fc-match of the image, given an installed family as one argument
+    result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607
+    from fontTools.ttLib import TTFont  # noqa: PLC0415 - only a document in an installed font needs it
+
+    return TTFont(result.stdout.strip(), lazy=True, fontNumber=0)
+
+
 def _hhea(family: str) -> tuple[float, float, float] | None:
     """The ascent, the single line and the line gap of a family as shares of its size, from its hhea table; None when unreadable."""
     try:
-        # fc-match of the image, given an installed family as one argument
-        result = subprocess.run(["fc-match", "-f", "%{file}", f"{family}:style=Regular"], capture_output=True, text=True, check=True, timeout=30)  # noqa: S603, S607
-        from fontTools.ttLib import TTFont  # noqa: PLC0415 - only a document in an installed font needs it
-
-        font = TTFont(result.stdout.strip(), lazy=True, fontNumber=0)
+        font = _font_file(family)
         # fontTools makes the fields of a table at run time, which a type checker does not see
         hhea: Any = font["hhea"]
         head: Any = font["head"]
@@ -658,6 +672,38 @@ def top_ratio(family: str | None) -> float | None:
     """
     ascent = ascent_ratio(family)
     return ascent + gap_ratio(family) if ascent is not None else None
+
+
+@functools.cache
+def script_ratios(family: str | None) -> tuple[float, float, float, float, float] | None:
+    """How Word sets a superscript and a subscript of a family, as shares of its size; None without the metrics.
+
+    The size of a script, the raise of a superscript and the drop of a subscript of the OS/2 table, the hhea ascent,
+    at least an em, and the hhea descent. Word sets a script at that size, rounded to a half point, raised so far
+    that its ascent meets the ascent of the text, and lowered so far that the descents meet, never further than the
+    font asks for. Measured with Word for Mac in twelve fonts from 9 to 72 points.
+    """
+    if family is None:
+        return None
+    try:
+        font = _font_file(family)
+        # fontTools makes the fields of a table at run time, which a type checker does not see
+        os2: Any = font["OS/2"]
+        hhea: Any = font["hhea"]
+        em = font["head"].unitsPerEm
+    except Exception:  # noqa: BLE001 - a font fontTools cannot read gets the scripts of LaTeX
+        logger.info("docx_document_styles: no script metrics for %r", family)
+        return None
+    if os2.ySuperscriptYSize <= 0:
+        return None
+    lift, drop = max(os2.ySuperscriptYOffset, 0) / em, max(os2.ySubscriptYOffset, 0) / em
+    return os2.ySuperscriptYSize / em, lift, drop, max(hhea.ascent / em, 1.0), -hhea.descent / em
+
+
+def script_field(family: str | None) -> str | None:
+    """The script ratios of a family as the metadata carries them, five numbers apart by colons."""
+    ratios = script_ratios(family)
+    return ":".join(f"{ratio:.4f}" for ratio in ratios) if ratios is not None else None
 
 
 def _line_multiple(chain: list[Element], styles: Element) -> float | None:

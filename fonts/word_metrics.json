@@ -584,7 +584,11 @@
     "sTypoLineGap": 0,
     "sxHeight": 976,
     "usWinAscent": 2068,
-    "usWinDescent": 563
+    "usWinDescent": 563,
+    "ySubscriptYOffset": 154,
+    "ySubscriptYSize": 1229,
+    "ySuperscriptYOffset": 717,
+    "ySuperscriptYSize": 1229
    },
    "hhea": {
     "ascent": 1923,
@@ -1179,7 +1183,11 @@
     "sTypoLineGap": 0,
     "sxHeight": 976,
     "usWinAscent": 2068,
-    "usWinDescent": 563
+    "usWinDescent": 563,
+    "ySubscriptYOffset": 154,
+    "ySubscriptYSize": 1229,
+    "ySuperscriptYOffset": 717,
+    "ySuperscriptYSize": 1229
    },
    "hhea": {
     "ascent": 1923,
@@ -1774,7 +1782,11 @@
     "sTypoLineGap": 0,
     "sxHeight": 974,
     "usWinAscent": 2068,
-    "usWinDescent": 563
+    "usWinDescent": 563,
+    "ySubscriptYOffset": 154,
+    "ySubscriptYSize": 1229,
+    "ySuperscriptYOffset": 717,
+    "ySuperscriptYSize": 1229
    },
    "hhea": {
     "ascent": 1923,
@@ -2369,7 +2381,11 @@
     "sTypoLineGap": 0,
     "sxHeight": 974,
     "usWinAscent": 2068,
-    "usWinDescent": 563
+    "usWinDescent": 563,
+    "ySubscriptYOffset": 154,
+    "ySubscriptYSize": 1229,
+    "ySuperscriptYOffset": 717,
+    "ySuperscriptYSize": 1229
    },
    "hhea": {
     "ascent": 1923,
@@ -2964,7 +2980,11 @@
     "sTypoLineGap": 0,
     "sxHeight": 976,
     "usWinAscent": 2068,
-    "usWinDescent": 563
+    "usWinDescent": 563,
+    "ySubscriptYOffset": 154,
+    "ySubscriptYSize": 1229,
+    "ySuperscriptYOffset": 717,
+    "ySuperscriptYSize": 1229
    },
    "hhea": {
     "ascent": 1923,
@@ -3559,7 +3579,11 @@
     "sTypoLineGap": 0,
     "sxHeight": 974,
     "usWinAscent": 2068,
-    "usWinDescent": 563
+    "usWinDescent": 563,
+    "ySubscriptYOffset": 154,
+    "ySubscriptYSize": 1229,
+    "ySuperscriptYOffset": 717,
+    "ySuperscriptYSize": 1229
    },
    "hhea": {
     "ascent": 1923,
@@ -4379,7 +4403,11 @@
     "sTypoLineGap": 198,
     "sxHeight": 992,
     "usWinAscent": 1878,
-    "usWinDescent": 449
+    "usWinDescent": 449,
+    "ySubscriptYOffset": 155,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 542,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 1878,
@@ -5199,7 +5227,11 @@
     "sTypoLineGap": 198,
     "sxHeight": 1015,
     "usWinAscent": 1878,
-    "usWinDescent": 449
+    "usWinDescent": 449,
+    "ySubscriptYOffset": 155,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 542,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 1878,
@@ -6019,7 +6051,11 @@
     "sTypoLineGap": 198,
     "sxHeight": 1009,
     "usWinAscent": 1878,
-    "usWinDescent": 449
+    "usWinDescent": 449,
+    "ySubscriptYOffset": 155,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 542,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 1878,
@@ -6839,7 +6875,11 @@
     "sTypoLineGap": 198,
     "sxHeight": 986,
     "usWinAscent": 1878,
-    "usWinDescent": 449
+    "usWinDescent": 449,
+    "ySubscriptYOffset": 155,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 542,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 1878,
@@ -7212,7 +7252,11 @@
     "sTypoLineGap": 269,
     "sxHeight": 1024,
     "usWinAscent": 2210,
-    "usWinDescent": 514
+    "usWinDescent": 514,
+    "ySubscriptYOffset": 283,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 977,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 2210,
@@ -7585,7 +7629,11 @@
     "sTypoLineGap": 269,
     "sxHeight": 1024,
     "usWinAscent": 2210,
-    "usWinDescent": 514
+    "usWinDescent": 514,
+    "ySubscriptYOffset": 283,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 977,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 2210,
@@ -7958,7 +8006,11 @@
     "sTypoLineGap": 269,
     "sxHeight": 1024,
     "usWinAscent": 2210,
-    "usWinDescent": 514
+    "usWinDescent": 514,
+    "ySubscriptYOffset": 283,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 977,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 2210,
@@ -8331,7 +8383,11 @@
     "sTypoLineGap": 269,
     "sxHeight": 1024,
     "usWinAscent": 2210,
-    "usWinDescent": 514
+    "usWinDescent": 514,
+    "ySubscriptYOffset": 283,
+    "ySubscriptYSize": 1331,
+    "ySuperscriptYOffset": 977,
+    "ySuperscriptYSize": 1331
    },
    "hhea": {
     "ascent": 2210,
