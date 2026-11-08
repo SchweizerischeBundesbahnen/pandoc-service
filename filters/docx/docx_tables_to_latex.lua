@@ -1299,8 +1299,8 @@ local function row_lines(rows)
         end
       end
     end
-    -- A row which goes out a line at a time sets the line of each piece itself
-    if all and highest > 0 and not row.attributes[WRAPPED] then
+    -- A row which goes out a line at a time keeps the line for its first one, see \pdcWrapBegin
+    if all and highest > 0 then
       lines[index] = highest
       any = true
     end

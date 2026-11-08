@@ -344,6 +344,19 @@ def test_the_last_line_of_a_cell_is_as_deep_as_the_font_of_its_text(test_paramet
     assert latex.count("depth 3.9445bp") == 2, "a cell of the body text keeps the strut of the body"
 
 
+def test_a_row_which_goes_out_a_line_at_a_time_starts_at_the_line_of_its_text(test_parameters: TestParameters):
+    """Its first line is as high as the font of its cells, not of the body, as in any other row."""
+    strut = "\\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 10.3308bp depth 3.0993bp width 0pt}"
+
+    def run(text: str) -> str:
+        return f'RawInline (Format "latex") "{{\\\\fontsize{{11bp}}{{13.2bp}}\\\\selectfont {strut}", Str "{text}", RawInline (Format "latex") "}}"'
+
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}", {run("Label")}'), _cell(run("Text"))])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "\\pdcWrapBegin" in latex, latex
+    assert "\\pdcRowLine{10.3308bp}" in latex, latex
+
+
 def test_a_row_of_paragraphs_goes_out_a_line_at_a_time_which_a_page_may_break(test_parameters: TestParameters):
     """Word breaks a row between any two lines of its cells; longtable only between rows."""
     native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}Label"'), _cell('Str "a", Space, Str "long", Space, Str "text"')])
