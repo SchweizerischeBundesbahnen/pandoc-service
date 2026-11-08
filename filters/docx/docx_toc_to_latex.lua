@@ -13,8 +13,11 @@
 --
 -- Both are set as Word sets its TOC styles: in the font and colour of the
 -- body, without a heading of their own, a line apart with 5pt after it, a
--- leader of close dots to the page number at the right margin, and each level
+-- leader of dots to the page number at the right tab, which Word puts
+-- 10 twips short of the right margin, and each level
 -- of the table of contents indented 12pt further, down to the ninth.
+-- An entry of a heading numbered by its style starts with the number, and its
+-- text follows at the tab Word sets, see \pdcTocNumber.
 -- The empty line Word leaves after a table of contents, see
 -- app/docx_toc_pre_process.py, stands 5pt below the last entry: Word puts no
 -- more than the larger of the space after one paragraph and before the next.
@@ -26,26 +29,68 @@ local CONTENTS = "PandocToc__CONTENTS_"
 local ENTRY = "PandocToc__ENTRY"
 local MARKER = "PDCPAGEREF"
 
-local PREAMBLE = [[
-\usepackage{titletoc}
-\makeatletter
-\newcommand{\pdcTocLeader}{\leaders\hbox to 0.275em{\hss.\hss}\hfill}
-\newcommand{\pdcTableOfContents}[1]{\par\begingroup\hypersetup{linkcolor=black}\setcounter{tocdepth}{#1}\setlength{\parskip}{0pt}\@starttoc{toc}\endgroup\vspace{-\parskip}}
-\newcommand{\pdcTocEntryBegin}{\par\begingroup\hypersetup{linkcolor=black}\setlength{\parskip}{0pt}}
-\newcommand{\pdcTocEntryEnd}{\par\endgroup\vspace{5pt}}
-\newcommand{\pdcTocPage}[1]{\nobreak\pdcTocLeader\nobreak\pageref{#1}}
-\makeatother
-\contentsmargin{0pt}
-\titlecontents{section}[0pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{subsection}[12pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{subsubsection}[24pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{paragraph}[36pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{subparagraph}[48pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{pdcHeadingF}[60pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{pdcHeadingG}[72pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{pdcHeadingH}[84pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-\titlecontents{pdcHeadingI}[96pt]{}{}{}{\pdcTocLeader\thecontentspage}[\vspace{5pt}]
-]]
+-- Word measures the number of an entry in its own default font, Aptos 12pt,
+-- whatever the font of the document: the advance widths of Aptos, in 2048ths
+-- of its size, of what a number can hold besides its digits, 1094 each.
+local APTOS_WIDTHS = {
+  ["."] = 585, ["-"] = 697, ["("] = 600, [")"] = 600,
+  a = 1088, b = 1149, c = 1075, d = 1148, e = 1079, f = 617, g = 992, h = 1129, i = 489,
+  j = 489, k = 997, l = 533, m = 1747, n = 1129, o = 1130, p = 1149, q = 1148, r = 685,
+  s = 995, t = 662, u = 1144, v = 926, w = 1476, x = 906, y = 926, z = 897,
+  A = 1207, B = 1237, C = 1418, D = 1405, E = 1139, F = 1074, G = 1451, H = 1448, I = 533,
+  J = 678, K = 1164, L = 1023, M = 1618, N = 1446, O = 1500, P = 1182, Q = 1500, R = 1241,
+  S = 1159, T = 980, U = 1395, V = 1199, W = 1827, X = 1132, Y = 1105, Z = 1056,
+}
+local APTOS_DIGIT = 1094
+
+local function aptos_widths()
+  local keys = {}
+  for char in pairs(APTOS_WIDTHS) do
+    keys[#keys + 1] = char
+  end
+  table.sort(keys)
+  local defs = {}
+  for _, char in ipairs(keys) do
+    defs[#defs + 1] = string.format("\\@namedef{pdc@tocw@%s}{%d}", char, APTOS_WIDTHS[char])
+  end
+  return table.concat(defs)
+end
+
+-- \pdcTocNumber{indent}{number}: the number of an entry, in a box to the tab
+-- Word sets after it. Word puts the tab at the first step of a grid of 12pt from
+-- the margin which leaves 12pt after the number, as wide as Aptos 12pt sets it.
+-- It does not measure a space. An empty number, of a level which only counts
+-- for the numbers below it, sets nothing.
+local function tableofcontents_preamble()
+  local levels = { "section", "subsection", "subsubsection", "paragraph", "subparagraph", "pdcHeadingF", "pdcHeadingG", "pdcHeadingH", "pdcHeadingI" }
+  local lines = {
+    "\\usepackage{titletoc}",
+    "\\makeatletter",
+    -- Word sets the dots of a leader a period apart, on a grid of periods from the left edge of the page, each
+    -- dot wholly between the text and the page. TeX aligns the boxes of a leader to the line, at the margin:
+    -- each dot moves within its box by what the margin leaves of a period, and the leader by as much back.
+    -- xdvipdfmx writes the dots and what follows them into one text object of the PDF, and the rounding of
+    -- each step adds up to a point past the end of the leader: an empty special starts the page in its own
+    "\\newbox\\pdc@dot\\newdimen\\pdc@dotshift",
+    "\\newcommand{\\pdcTocLeader}{\\setbox\\pdc@dot\\hbox{.}\\pdc@dotshift=\\dimexpr1in+\\hoffset+\\oddsidemargin-\\numexpr(2*\\dimexpr1in+\\hoffset+\\oddsidemargin\\relax-\\wd\\pdc@dot)/(2*\\wd\\pdc@dot)\\relax\\wd\\pdc@dot\\relax\\ifdim\\pdc@dotshift<\\z@\\advance\\pdc@dotshift\\wd\\pdc@dot\\fi\\ifdim\\pdc@dotshift>\\z@\\pdc@dotshift=\\dimexpr\\wd\\pdc@dot-\\pdc@dotshift\\relax\\fi\\kern-\\pdc@dotshift\\leaders\\hbox to\\wd\\pdc@dot{\\kern\\pdc@dotshift\\special{pdf:content }\\copy\\pdc@dot\\kern-\\pdc@dotshift\\hss}\\hfill\\kern\\pdc@dotshift\\special{pdf:content }}",
+    "\\newcommand{\\pdcTableOfContents}[1]{\\par\\begingroup\\hypersetup{linkcolor=black}\\setcounter{tocdepth}{#1}\\setlength{\\parskip}{0pt}\\@starttoc{toc}\\endgroup\\vspace{-\\parskip}}",
+    "\\newcommand{\\pdcTocEntryBegin}{\\par\\begingroup\\hypersetup{linkcolor=black}\\setlength{\\parskip}{0pt}}",
+    "\\newcommand{\\pdcTocEntryEnd}{\\par\\endgroup\\vspace{5pt}}",
+    "\\newcommand{\\pdcTocPage}[1]{\\nobreak\\pdcTocLeader\\nobreak\\pageref{#1}\\kern0.5bp}",
+    aptos_widths(),
+    "\\newcount\\pdc@tocn",
+    string.format("\\def\\pdc@tocw#1{\\ifx\\relax#1\\else\\advance\\pdc@tocn\\ifcsname pdc@tocw@#1\\endcsname\\csname pdc@tocw@#1\\endcsname\\else %d\\fi\\relax\\expandafter\\pdc@tocw\\fi}", APTOS_DIGIT),
+    "\\newcommand{\\pdcTocNumber}[2]{\\edef\\pdc@tocl{#2}\\ifx\\pdc@tocl\\@empty\\else\\pdc@tocn=0 \\expandafter\\pdc@tocw\\pdc@tocl\\relax"
+      .. "\\hbox to \\dimexpr\\numexpr(\\dimexpr#1+12bp*\\pdc@tocn/2048+12bp\\relax+\\dimexpr6bp\\relax-1)/\\dimexpr12bp\\relax\\relax\\dimexpr12bp\\relax-#1\\relax{\\pdc@tocl\\hss}\\fi}",
+    "\\makeatother",
+    "\\contentsmargin{0pt}",
+  }
+  for depth, command in ipairs(levels) do
+    local indent = string.format("%dpt", 12 * (depth - 1))
+    lines[#lines + 1] = string.format("\\titlecontents{%s}[%s]{}{\\pdcTocNumber{%s}{\\thecontentslabel}}{}{\\pdcTocLeader\\thecontentspage\\kern0.5bp}[\\vspace{5pt}]", command, indent, indent)
+  end
+  return table.concat(lines, "\n") .. "\n"
+end
 
 local used = false
 
@@ -92,7 +137,7 @@ function Meta(meta)
   if not used then
     return nil
   end
-  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", PREAMBLE) })
+  local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", tableofcontents_preamble()) })
   local existing = meta["header-includes"]
   if existing == nil then
     meta["header-includes"] = pandoc.MetaList({ block })

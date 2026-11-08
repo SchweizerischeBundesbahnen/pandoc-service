@@ -468,6 +468,7 @@ local function headings_preamble(meta, lines)
     deep_levels(lines)
   end
   local numbered = nil
+  local has_number = {}
   for level, heading in ipairs(HEADINGS) do
     local style = style_fields(meta[STYLE_PREFIX .. heading.style], points(meta[SKIP]))
     if style and (deep_used or not heading.deep) then
@@ -478,6 +479,7 @@ local function headings_preamble(meta, lines)
       if style.number then
         -- The number of the numbering of the style, in its hanging indent, as Word sets it
         numbered = level
+        has_number[level] = true
         lines[#lines + 1] = string.format("\\renewcommand{\\the%s}{%s}", heading.command, style.number)
         local label = string.format("\\makebox[%gpt][l]{\\the%s}", style.number_hang, heading.command)
         if style.number_hang == 0 then
@@ -493,6 +495,12 @@ local function headings_preamble(meta, lines)
   if numbered then
     -- The template numbers no heading; a level of a numbered style and those above it count
     lines[#lines + 1] = string.format("\\AtBeginDocument{\\setcounter{secnumdepth}{%d}}", numbered)
+    -- A level above without a number of its own only counts: its entry in a table of contents has no number
+    for level = 1, numbered - 1 do
+      if not has_number[level] then
+        lines[#lines + 1] = string.format("\\renewcommand{\\the%s}{}", HEADINGS[level].command)
+      end
+    end
   end
 end
 

@@ -7,11 +7,16 @@ end-to-end test converts a DOCX with a table of contents through the service.
 
 from __future__ import annotations
 
+import ctypes
 import io
+import re
 
+import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from docx import Document
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls, qn
+from docx.shared import Pt
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -58,6 +63,7 @@ def test_an_entry_gets_its_page_and_the_leader(test_parameters: TestParameters):
     assert "\\pdcTocPage{_Toc1}" in body
     assert "\\pdcTocEntryEnd" in body
     assert "PDCPAGEREF" not in body
+    assert "\\pageref{#1}\\kern0.5bp}" in latex, "the page ends at the right tab of Word, 0.5pt short of the margin"
 
 
 def test_a_document_without_a_table_of_contents_is_left_as_it_is(test_parameters: TestParameters):
@@ -107,3 +113,131 @@ def test_the_table_of_contents_holds_the_nine_levels_of_word(test_parameters: Te
     text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(response.content)).pages)
     for level in range(1, 10):
         assert text.count(f"Heading of level {level}") == 2, text
+
+
+def _numbered_heading_styles(document, texts: dict[int, str]) -> None:
+    """Number the heading styles of the levels given through the numbering of the styles, with the text given for each.
+
+    The levels above the deepest one given count in decimal, without a style.
+    """
+    numbering = document.part.numbering_part.element
+    levels = ""
+    for level in range(1, max(texts) + 1):
+        style = f'<w:pStyle w:val="Heading{level}"/>' if level in texts else ""
+        text = texts.get(level, f"%{level}")
+        levels += f'<w:lvl w:ilvl="{level - 1}"><w:start w:val="1"/><w:numFmt w:val="decimal"/>{style}<w:lvlText w:val="{text}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="432" w:hanging="432"/></w:pPr></w:lvl>'
+    numbering.insert(0, parse_xml(f'<w:abstractNum {nsdecls("w")} w:abstractNumId="90"><w:multiLevelType w:val="multilevel"/>{levels}</w:abstractNum>'))
+    numbering.append(parse_xml(f'<w:num {nsdecls("w")} w:numId="90"><w:abstractNumId w:val="90"/></w:num>'))
+    for level in texts:
+        style = document.styles[f"Heading {level}"].element.get_or_add_pPr()
+        style.insert(0, parse_xml(f'<w:numPr {nsdecls("w")}><w:ilvl w:val="{level - 1}"/><w:numId w:val="90"/></w:numPr>'))
+
+
+def _toc_text_x(test_parameters: TestParameters, texts: dict[int, str], headings: list[tuple[int, str]]) -> float:
+    """How far right of the margin the first entry of the table of contents sets the text of its heading."""
+    document = Document()
+    _toc_field_paragraph(document)
+    _numbered_heading_styles(document, texts)
+    for level, text in headings:
+        document.add_heading(text, level=level)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    found = textpage.search(headings[0][1], match_case=True).get_next()
+    assert found, headings[0][1]
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    return x.value - document.sections[0].left_margin.pt
+
+
+def test_an_entry_of_a_numbered_heading_style_sets_its_text_at_the_tab_of_word(test_parameters: TestParameters):
+    """Word sets the number, then a tab 12pt past its width in Aptos 12pt, on a grid of 12pt: 24pt for one digit."""
+    assert abs(_toc_text_x(test_parameters, {1: "%1"}, [(1, "Alpha")]) - 24) < 0.3
+
+
+def test_an_entry_of_a_wide_number_sets_its_text_at_a_later_tab(test_parameters: TestParameters):
+    """1.1.1.1.1 is 45.8pt wide in Aptos 12pt: the text goes to 60pt, the first step of the grid past 57.8pt."""
+    assert abs(_toc_text_x(test_parameters, {1: "%1.%1.%1.%1.%1"}, [(1, "Alpha")]) - 60) < 0.3
+
+
+def test_an_entry_of_a_heading_style_without_a_number_has_none(test_parameters: TestParameters):
+    """The level above a numbered style counts for its number, but has no number of its own."""
+    assert abs(_toc_text_x(test_parameters, {2: "%1.%2"}, [(1, "Alpha"), (2, "Beta")])) < 0.3
+
+
+def test_the_page_of_an_entry_ends_at_the_tab_of_word(test_parameters: TestParameters):
+    """Word sets the page at a right tab 10 twips short of the margin, 0.5pt."""
+    document = Document()
+    _toc_field_paragraph(document)
+    document.add_heading("Alpha", level=1)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    page = pdfium.PdfDocument(response.content)[0]
+    textpage = page.get_textpage()
+    text = textpage.get_text_range()
+    # The page of the first entry: the digit after its leader of dots, with or without a space before it
+    found = re.search(r"\.\s*(1)", text)
+    assert found, text
+    index = found.start(1)
+    right = textpage.get_charbox(index, loose=True)[2]
+    section = document.sections[0]
+    assert abs(right - (section.page_width.pt - section.right_margin.pt - 0.5)) < 0.1
+
+
+def test_the_page_of_an_entry_ends_at_the_tab_whatever_its_leader(test_parameters: TestParameters):
+    """The dots of a leader in Carlito put the page of each entry up to 0.65pt off the tab, each by its own amount."""
+    document = Document()
+    document.styles["Normal"].font.name = "Carlito"
+    document.styles["Normal"].font.size = Pt(12)
+    _toc_field_paragraph(document)
+    for text in ("Alpha", "A much longer heading text", "Mid"):
+        document.add_heading(text, level=1)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    text = textpage.get_text_range()
+    pages = [found.start(1) for found in re.finditer(r"\.\s*(1)", text)]
+    assert len(pages) == 3, text
+    section = document.sections[0]
+    tab = section.page_width.pt - section.right_margin.pt - 0.5
+    assert [round(textpage.get_charbox(index, loose=True)[2] - tab, 1) for index in pages] == [0, 0, 0]
+
+
+def test_the_dots_of_a_leader_stand_a_period_apart_on_the_grid_of_word(test_parameters: TestParameters):
+    """Word sets the dots on a grid of periods from the left edge of the page, each wholly between the text and the page.
+
+    A period of Liberation Sans 12pt is 3.334pt: a margin of 72pt is 21.6 periods, so the grid is not the margin's.
+    """
+    period = 569 / 2048 * 12
+    document = Document()
+    document.styles["Normal"].font.name = "Liberation Sans"
+    document.styles["Normal"].font.size = Pt(12)
+    document.sections[0].left_margin = Pt(72)
+    _toc_field_paragraph(document)
+    document.add_heading("Alpha", level=1)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    text = textpage.get_text_range()
+    leader = re.search(r"Alpha\s*(\.+)\s*(1)", text)
+    assert leader, text
+
+    def origin(index: int) -> float:
+        x, y = ctypes.c_double(), ctypes.c_double()
+        pdfium_c.FPDFText_GetCharOrigin(textpage.raw, index, ctypes.byref(x), ctypes.byref(y))
+        return x.value
+
+    dots = [origin(index) for index in range(leader.start(1), leader.end(1))]
+    assert all(abs(x / period - round(x / period)) < 0.01 for x in dots), dots
+    text_end = textpage.get_charbox(leader.start(1) - 1 if text[leader.start(1) - 1] != " " else leader.start(1) - 2, loose=True)[2]
+    page = origin(leader.start(2))
+    assert dots[0] - period < text_end <= dots[0] + 0.01, (text_end, dots[0])
+    assert dots[-1] + period <= page + 0.01 < dots[-1] + 2 * period, (dots[-1], page)
