@@ -167,6 +167,24 @@ def test_an_entry_of_a_heading_style_without_a_number_has_none(test_parameters: 
     assert abs(_toc_text_x(test_parameters, {2: "%1.%2"}, [(1, "Alpha"), (2, "Beta")])) < 0.3
 
 
+def test_a_level_of_the_table_of_contents_is_indented_by_the_size_of_the_body(test_parameters: TestParameters):
+    """Word indents each level of its TOC styles by the size of the body text: 10pt for a body of 10pt."""
+    document = Document()
+    document.styles["Normal"].font.size = Pt(10)
+    _toc_field_paragraph(document)
+    document.add_heading("Alpha", level=2)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    found = textpage.search("Alpha", match_case=True).get_next()
+    assert found
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    assert abs(x.value - document.sections[0].left_margin.pt - 10) < 0.3
+
+
 def test_the_page_of_an_entry_ends_at_the_tab_of_word(test_parameters: TestParameters):
     """Word sets the page at a right tab 10 twips short of the margin, 0.5pt."""
     document = Document()

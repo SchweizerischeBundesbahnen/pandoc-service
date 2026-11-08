@@ -15,7 +15,8 @@
 -- body, without a heading of their own, a line apart with 5pt after it, a
 -- leader of dots to the page number at the right tab, which Word puts
 -- 10 twips short of the right margin, and each level
--- of the table of contents indented 12pt further, down to the ninth.
+-- of the table of contents indented by the size of the body text further,
+-- down to the ninth.
 -- An entry of a heading numbered by its style starts with the number, and its
 -- text follows at the tab Word sets, see \pdcTocNumber.
 -- The empty line Word leaves after a table of contents, see
@@ -82,11 +83,13 @@ local function tableofcontents_preamble()
     string.format("\\def\\pdc@tocw#1{\\ifx\\relax#1\\else\\advance\\pdc@tocn\\ifcsname pdc@tocw@#1\\endcsname\\csname pdc@tocw@#1\\endcsname\\else %d\\fi\\relax\\expandafter\\pdc@tocw\\fi}", APTOS_DIGIT),
     "\\newcommand{\\pdcTocNumber}[2]{\\edef\\pdc@tocl{#2}\\ifx\\pdc@tocl\\@empty\\else\\pdc@tocn=0 \\expandafter\\pdc@tocw\\pdc@tocl\\relax"
       .. "\\hbox to \\dimexpr\\numexpr(\\dimexpr#1+12bp*\\pdc@tocn/2048+12bp\\relax+\\dimexpr6bp\\relax-1)/\\dimexpr12bp\\relax\\relax\\dimexpr12bp\\relax-#1\\relax{\\pdc@tocl\\hss}\\fi}",
+    -- Word indents each level of its TOC styles by the size of the body text
+    "\\newcommand{\\pdcTocIndent}[1]{\\dimexpr\\f@size pt*#1\\relax}",
     "\\makeatother",
     "\\contentsmargin{0pt}",
   }
   for depth, command in ipairs(levels) do
-    local indent = string.format("%dpt", 12 * (depth - 1))
+    local indent = string.format("\\pdcTocIndent{%d}", depth - 1)
     lines[#lines + 1] = string.format("\\titlecontents{%s}[%s]{}{\\pdcTocNumber{%s}{\\thecontentslabel}}{}{\\pdcTocLeader\\thecontentspage\\kern0.5bp}[\\vspace{5pt}]", command, indent, indent)
   end
   return table.concat(lines, "\n") .. "\n"
