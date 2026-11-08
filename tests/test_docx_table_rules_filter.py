@@ -8,12 +8,17 @@ markdown table whose first cell carries the sentinel.
 
 from __future__ import annotations
 
+import ctypes
 import io
 
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
+from docx.shared import Pt
+from PIL import Image
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -569,3 +574,41 @@ def test_a_narrow_column_of_an_absolute_table_keeps_tight_margins(test_parameter
     native = f'[Table ("",[],[]) (Caption Nothing []) [{columns}] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{", ".join(cells)}]]] (TableFoot ("",[],[]) [])]'
     latex = " ".join(_native_latex(test_parameters.container, native).split())
     assert "\\setlength{\\tabcolsep}{3pt}" in latex, latex
+
+
+def _baseline(pdf: bytes, text: str) -> float:
+    """The height of the baseline of the first character of the text given, in points from the top of the page."""
+    page = pdfium.PdfDocument(pdf)[0]
+    textpage = page.get_textpage()
+    found = textpage.search(text, match_case=True).get_next()
+    assert found, text
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    return page.get_height() - y.value
+
+
+def test_the_space_of_a_cell_goes_below_a_picture_lowered_below_the_descent(test_parameters: TestParameters):
+    """A picture of 12 points lowered by 3 makes the line deeper than the descent of Liberation Sans, 2.54 points."""
+    document = Document()
+    normal = document.styles["Normal"]
+    normal.font.name = "Liberation Sans"
+    normal.font.size = Pt(12)
+    normal.paragraph_format.space_after = Pt(10)
+    # The styles of pandoc's reference document, which give a cell without a style the space of Normal
+    document.styles.add_style("Compact", WD_STYLE_TYPE.PARAGRAPH)
+    table = document.add_table(rows=3, cols=1)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    table.rows[0].cells[0].text = "Upper"
+    paragraph = table.rows[1].cells[0].paragraphs[0]
+    paragraph.add_run("Icon ")
+    png = io.BytesIO()
+    Image.new("RGB", (16, 16), (40, 90, 170)).save(png, format="PNG")
+    picture = paragraph.add_run()
+    picture.add_picture(io.BytesIO(png.getvalue()), width=Pt(12), height=Pt(12))
+    picture._r.get_or_add_rPr().append(parse_xml(f'<w:position {nsdecls("w")} w:val="-6"/>'))
+    table.rows[2].cells[0].text = "Lower"
+    pdf = _pdf_of(test_parameters, document)
+    plain = _baseline(pdf, "Icon") - _baseline(pdf, "Upper")
+    lowered = _baseline(pdf, "Lower") - _baseline(pdf, "Icon")
+    assert abs(lowered - plain - (3 - 0.2119 * 12)) < 0.1, (plain, lowered)

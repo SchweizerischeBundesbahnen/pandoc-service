@@ -256,8 +256,12 @@ end
 
 -- The space below the paragraph of a cell without a style, which
 -- docx_document_styles_to_latex defines: Word sets the text at the top of
--- the cell and the space of the Normal style below it.
-local PLAIN_CELL_SPACE = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi"
+-- the cell and the space of the Normal style below it, under the deepest of
+-- its last line, a picture lowered below the descent among them.
+local PLAIN_CELL_SPACE = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dp\\strutbox]{0pt}{0pt}\\vadjust{\\kern\\pdcPlainCellSpace}\\fi"
+-- A cell of the header of a table, which pandoc sets in a minipage on its last line: a space after that line
+-- would put the line on the bottom of the space, so the space goes into the depth of the line
+local PLAIN_HEAD_CELL_SPACE = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi"
 
 -- A cell of Compact paragraphs ends as deep as the row: the last line of a cell
 -- of several lines stands as far above the bottom of the row as a single line.
@@ -650,7 +654,7 @@ local function add_plain_cell_space(rows, raw)
         cell.contents = { pandoc.Plain({ pandoc.RawInline("latex", raw) }) }
       elseif last and (last.t == "Plain" or last.t == "Para") then
         -- Word ends the last line as deep as the font of its text
-        local strut = raw == PLAIN_CELL_SPACE and last_run_strut(last)
+        local strut = (raw == PLAIN_CELL_SPACE or raw == PLAIN_HEAD_CELL_SPACE) and last_run_strut(last)
         if strut then
           last.content:insert(pandoc.RawInline("latex", strut))
         end
@@ -1426,7 +1430,7 @@ function table_pass.Table(tbl)
 
   local cell_end = not layout.cc and PLAIN_CELL_SPACE or COMPACT_CELL_DEPTH
   do
-    add_plain_cell_space(tbl.head.rows, cell_end)
+    add_plain_cell_space(tbl.head.rows, not layout.cc and PLAIN_HEAD_CELL_SPACE or COMPACT_CELL_DEPTH)
     for _, body in ipairs(tbl.bodies) do
       add_plain_cell_space(body.head, cell_end)
       add_plain_cell_space(body.body, cell_end)
