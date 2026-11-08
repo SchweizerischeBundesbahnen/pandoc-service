@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import io
+import re
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
@@ -61,6 +62,7 @@ def test_an_entry_gets_its_page_and_the_leader(test_parameters: TestParameters):
     assert "\\pdcTocPage{_Toc1}" in body
     assert "\\pdcTocEntryEnd" in body
     assert "PDCPAGEREF" not in body
+    assert "\\pageref{#1}\\kern0.5bp}" in latex, "the page ends at the right tab of Word, 0.5pt short of the margin"
 
 
 def test_a_document_without_a_table_of_contents_is_left_as_it_is(test_parameters: TestParameters):
@@ -162,3 +164,24 @@ def test_an_entry_of_a_wide_number_sets_its_text_at_a_later_tab(test_parameters:
 def test_an_entry_of_a_heading_style_without_a_number_has_none(test_parameters: TestParameters):
     """The level above a numbered style counts for its number, but has no number of its own."""
     assert abs(_toc_text_x(test_parameters, {2: "%1.%2"}, [(1, "Alpha"), (2, "Beta")])) < 0.3
+
+
+def test_the_page_of_an_entry_ends_at_the_tab_of_word(test_parameters: TestParameters):
+    """Word sets the page at a right tab 10 twips short of the margin, 0.5pt."""
+    document = Document()
+    _toc_field_paragraph(document)
+    document.add_heading("Alpha", level=1)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    page = pdfium.PdfDocument(response.content)[0]
+    textpage = page.get_textpage()
+    text = textpage.get_text_range()
+    # The page of the first entry: the digit after its leader of dots, with or without a space before it
+    found = re.search(r"\.\s*(1)", text)
+    assert found, text
+    index = found.start(1)
+    right = textpage.get_charbox(index, loose=True)[2]
+    section = document.sections[0]
+    assert abs(right - (section.page_width.pt - section.right_margin.pt - 0.5)) < 0.1

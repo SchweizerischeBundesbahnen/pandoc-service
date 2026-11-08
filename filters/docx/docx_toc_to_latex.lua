@@ -13,7 +13,8 @@
 --
 -- Both are set as Word sets its TOC styles: in the font and colour of the
 -- body, without a heading of their own, a line apart with 5pt after it, a
--- leader of close dots to the page number at the right margin, and each level
+-- leader of close dots to the page number at the right tab, which Word puts
+-- 10 twips short of the right margin, and each level
 -- of the table of contents indented 12pt further, down to the ninth.
 -- An entry of a heading numbered by its style starts with the number, and its
 -- text follows at the tab Word sets, see \pdcTocNumber.
@@ -69,7 +70,7 @@ local function tableofcontents_preamble()
     "\\newcommand{\\pdcTableOfContents}[1]{\\par\\begingroup\\hypersetup{linkcolor=black}\\setcounter{tocdepth}{#1}\\setlength{\\parskip}{0pt}\\@starttoc{toc}\\endgroup\\vspace{-\\parskip}}",
     "\\newcommand{\\pdcTocEntryBegin}{\\par\\begingroup\\hypersetup{linkcolor=black}\\setlength{\\parskip}{0pt}}",
     "\\newcommand{\\pdcTocEntryEnd}{\\par\\endgroup\\vspace{5pt}}",
-    "\\newcommand{\\pdcTocPage}[1]{\\nobreak\\pdcTocLeader\\nobreak\\pageref{#1}}",
+    "\\newcommand{\\pdcTocPage}[1]{\\nobreak\\pdcTocLeader\\nobreak\\pageref{#1}\\kern0.5bp}",
     aptos_widths(),
     "\\newcount\\pdc@tocn",
     string.format("\\def\\pdc@tocw#1{\\ifx\\relax#1\\else\\advance\\pdc@tocn\\ifcsname pdc@tocw@#1\\endcsname\\csname pdc@tocw@#1\\endcsname\\else %d\\fi\\relax\\expandafter\\pdc@tocw\\fi}", APTOS_DIGIT),
@@ -80,7 +81,7 @@ local function tableofcontents_preamble()
   }
   for depth, command in ipairs(levels) do
     local indent = string.format("%dpt", 12 * (depth - 1))
-    lines[#lines + 1] = string.format("\\titlecontents{%s}[%s]{}{\\pdcTocNumber{%s}{\\thecontentslabel}}{}{\\pdcTocLeader\\thecontentspage}[\\vspace{5pt}]", command, indent, indent)
+    lines[#lines + 1] = string.format("\\titlecontents{%s}[%s]{}{\\pdcTocNumber{%s}{\\thecontentslabel}}{}{\\pdcTocLeader\\thecontentspage\\kern0.5bp}[\\vspace{5pt}]", command, indent, indent)
   end
   return table.concat(lines, "\n") .. "\n"
 end
