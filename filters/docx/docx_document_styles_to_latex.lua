@@ -591,6 +591,8 @@ local function display_line()
     -- Word sets a fraction inside a fraction of an equation as large as the outer one, closer to its line.
     -- The rows of an array that far apart whatever they hold, and the array as high as its first row and
     -- as deep as its last: see EQUATION_ARRAY. Word sets the line of an equation that much above it.
+    -- The columns of a matrix stand an em of the body apart, TeX's two \\arraycolsep.
+    open = open .. string.format("\\setlength{\\arraycolsep}{%gbp}", body_size / 2)
     open = open .. "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{"
     local line = ""
     if math_top and math_descent and body_descent then
