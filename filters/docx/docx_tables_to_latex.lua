@@ -1065,13 +1065,11 @@ end
 -- Word sets a table as wide as the line out to the cell margin on both sides, and each column of it
 -- holds the margin on both sides of its text: pandoc shares the padding of the columns out by their
 -- widths, which makes a narrow column too wide. A table of an absolute width is that wide with its
--- margins; a column of it narrower than a twentieth of the line keeps the width pandoc gives it.
+-- margins, however narrow a column: the text of a column narrower than its margins reaches past it.
 local function word_widths(latex, absolute)
   local function width(fraction)
-    if absolute and tonumber(fraction) >= 0.05 then
+    if absolute then
       return string.format("\\dimexpr%s\\linewidth-2\\tabcolsep\\relax", fraction)
-    elseif absolute then
-      return nil
     end
     return string.format("\\dimexpr%s\\linewidth+%s\\tabcolsep+%s\\tabcolsep-2\\tabcolsep\\relax", fraction, fraction, fraction)
   end
@@ -1569,13 +1567,8 @@ function table_pass.Table(tbl)
   -- Written as LaTeX, a table gets the columns of Word; pandoc's table its own
   local nested = tbl.attributes[NESTED] ~= nil
   tbl.attributes[NESTED] = nil
-  -- A table of an absolute width sets each column as wide as Word with Word's margins, when no column is
-  -- narrower than a twentieth of the line; a narrower one keeps tight margins, see word_widths
-  local wide = true
-  for _, colspec in ipairs(tbl.colspecs) do
-    wide = wide and type(colspec[2]) == "number" and colspec[2] >= 0.05
-  end
-  local simple = not grid and not nested and (not layout.aw or wide) and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
+  -- A table of an absolute width sets each column as wide as Word with Word's margins, see word_widths
+  local simple = not grid and not nested and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
   if layout.aw and not grid and not simple then
     -- A group: the table after this one gets the padding the document sets, not 6pt
     before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"
