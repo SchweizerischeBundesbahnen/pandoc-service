@@ -207,3 +207,37 @@ def test_the_page_of_an_entry_ends_at_the_tab_whatever_its_leader(test_parameter
     section = document.sections[0]
     tab = section.page_width.pt - section.right_margin.pt - 0.5
     assert [round(textpage.get_charbox(index, loose=True)[2] - tab, 1) for index in pages] == [0, 0, 0]
+
+
+def test_the_dots_of_a_leader_stand_a_period_apart_on_the_grid_of_word(test_parameters: TestParameters):
+    """Word sets the dots on a grid of periods from the left edge of the page, each wholly between the text and the page.
+
+    A period of Liberation Sans 12pt is 3.334pt: a margin of 72pt is 21.6 periods, so the grid is not the margin's.
+    """
+    period = 569 / 2048 * 12
+    document = Document()
+    document.styles["Normal"].font.name = "Liberation Sans"
+    document.styles["Normal"].font.size = Pt(12)
+    document.sections[0].left_margin = Pt(72)
+    _toc_field_paragraph(document)
+    document.add_heading("Alpha", level=1)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    text = textpage.get_text_range()
+    leader = re.search(r"Alpha\s*(\.+)\s*(1)", text)
+    assert leader, text
+
+    def origin(index: int) -> float:
+        x, y = ctypes.c_double(), ctypes.c_double()
+        pdfium_c.FPDFText_GetCharOrigin(textpage.raw, index, ctypes.byref(x), ctypes.byref(y))
+        return x.value
+
+    dots = [origin(index) for index in range(leader.start(1), leader.end(1))]
+    assert all(abs(x / period - round(x / period)) < 0.01 for x in dots), dots
+    text_end = textpage.get_charbox(leader.start(1) - 1 if text[leader.start(1) - 1] != " " else leader.start(1) - 2, loose=True)[2]
+    page = origin(leader.start(2))
+    assert dots[0] - period < text_end <= dots[0] + 0.01, (text_end, dots[0])
+    assert dots[-1] + period <= page + 0.01 < dots[-1] + 2 * period, (dots[-1], page)

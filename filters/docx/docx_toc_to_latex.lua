@@ -13,7 +13,7 @@
 --
 -- Both are set as Word sets its TOC styles: in the font and colour of the
 -- body, without a heading of their own, a line apart with 5pt after it, a
--- leader of close dots to the page number at the right tab, which Word puts
+-- leader of dots to the page number at the right tab, which Word puts
 -- 10 twips short of the right margin, and each level
 -- of the table of contents indented 12pt further, down to the ninth.
 -- An entry of a heading numbered by its style starts with the number, and its
@@ -66,9 +66,13 @@ local function tableofcontents_preamble()
   local lines = {
     "\\usepackage{titletoc}",
     "\\makeatletter",
+    -- Word sets the dots of a leader a period apart, on a grid of periods from the left edge of the page, each
+    -- dot wholly between the text and the page. TeX aligns the boxes of a leader to the line, at the margin:
+    -- each dot moves within its box by what the margin leaves of a period, and the leader by as much back.
     -- xdvipdfmx writes the dots and what follows them into one text object of the PDF, and the rounding of
     -- each step adds up to a point past the end of the leader: an empty special starts the page in its own
-    "\\newcommand{\\pdcTocLeader}{\\leaders\\hbox to 0.275em{\\hss.\\hss}\\hfill\\special{pdf:content }}",
+    "\\newbox\\pdc@dot\\newdimen\\pdc@dotshift",
+    "\\newcommand{\\pdcTocLeader}{\\setbox\\pdc@dot\\hbox{.}\\pdc@dotshift=\\dimexpr1in+\\hoffset+\\oddsidemargin-\\numexpr(2*\\dimexpr1in+\\hoffset+\\oddsidemargin\\relax-\\wd\\pdc@dot)/(2*\\wd\\pdc@dot)\\relax\\wd\\pdc@dot\\relax\\ifdim\\pdc@dotshift<\\z@\\advance\\pdc@dotshift\\wd\\pdc@dot\\fi\\ifdim\\pdc@dotshift>\\z@\\pdc@dotshift=\\dimexpr\\wd\\pdc@dot-\\pdc@dotshift\\relax\\fi\\kern-\\pdc@dotshift\\leaders\\hbox to\\wd\\pdc@dot{\\kern\\pdc@dotshift\\special{pdf:content }\\copy\\pdc@dot\\kern-\\pdc@dotshift\\hss}\\hfill\\kern\\pdc@dotshift\\special{pdf:content }}",
     "\\newcommand{\\pdcTableOfContents}[1]{\\par\\begingroup\\hypersetup{linkcolor=black}\\setcounter{tocdepth}{#1}\\setlength{\\parskip}{0pt}\\@starttoc{toc}\\endgroup\\vspace{-\\parskip}}",
     "\\newcommand{\\pdcTocEntryBegin}{\\par\\begingroup\\hypersetup{linkcolor=black}\\setlength{\\parskip}{0pt}}",
     "\\newcommand{\\pdcTocEntryEnd}{\\par\\endgroup\\vspace{5pt}}",
