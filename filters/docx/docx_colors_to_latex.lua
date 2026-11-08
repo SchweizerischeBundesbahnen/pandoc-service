@@ -261,7 +261,8 @@ local SCRIPTS = table.concat({
   "\\makeatletter",
   "\\newcommand{\\pdcScriptFont}[5]{\\def\\pdc@script{{#1}{#2}{#3}{#4}{#5}}}",
   "\\newcommand{\\pdcNoScriptFont}{\\let\\pdc@script\\@undefined}",
-  "\\def\\pdc@scriptsize#1{\\dimexpr\\numexpr\\dimexpr#1\\dimexpr\\f@size pt\\relax\\relax/32768\\relax sp*32768\\relax}",
+  -- A half point of Word is a half bp: the size in bp, rounded to 32768 sp, back in pt
+  "\\def\\pdc@scriptsize#1{\\dimexpr\\numexpr\\dimexpr#1\\dimexpr\\f@size pt\\relax*7200/7227\\relax/32768\\relax sp*32768*7227/7200\\relax}",
   -- #1 the size, #2 the most the font allows, #3 the share of the rest of the size, #4 \raise or \lower.
   -- \raise starts no paragraph, a script first in one does
   "\\def\\pdc@shift#1#2#3#4#5{\\leavevmode\\begingroup\\dimen@=\\pdc@scriptsize{#1}\\dimen\\tw@=#2\\dimexpr\\f@size pt\\relax"

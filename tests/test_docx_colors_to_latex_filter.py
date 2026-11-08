@@ -467,6 +467,15 @@ def test_scripts_take_the_size_and_the_shift_word_gives_them(test_parameters: Te
     assert abs(base - subscript - 0.825) < 0.05, base - subscript
 
 
+def test_a_script_takes_a_half_point_of_word(test_parameters: TestParameters):
+    """Word rounds a script to a half PostScript point: DejaVu Sans at 12.5 points has scripts of 8.5, not 9 points of TeX."""
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", _scripts_docx("DejaVu Sans", 25), mime)})
+    assert response.status_code == 200, response.text
+    size, _ = _character(response.content, "X")
+    assert abs(size - 8.5) < 0.05, size
+
+
 def test_a_paragraph_may_start_with_a_script(test_parameters: TestParameters):
     """A superscript first in a paragraph starts the paragraph, as a letter does.
 
