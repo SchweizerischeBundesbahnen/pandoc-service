@@ -528,26 +528,32 @@ local has_wrap = false
 local wrap_columns = 0
 local wrap_rows = {}   -- the cells of each further line of a row, by the number in its marker
 local WRAP_END = {
-  [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\pdcWrapEnd{\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax}\\fi",
+  [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\pdcWrapEnd{\\dimexpr\\dp\\strutbox+\\pdcPlainCellSpace\\relax}\\global\\pdcWrapBelow\\pdcPlainCellSpace\\fi",
   [COMPACT_CELL_DEPTH] = "\\ifdefined\\pdcCompactCellDepth\\pdcWrapEnd{\\dp\\pdcWrapStrut}\\fi",
 }
 local WRAP_PREAMBLE = table.concat({
   "\\makeatletter",
   "\\newsavebox{\\pdcWrapStrut}\\newif\\ifpdcWrapMore\\newdimen\\pdcWrapDepth",
+  -- The space of a cell below its last line, and the deepest a cell whose last line is in the line asks for
+  "\\newdimen\\pdcWrapBelow\\newdimen\\pdcWrapLast",
   -- Before the row: the rows of its lines get no strut, the strut of the row is kept
   "\\newcommand{\\pdcWrapBegin}{\\noalign{\\global\\setbox\\pdcWrapStrut\\copy\\@arstrutbox"
-    .. "\\global\\setbox\\@arstrutbox\\hbox{}\\global\\pdcWrapDepth\\dp\\pdcWrapStrut}}",
+    .. "\\global\\setbox\\@arstrutbox\\hbox{}\\global\\pdcWrapDepth\\dp\\pdcWrapStrut\\global\\pdcWrapBelow\\z@}}",
   -- The depth the end of a cell asks for, given to the last line of the row
   "\\newcommand{\\pdcWrapEnd}[1]{\\ifdim#1>\\pdcWrapDepth\\global\\pdcWrapDepth#1\\relax\\fi}",
-  -- The next line of a cell in \\box0, at least #2 high and a line deep
-  "\\newcommand{\\pdcWrapSplit}[2]{\\expandafter\\ifvoid\\csname pdcWrapBox#1\\endcsname\\setbox\\z@\\hbox{}\\else"
+  -- The next line of a cell in \\box0, at least #2 high and a line deep. The last line of a cell asks for
+  -- its depth and the space of the cell below it: a picture lowered below the descent goes deeper
+  "\\newcommand{\\pdcWrapSplit}[2]{\\ifnum#1=\\@ne\\global\\pdcWrapLast\\z@\\fi"
+    .. "\\expandafter\\ifvoid\\csname pdcWrapBox#1\\endcsname\\setbox\\z@\\hbox{}\\else"
     .. "\\splittopskip\\ht\\strutbox\\vbadness\\@M\\vfuzz\\maxdimen\\setbox\\z@\\vsplit\\csname pdcWrapBox#1\\endcsname to\\z@"
-    .. "\\setbox\\z@\\vbox{\\unvbox\\z@}\\fi\\ifdim\\ht\\z@<#2\\ht\\z@#2\\fi\\ifdim\\dp\\z@<\\dp\\strutbox\\dp\\z@\\dp\\strutbox\\fi}",
+    .. "\\setbox\\z@\\vbox{\\unvbox\\z@}\\expandafter\\ifvoid\\csname pdcWrapBox#1\\endcsname"
+    .. "\\ifdim\\dimexpr\\dp\\z@+\\pdcWrapBelow\\relax>\\pdcWrapLast\\global\\pdcWrapLast\\dimexpr\\dp\\z@+\\pdcWrapBelow\\relax\\fi\\fi"
+    .. "\\fi\\ifdim\\ht\\z@<#2\\ht\\z@#2\\fi\\ifdim\\dp\\z@<\\dp\\strutbox\\dp\\z@\\dp\\strutbox\\fi}",
   -- In the last cell of a line: whether a line follows, else the line gets the depth of the end of the row
   "\\newcommand{\\pdcWrapCheck}[1]{\\global\\pdcWrapMorefalse\\@tempcnta\\@ne"
     .. "\\loop\\expandafter\\ifvoid\\csname pdcWrapBox\\the\\@tempcnta\\endcsname\\else\\global\\pdcWrapMoretrue\\fi"
     .. "\\ifnum\\@tempcnta<#1\\advance\\@tempcnta\\@ne\\repeat"
-    .. "\\ifpdcWrapMore\\else\\ifdim\\dp\\z@<\\pdcWrapDepth\\dp\\z@\\pdcWrapDepth\\fi\\fi\\box\\z@}",
+    .. "\\ifpdcWrapMore\\else\\ifdim\\dp\\z@<\\pdcWrapDepth\\dp\\z@\\pdcWrapDepth\\fi\\ifdim\\dp\\z@<\\pdcWrapLast\\dp\\z@\\pdcWrapLast\\fi\\fi\\box\\z@}",
   -- Word breaks a row after any line of a cell, whatever the widow control of the document
   "\\newcommand{\\pdcWrapSet}[2]{\\global\\expandafter\\setbox\\csname pdcWrapBox#1\\endcsname\\vbox{"
     .. "\\clubpenalty\\z@\\widowpenalty\\z@\\brokenpenalty\\z@\\interlinepenalty\\z@\\everypar{\\vrule height\\ht\\pdcWrapStrut width\\z@\\everypar{}}#2\\par}\\pdcWrapSplit{#1}{\\ht\\pdcWrapStrut}}",
@@ -561,8 +567,31 @@ local WRAP_PREAMBLE = table.concat({
   "\\makeatother",
 }, "\n")
 
--- Whether a row can go out a line at a time: a cell of one paragraph in each column, with no picture,
--- none merged
+-- Whether each line of a paragraph with a picture has text as well: a picture in a line of text keeps
+-- to the line, one alone on its line hangs from the top of the cell, see CELL_PICTURE_PREAMBLE
+local function pictures_in_text(block)
+  local picture, text = false, false
+  local function line_ends()
+    local alone = picture and not text
+    picture, text = false, false
+    return not alone
+  end
+  local fine = true
+  for _, inline in ipairs(block.content) do
+    if inline.t == "LineBreak" then
+      fine = line_ends() and fine
+    else
+      pandoc.Inlines({ inline }):walk({
+        Image = function() picture = true return {} end,
+        Str = function() text = true end,
+      })
+    end
+  end
+  return line_ends() and fine
+end
+
+-- Whether a row can go out a line at a time: a cell of one paragraph in each column, with no picture
+-- alone on a line, none merged
 local function wraps(row, columns)
   if row.attributes[SPLIT] or #row.cells ~= columns then return false end
   for _, cell in ipairs(row.cells) do
@@ -570,9 +599,7 @@ local function wraps(row, columns)
     if #cell.contents ~= 1 or (cell.contents[1].t ~= "Plain" and cell.contents[1].t ~= "Para") then return false end
     local last = cell.contents[1].content[#cell.contents[1].content]
     if not (last and last.t == "RawInline" and WRAP_END[last.text]) then return false end
-    local picture = false
-    pandoc.Blocks(cell.contents):walk({ Image = function() picture = true end })
-    if picture then return false end
+    if not pictures_in_text(cell.contents[1]) then return false end
   end
   return true
 end

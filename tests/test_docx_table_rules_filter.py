@@ -385,6 +385,19 @@ def test_a_row_with_a_picture_stays_one_row(test_parameters: TestParameters):
     assert "pdcWrap" not in _native_latex(test_parameters.container, native)
 
 
+def test_a_row_with_a_picture_in_its_text_goes_out_a_line_at_a_time(test_parameters: TestParameters):
+    """An icon in a line of text keeps to its line: Word breaks the row between its lines all the same."""
+    picture = 'Image ("",[],[("width","0.16667in"),("height","0.16667in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "has", Space, {picture}, Space, Str "parent"')])
+    assert "pdcWrap" in _native_latex(test_parameters.container, native)
+
+
+def test_a_row_with_a_picture_alone_on_a_line_stays_one_row(test_parameters: TestParameters):
+    picture = 'Image ("",[],[("width","1in"),("height","1in")]) [] ("x.png","")'
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "Label:", LineBreak, Span ("",[],[]) [{picture}]')])
+    assert "pdcWrap" not in _native_latex(test_parameters.container, native)
+
+
 def test_a_row_longer_than_the_rest_of_the_page_breaks_between_its_lines(test_parameters: TestParameters):
     document = Document()
     document.add_paragraph("Before the table.")
