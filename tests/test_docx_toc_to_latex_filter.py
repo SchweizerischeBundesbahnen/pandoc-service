@@ -7,11 +7,14 @@ end-to-end test converts a DOCX with a table of contents through the service.
 
 from __future__ import annotations
 
+import ctypes
 import io
 
+import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from docx import Document
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls, qn
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -107,3 +110,55 @@ def test_the_table_of_contents_holds_the_nine_levels_of_word(test_parameters: Te
     text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(response.content)).pages)
     for level in range(1, 10):
         assert text.count(f"Heading of level {level}") == 2, text
+
+
+def _numbered_heading_styles(document, texts: dict[int, str]) -> None:
+    """Number the heading styles of the levels given through the numbering of the styles, with the text given for each.
+
+    The levels above the deepest one given count in decimal, without a style.
+    """
+    numbering = document.part.numbering_part.element
+    levels = ""
+    for level in range(1, max(texts) + 1):
+        style = f'<w:pStyle w:val="Heading{level}"/>' if level in texts else ""
+        text = texts.get(level, f"%{level}")
+        levels += f'<w:lvl w:ilvl="{level - 1}"><w:start w:val="1"/><w:numFmt w:val="decimal"/>{style}<w:lvlText w:val="{text}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="432" w:hanging="432"/></w:pPr></w:lvl>'
+    numbering.insert(0, parse_xml(f'<w:abstractNum {nsdecls("w")} w:abstractNumId="90"><w:multiLevelType w:val="multilevel"/>{levels}</w:abstractNum>'))
+    numbering.append(parse_xml(f'<w:num {nsdecls("w")} w:numId="90"><w:abstractNumId w:val="90"/></w:num>'))
+    for level in texts:
+        style = document.styles[f"Heading {level}"].element.get_or_add_pPr()
+        style.insert(0, parse_xml(f'<w:numPr {nsdecls("w")}><w:ilvl w:val="{level - 1}"/><w:numId w:val="90"/></w:numPr>'))
+
+
+def _toc_text_x(test_parameters: TestParameters, texts: dict[int, str], headings: list[tuple[int, str]]) -> float:
+    """How far right of the margin the first entry of the table of contents sets the text of its heading."""
+    document = Document()
+    _toc_field_paragraph(document)
+    _numbered_heading_styles(document, texts)
+    for level, text in headings:
+        document.add_heading(text, level=level)
+    docx = io.BytesIO()
+    document.save(docx)
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), DOCX_MIME)})
+    assert response.status_code == 200, response.text
+    textpage = pdfium.PdfDocument(response.content)[0].get_textpage()
+    found = textpage.search(headings[0][1], match_case=True).get_next()
+    assert found, headings[0][1]
+    x, y = ctypes.c_double(), ctypes.c_double()
+    pdfium_c.FPDFText_GetCharOrigin(textpage.raw, found[0], ctypes.byref(x), ctypes.byref(y))
+    return x.value - document.sections[0].left_margin.pt
+
+
+def test_an_entry_of_a_numbered_heading_style_sets_its_text_at_the_tab_of_word(test_parameters: TestParameters):
+    """Word sets the number, then a tab 12pt past its width in Aptos 12pt, on a grid of 12pt: 24pt for one digit."""
+    assert abs(_toc_text_x(test_parameters, {1: "%1"}, [(1, "Alpha")]) - 24) < 0.3
+
+
+def test_an_entry_of_a_wide_number_sets_its_text_at_a_later_tab(test_parameters: TestParameters):
+    """1.1.1.1.1 is 45.8pt wide in Aptos 12pt: the text goes to 60pt, the first step of the grid past 57.8pt."""
+    assert abs(_toc_text_x(test_parameters, {1: "%1.%1.%1.%1.%1"}, [(1, "Alpha")]) - 60) < 0.3
+
+
+def test_an_entry_of_a_heading_style_without_a_number_has_none(test_parameters: TestParameters):
+    """The level above a numbered style counts for its number, but has no number of its own."""
+    assert abs(_toc_text_x(test_parameters, {2: "%1.%2"}, [(1, "Alpha"), (2, "Beta")])) < 0.3
