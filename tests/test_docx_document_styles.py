@@ -25,9 +25,11 @@ NORMAL = '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w
 BODY_TEXT = '<w:style w:type="paragraph" w:styleId="BodyText"><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="180" w:after="180"/></w:pPr></w:style>'
 
 
-def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>", numbering: str | None = None) -> bytes:
+def _docx(styles: str, theme: str | None = THEME, settings: str | None = None, section: str = "<w:sectPr/>", numbering: str | None = None, footnotes: str | None = None) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as package:
+        if footnotes is not None:
+            package.writestr("word/footnotes.xml", f"<w:footnotes {W}>{footnotes}</w:footnotes>")
         if numbering is not None:
             package.writestr("word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>")
         package.writestr("word/document.xml", f"<w:document {W}><w:body>{section}</w:body></w:document>")
@@ -652,6 +654,13 @@ def test_a_font_without_script_metrics_passes_none(font_metrics):
         assert docx_document_styles.script_ratios(None) is None
     finally:
         docx_document_styles.script_ratios.cache_clear()
+
+
+def test_the_fonts_of_the_runs_of_the_notes_come_with_their_scripts(script_metrics):
+    """A font only a footnote names is set as Word sets it, as a font of the body is."""
+    footnote = '<w:footnote w:id="1"><w:p><w:r><w:rPr><w:rFonts w:ascii="minor serif"/></w:rPr><w:t>note</w:t></w:r></w:p></w:footnote>'
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, footnotes=footnote))
+    assert options["docx-run-fonts"] == b"Minor Serif".hex().upper() + ":1.0790:1.3300:0.6500:0.4770:0.1380:1.0790:0.2510"
 
 
 def test_a_document_without_fonts_of_runs_passes_none():

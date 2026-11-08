@@ -42,6 +42,8 @@ DOCUMENT_PART = "word/document.xml"
 THEME_PART = "word/theme/theme1.xml"
 SETTINGS_PART = "word/settings.xml"
 NUMBERING_PART = "word/numbering.xml"
+# The parts besides the document whose runs pandoc sets, each with the fonts docx_color_pre_process names
+RUN_PARTS = ("word/footnotes.xml", "word/endnotes.xml", "word/comments.xml")
 # The LaTeX counter command of each number format of Word a heading may carry.
 NUMBER_FORMATS = {"decimal": "arabic", "lowerLetter": "alph", "upperLetter": "Alph", "lowerRoman": "roman", "upperRoman": "Roman"}
 # The text of a number: its level placeholders, digits and the punctuation around them.
@@ -242,7 +244,7 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     """pandoc arguments which set the PDF in the styles Word sets the DOCX in."""
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
-            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART, NUMBERING_PART) if name in package.namelist()}
+            parts = {name: package.read(name) for name in (STYLES_PART, THEME_PART, SETTINGS_PART, DOCUMENT_PART, NUMBERING_PART, *RUN_PARTS) if name in package.namelist()}
     except _UNREADABLE_DOCX:
         return []
     styles = parse_xml(parts[STYLES_PART]) if STYLES_PART in parts else None
@@ -273,18 +275,17 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-paragraph-spacing={_paragraph_spacing(styles, document)}"]
     if document is not None and not _has_header_or_footer(document):
         options += ["-M", "docx-page-numbers=false"]
-    return options + _run_font_options(document) + _display_options(styles, theme, numbering)
+    runs = [part for part in (document, *(parse_xml(parts[name]) for name in RUN_PARTS if name in parts)) if part is not None]
+    return options + _run_font_options(runs) + _display_options(styles, theme, numbering)
 
 
-def _run_font_options(document: Element | None) -> list[str]:
-    """The ascent, the single line and the script ratios of each installed font a run of the body names, by the hex of its name.
+def _run_font_options(parts: list[Element]) -> list[str]:
+    """The ascent, the single line and the script ratios of each installed font a run names, by the hex of its name.
 
     Word sets a line in the font of its text: a paragraph of runs in another font than its style's gets the line
     of that font, see filters/docx/docx_colors_to_latex.lua. The hex is how docx_color_pre_process names the font.
     """
-    if document is None:
-        return []
-    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for fonts in document.iter(_w("rFonts"))}
+    names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for part in parts for fonts in part.iter(_w("rFonts"))}
     metrics = []
     families = {family for family in (installed_family(name) for name in names) if family is not None}
     for family in sorted(families):
