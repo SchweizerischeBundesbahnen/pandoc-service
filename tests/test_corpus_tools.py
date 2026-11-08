@@ -18,6 +18,13 @@ def test_text_is_compared_with_single_spaces_and_short_leaders():
     assert normalized("one\u2010two") == "one-two"
 
 
+def test_a_leader_against_the_page_is_a_word_of_its_own():
+    """Whether a reader sees a space after a leader depends on the gap Word leaves, anything up to a dot wide."""
+    assert normalized("Introduction.......3") == normalized("Introduction ....... 3") == "Introduction ... 3"
+    run = _Run(0, 72, 100, 300, 12, list("Alpha......2"), [72.0 + 4 * index for index in range(12)])
+    assert [(word.text, word.x) for word in run.words()] == [("Alpha", 72.0), ("...", 92.0), ("2", 116.0)]
+
+
 def test_a_character_outside_the_bmp_comes_back_whole():
     assert normalized("a \ud83d\ude00 b") == "a \U0001f600 b"
 

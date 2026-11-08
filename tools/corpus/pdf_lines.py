@@ -65,9 +65,9 @@ class _Run:
         return Line(self.page, round(self.x, 2), round(self.y, 2), round(self.right - self.x, 2), text)
 
     def words(self) -> list[Word]:
-        """The words of the run, split at its spaces."""
+        """The words of the run, split at its spaces and on both sides of a leader of dots."""
         words, characters, start = [], "", None
-        for character, left in [*zip(self.characters, self.lefts, strict=True), (" ", None)]:
+        for character, left in [*_leaders_apart(list(zip(self.characters, self.lefts, strict=True))), (" ", None)]:
             if character.isspace():
                 text = normalized(characters)
                 if text and start is not None:
@@ -79,13 +79,25 @@ class _Run:
         return words
 
 
+def _leaders_apart(characters: list[tuple[str, float | None]]) -> list[tuple[str, float | None]]:
+    """The characters of a run with a space before and after each leader, four dots or more."""
+    text = "".join(character for character, _left in characters)
+    apart: list[tuple[str, float | None]] = []
+    end = 0
+    for leader in re.finditer(r"\.{4,}", text):
+        apart += [*characters[end : leader.start()], (" ", None), *characters[leader.start() : leader.end()], (" ", None)]
+        end = leader.end()
+    return apart + characters[end:]
+
+
 def normalized(text: str) -> str:
     """The text as the comparison reads it: one space between words, a dot leader as three dots."""
     # pdfium hands a character outside the BMP over as two UTF-16 surrogates
     text = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    # A leader of dots is as long as its line leaves room for: its dots do not count. It stands apart from the
+    # text on both sides, whether or not a reader sees a space in the gap Word leaves before the page
+    text = re.sub(r"(?:\s?\.){4,}", " ... ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    # A leader of dots is as long as its line leaves room for: its dots do not count
-    text = re.sub(r"(?:\s?\.){4,}", " ...", text)
     # XeTeX maps the hyphen of Aptos to U+2010, Word to U+002D: the same glyph
     return text.replace("\u2010", "-")
 
