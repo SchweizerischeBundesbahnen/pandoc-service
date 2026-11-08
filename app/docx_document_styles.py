@@ -482,6 +482,10 @@ def _display_style(styles: Element, theme: Element | None, style_id: str, number
         top = top_ratio(font)
         if top is not None:
             fields["ascent"] = f"{size / 2 * top:.4g}"
+    script = script_field(font)
+    if "font" in fields and script is not None:
+        # Apart by slashes: a colon parts the name of a field from its value
+        fields["script"] = script.replace(":", "/")
     fields["bold"] = "true" if _toggle(chain, styles, "b") else "false"
     fields["italic"] = "true" if _toggle(chain, styles, "i") else "false"
     color = word_color(_first(chain, styles, "rPr", "color"), theme)

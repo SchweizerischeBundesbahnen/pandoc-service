@@ -330,6 +330,11 @@ local function style_fields(value, skip)
   if fields.font and fields.font:match("^[%w][%w %.%-_]*$") then
     style.font = fields.font
   end
+  -- The script ratios of the font, see script_ratios of app/docx_document_styles.py, as the arguments of \pdcScriptFont
+  local ratios = { (fields.script or ""):match("^([%d.]+)/([%d.]+)/([%d.]+)/([%d.]+)/([%d.]+)$") }
+  if #ratios == 5 then
+    style.script = "{" .. table.concat(ratios, "}{") .. "}"
+  end
   style.size = points(fields.size)
   style.line = points(fields.line)
   style.ascent = points(fields.ascent)
@@ -409,6 +414,8 @@ local function font_switch(style, family_macro, lines, colour_apart)
   if style.font then
     lines[#lines + 1] = string.format("\\newfontfamily{\\%s}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{%s}", family_macro, style.font)
     parts[#parts + 1] = "\\" .. family_macro
+    -- Its scripts as Word sets them in the font, or as LaTeX does: see docx_colors_to_latex.lua
+    parts[#parts + 1] = style.script and ("\\pdcScriptFont" .. style.script) or "\\pdcNoScriptFont{}"
   end
   if style.size then
     parts[#parts + 1] = string.format("\\fontsize{%gbp}{%gbp}\\selectfont", style.size, style.line or style.size * LINE_SPREAD)

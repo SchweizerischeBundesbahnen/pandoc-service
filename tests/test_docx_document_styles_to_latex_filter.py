@@ -126,8 +126,22 @@ def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParame
     assert "\\usepackage{titlesec}" in preamble
     assert "\\newfontfamily{\\docxHeadingFontA}[Kerning=Off,Scale=1,WordSpace={1,1,0},Ligatures={TeXOff,NoCommon}]{DejaVu Sans}" in preamble
     # The colour inside the line of the heading: before it, its special would let TeX break the page after the heading
-    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\filcenter}{}{0pt}{\\color[HTML]{0F4761}}" in preamble
+    assert "\\titleformat{\\section}[block]{\\normalfont\\docxHeadingFontA\\pdcNoScriptFont{}\\fontsize{20bp}{24.4bp}\\selectfont\\itshape\\filcenter}{}{0pt}{\\color[HTML]{0F4761}}" in preamble
     assert "\\titlespacing*{\\section}{0pt}{18pt}{9pt}" in preamble
+
+
+def test_a_heading_sets_its_scripts_in_its_font(test_parameters: TestParameters):
+    """A heading in another font than the body's sets its scripts as Word does in that font, or as LaTeX does."""
+    with_scripts = "docx-style-Heading1=font:DejaVu Serif,size:20,script:0.6997/0.4800/0.1396/1.0000/0.2358"
+    without = "docx-style-Heading2=font:No Scripts,size:16"
+    preamble = _preamble(_latex(test_parameters.container, with_scripts, without))
+    assert "\\docxHeadingFontA\\pdcScriptFont{0.6997}{0.4800}{0.1396}{1.0000}{0.2358}\\fontsize{20bp}" in preamble
+    assert "\\docxHeadingFontB\\pdcNoScriptFont{}\\fontsize{16bp}" in preamble
+
+
+def test_a_script_field_that_could_carry_latex_is_left_out(test_parameters: TestParameters):
+    preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=font:DejaVu Serif,size:20,script:1/2/3/4/5}\\input{y}"))
+    assert "\\docxHeadingFontA\\pdcNoScriptFont{}\\fontsize{20bp}" in preamble
 
 
 DEEP_HEADINGS = '[Header 6 ("six",[],[]) [Str "Six"], Header 7 ("",[],[]) [Str "Seven"], Header 10 ("ten",[],[]) [Str "Ten"]]'

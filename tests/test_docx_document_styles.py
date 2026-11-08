@@ -409,6 +409,11 @@ def test_a_heading_gets_the_ascent_of_its_font(font_metrics):
     assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["ascent"] == "20"
 
 
+def test_a_heading_gets_the_scripts_of_its_font(script_metrics):
+    """Apart by slashes: a colon parts the name of a field from its value."""
+    assert _fields(_options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-style-Heading1"])["script"] == "0.6500/0.4770/0.1380/1.0790/0.2510"
+
+
 def test_a_font_without_metrics_gets_no_ascent(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.ascent_ratio.cache_clear()
     docx_document_styles.gap_ratio.cache_clear()
