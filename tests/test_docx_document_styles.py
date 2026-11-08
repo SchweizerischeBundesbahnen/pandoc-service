@@ -598,6 +598,11 @@ def test_each_toc_style_of_the_document_passes_its_left_indent():
     assert _options(_docx(DEFAULTS + NORMAL + styles))["docx-toc-indents"] == "1:0,2:36,3:28.35"
 
 
+def test_a_negative_indent_of_a_toc_style_passes():
+    """A negative left indent sets the entry into the margin."""
+    assert _options(_docx(DEFAULTS + NORMAL + _toc_style(2, '<w:ind w:left="-720"/>')))["docx-toc-indents"] == "2:-36"
+
+
 def test_a_localised_toc_style_is_found_by_its_name():
     assert _options(_docx(DEFAULTS + NORMAL + _toc_style(2, '<w:ind w:left="720"/>', style_id="Verzeichnis2")))["docx-toc-indents"] == "2:36"
 

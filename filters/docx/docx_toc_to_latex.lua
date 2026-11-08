@@ -144,7 +144,7 @@ local function style_indents(meta)
   local indents = {}
   local value = meta[INDENTS]
   if value ~= nil then
-    for level, points in pandoc.utils.stringify(value):gmatch("(%d):([%d.]+)") do
+    for level, points in pandoc.utils.stringify(value):gmatch("(%d):(-?[%d.]+)") do
       indents[tonumber(level)] = tonumber(points)
     end
   end

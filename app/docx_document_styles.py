@@ -292,7 +292,7 @@ def _toc_indent_options(styles: Element) -> list[str]:
         if style is None:
             continue
         found = _attribute(_style_chain(styles, style.get(_w("styleId"), ""), fallback=None), styles, "pPr", "ind", ("left", "start"))
-        left = whole_number(found[1]) if found is not None else 0
+        left = whole_number(found[1], signed=True) if found is not None else 0
         if left is not None:
             indents.append(f"{level}:{left / TWIPS_PER_POINT:g}")
     return ["-M", "docx-toc-indents=" + ",".join(indents)] if indents else []
