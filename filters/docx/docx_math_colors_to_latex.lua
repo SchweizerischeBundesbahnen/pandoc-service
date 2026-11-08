@@ -43,6 +43,38 @@ local function colored(color, content)
   return "{\\color[HTML]{" .. color .. "} " .. content .. "}"
 end
 
+-- A colored base of a script is a group to TeX, and with an OpenType math font TeX raises the script of a group
+-- from its top, higher than from a letter: Word sets a colored b² as a black one. texmath writes the base in a
+-- group of its own, {{\color[HTML]{FF0000} b}}^{...}: a script of colored content moves into the group of the
+-- base, at its letter. A script of black content stays out, which the color of the base would reach.
+local COLOR_GROUP = "^{\\color%[HTML%]{%x+}"
+
+local function colored_script(script)
+  local inner = script:match("^{(%b{})}$")
+  return inner ~= nil and inner:match(COLOR_GROUP) ~= nil
+end
+
+local function scripts_into_bases(tex)
+  -- A group after _ or ^ is a script itself, not a base: \int_{{\color[HTML]{008000} 0}}^{...}
+  local function into_base(position, base, ...)
+    local before = tex:sub(position - 1, position - 1)
+    if before == "_" or before == "^" or not base:match(COLOR_GROUP) then
+      return nil
+    end
+    local scripts = { ... }
+    local inside = base:sub(1, -2)
+    for index = 1, #scripts, 2 do
+      if not colored_script(scripts[index + 1]) then
+        return nil
+      end
+      inside = inside .. scripts[index] .. scripts[index + 1]
+    end
+    return inside .. "}"
+  end
+  tex = tex:gsub("(){(%b{})}([_^])(%b{})([_^])(%b{})", into_base)
+  return (tex:gsub("(){(%b{})}([_^])(%b{})", into_base))
+end
+
 local filter = {}
 
 function filter.Math(el)
@@ -56,7 +88,7 @@ function filter.Math(el)
   if count == 0 then
     return nil
   end
-  el.text = replaced
+  el.text = scripts_into_bases(replaced)
   return el
 end
 
