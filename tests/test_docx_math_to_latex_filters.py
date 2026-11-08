@@ -6,6 +6,7 @@ import ctypes
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
+import pytest
 
 from tests.test_container import TestParameters
 
@@ -102,3 +103,10 @@ def test_the_colored_limits_of_an_integral_stay_apart(test_parameters: TestParam
 def test_both_scripts_of_a_colored_base_move_into_its_group(test_parameters: TestParameters):
     latex = _md_to_latex(test_parameters, f"${{{_marked('00FF00', 'x')}}}_{{{_marked('00FF00', 'i')}}}^{{{_marked('00FF00', '2')}}}$")
     assert "{\\color[HTML]{00FF00} x_{{\\color[HTML]{00FF00} i}}^{{\\color[HTML]{00FF00} 2}}}" in latex, latex
+
+
+@pytest.mark.parametrize("command", ["\\sqrt", "\\sqrt[3]", "\\frac{a}", "\\symbf"])
+def test_a_script_after_the_colored_argument_of_a_command_stays_out_of_it(test_parameters: TestParameters, command: str):
+    """The power of a root of a colored x belongs to the root: inside the argument it would be the power of x."""
+    latex = _md_to_latex(test_parameters, f"${command}{{{_marked('FF0000', 'x')}}}^{{{_marked('FF0000', '2')}}}$")
+    assert f"{command}{{{{\\color[HTML]{{FF0000}} x}}}}^{{{{\\color[HTML]{{FF0000}} 2}}}}" in latex, latex

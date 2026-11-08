@@ -54,11 +54,19 @@ local function colored_script(script)
   return inner ~= nil and inner:match(COLOR_GROUP) ~= nil
 end
 
+-- Whether a group which starts at the position given stands on its own, and so can be the base of a script. A
+-- group after _ or ^ is a script itself, \int_{{\color[HTML]{008000} 0}}^{...}; a group after a command, or after
+-- the } or ] of an argument before it, is an argument, \sqrt{{\color[HTML]{FF0000} x}}^{...}: its script belongs
+-- to the command.
+local function standalone(tex, position)
+  local before = tex:sub(1, position - 1):gsub("%s+$", "")
+  local last = before:sub(-1)
+  return not (last == "_" or last == "^" or last == "}" or last == "]" or before:match("\\%a+$"))
+end
+
 local function scripts_into_bases(tex)
-  -- A group after _ or ^ is a script itself, not a base: \int_{{\color[HTML]{008000} 0}}^{...}
   local function into_base(position, base, ...)
-    local before = tex:sub(position - 1, position - 1)
-    if before == "_" or before == "^" or not base:match(COLOR_GROUP) then
+    if not standalone(tex, position) or not base:match(COLOR_GROUP) then
       return nil
     end
     local scripts = { ... }
