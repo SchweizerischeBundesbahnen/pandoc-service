@@ -729,3 +729,10 @@ def test_a_character_whose_glyph_a_higher_code_point_shares_gets_its_own_text(mo
 def test_a_font_of_no_shared_glyph_passes_no_actual_text(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(docx_document_styles, "_font_file", lambda _family: _CmapFont({0x28: "parenleft", 0x2D: "hyphen", 0x2010: "hyphen"}))
     assert "docx-actual-text" not in _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+
+
+def test_a_character_of_a_shared_glyph_in_the_font_of_a_heading_gets_its_own_text(monkeypatch: pytest.MonkeyPatch):
+    """A heading in Major Sans sets its ( in that font, which no run names."""
+    shared = {0x28: "parenleft", 0xFD3E: "parenleft"}
+    monkeypatch.setattr(docx_document_styles, "_font_file", lambda family: _CmapFont(shared if family == "Major Sans" else {0x28: "parenleft"}))
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-actual-text"] == "0028"

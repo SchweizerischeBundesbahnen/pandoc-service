@@ -280,16 +280,18 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
         options += ["-M", "docx-page-numbers=false"]
     options += _toc_indent_options(styles)
     runs = [part for part in (document, *(parse_xml(parts[name]) for name in RUN_PARTS if name in parts)) if part is not None]
-    return options + _run_font_options(runs) + _actual_text_options(font, runs) + _display_options(styles, theme, numbering)
+    display = [_font(_style_chain(styles, style_id, fallback=None), styles, theme) for style_id in DISPLAY_STYLES]
+    return options + _run_font_options(runs) + _actual_text_options([font, *display], runs) + _display_options(styles, theme, numbering)
 
 
-def _actual_text_options(font: str | None, parts: list[Element]) -> list[str]:
-    """The characters a reader of the PDF gets wrong in a font of the body or of a run, by the hex of their code point.
+def _actual_text_options(fonts: list[str | None], parts: list[Element]) -> list[str]:
+    """The characters a reader of the PDF gets wrong in a font of the styles given or of a run, by the hex of their code point.
 
-    See shared_characters. filters/docx/docx_document_styles_to_latex.lua sets each with its own text in the PDF.
+    See shared_characters. filters/docx/docx_document_styles_to_latex.lua and docx_tables_to_latex.lua set each with
+    its own text in the PDF.
     """
     names = {fonts.get(_w("ascii")) or fonts.get(_w("hAnsi")) for part in parts for fonts in part.iter(_w("rFonts"))}
-    families = {family for family in (font, *(installed_family(name) for name in names)) if family is not None}
+    families = {family for family in (*fonts, *(installed_family(name) for name in names)) if family is not None}
     characters = sorted({character for family in families for character in shared_characters(family)})
     return ["-M", "docx-actual-text=" + ",".join(f"{ord(character):04X}" for character in characters)] if characters else []
 
