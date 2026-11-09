@@ -30,6 +30,16 @@
   .sheet img { display: block; width: 100%; }
   .sheet .top { position: absolute; inset: 0; }
   .sheet .top img { position: absolute; inset: 0; }
+  /* Swipe as in weasysvg: dragging the line changes the clip of the upper page and nothing else, so no page is
+     drawn again and nothing flickers. Safari selects a dragged image: the prefixed rules keep it from that */
+  .sheet.swipe { touch-action: none; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
+  .sheet.swipe img { -webkit-user-drag: none; }
+  .sheet .top { will-change: clip-path; }
+  .sheet .line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0969da; }
+  .sheet .line::after { content: "\25C2 \25B8"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0969da; color: #fff; border-radius: 12px; padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+  .sheet .line:focus-visible { outline: 2px solid #fff; }
+  .sheet .tag { position: absolute; top: 6px; background: rgba(13, 17, 23, .75); color: #fff; font-size: 12px; padding: 1px 6px; border-radius: 4px; pointer-events: none; }
+  .sheet .tag.left { left: 6px; } .sheet .tag.right { right: 6px; }
   .caption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
   .empty { display: grid; place-items: center; aspect-ratio: 612 / 792; color: var(--muted); background: var(--panel); }
   ul.problems { font-size: 12px; columns: 2; padding-left: 18px; }
@@ -56,6 +66,7 @@
     <label><input type="radio" name="mode" value="swipe"> swipe</label>
     <label><input type="radio" name="mode" value="difference"> difference</label>
     <label id="amount-label">conversion <input type="range" id="amount" min="0" max="100" value="50"></label>
+    <span id="swipe-hint" class="totals">drag the line or move it with the arrow keys</span>
   </div>
   <div class="pages" id="pages"></div>
   <ul class="problems" id="problems"></ul>
@@ -101,10 +112,14 @@ function sheet(doc, number, side) {
   return `<div class="sheet"><img loading="lazy" src="${side}/${names[number]}" alt="${doc.name} page ${number + 1}, ${side}"></div>`;
 }
 
+// Where the line of swipe stands, as a share of the width: Word on its left, pandoc-service on its right
+let split = 0.5;
+
 function draw(doc) {
   const mode = document.querySelector("input[name=mode]:checked").value;
   const amount = document.getElementById("amount").value;
-  document.getElementById("amount-label").style.visibility = mode === "side" || mode === "difference" ? "hidden" : "visible";
+  document.getElementById("amount-label").style.display = mode === "overlay" ? "" : "none";
+  document.getElementById("swipe-hint").style.display = mode === "swipe" ? "" : "none";
   const count = Math.max(doc.reference_pages.length, doc.converted_pages.length);
   const parts = [];
   for (let number = 0; number < count; number++) {
@@ -114,9 +129,12 @@ function draw(doc) {
     } else if (mode === "side") {
       parts.push(`<div><div class="caption">page ${number + 1}: Word | pandoc-service</div><div class="pair">${sheet(doc, number, "reference")}${sheet(doc, number, "converted")}</div></div>`);
     } else if (number < doc.reference_pages.length && number < doc.converted_pages.length) {
-      const top = mode === "overlay" ? `opacity:${amount / 100}` : `clip-path:inset(0 0 0 ${amount}%)`;
-      parts.push(`<div><div class="caption">page ${number + 1}: Word under pandoc-service</div><div class="pair stacked"><div class="sheet"><img loading="lazy" src="reference/${doc.reference_pages[number]}" alt="">` +
-        `<div class="top" style="${top}"><img loading="lazy" src="converted/${doc.converted_pages[number]}" alt=""></div></div></div></div>`);
+      const swipe = mode === "swipe";
+      const top = swipe ? `clip-path:inset(0 0 0 ${split * 100}%)` : `opacity:${amount / 100}`;
+      const line = swipe ? `<div class="line" tabindex="0" role="slider" aria-label="Split between Word and pandoc-service" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(split * 100)}" style="left:${split * 100}%"></div>` +
+        `<span class="tag left">Word</span><span class="tag right">pandoc-service</span>` : "";
+      parts.push(`<div><div class="caption">page ${number + 1}: Word under pandoc-service</div><div class="pair stacked"><div class="sheet${swipe ? " swipe" : ""}"><img loading="lazy" src="reference/${doc.reference_pages[number]}" alt="">` +
+        `<div class="top" style="${top}"><img loading="lazy" src="converted/${doc.converted_pages[number]}" alt=""></div>${line}</div></div></div>`);
     } else {
       parts.push(`<div><div class="caption">page ${number + 1}</div><div class="pair stacked">${sheet(doc, number, number < doc.reference_pages.length ? "reference" : "converted")}</div></div>`);
     }
@@ -137,7 +155,49 @@ function pick() {
     `<li class="${problem.dy === null ? "bad" : "warn"}">p${problem.line.page + 1}: ${problem.line.text.replace(/</g, "&lt;")} ${problem.dy === null ? "(missing)" : `(${problem.dy > 0 ? "+" : ""}${problem.dy} pt)`}</li>`).join("");
   draw(doc);
 }
-for (const input of document.querySelectorAll(".controls input")) input.oninput = pick;
+// Moves the line of every page in place: the pages stay as they are
+function moveSplit(value) {
+  split = Math.min(1, Math.max(0, value));
+  for (const top of document.querySelectorAll(".sheet.swipe .top")) top.style.clipPath = `inset(0 0 0 ${split * 100}%)`;
+  for (const line of document.querySelectorAll(".sheet.swipe .line")) {
+    line.style.left = `${split * 100}%`;
+    line.setAttribute("aria-valuenow", String(Math.round(split * 100)));
+  }
+}
+
+const pages = document.getElementById("pages");
+let dragged = null;
+let pending = null;
+// At most one move per frame: a pointer reports more often than the screen paints
+const follow = (event) => {
+  const box = dragged.getBoundingClientRect();
+  if (pending === null) requestAnimationFrame(() => { moveSplit(pending); pending = null; });
+  pending = (event.clientX - box.left) / box.width;
+};
+pages.addEventListener("pointerdown", (event) => {
+  const sheet = event.target.closest(".sheet.swipe");
+  if (!sheet) return;
+  // No selection starts under a drag of the line
+  event.preventDefault();
+  dragged = sheet;
+  sheet.setPointerCapture(event.pointerId);
+  follow(event);
+});
+pages.addEventListener("pointermove", (event) => { if (dragged) follow(event); });
+pages.addEventListener("pointerup", () => { dragged = null; });
+pages.addEventListener("pointercancel", () => { dragged = null; });
+pages.addEventListener("keydown", (event) => {
+  if (!event.target.classList.contains("line")) return;
+  const step = { ArrowLeft: -0.01, ArrowRight: 0.01, PageDown: -0.1, PageUp: 0.1 }[event.key];
+  if (step === undefined) return;
+  event.preventDefault();
+  moveSplit(split + (event.shiftKey ? step * 10 : step));
+});
+// The amount of overlay changes the opacity in place as well
+document.getElementById("amount").oninput = (event) => {
+  for (const top of document.querySelectorAll(".sheet .top")) top.style.opacity = event.target.value / 100;
+};
+for (const input of document.querySelectorAll("input[name=mode]")) input.onchange = pick;
 window.onhashchange = pick;
 if (!location.hash) location.hash = [...documents].sort((a, b) => (b.mean_shift ?? 1000) - (a.mean_shift ?? 1000))[0].name;
 drawList();
