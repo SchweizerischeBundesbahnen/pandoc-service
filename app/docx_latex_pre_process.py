@@ -20,6 +20,8 @@ running each rewrite on its own — only much lighter on memory.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from . import (
     docx_color_pre_process,
     docx_document_styles,
@@ -36,6 +38,43 @@ from . import (
     docx_toc_pre_process,
 )
 from .docx_ooxml import STYLES_PART, augment_styles, enumerate_body_parts, parse_xml, read_entries, repack
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def _rewrite_styled_part(
+    xml: bytes,
+    color_styles: dict[str, docx_color_pre_process._StyleSpec],
+    para_styles: dict[str, docx_paragraph_pre_process._StyleSpec],
+    toc_styles: dict[str, docx_toc_pre_process._StyleSpec],
+    style_colors: dict[str, docx_color_pre_process.StyleColors] | None,
+    toc_style_ids: frozenset[str],
+) -> tuple[bytes, bool]:
+    """The rewrites which add styles to the styles part, in their order. Returns (new_xml, changed)."""
+    changed = False
+    # First, so the other rewrites see the entries of a list of figures and not the field around them
+    rewritten, toc_used = docx_toc_pre_process.rewrite_part(xml)
+    if toc_used:
+        xml, changed = rewritten, True
+        toc_styles.update(toc_used)
+    rewritten, empty_lines_changed = docx_empty_lines_pre_process.rewrite_part(xml)
+    if empty_lines_changed:
+        xml, changed = rewritten, True
+        toc_styles.update(docx_toc_pre_process.plain_styles(docx_empty_lines_pre_process.EMPTY_LINES_STYLE))
+    # Before the colour rewrite, which moves the formatting of a run into a style of its own
+    rewritten, spaces_changed = docx_run_spaces_pre_process.rewrite_part(xml)
+    if spaces_changed:
+        xml, changed = rewritten, True
+    rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_style_ids)
+    if color_used:
+        xml, changed = rewritten, True
+        color_styles.update(color_used)
+    rewritten, para_used = docx_paragraph_pre_process.rewrite_part(xml)
+    if para_used:
+        xml, changed = rewritten, True
+        para_styles.update(para_used)
+    return xml, changed
 
 
 def _rewrite_body_part(
@@ -56,43 +95,20 @@ def _rewrite_body_part(
     # First, so a page break run sheds its properties before the colour rewrite reads them.
     xml, changed = docx_page_break_pre_process.rewrite_part(xml, break_styles)
     if has_styles:
-        # First, so the other rewrites see the entries of a list of figures and not the field around them
-        rewritten, toc_used = docx_toc_pre_process.rewrite_part(xml)
-        if toc_used:
+        xml, styled_changed = _rewrite_styled_part(xml, color_styles, para_styles, toc_styles, style_colors, toc_style_ids)
+        changed = changed or styled_changed
+    rewrites: tuple[Callable[[bytes], tuple[bytes, bool]], ...] = (
+        docx_list_level_pre_process.rewrite_part,
+        lambda part: docx_table_pre_process.rewrite_part(part, text_width_twips, bordered_styles),
+        # Before the color rewrite, whose markers then hold the style markers
+        docx_math_style_pre_process.rewrite_part,
+        docx_math_color_pre_process.rewrite_part,
+        docx_image_layout_pre_process.rewrite_part,
+    )
+    for rewrite in rewrites:
+        rewritten, step_changed = rewrite(xml)
+        if step_changed:
             xml, changed = rewritten, True
-            toc_styles.update(toc_used)
-        rewritten, empty_lines_changed = docx_empty_lines_pre_process.rewrite_part(xml)
-        if empty_lines_changed:
-            xml, changed = rewritten, True
-            toc_styles.update(docx_toc_pre_process.plain_styles(docx_empty_lines_pre_process.EMPTY_LINES_STYLE))
-        # Before the colour rewrite, which moves the formatting of a run into a style of its own
-        rewritten, spaces_changed = docx_run_spaces_pre_process.rewrite_part(xml)
-        if spaces_changed:
-            xml, changed = rewritten, True
-        rewritten, color_used = docx_color_pre_process.rewrite_part(xml, style_colors, toc_style_ids)
-        if color_used:
-            xml, changed = rewritten, True
-            color_styles.update(color_used)
-        rewritten, para_used = docx_paragraph_pre_process.rewrite_part(xml)
-        if para_used:
-            xml, changed = rewritten, True
-            para_styles.update(para_used)
-    rewritten, list_changed = docx_list_level_pre_process.rewrite_part(xml)
-    if list_changed:
-        xml, changed = rewritten, True
-    rewritten, table_changed = docx_table_pre_process.rewrite_part(xml, text_width_twips, bordered_styles)
-    if table_changed:
-        xml, changed = rewritten, True
-    # Before the color rewrite, whose markers then hold the style markers
-    rewritten, math_style_changed = docx_math_style_pre_process.rewrite_part(xml)
-    if math_style_changed:
-        xml, changed = rewritten, True
-    rewritten, math_color_changed = docx_math_color_pre_process.rewrite_part(xml)
-    if math_color_changed:
-        xml, changed = rewritten, True
-    rewritten, image_layout_changed = docx_image_layout_pre_process.rewrite_part(xml)
-    if image_layout_changed:
-        xml, changed = rewritten, True
     return xml, changed
 
 

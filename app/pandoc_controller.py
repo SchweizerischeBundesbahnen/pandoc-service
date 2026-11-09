@@ -260,8 +260,8 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:
         metrics_server = MetricsServer(port=metrics_port)
         try:
             await metrics_server.start()
-        except Exception as e:  # noqa: BLE001
-            logger.error("Failed to start metrics server: %s", e)
+        except Exception:
+            logger.exception("Failed to start metrics server")
             metrics_server = None
 
     # The conversions run in worker threads, whose pool holds 40 of them by default. Each
@@ -280,8 +280,8 @@ async def lifespan(app_instance: FastAPI) -> AsyncGenerator[None]:
     if metrics_server:
         try:
             await metrics_server.stop()
-        except Exception as e:  # noqa: BLE001
-            logger.error("Error stopping metrics server: %s", e)
+        except Exception:
+            logger.exception("Error stopping metrics server")
 
     # Last line of the shutdown. A SIGTERM which reaches the service produces it, so its
     # absence in the container logs means the process was killed instead of stopped.
@@ -406,8 +406,8 @@ def get_pandoc_version() -> str | None:
         version_line = result.stdout.splitlines()[0]
         return version_line.split()[-1]  # Last word on the first line is the version
     # A missing pandoc version must not fail the request.
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Error getting pandoc version: {e}")
+    except Exception:
+        logger.exception("Error getting pandoc version")
         return None
 
 
