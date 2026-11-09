@@ -853,3 +853,11 @@ def test_a_cell_without_a_positive_indent_is_not_tagged(ind):
     out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_indented_cell(ind)))}))
 
     assert "li=" not in _cell_sentinel_text(out)
+
+
+def test_a_cell_starting_with_a_list_paragraph_is_not_tagged():
+    """A list paragraph carries the indent of its level, which LaTeX sets for the list already."""
+    numbered = '<w:tc><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:r><w:t>item</w:t></w:r></w:p></w:tc>'
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(numbered))}))
+
+    assert "li=" not in _cell_sentinel_text(out)

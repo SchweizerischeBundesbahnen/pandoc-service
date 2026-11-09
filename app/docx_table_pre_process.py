@@ -367,9 +367,13 @@ def _extract_cell_justification(tc: ET.Element) -> str | None:
 
 
 def _extract_cell_indent(tc: ET.Element) -> str | None:
-    """The left indent of the cell's own first paragraph in points, when it has a positive one."""
+    """The left indent of the cell's own first paragraph in points, when it has a positive one.
+
+    A list paragraph carries the indent of its level, which LaTeX sets for the list already.
+    """
     first_para = _own_first_para(tc)
-    ind = first_para.find(f"{_PPR_TAG}/{_IND_TAG}") if first_para is not None else None
+    ppr = first_para.find(_PPR_TAG) if first_para is not None else None
+    ind = ppr.find(_IND_TAG) if ppr is not None and ppr.find(f"{{{W_NS}}}numPr") is None else None
     if ind is None:
         return None
     twips = whole_number(ind.get(f"{{{W_NS}}}left") or ind.get(f"{{{W_NS}}}start"), signed=True)
