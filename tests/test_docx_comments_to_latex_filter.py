@@ -154,3 +154,12 @@ def test_balloons_which_reach_past_the_page_move_up_as_word_moves_them(test_para
         bottoms = [text.get_charbox(char)[1] for char in range(text.count_chars())]
         assert min(bottoms, default=0) >= 0, f"text below the paper on page {index + 1}"
     assert "Remark 7" in "".join(pdf[index].get_textpage().get_text_range() for index in range(len(pdf)))
+
+
+def test_the_text_of_a_balloon_is_laid_out_at_nine_points(test_parameters: TestParameters):
+    """Word draws the text of a balloon at 9.12pt of the page before it shrinks, but sets its glyphs as far apart as at 9pt.
+
+    The words of a balloon line drifted right of Word's, 2.3pt over the line.
+    """
+    latex = _native_to_latex(test_parameters.container, f'[ Para [ Str "text" , {_comment(0, "remark")} ] ]')
+    assert "\\fontsize{9bp}{10.94bp}\\selectfont" in latex, latex

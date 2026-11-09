@@ -27,8 +27,9 @@ local ASCENT = "docx-body-ascent"
 local DESCENT = "docx-body-descent"
 local BASELINE = "docx-body-baseline"
 
--- The balloon as Word for Mac draws it, in points of the page before Word shrinks it
-local TEXT_SIZE = 9.12
+-- The balloon as Word for Mac draws it, in points of the page before Word shrinks it. Word draws its text at
+-- 9.12pt, but sets the glyphs as far apart as at 9pt: the place of the words counts
+local TEXT_SIZE = 9
 local TEXT_LINE = 10.94
 local PADDING = 4.3
 local FIRST_BASELINE = 10.6
