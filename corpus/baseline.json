@@ -243,16 +243,16 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 31,
      "lines": 31,
-     "mean_shift": 0.72,
+     "mean_shift": 0.45,
      "pages": [
       2,
       2
      ],
-     "regions": 744,
-     "regions_matched": 677,
+     "regions": 742,
+     "regions_matched": 718,
      "same_page": 31,
      "words": 96,
-     "words_in_place": 74
+     "words_in_place": 94
     },
     "test_convert_live_doc_with_wi_table": {
      "any_page": 50,
@@ -692,11 +692,11 @@
    "total": {
     "any_page": 96.6,
     "documents": 49,
-    "mean_shift": 0.33,
+    "mean_shift": 0.32,
     "pages_as_reference": 49,
-    "regions_matched": 93.0,
+    "regions_matched": 93.1,
     "same_page": 96.6,
-    "words_in_place": 93.9
+    "words_in_place": 94.1
    }
   },
   "word-fonts": {
@@ -942,16 +942,16 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 31,
      "lines": 31,
-     "mean_shift": 0.7,
+     "mean_shift": 0.43,
      "pages": [
       2,
       2
      ],
-     "regions": 736,
-     "regions_matched": 675,
+     "regions": 735,
+     "regions_matched": 719,
      "same_page": 31,
      "words": 96,
-     "words_in_place": 74
+     "words_in_place": 94
     },
     "test_convert_live_doc_with_wi_table": {
      "any_page": 50,
@@ -1393,9 +1393,9 @@
     "documents": 49,
     "mean_shift": 0.24,
     "pages_as_reference": 49,
-    "regions_matched": 97.5,
+    "regions_matched": 97.6,
     "same_page": 99.8,
-    "words_in_place": 98.5
+    "words_in_place": 98.6
    }
   }
  },
@@ -1643,16 +1643,16 @@
     "test_convert_live_doc_with_table_with_inline_style": {
      "any_page": 31,
      "lines": 31,
-     "mean_shift": 0.53,
+     "mean_shift": 0.26,
      "pages": [
       2,
       2
      ],
-     "regions": 778,
-     "regions_matched": 697,
+     "regions": 775,
+     "regions_matched": 742,
      "same_page": 31,
      "words": 96,
-     "words_in_place": 74
+     "words_in_place": 94
     },
     "test_convert_live_doc_with_wi_table": {
      "any_page": 50,
@@ -2092,11 +2092,11 @@
    "total": {
     "any_page": 99.7,
     "documents": 49,
-    "mean_shift": 0.35,
+    "mean_shift": 0.34,
     "pages_as_reference": 49,
-    "regions_matched": 95.5,
+    "regions_matched": 95.6,
     "same_page": 99.7,
-    "words_in_place": 96.2
+    "words_in_place": 96.4
    }
   }
  }

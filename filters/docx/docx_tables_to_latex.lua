@@ -53,6 +53,7 @@ end
 
 -- Parse the sentinel payload into a properties table. Supported segments:
 --   bg=RRGGBB  cell background colour (per cell)
+--   li=<points>  the left indent of the first paragraph of the cell (per cell)
 --   tw=<0..1>  table width as a fraction of the line (table-level, first cell)
 --   ta=left|center|right  table horizontal alignment (table-level, first cell)
 --   rl=none|head|grid  the lines Word draws (table-level, first cell)
@@ -73,6 +74,11 @@ local function parse_payload(payload)
       props.ta = value
     elseif key == "ha" and value == "justify" then
       props.ha = value
+    elseif key == "li" then
+      local n = tonumber(value)
+      if n and n > 0 and n <= 1584 then
+        props.li = n
+      end
     elseif key == "aw" and value == "1" then
       props.aw = true
     elseif key == "rl" and RULES[value] ~= nil then
@@ -540,6 +546,12 @@ local WRAP_PREAMBLE = table.concat({
   "\\newsavebox{\\pdcWrapStrut}\\newif\\ifpdcWrapMore\\newdimen\\pdcWrapDepth",
   -- The space of a cell below its last line, and the deepest a cell whose last line is in the line asks for
   "\\newdimen\\pdcWrapBelow\\newdimen\\pdcWrapLast",
+  -- The height of the first line of the next cell when it is lower than the line of its row, else zero
+  "\\newdimen\\pdcWrapOwnHeight\\newcommand{\\pdcWrapOwn}[1]{\\global\\pdcWrapOwnHeight#1\\relax}",
+  "\\newcommand{\\pdcWrapFirst}{\\ifdim\\pdcWrapOwnHeight>\\z@\\pdcWrapOwnHeight\\else\\ht\\pdcWrapStrut\\fi}",
+  -- Word hangs the first line of each cell from the top of the row: a lower one goes up to it
+  "\\newcommand{\\pdcWrapTop}{\\ifdim\\pdcWrapOwnHeight>\\z@\\ifdim\\ht\\z@<\\ht\\pdcWrapStrut"
+    .. "\\setbox\\z@\\hbox{\\raise\\dimexpr\\ht\\pdcWrapStrut-\\ht\\z@\\relax\\box\\z@}\\fi\\global\\pdcWrapOwnHeight\\z@\\fi}",
   -- Before the row: the rows of its lines get no strut, the strut of the row is kept
   "\\newcommand{\\pdcWrapBegin}{\\noalign{\\global\\setbox\\pdcWrapStrut\\copy\\@arstrutbox"
     .. "\\global\\setbox\\@arstrutbox\\hbox{}\\global\\pdcWrapDepth\\dp\\pdcWrapStrut\\global\\pdcWrapBelow\\z@}}",
@@ -560,9 +572,9 @@ local WRAP_PREAMBLE = table.concat({
     .. "\\ifpdcWrapMore\\else\\ifdim\\dp\\z@<\\pdcWrapDepth\\dp\\z@\\pdcWrapDepth\\fi\\ifdim\\dp\\z@<\\pdcWrapLast\\dp\\z@\\pdcWrapLast\\fi\\fi\\box\\z@}",
   -- Word breaks a row after any line of a cell, whatever the widow control of the document
   "\\newcommand{\\pdcWrapSet}[2]{\\global\\expandafter\\setbox\\csname pdcWrapBox#1\\endcsname\\vbox{"
-    .. "\\clubpenalty\\z@\\widowpenalty\\z@\\brokenpenalty\\z@\\interlinepenalty\\z@\\everypar{\\vrule height\\ht\\pdcWrapStrut width\\z@\\everypar{}}#2\\par}\\pdcWrapSplit{#1}{\\ht\\pdcWrapStrut}}",
-  "\\newcommand{\\pdcWrapCell}[2]{\\pdcWrapSet{#1}{#2}\\box\\z@}",
-  "\\newcommand{\\pdcWrapCellLast}[2]{\\pdcWrapSet{#1}{#2}\\pdcWrapCheck{#1}}",
+    .. "\\clubpenalty\\z@\\widowpenalty\\z@\\brokenpenalty\\z@\\interlinepenalty\\z@\\everypar{\\vrule height\\pdcWrapFirst width\\z@\\everypar{}}#2\\par}\\pdcWrapSplit{#1}{\\pdcWrapFirst}}",
+  "\\newcommand{\\pdcWrapCell}[2]{\\pdcWrapSet{#1}{#2}\\pdcWrapTop\\box\\z@}",
+  "\\newcommand{\\pdcWrapCellLast}[2]{\\pdcWrapSet{#1}{#2}\\pdcWrapTop\\pdcWrapCheck{#1}}",
   "\\newcommand{\\pdcWrapPiece}[1]{\\pdcWrapSplit{#1}{\\ht\\strutbox}\\box\\z@}",
   "\\newcommand{\\pdcWrapPieceLast}[1]{\\pdcWrapSplit{#1}{\\ht\\strutbox}\\pdcWrapCheck{#1}}",
   -- After the row: a row per further line, then the strut of the table back
@@ -594,6 +606,21 @@ local function pictures_in_text(block)
   return line_ends() and fine
 end
 
+-- The height of the first line of a cell, in big points, when its text starts in a size of its own; nil otherwise.
+local function first_line(cell)
+  local first = cell.contents[1]
+  for _, inline in ipairs(first and (first.t == "Plain" or first.t == "Para") and first.content or {}) do
+    if inline.t ~= "RawInline" then
+      return nil
+    end
+    local height = inline.text:match("\\setbox\\strutbox\\hbox{\\vrule height ([%d%.]+)bp")
+    if height then
+      return tonumber(height)
+    end
+  end
+  return nil
+end
+
 -- Whether a row can go out a line at a time: a cell of one paragraph in each column, with no picture
 -- alone on a line, none merged
 local function wraps(row, columns)
@@ -608,9 +635,27 @@ local function wraps(row, columns)
   return true
 end
 
+-- The first line of each cell of a row whose cells all start in a size of their own, by its column, when it
+-- is lower than the line of the row: see \pdcWrapTop. Empty for another row.
+local function own_lines(row)
+  local heights, highest = {}, 0
+  for index, cell in ipairs(row.cells) do
+    local height = first_line(cell)
+    if height == nil then return {} end
+    heights[index] = height
+    highest = math.max(highest, height)
+  end
+  local lower = {}
+  for index, height in ipairs(heights) do
+    if height < highest then lower[index] = height end
+  end
+  return lower
+end
+
 -- The cells of each row of the bodies which can go out a line at a time, in their boxes; after its last
--- cell a marker which wrap_latex replaces.
-local function wrap_cells(tbl)
+-- cell a marker which wrap_latex replaces. In a table with lines of its rows, `lined`, the first line of
+-- each cell keeps its own height.
+local function wrap_cells(tbl, lined)
   for _, body in ipairs(tbl.bodies) do
     -- The rows a cell merged down from a row above still covers
     local covered = 0
@@ -626,6 +671,7 @@ local function wrap_cells(tbl)
         wrap_columns = math.max(wrap_columns, #row.cells)
         local number = #wrap_rows + 1
         local pieces = {}
+        local own = lined and own_lines(row) or {}
         for index, cell in ipairs(row.cells) do
           local block = cell.contents[1]
           local color, at = cell_color(cell)
@@ -637,7 +683,8 @@ local function wrap_cells(tbl)
           local content = block.content
           content[#content] = pandoc.RawInline("latex", WRAP_END[content[#content].text])
           local last = index == #row.cells
-          local open = string.format("%s\\pdcWrapCell%s{%d}{", before, last and "Last" or "", index)
+          local height = own[index] and string.format("\\pdcWrapOwn{%.4fbp}", own[index]) or ""
+          local open = string.format("%s%s\\pdcWrapCell%s{%d}{", before, height, last and "Last" or "", index)
           content:insert(1, pandoc.RawInline("latex", (index == 1 and "\\pdcWrapBegin" or "") .. open))
           content:insert(pandoc.RawInline("latex", last and string.format("}\\pdcWrapRowEnd{%d}", number) or "}"))
           pieces[index] = string.format("%s\\pdcWrapPiece%s{%d}", before, last and "Last" or "", index)
@@ -769,7 +816,14 @@ local function process_rows(rows, layout, flags, head)
         -- has that line: before a list or a table the strut would be a line of its own
         local first = cell.contents[1]
         local strut = (head and first and (first.t == "Para" or first.t == "Plain")) and HEAD_STRUT or ""
-        inject_raw_at_start(cell.contents, align_latex .. strut)
+        -- Word sets the text of an indented paragraph in from the cell margin. The alignment switch sets
+        -- \leftskip, so the indent comes after it. Word centers a paragraph over the whole cell and only keeps
+        -- it off the indent, which glue cannot say: a centered cell stays centered
+        local indent = ""
+        if props and props.li and align_latex ~= ALIGN_LATEX.AlignCenter then
+          indent = string.format("\\advance\\leftskip%sbp\\relax ", props.li)
+        end
+        inject_raw_at_start(cell.contents, align_latex .. indent .. strut)
         flags.align = true
         modified = true
       end
@@ -1326,21 +1380,6 @@ local function widest_separator(owners)
   return widest
 end
 
--- The height of the first line of a cell, in big points, when its text starts in a size of its own; nil otherwise.
-local function first_line(cell)
-  local first = cell.contents[1]
-  for _, inline in ipairs(first and (first.t == "Plain" or first.t == "Para") and first.content or {}) do
-    if inline.t ~= "RawInline" then
-      return nil
-    end
-    local height = inline.text:match("\\setbox\\strutbox\\hbox{\\vrule height ([%d%.]+)bp")
-    if height then
-      return tonumber(height)
-    end
-  end
-  return nil
-end
-
 -- The line of each row of a table whose cells all start in a size of their own: Word sets the first line
 -- of a cell as high as its text, LaTeX as high as the body text. Nil for a row with a cell of the body text,
 -- and nil for the table when no row has one.
@@ -1395,7 +1434,7 @@ local function grid_table(tbl, absolute)
       end
     end
   end
-  wrap_cells(tbl)
+  wrap_cells(tbl, true)
   local struts = row_lines(rows)
   if struts then
     for index in ipairs(rows) do

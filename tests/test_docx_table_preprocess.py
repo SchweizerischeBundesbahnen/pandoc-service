@@ -829,3 +829,61 @@ def test_a_cell_merged_down_takes_its_bottom_from_its_last_row():
     last = '<w:tcPr><w:vMerge/><w:tcBorders><w:bottom w:val="single" w:sz="24" w:color="0000FF"/></w:tcBorders></w:tcPr>'
     xml = _bordered_table([[restart + _para("a"), _para("b")], [last + _para(""), _para("d")]], _sides())
     assert _cell_borders(xml)[0] == "single.4.000000/single.4.000000/single.24.0000FF/single.4.000000"
+
+
+# --- cell left indent -------------------------------------------------------
+#
+# pandoc reads an indented paragraph as a BlockQuote, which the filter unwraps
+# in a cell, so the indent rides on the sentinel in points.
+
+
+def _indented_cell(ind: str) -> str:
+    return f"<w:tc><w:p><w:pPr><w:ind {ind}/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p></w:tc>"
+
+
+@pytest.mark.parametrize(("ind", "expected"), [('w:left="142"', "li=7.1"), ('w:start="200"', "li=10")])
+def test_an_indented_cell_is_tagged_with_its_indent(ind, expected):
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_indented_cell(ind)))}))
+
+    assert expected in _cell_sentinel_text(out)
+
+
+@pytest.mark.parametrize("ind", ['w:left="0"', 'w:left="-142"', 'w:hanging="142"'])
+def test_a_cell_without_a_positive_indent_is_not_tagged(ind):
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(_indented_cell(ind)))}))
+
+    assert "li=" not in _cell_sentinel_text(out)
+
+
+def test_a_cell_starting_with_a_list_paragraph_is_not_tagged():
+    """A list paragraph carries the indent of its level, which LaTeX sets for the list already."""
+    numbered = '<w:tc><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:ind w:left="720" w:hanging="360"/></w:pPr><w:r><w:t>item</w:t></w:r></w:p></w:tc>'
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(numbered))}))
+
+    assert "li=" not in _cell_sentinel_text(out)
+
+
+def _paragraph(text: str, left: int | None) -> str:
+    ppr = f'<w:pPr><w:ind w:left="{left}"/></w:pPr>' if left is not None else ""
+    return f"<w:p>{ppr}<w:r><w:t>{text}</w:t></w:r></w:p>" if text else f"<w:p>{ppr}</w:p>"
+
+
+@pytest.mark.parametrize(
+    ("paragraphs", "expected"),
+    [
+        ((("first", 142), ("second", None)), None),
+        ((("first", 142), ("second", 284)), None),
+        ((("first", 142), ("second", 142)), "li=7.1"),
+        ((("first", 142), ("", None)), "li=7.1"),
+    ],
+)
+def test_a_cell_is_tagged_only_when_its_paragraphs_share_the_indent(paragraphs, expected):
+    """The indent applies to the whole cell: Word indents a paragraph which states no indent less."""
+    cell = "<w:tc>" + "".join(_paragraph(text, left) for text, left in paragraphs) + "</w:tc>"
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(cell))}))
+
+    text = _cell_sentinel_text(out)
+    if expected is None:
+        assert "li=" not in text
+    else:
+        assert expected in text

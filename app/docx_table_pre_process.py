@@ -29,7 +29,7 @@ Sentinel format (PUA delimiters U+E010 / U+E011), a ``;``-separated key map::
 
     <U+E010>bg=RRGGBB;ha=justify;tw=0.4000;ta=left<U+E011>
 
-``bg`` and ``ha`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
+``bg``, ``ha`` and ``li`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
 (left/center/right) are table-level and live on the first cell (merged into
 its sentinel if it also carries a per-cell key).
 
@@ -38,6 +38,10 @@ its ``Alignment`` is left/right/center/default — so a cell's ``w:jc="both"``
 reaches the reader as ``AlignLeft`` and ``distribute`` as ``AlignDefault``,
 and either way the text comes out flush left. The other three alignments
 survive on the ``Cell`` and need no sentinel.
+
+``li`` is the left indent of the cell's first paragraph, in points. pandoc reads
+an indented paragraph as a BlockQuote and the filter unwraps it, so the indent
+rides on the sentinel.
 
 This is the table companion to :mod:`app.docx_color_pre_process` /
 :mod:`app.docx_paragraph_pre_process`; it runs on the same docx->latex path
@@ -51,6 +55,7 @@ import logging
 from xml.etree import ElementTree as ET
 
 from . import docx_page_geometry
+from .docx_numbers import whole_number
 from .docx_ooxml import W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
@@ -68,6 +73,7 @@ _TBLGRID_TAG = f"{{{W_NS}}}tblGrid"
 _GRIDCOL_TAG = f"{{{W_NS}}}gridCol"
 _TBLW_TAG = f"{{{W_NS}}}tblW"
 _JC_TAG = f"{{{W_NS}}}jc"
+_IND_TAG = f"{{{W_NS}}}ind"
 _TR_TAG = f"{{{W_NS}}}tr"
 _TC_TAG = f"{{{W_NS}}}tc"
 _TCPR_TAG = f"{{{W_NS}}}tcPr"
@@ -360,10 +366,38 @@ def _extract_cell_justification(tc: ET.Element) -> str | None:
     return "justify" if jc.get(_VAL_ATTR) in _JUSTIFIED_JC_VALUES else None
 
 
+def _paragraph_indent(para: ET.Element) -> int | None:
+    """The positive left indent of a paragraph in twips, None for none.
+
+    A list paragraph carries the indent of its level, which LaTeX sets for the list already.
+    """
+    ppr = para.find(_PPR_TAG)
+    ind = ppr.find(_IND_TAG) if ppr is not None and ppr.find(f"{{{W_NS}}}numPr") is None else None
+    if ind is None:
+        return None
+    twips = whole_number(ind.get(f"{{{W_NS}}}left") or ind.get(f"{{{W_NS}}}start"), signed=True)
+    return twips if twips is not None and twips > 0 else None
+
+
+def _extract_cell_indent(tc: ET.Element) -> str | None:
+    """The left indent of the cell's own paragraphs in points, when those with text share a positive one.
+
+    The indent applies to the whole cell, so a cell of paragraphs indented apart, or holding a table, gets none.
+    """
+    indents = set()
+    for child in tc:
+        if child.tag == _TBL_TAG:
+            return None
+        if child.tag == _P_TAG and any(text.text for text in child.iter(_T_TAG)):
+            indents.add(_paragraph_indent(child))
+    indent = indents.pop() if len(indents) == 1 else None
+    return f"{indent / 20:g}" if indent is not None else None
+
+
 def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:
     """The per-cell sentinel keys this cell needs, empty when it needs none.
 
-    Covers the background colour and justification; see the module docstring
+    Covers the background colour, justification and left indent; see the module docstring
     for why justification needs carrying and the other alignments do not.
     """
     props: dict[str, str] = {}
@@ -376,6 +410,10 @@ def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:
     justification = _extract_cell_justification(tc)
     if justification:
         props["ha"] = justification
+
+    indent = _extract_cell_indent(tc)
+    if indent:
+        props["li"] = indent
 
     return props
 
