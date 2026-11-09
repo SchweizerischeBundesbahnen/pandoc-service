@@ -13,7 +13,7 @@ import shlex
 import pypdfium2 as pdfium
 import pytest
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -714,6 +714,17 @@ def test_a_period_at_the_end_of_a_line_hangs_past_the_margin(test_parameters: Te
     assert "end\\rlap{.}}" in body, "the period of the paragraph hangs inside the group of its run"
 
 
+def test_the_punctuation_word_lets_hang_hangs_past_the_margin(test_parameters: TestParameters):
+    """Probes in Word for Mac: a colon, a closing bracket, a percent sign and their like hang as the period does."""
+    native = '[Para [Str "a)", Space, Str "50%", Space, Str "b-", Space, Str "c", LineBreak, Str "d\u201d", LineBreak, Str "handling):"]]'
+    body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-body-descent=3.4", native=native).split())
+    assert "a\\rlap{)}\\hskip\\dimexpr\\fontcharwd\\font`)+\\fontdimen2\\font\\relax 50" in body, body
+    assert "50\\rlap{\\%}\\hskip\\dimexpr\\fontcharwd\\font`\\%+" in body, "a percent sign goes in escaped"
+    assert "b- c" in body, "a hyphen does not hang"
+    assert "d\\rlap{\u201d}\\strut{}\\\\" in body, "a mark before a line break hangs"
+    assert "handling)\\rlap{:}" in body, "the mark which ends the paragraph hangs"
+
+
 def test_an_equation_has_no_room_for_an_empty_limit(test_parameters: TestParameters):
     """Word sets no limit where a sum has an empty one: TeX keeps room for it."""
     body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "\\\\sum_{i}^{}P_{}"]]')
@@ -769,3 +780,19 @@ def test_the_hyphen_of_a_font_which_shares_its_glyph_copies_out_as_a_hyphen(test
     response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
     assert response.status_code == 200, response.text
     assert "e-mail" in pdfium.PdfDocument(response.content)[0].get_textpage().get_text_range()
+
+
+def test_a_line_which_fits_but_for_its_closing_colon_stays_one_line(test_parameters: TestParameters):
+    """The line of test_formulas_conversion is 468.475pt wide in Liberation Sans, the text 468pt: Word hangs the colon.
+
+    TeX moved its last word to a line of its own, and everything below the paragraph down by a line.
+    """
+    document = Document()
+    section = document.sections[0]
+    section.left_margin = section.right_margin = Inches(1)
+    section.page_width = Inches(8.5)
+    document.styles["Normal"].font.name = "Liberation Sans"
+    document.styles["Normal"].font.size = Pt(12)
+    document.add_paragraph("Plain-TeX matrix macro + \\cr, multi-line (\\pmatrix -> pmatrix env, \\cr -> \\\\, <br> handling):")
+    text = pdfium.PdfDocument(_docx_to_pdf(test_parameters, document))[0].get_textpage().get_text_range()
+    assert "<br> handling):" in text, text

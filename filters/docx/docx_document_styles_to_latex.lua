@@ -690,18 +690,45 @@ end
 
 local last_word
 
--- Word lets the period which ends a line hang past the right margin: only the word before it has to
--- fit. A period before a space takes no width of its own, and the space after it as much more: at the
--- end of a line the space goes, and the period stands past the margin.
-local HANGING_PERIOD = "\\rlap{.}\\hskip\\dimexpr\\fontcharwd\\font`.+\\fontdimen2\\font\\relax "
+-- Word lets the punctuation which ends a line hang past the right margin: only the word before it has
+-- to fit. Probes in Word for Mac found these to hang, and no letter, hyphen, ellipsis or straight quote.
+-- A mark before a space takes no width of its own, and the space after it as much more: at the end of
+-- a line the space goes, and the mark stands past the margin. The LaTeX of each, escaped where needed.
+local HANGING = {
+  ["!"] = "!", ["%"] = "\\%", [")"] = ")", [","] = ",", ["."] = ".", [":"] = ":", [";"] = ";", [">"] = ">",
+  ["?"] = "?", ["]"] = "]", ["}"] = "\\}", ["°"] = "°", ["·"] = "·", ["’"] = "’", ["”"] = "”", ["‰"] = "‰",
+}
 
-local function hang_periods(inlines)
+-- The text without its last character, and the LaTeX of that character when it hangs
+local function hanging_end(text)
+  local start = utf8.offset(text, -1)
+  local mark = start and start > 1 and HANGING[text:sub(start)]
+  if mark then
+    return text:sub(1, start - 1), mark
+  end
+  return nil
+end
+
+local function hanging_space(mark)
+  return string.format("\\rlap{%s}\\hskip\\dimexpr\\fontcharwd\\font`%s+\\fontdimen2\\font\\relax ", mark, mark)
+end
+
+local function hang_punctuation(inlines)
   local changed = false
   for index = #inlines - 1, 1, -1 do
     local str, after = inlines[index], inlines[index + 1]
-    if str.t == "Str" and #str.text > 1 and str.text:sub(-1) == "." and (after.t == "Space" or after.t == "SoftBreak") then
-      inlines[index] = pandoc.Str(str.text:sub(1, -2))
-      inlines[index + 1] = pandoc.RawInline("latex", HANGING_PERIOD)
+    local rest, mark = nil, nil
+    if str.t == "Str" then
+      rest, mark = hanging_end(str.text)
+    end
+    if mark and (after.t == "Space" or after.t == "SoftBreak") then
+      inlines[index] = pandoc.Str(rest)
+      inlines[index + 1] = pandoc.RawInline("latex", hanging_space(mark))
+      changed = true
+    elseif mark and (after.t == "LineBreak" or (after.t == "RawInline" and after.text == "\\strut{}")) then
+      -- The line ends at the break: nothing follows the mark on it
+      inlines[index] = pandoc.Str(rest)
+      inlines:insert(index + 1, pandoc.RawInline("latex", "\\rlap{" .. mark .. "}"))
       changed = true
     end
   end
@@ -749,9 +776,13 @@ local function set_paragraph(para)
   local changed = false
   local list, index = last_word(para.content)
   local last = list and list[index]
-  if last and #last.text > 1 and last.text:sub(-1) == "." then
-    list[index] = pandoc.Str(last.text:sub(1, -2))
-    list:insert(index + 1, pandoc.RawInline("latex", "\\rlap{.}"))
+  local rest, mark = nil, nil
+  if last then
+    rest, mark = hanging_end(last.text)
+  end
+  if mark then
+    list[index] = pandoc.Str(rest)
+    list:insert(index + 1, pandoc.RawInline("latex", "\\rlap{" .. mark .. "}"))
     changed = true
   end
   local visible = false
@@ -1072,7 +1103,7 @@ return {
   { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
-  { Para = function(para) return para:walk({ Inlines = hang_periods }) end, Plain = function(plain) return plain:walk({ Inlines = hang_periods }) end },
+  { Para = function(para) return para:walk({ Inlines = hang_punctuation }) end, Plain = function(plain) return plain:walk({ Inlines = hang_punctuation }) end },
   {
     Pandoc = function(doc)
       if FORMAT:match("latex") then
