@@ -31,8 +31,9 @@
   .sheet .top { position: absolute; inset: 0; }
   .sheet .top img { position: absolute; inset: 0; }
   /* Swipe as in weasysvg: dragging the line changes the clip of the upper page and nothing else, so no page is
-     drawn again and nothing flickers. Safari selects a dragged image: the prefixed rules keep it from that */
-  .sheet.swipe { touch-action: none; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
+     drawn again and nothing flickers. Safari selects a dragged image: the prefixed rules keep it from that.
+     A finger moving up or down still scrolls the pages, one moving across drags the line */
+  .sheet.swipe { touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
   .sheet.swipe img { -webkit-user-drag: none; }
   .sheet .top { will-change: clip-path; }
   .sheet .line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0969da; }
