@@ -168,6 +168,8 @@ function moveSplit(value) {
 
 const pages = document.getElementById("pages");
 let dragged = null;
+// The pointer which drags: a second finger neither moves the line nor ends the drag
+let dragger = null;
 let pending = null;
 // At most one move per frame: a pointer reports more often than the screen paints
 const follow = (event) => {
@@ -177,18 +179,20 @@ const follow = (event) => {
 };
 pages.addEventListener("pointerdown", (event) => {
   const sheet = event.target.closest(".sheet.swipe");
-  if (!sheet) return;
+  if (!sheet || dragged) return;
   // No selection starts under a drag of the line, which also keeps the line from taking the focus: it takes it
   // here, so the arrow keys move it on
   event.preventDefault();
   sheet.querySelector(".line").focus({ preventScroll: true });
   dragged = sheet;
+  dragger = event.pointerId;
   sheet.setPointerCapture(event.pointerId);
   follow(event);
 });
-pages.addEventListener("pointermove", (event) => { if (dragged) follow(event); });
-pages.addEventListener("pointerup", () => { dragged = null; });
-pages.addEventListener("pointercancel", () => { dragged = null; });
+const release = (event) => { if (event.pointerId === dragger) dragged = dragger = null; };
+pages.addEventListener("pointermove", (event) => { if (dragged && event.pointerId === dragger) follow(event); });
+pages.addEventListener("pointerup", release);
+pages.addEventListener("pointercancel", release);
 pages.addEventListener("keydown", (event) => {
   if (!event.target.classList.contains("line")) return;
   const step = { ArrowLeft: -0.01, ArrowRight: 0.01, PageDown: -0.1, PageUp: 0.1 }[event.key];
