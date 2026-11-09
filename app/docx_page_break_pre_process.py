@@ -213,6 +213,14 @@ def _page_break_before() -> ET.Element:
     return para
 
 
+def _move_breaks(body: ET.Element, breaks_before: list[ET.Element], replaced_breaks: list[ET.Element]) -> None:
+    """Put a break paragraph before each paragraph of breaks_before, and drop a page break of each of replaced_breaks."""
+    for para in breaks_before:
+        body.insert(list(body).index(para), _page_break_before())
+    for para in replaced_breaks:
+        _drop_one_page_break(body, para)
+
+
 def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = frozenset()) -> bool:
     """Write the breaks of the paragraphs directly in the body as sentinels. Returns whether there were any."""
     sections = pairwise(docx_page_geometry.body_sections(body))
@@ -231,10 +239,7 @@ def _mark_body_breaks(body: ET.Element, break_styles: frozenset[str | None] = fr
             changed = _mark_section_end(block, sections, lone_page_break, replaced_breaks) or changed
         lone_page_break = block if is_lone_page_break else None
     # Not in the loop: adding or removing a block while iterating the body visits a block twice or skips one.
-    for para in breaks_before:
-        body.insert(list(body).index(para), _page_break_before())
-    for para in replaced_breaks:
-        _drop_one_page_break(body, para)
+    _move_breaks(body, breaks_before, replaced_breaks)
     return changed or bool(breaks_before)
 
 

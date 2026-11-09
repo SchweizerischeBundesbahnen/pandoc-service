@@ -105,7 +105,8 @@ def _add_svg_relationships(
     """Relate each PNG of `svg_layers` this part shows to its SVG. Returns the id of the SVG by the id of the PNG."""
     ids = {relationship.get("Id") for relationship in rels}
     svg_ids: dict[str, str] = {}
-    for relationship in list(rels):
+    # A copy: the loop adds relationships to rels
+    for relationship in rels.findall(f"{{{_RELATIONSHIPS_NS}}}Relationship"):
         if relationship.get("Type") != _IMAGE_RELATIONSHIP or relationship.get("TargetMode") == "External":
             continue
         png_name = posixpath.normpath(posixpath.join(folder, relationship.get("Target", "")))
