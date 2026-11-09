@@ -43,6 +43,18 @@ def _sentinels(text: str) -> str:
     return SPACE * start + body + SPACE * end
 
 
+def _mark_run(run: ET.Element) -> bool:
+    """Mark the edge spaces of the texts of a run; returns whether one changed."""
+    changed = False
+    for text in run.iter(_w("t")):
+        value = text.text or ""
+        marked = _sentinels(value)
+        if marked != value:
+            text.text = marked
+            changed = True
+    return changed
+
+
 def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
     """Mark the edge spaces of the formatted runs of a part; returns the part and whether it changed."""
     tree = parse_xml(xml_bytes)
@@ -54,12 +66,6 @@ def rewrite_part(xml_bytes: bytes) -> tuple[bytes, bool]:
         if not any((text.text or "").strip(" ") for text in paragraph.iter(_w("t"))):
             continue
         for run in paragraph.iter(_w("r")):
-            if not _formatted(run):
-                continue
-            for text in run.iter(_w("t")):
-                value = text.text or ""
-                marked = _sentinels(value)
-                if marked != value:
-                    text.text = marked
-                    changed = True
+            if _formatted(run):
+                changed = _mark_run(run) or changed
     return (serialize_tree(tree), True) if changed else (xml_bytes, False)
