@@ -745,7 +745,7 @@ def test_every_line_a_break_ends_reaches_the_descent_of_the_font(test_parameters
     metadata = ("docx-body-size=12", "docx-body-baseline=14.64", "docx-body-ascent=11.28", "docx-body-descent=3.36")
     native = '[Para [Str "Not", Space, Str "resized:", LineBreak, Strong [Str "bold", LineBreak], Str "end"]]'
     body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
-    assert "resized:\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body
+    assert "resized\\rlap{:}\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body
 
 
 def test_a_page_ends_where_the_descent_of_its_last_line_reaches_the_margin(test_parameters: TestParameters):
@@ -768,7 +768,16 @@ def test_a_character_of_a_shared_glyph_carries_its_own_text(test_parameters: Tes
     """A reader takes the ( of Segoe UI for U+FD3E, which the font maps to the same glyph: the PDF says it is a (."""
     body = _latex(test_parameters.container, "docx-actual-text=0028", native='[Para [Str "(a)"]]')
     body = body[body.index("\\begin{document}") :]
-    assert "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF0028>>>BDC}(\\special{pdf:content EMC}}{(}a)" in body, body
+    assert "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF0028>>>BDC}(\\special{pdf:content EMC}}{(}a\\rlap{)}" in body, body
+
+
+def test_a_hanging_mark_of_a_shared_glyph_carries_its_own_text(test_parameters: TestParameters):
+    """The ) of Segoe UI shares its glyph with U+FD3F: past the margin it keeps its own text as well."""
+    body = _latex(test_parameters.container, "docx-actual-text=0029", native='[Para [Str "a)", Space, Str "b)"]]')
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    shared = "\\rlap{\\special{pdf:content /Span<</ActualText<FEFF0029>>>BDC})\\special{pdf:content EMC}}"
+    assert f"a{shared}\\hskip" in body, body
+    assert f"b{shared}" in body, "the mark which ends the paragraph too"
 
 
 def test_the_hyphen_of_a_font_which_shares_its_glyph_copies_out_as_a_hyphen(test_parameters: TestParameters):

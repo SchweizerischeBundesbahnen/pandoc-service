@@ -705,6 +705,9 @@ local HANGING = {
 -- Whether the punctuation hangs at all, see docx-hanging-punctuation
 local hanging = true
 
+-- The characters of docx-actual-text, with the hex of their code point.
+local actual_texts = {}
+
 -- The text without its last character, and the LaTeX of that character when it hangs
 local function hanging_end(text)
   if not hanging then
@@ -713,31 +716,39 @@ local function hanging_end(text)
   local start = utf8.offset(text, -1)
   local mark = start and start > 1 and HANGING[text:sub(start)]
   if mark then
-    return text:sub(1, start - 1), mark
+    return text:sub(1, start - 1), mark, actual_texts[text:sub(start)]
   end
   return nil
 end
 
-local function hanging_space(mark)
-  return string.format("\\rlap{%s}\\hskip\\dimexpr\\fontcharwd\\font`%s+\\fontdimen2\\font\\relax ", mark, mark)
+-- The mark as it stands past the margin: with its own text where the font shares its glyph, see actual_text
+local function hanging_mark(mark, hex)
+  if hex then
+    mark = string.format("\\special{pdf:content /Span<</ActualText<FEFF%s>>>BDC}%s\\special{pdf:content EMC}", hex, mark)
+  end
+  return "\\rlap{" .. mark .. "}"
+end
+
+local function hanging_space(mark, hex)
+  return string.format("%s\\hskip\\dimexpr\\fontcharwd\\font`%s+\\fontdimen2\\font\\relax ", hanging_mark(mark, hex), mark)
 end
 
 local function hang_punctuation(inlines)
   local changed = false
   for index = #inlines - 1, 1, -1 do
     local str, after = inlines[index], inlines[index + 1]
-    local rest, mark = nil, nil
+    local rest, mark, hex = nil, nil, nil
     if str.t == "Str" then
-      rest, mark = hanging_end(str.text)
+      rest, mark, hex = hanging_end(str.text)
     end
     if mark and (after.t == "Space" or after.t == "SoftBreak") then
       inlines[index] = pandoc.Str(rest)
-      inlines[index + 1] = pandoc.RawInline("latex", hanging_space(mark))
+      inlines[index + 1] = pandoc.RawInline("latex", hanging_space(mark, hex))
       changed = true
     elseif mark and (after.t == "LineBreak" or (after.t == "RawInline" and after.text == "\\strut{}")) then
       -- The line ends at the break: nothing follows the mark on it
       inlines[index] = pandoc.Str(rest)
-      inlines:insert(index + 1, pandoc.RawInline("latex", "\\rlap{" .. mark .. "}"))
+      inlines:insert(index + 1, pandoc.RawInline("latex", hanging_mark(mark, hex)))
       changed = true
     end
   end
@@ -785,13 +796,13 @@ local function set_paragraph(para)
   local changed = false
   local list, index = last_word(para.content)
   local last = list and list[index]
-  local rest, mark = nil, nil
+  local rest, mark, hex = nil, nil, nil
   if last then
-    rest, mark = hanging_end(last.text)
+    rest, mark, hex = hanging_end(last.text)
   end
   if mark then
     list[index] = pandoc.Str(rest)
-    list:insert(index + 1, pandoc.RawInline("latex", "\\rlap{" .. mark .. "}"))
+    list:insert(index + 1, pandoc.RawInline("latex", hanging_mark(mark, hex)))
     changed = true
   end
   local visible = false
@@ -967,9 +978,6 @@ local function paragraph_gaps(blocks, starts_page)
   end
   return result
 end
-
--- The characters of docx-actual-text, with the hex of their code point.
-local actual_texts = {}
 
 -- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI
 -- for U+FD3E, which the font maps to the same glyph. Each such character carries its own text, which a
