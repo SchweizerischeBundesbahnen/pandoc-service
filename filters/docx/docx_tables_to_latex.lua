@@ -1507,6 +1507,30 @@ local ALIGN_GLUE = {
 }
 local RESET_GLUE = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{\\fill}"
 
+-- Word keeps a space which starts the line after a line break, TeX drops it with the break: a box before the space
+-- keeps it, and zero width spaces before it drop as well. docx_document_styles_to_latex does the same outside the
+-- tables this writes as LaTeX, whose cells it cannot see.
+local ZERO_WIDTH = "\u{200B}"
+local spaces_kept = false
+
+local function keep_spaces_after_breaks(inlines)
+  local changed = false
+  for index = #inlines - 1, 1, -1 do
+    if inlines[index].t == "LineBreak" then
+      local after = index + 1
+      if inlines[after].t == "Str" and inlines[after].text ~= "" and inlines[after].text:gsub(ZERO_WIDTH, "") == "" then
+        after = after + 1
+      end
+      if inlines[after] and inlines[after].t == "Space" then
+        inlines:insert(index + 1, pandoc.RawInline("latex", "\\hbox{}"))
+        changed = true
+      end
+    end
+  end
+  spaces_kept = spaces_kept or changed
+  return changed and inlines or nil
+end
+
 -- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI for
 -- U+FD3E, which the font maps to the same glyph. Each such character carries its own text: an /ActualText
 -- around it. docx_document_styles_to_latex does the same for the text outside the tables this writes as LaTeX.
@@ -1554,6 +1578,13 @@ function table_pass.Table(tbl)
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
   hang_pictures(all_rows(tbl))
+  spaces_kept = false
+  for _, row in ipairs(all_rows(tbl)) do
+    for _, cell in ipairs(row.cells) do
+      cell.contents = pandoc.Blocks(cell.contents):walk({ Inlines = keep_spaces_after_breaks })
+    end
+  end
+  modified = modified or spaces_kept
   if next(actual_texts) then
     for _, row in ipairs(all_rows(tbl)) do
       for _, cell in ipairs(row.cells) do

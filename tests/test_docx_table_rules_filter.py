@@ -792,3 +792,22 @@ def test_the_lines_of_cells_which_take_their_room_get_no_more(test_parameters: T
     latex = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/latex", files={"source": ("in.docx", docx.getvalue())}).text
     assert "\\pdcGridV" in latex, "a table which draws the lines of its cells"
     assert "\\vadjust{\\kern\\arrayrulewidth}" not in latex
+
+
+def test_a_space_after_a_line_break_in_a_cell_of_a_grid_stays(test_parameters: TestParameters):
+    """A grid is written as LaTeX before the styles see its cells: the space after a line break stays there as well."""
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    paragraph = table.rows[0].cells[0].paragraphs[0]
+    paragraph.add_run("Title").add_break()
+    # As Polarion writes the attribute line of a work item: zero width spaces, a space, then the attributes
+    for text in ("\u200b\u200b", " ", "[Draft]"):
+        paragraph.add_run(text)
+    table.rows[0].cells[1].text = "Other"
+    docx = io.BytesIO()
+    document.save(docx)
+    latex = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/latex", files={"source": ("in.docx", docx.getvalue())}).text
+    assert "\\pdcGridV" in latex, "a table written as LaTeX"
+    assert "\\\\ \\hbox{}\\hspace{0pt}\\hspace{0pt} {[}Draft" in " ".join(latex.split()), latex
