@@ -141,6 +141,8 @@ function draw(doc) {
     }
   }
   const pages = document.getElementById("pages");
+  // The sheet of a drag goes: its pointer may lift outside the pages, where no handler sees it
+  dragged = dragger = null;
   pages.innerHTML = parts.join("");
 }
 
