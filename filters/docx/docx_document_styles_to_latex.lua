@@ -595,7 +595,9 @@ end
 -- An equation of Word is a centred paragraph. TeX opens an empty line above
 -- a display which starts a paragraph, and its matrices take the row height
 -- of the tables: the equation is set as a centred paragraph in display style.
-local function display_line()
+-- In a cell, whose paragraph has no space before it, Word sets the line of the font of the equations that
+-- much further down as well.
+local function display_line(cell)
   local open = "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{" .. ALIGNED_GAP .. "pt}"
   local close = "\\par}"
   if body_size then
@@ -609,7 +611,8 @@ local function display_line()
     if math_top and math_descent and body_descent then
       -- At the least as high and as deep as the line of the font of the equations, and the next line right below
       -- its depth: the line skip of the body would set it a line of the body below
-      line = string.format("\\rule[-%gbp]{0pt}{%gbp}", math_descent * body_size, (math_top + math_descent) * body_size)
+      local top = math_top + (cell and EQUATION_TOP or 0)
+      line = string.format("\\rule[-%gbp]{0pt}{%gbp}", math_descent * body_size, (top + math_descent) * body_size)
     end
     close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}%s\\usebox{\\pdcEquationBox}\\par%s}",
       EQUATION_TOP * body_size, line, line ~= "" and "\\prevdepth\\dp\\strutbox" or "")
@@ -786,6 +789,27 @@ local function strut_line_breaks(inlines)
     result:insert(inline)
   end
   return result
+end
+
+-- Word keeps a space which starts the line after a line break, TeX drops it with the break: a box before the space
+-- keeps it. Zero width spaces, which Polarion writes before it, are glue to TeX and drop as well.
+local ZERO_WIDTH = "\u{200B}"
+
+local function keep_spaces_after_breaks(inlines)
+  local changed = false
+  for index = #inlines - 1, 1, -1 do
+    if inlines[index].t == "LineBreak" then
+      local after = index + 1
+      if inlines[after].t == "Str" and inlines[after].text ~= "" and inlines[after].text:gsub(ZERO_WIDTH, "") == "" then
+        after = after + 1
+      end
+      if inlines[after] and inlines[after].t == "Space" then
+        inlines:insert(index + 1, pandoc.RawInline("latex", "\\hbox{}"))
+        changed = true
+      end
+    end
+  end
+  return changed and inlines or nil
 end
 
 local function set_paragraph(para)
@@ -1101,8 +1125,10 @@ local function write_preamble(meta)
   -- After docx_tables_to_latex, whose \\providecommand stands for it without the styles
   local open, close = display_line()
   lines[#lines + 1] = "\\def\\pdcDisplayLine#1{" .. open .. "#1" .. close .. "}"
+  local _, cell_close = display_line(true)
+  lines[#lines + 1] = "\\def\\pdcCellDisplayLine#1{" .. open .. "#1" .. cell_close .. "}"
   -- The last paragraph of a cell: the cell ends it, centered, where a paragraph ended in the cell would add a line
-  local last_close = close:match("^(.-)\\par[^\\]*}$") or close:match("^(.-)\\par\\prevdepth\\dp\\strutbox}$") or ""
+  local last_close = cell_close:match("^(.-)\\par[^\\]*}$") or cell_close:match("^(.-)\\par\\prevdepth\\dp\\strutbox}$") or ""
   -- \\arraybackslash: the \\\\ after the cell ends the row, which \\centering would make a break of the line
   lines[#lines + 1] = "\\def\\pdcDisplayLineEnd#1{\\par" .. open:sub(2):gsub("^\\centering", "\\centering\\arraybackslash") .. "#1" .. last_close .. "}"
   headings_preamble(meta, lines)
@@ -1125,6 +1151,10 @@ return {
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
   { Para = function(para) return para:walk({ Inlines = hang_punctuation }) end, Plain = function(plain) return plain:walk({ Inlines = hang_punctuation }) end },
+  {
+    Para = function(para) return FORMAT:match("latex") and para:walk({ Inlines = keep_spaces_after_breaks }) or nil end,
+    Plain = function(plain) return FORMAT:match("latex") and plain:walk({ Inlines = keep_spaces_after_breaks }) or nil end,
+  },
   {
     Pandoc = function(doc)
       if FORMAT:match("latex") then

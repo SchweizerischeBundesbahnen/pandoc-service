@@ -765,7 +765,7 @@ local function display_equations(blocks)
     local only = (block.t == "Plain" or block.t == "Para") and #block.content == 1 and block.content[1]
     if only and only.t == "Math" and only.mathtype == "DisplayMath" then
       blocks[index] = pandoc.Plain({
-        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcDisplayLine{"),
+        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcCellDisplayLine{"),
         pandoc.Math("InlineMath", "\\displaystyle " .. only.text),
         pandoc.RawInline("latex", "}"),
       })
@@ -1420,6 +1420,19 @@ local function grid_table(tbl, absolute)
   local lines = grid_row_lines(rows, columns_count)
   local numbered = draws_cell_lines(rows)
   local owners = numbered and cell_owners(rows, columns_count)
+  -- A \cline takes no room of its own, where Word sets the row below a line its width lower: each cell of the
+  -- row above reaches that much deeper, so the line crosses no gap in a cell merged down across it. The lines of
+  -- the cells of a table which draws them take their room already
+  for index, row in ipairs(numbered and {} or rows) do
+    if rows[index + 1] and lines[index]:find("\\cline", 1, true) then
+      for _, cell in ipairs(row.cells) do
+        local last = cell.contents[#cell.contents]
+        if last and (last.t == "Plain" or last.t == "Para") then
+          last.content:insert(pandoc.RawInline("latex", "\\vadjust{\\kern\\arrayrulewidth}"))
+        end
+      end
+    end
+  end
   if numbered then
     for index, row in ipairs(rows) do
       local split = row.attributes[SPLIT]
@@ -1494,6 +1507,30 @@ local ALIGN_GLUE = {
 }
 local RESET_GLUE = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{\\fill}"
 
+-- Word keeps a space which starts the line after a line break, TeX drops it with the break: a box before the space
+-- keeps it, and zero width spaces before it drop as well. docx_document_styles_to_latex does the same outside the
+-- tables this writes as LaTeX, whose cells it cannot see.
+local ZERO_WIDTH = "\u{200B}"
+local spaces_kept = false
+
+local function keep_spaces_after_breaks(inlines)
+  local changed = false
+  for index = #inlines - 1, 1, -1 do
+    if inlines[index].t == "LineBreak" then
+      local after = index + 1
+      if inlines[after].t == "Str" and inlines[after].text ~= "" and inlines[after].text:gsub(ZERO_WIDTH, "") == "" then
+        after = after + 1
+      end
+      if inlines[after] and inlines[after].t == "Space" then
+        inlines:insert(index + 1, pandoc.RawInline("latex", "\\hbox{}"))
+        changed = true
+      end
+    end
+  end
+  spaces_kept = spaces_kept or changed
+  return changed and inlines or nil
+end
+
 -- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI for
 -- U+FD3E, which the font maps to the same glyph. Each such character carries its own text: an /ActualText
 -- around it. docx_document_styles_to_latex does the same for the text outside the tables this writes as LaTeX.
@@ -1541,6 +1578,13 @@ function table_pass.Table(tbl)
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
   hang_pictures(all_rows(tbl))
+  spaces_kept = false
+  for _, row in ipairs(all_rows(tbl)) do
+    for _, cell in ipairs(row.cells) do
+      cell.contents = pandoc.Blocks(cell.contents):walk({ Inlines = keep_spaces_after_breaks })
+    end
+  end
+  modified = modified or spaces_kept
   if next(actual_texts) then
     for _, row in ipairs(all_rows(tbl)) do
       for _, cell in ipairs(row.cells) do
@@ -1734,7 +1778,7 @@ function preamble_pass.Meta(meta)
 
   local parts = {}
   -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
-  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
+  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcCellDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
   if has_grid then parts[#parts + 1] = GRID_PREAMBLE end
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end

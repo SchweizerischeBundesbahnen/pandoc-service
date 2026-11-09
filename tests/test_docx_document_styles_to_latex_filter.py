@@ -355,9 +355,9 @@ def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameter
     metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.381", "docx-math-top=0.9502", "docx-math-descent=0.2222")
     preamble = _preamble(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "a^{2}"]]'))
     assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}}" in preamble, preamble
-    # The last paragraph of a cell: the cell ends the paragraph, and the row with it
+    # The last paragraph of a cell: the cell ends the paragraph, and the row with it. A cell sets the line lower
     last = "\\def\\pdcDisplayLineEnd#1{\\par\\centering\\arraybackslash"
-    assert last in preamble and "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}}" in preamble, preamble
+    assert last in preamble and "\\rule[-2.6664bp]{0pt}{15.6888bp}\\usebox{\\pdcEquationBox}}" in preamble, preamble
 
 
 def _numerator_top(container, equation: str) -> float:
@@ -827,3 +827,28 @@ def test_no_punctuation_hangs_where_word_lets_none(test_parameters: TestParamete
     body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-hanging-punctuation=false", native=native).split())
     assert "a) end." in body, body
     assert "rlap" not in body
+
+
+def test_a_space_which_starts_the_line_after_a_break_stays(test_parameters: TestParameters):
+    """Word keeps the space after a line break, TeX drops it with the break: the attribute line of a work item starts a space in."""
+    native = '[Para [Str "Title", LineBreak, Str "\\8203\\8203", Space, Str "[Draft]", LineBreak, Str "next", LineBreak, Space, Str "spaced"]]'
+    body = " ".join(_latex(test_parameters.container, native=native).split())
+    assert "\\\\ \\hbox{}\\hspace{0pt}\\hspace{0pt} {[}Draft" in body, body
+    assert "\\\\ next" in body, "a line which starts with text gets nothing"
+    assert "\\\\ \\hbox{} spaced" in body
+
+
+def test_an_equation_in_a_cell_sets_the_line_of_its_font_lower(test_parameters: TestParameters):
+    """Word sets the line of the font of an equation in a cell, whose paragraph has no space before it, 0.135 times the size lower.
+
+    In the body the space before its paragraph takes it. test_test_case_tables: the equation of a cell sat 2pt high.
+    """
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", "docx-math-top=0.9502", "docx-math-descent=0.2222")
+    preamble = _preamble(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "x"]]'))
+    assert "\\def\\pdcDisplayLine#1{" in preamble
+    body = preamble[preamble.index("\\def\\pdcDisplayLine#1{") :].split("\n")[0]
+    cell = preamble[preamble.index("\\def\\pdcCellDisplayLine#1{") :].split("\n")[0]
+    end = preamble[preamble.index("\\def\\pdcDisplayLineEnd#1{") :].split("\n")[0]
+    assert "\\rule[-2.6664bp]{0pt}{14.0688bp}" in body, body
+    assert "\\rule[-2.6664bp]{0pt}{15.6888bp}" in cell, cell
+    assert "\\rule[-2.6664bp]{0pt}{15.6888bp}" in end, end
