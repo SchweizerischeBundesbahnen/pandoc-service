@@ -366,18 +366,32 @@ def _extract_cell_justification(tc: ET.Element) -> str | None:
     return "justify" if jc.get(_VAL_ATTR) in _JUSTIFIED_JC_VALUES else None
 
 
-def _extract_cell_indent(tc: ET.Element) -> str | None:
-    """The left indent of the cell's own first paragraph in points, when it has a positive one.
+def _paragraph_indent(para: ET.Element) -> int | None:
+    """The positive left indent of a paragraph in twips, None for none.
 
     A list paragraph carries the indent of its level, which LaTeX sets for the list already.
     """
-    first_para = _own_first_para(tc)
-    ppr = first_para.find(_PPR_TAG) if first_para is not None else None
+    ppr = para.find(_PPR_TAG)
     ind = ppr.find(_IND_TAG) if ppr is not None and ppr.find(f"{{{W_NS}}}numPr") is None else None
     if ind is None:
         return None
     twips = whole_number(ind.get(f"{{{W_NS}}}left") or ind.get(f"{{{W_NS}}}start"), signed=True)
-    return f"{twips / 20:g}" if twips is not None and twips > 0 else None
+    return twips if twips is not None and twips > 0 else None
+
+
+def _extract_cell_indent(tc: ET.Element) -> str | None:
+    """The left indent of the cell's own paragraphs in points, when those with text share a positive one.
+
+    The indent applies to the whole cell, so a cell of paragraphs indented apart, or holding a table, gets none.
+    """
+    indents = set()
+    for child in tc:
+        if child.tag == _TBL_TAG:
+            return None
+        if child.tag == _P_TAG and any(text.text for text in child.iter(_T_TAG)):
+            indents.add(_paragraph_indent(child))
+    indent = indents.pop() if len(indents) == 1 else None
+    return f"{indent / 20:g}" if indent is not None else None
 
 
 def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:

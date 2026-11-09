@@ -861,3 +861,29 @@ def test_a_cell_starting_with_a_list_paragraph_is_not_tagged():
     out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(numbered))}))
 
     assert "li=" not in _cell_sentinel_text(out)
+
+
+def _paragraph(text: str, left: int | None) -> str:
+    ppr = f'<w:pPr><w:ind w:left="{left}"/></w:pPr>' if left is not None else ""
+    return f"<w:p>{ppr}<w:r><w:t>{text}</w:t></w:r></w:p>" if text else f"<w:p>{ppr}</w:p>"
+
+
+@pytest.mark.parametrize(
+    ("paragraphs", "expected"),
+    [
+        ((("first", 142), ("second", None)), None),
+        ((("first", 142), ("second", 284)), None),
+        ((("first", 142), ("second", 142)), "li=7.1"),
+        ((("first", 142), ("", None)), "li=7.1"),
+    ],
+)
+def test_a_cell_is_tagged_only_when_its_paragraphs_share_the_indent(paragraphs, expected):
+    """The indent applies to the whole cell: Word indents a paragraph which states no indent less."""
+    cell = "<w:tc>" + "".join(_paragraph(text, left) for text, left in paragraphs) + "</w:tc>"
+    out = docx_table_pre_process.preprocess(_pack({"word/document.xml": _doc(_table(cell))}))
+
+    text = _cell_sentinel_text(out)
+    if expected is None:
+        assert "li=" not in text
+    else:
+        assert expected in text
