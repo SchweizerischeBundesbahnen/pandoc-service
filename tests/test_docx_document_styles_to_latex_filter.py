@@ -13,7 +13,9 @@ import shlex
 import pypdfium2 as pdfium
 import pytest
 from docx import Document
-from docx.shared import Pt
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt
 from pypdf import PdfReader
 
 from tests.test_container import TestParameters
@@ -714,6 +716,17 @@ def test_a_period_at_the_end_of_a_line_hangs_past_the_margin(test_parameters: Te
     assert "end\\rlap{.}}" in body, "the period of the paragraph hangs inside the group of its run"
 
 
+def test_the_punctuation_word_lets_hang_hangs_past_the_margin(test_parameters: TestParameters):
+    """Probes in Word for Mac: a colon, a closing bracket, a percent sign and their like hang as the period does."""
+    native = '[Para [Str "a)", Space, Str "50%", Space, Str "b-", Space, Str "c", LineBreak, Str "d\u201d", LineBreak, Str "handling):"]]'
+    body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-body-descent=3.4", native=native).split())
+    assert "a\\rlap{)}\\hskip\\dimexpr\\fontcharwd\\font`)+\\fontdimen2\\font\\relax 50" in body, body
+    assert "50\\rlap{\\%}\\hskip\\dimexpr\\fontcharwd\\font`\\%+" in body, "a percent sign goes in escaped"
+    assert "b- c" in body, "a hyphen does not hang"
+    assert "d\\rlap{\u201d}\\strut{}\\\\" in body, "a mark before a line break hangs"
+    assert "handling)\\rlap{:}" in body, "the mark which ends the paragraph hangs"
+
+
 def test_an_equation_has_no_room_for_an_empty_limit(test_parameters: TestParameters):
     """Word sets no limit where a sum has an empty one: TeX keeps room for it."""
     body = _latex(test_parameters.container, "docx-body-size=12", "docx-body-baseline=14.65", native='[Para [Math DisplayMath "\\\\sum_{i}^{}P_{}"]]')
@@ -732,7 +745,7 @@ def test_every_line_a_break_ends_reaches_the_descent_of_the_font(test_parameters
     metadata = ("docx-body-size=12", "docx-body-baseline=14.64", "docx-body-ascent=11.28", "docx-body-descent=3.36")
     native = '[Para [Str "Not", Space, Str "resized:", LineBreak, Strong [Str "bold", LineBreak], Str "end"]]'
     body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
-    assert "resized:\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body
+    assert "resized\\rlap{:}\\strut{}\\\\ \\textbf{bold\\strut{}\\\\ }end" in body, body
 
 
 def test_a_page_ends_where_the_descent_of_its_last_line_reaches_the_margin(test_parameters: TestParameters):
@@ -755,7 +768,16 @@ def test_a_character_of_a_shared_glyph_carries_its_own_text(test_parameters: Tes
     """A reader takes the ( of Segoe UI for U+FD3E, which the font maps to the same glyph: the PDF says it is a (."""
     body = _latex(test_parameters.container, "docx-actual-text=0028", native='[Para [Str "(a)"]]')
     body = body[body.index("\\begin{document}") :]
-    assert "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF0028>>>BDC}(\\special{pdf:content EMC}}{(}a)" in body, body
+    assert "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF0028>>>BDC}(\\special{pdf:content EMC}}{(}a\\rlap{)}" in body, body
+
+
+def test_a_hanging_mark_of_a_shared_glyph_carries_its_own_text(test_parameters: TestParameters):
+    """The ) of Segoe UI shares its glyph with U+FD3F: past the margin it keeps its own text as well."""
+    body = _latex(test_parameters.container, "docx-actual-text=0029", native='[Para [Str "a)", Space, Str "b)"]]')
+    body = " ".join(body[body.index("\\begin{document}") :].split())
+    shared = "\\rlap{\\special{pdf:content /Span<</ActualText<FEFF0029>>>BDC})\\special{pdf:content EMC}}"
+    assert f"a{shared}\\hskip" in body, body
+    assert f"b{shared}" in body, "the mark which ends the paragraph too"
 
 
 def test_the_hyphen_of_a_font_which_shares_its_glyph_copies_out_as_a_hyphen(test_parameters: TestParameters):
@@ -769,3 +791,33 @@ def test_the_hyphen_of_a_font_which_shares_its_glyph_copies_out_as_a_hyphen(test
     response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
     assert response.status_code == 200, response.text
     assert "e-mail" in pdfium.PdfDocument(response.content)[0].get_textpage().get_text_range()
+
+
+def test_a_line_which_fits_but_for_its_closing_colon_stays_one_line(test_parameters: TestParameters):
+    """The line of test_formulas_conversion is 468.475pt wide in Liberation Sans, the text 468pt: Word hangs the colon.
+
+    TeX moved its last word to a line of its own, and everything below the paragraph down by a line.
+    """
+    document = Document()
+    # As the documents of the corpus: Word hangs punctuation with Simplified Chinese as the East Asian language
+    defaults = document.styles.element.find(qn("w:docDefaults")).find(qn("w:rPrDefault")).find(qn("w:rPr"))
+    lang = defaults.find(qn("w:lang"))
+    if lang is None:
+        lang = OxmlElement("w:lang")
+        defaults.append(lang)
+    lang.set(qn("w:eastAsia"), "zh-CN")
+    section = document.sections[0]
+    section.left_margin = section.right_margin = Inches(1)
+    section.page_width = Inches(8.5)
+    document.styles["Normal"].font.name = "Liberation Sans"
+    document.styles["Normal"].font.size = Pt(12)
+    document.add_paragraph("Plain-TeX matrix macro + \\cr, multi-line (\\pmatrix -> pmatrix env, \\cr -> \\\\, <br> handling):")
+    text = pdfium.PdfDocument(_docx_to_pdf(test_parameters, document))[0].get_textpage().get_text_range()
+    assert "<br> handling):" in text, text
+
+
+def test_no_punctuation_hangs_where_word_lets_none(test_parameters: TestParameters):
+    native = '[Para [Str "a)", Space, Str "end."]]'
+    body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-hanging-punctuation=false", native=native).split())
+    assert "a) end." in body, body
+    assert "rlap" not in body

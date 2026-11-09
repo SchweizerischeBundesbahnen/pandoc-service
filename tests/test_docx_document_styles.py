@@ -88,6 +88,7 @@ def test_sets_pandoc_template_like_word():
         "docx-body-paragraph-skip": "9",
         "docx-body-justified": "false",
         "docx-body-hyphenated": "false",
+        "docx-hanging-punctuation": "false",
         "docx-page-numbers": "false",
         "docx-table-plain-cell-space": "10",
         "docx-paragraph-spacing": "Normal:Normal:0:10",
@@ -736,3 +737,24 @@ def test_a_character_of_a_shared_glyph_in_the_font_of_a_heading_gets_its_own_tex
     shared = {0x28: "parenleft", 0xFD3E: "parenleft"}
     monkeypatch.setattr(docx_document_styles, "_font_file", lambda family: _CmapFont(shared if family == "Major Sans" else {0x28: "parenleft"}))
     assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT + HEADING1))["docx-actual-text"] == "0028"
+
+
+ZH_CN = DEFAULTS.replace('<w:sz w:val="24"/>', '<w:sz w:val="24"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/>')
+
+
+@pytest.mark.parametrize(
+    ("defaults", "normal", "hanging"),
+    [
+        (ZH_CN, NORMAL, None),
+        (DEFAULTS, NORMAL, "false"),
+        (ZH_CN.replace("zh-CN", "ja-JP"), NORMAL, "false"),
+        (ZH_CN, NORMAL.replace("</w:style>", '<w:pPr><w:overflowPunct w:val="0"/></w:pPr></w:style>'), "false"),
+        (ZH_CN, NORMAL.replace("</w:style>", '<w:rPr><w:lang w:val="de-CH"/></w:rPr></w:style>'), None),
+    ],
+)
+def test_punctuation_hangs_only_where_word_lets_it(defaults: str, normal: str, hanging: str | None):
+    """Probes in Word for Mac: punctuation hangs with Simplified Chinese as the East Asian language, unless overflowPunct is off.
+
+    A style which names a language but no East Asian one keeps that of the defaults.
+    """
+    assert _options(_docx(defaults + normal + BODY_TEXT)).get("docx-hanging-punctuation") == hanging

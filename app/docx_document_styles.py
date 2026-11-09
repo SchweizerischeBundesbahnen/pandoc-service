@@ -271,6 +271,8 @@ def document_style_options(docx_bytes: bytes) -> list[str]:
     options += ["-M", f"docx-body-paragraph-skip={skip:g}"]
     options += ["-M", f"docx-body-justified={'true' if _justified(chain, styles) else 'false'}"]
     options += ["-M", f"docx-body-hyphenated={'true' if _hyphenated(settings) else 'false'}"]
+    if not _hanging_punctuation(chain, styles):
+        options += ["-M", "docx-hanging-punctuation=false"]
     cell_margin = _cell_margin(styles)
     if cell_margin is not None:
         options += ["-M", f"docx-table-cell-margin={cell_margin:g}"]
@@ -508,6 +510,22 @@ def _spacing_twips(chain: list[Element], styles: Element, side: str) -> int:
 def _justified(chain: list[Element], styles: Element) -> bool:
     alignment = _first(chain, styles, "pPr", "jc")
     return alignment is not None and alignment.get(_w("val")) in JUSTIFIED
+
+
+def _hanging_punctuation(chain: list[Element], styles: Element) -> bool:
+    """Whether Word lets the punctuation which ends a line hang past the margin.
+
+    Probes in Word for Mac: it does in a document whose East Asian language is Simplified Chinese, unless
+    overflowPunct turns it off, and not in a document without an East Asian language.
+    """
+    east_asian = None
+    for properties in (*(style.find(_w("rPr")) for style in chain), _defaults(styles, "rPr")):
+        lang = properties.find(_w("lang")) if properties is not None else None
+        if lang is not None and lang.get(_w("eastAsia")):
+            east_asian = lang.get(_w("eastAsia"))
+            break
+    overflow = _first(chain, styles, "pPr", "overflowPunct")
+    return east_asian == "zh-CN" and (overflow is None or overflow.get(_w("val"), "true") not in OFF_VALUES)
 
 
 def _hyphenated(settings: Element | None) -> bool:

@@ -25,6 +25,8 @@
 --                             glyph of with a higher code point, as hex code
 --                             points separated by commas: each gets its own
 --                             text in the PDF, see actual_text
+--   docx-hanging-punctuation  false when Word lets no punctuation hang past
+--                             the margin, see HANGING
 --   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
 --                             name:value fields separated by commas: font,
 --                             size, line, bold, italic, color, before,
@@ -54,6 +56,7 @@ local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
 local PAGE_NUMBERS = "docx-page-numbers"
 local ACTUAL_TEXT = "docx-actual-text"
+local HANGING_PUNCTUATION = "docx-hanging-punctuation"
 local STYLE_PREFIX = "docx-style-"
 
 -- The LaTeX command of each heading style, and a letter for the macro of its font.
@@ -690,18 +693,62 @@ end
 
 local last_word
 
--- Word lets the period which ends a line hang past the right margin: only the word before it has to
--- fit. A period before a space takes no width of its own, and the space after it as much more: at the
--- end of a line the space goes, and the period stands past the margin.
-local HANGING_PERIOD = "\\rlap{.}\\hskip\\dimexpr\\fontcharwd\\font`.+\\fontdimen2\\font\\relax "
+-- Word lets the punctuation which ends a line hang past the right margin: only the word before it has
+-- to fit. Probes in Word for Mac found these to hang, and no letter, hyphen, ellipsis or straight quote.
+-- A mark before a space takes no width of its own, and the space after it as much more: at the end of
+-- a line the space goes, and the mark stands past the margin. The LaTeX of each, escaped where needed.
+local HANGING = {
+  ["!"] = "!", ["%"] = "\\%", [")"] = ")", [","] = ",", ["."] = ".", [":"] = ":", [";"] = ";", [">"] = ">",
+  ["?"] = "?", ["]"] = "]", ["}"] = "\\}", ["°"] = "°", ["·"] = "·", ["’"] = "’", ["”"] = "”", ["‰"] = "‰",
+}
 
-local function hang_periods(inlines)
+-- Whether the punctuation hangs at all, see docx-hanging-punctuation
+local hanging = true
+
+-- The characters of docx-actual-text, with the hex of their code point.
+local actual_texts = {}
+
+-- The text without its last character, and the LaTeX of that character when it hangs
+local function hanging_end(text)
+  if not hanging then
+    return nil
+  end
+  local start = utf8.offset(text, -1)
+  local mark = start and start > 1 and HANGING[text:sub(start)]
+  if mark then
+    return text:sub(1, start - 1), mark, actual_texts[text:sub(start)]
+  end
+  return nil
+end
+
+-- The mark as it stands past the margin: with its own text where the font shares its glyph, see actual_text
+local function hanging_mark(mark, hex)
+  if hex then
+    mark = string.format("\\special{pdf:content /Span<</ActualText<FEFF%s>>>BDC}%s\\special{pdf:content EMC}", hex, mark)
+  end
+  return "\\rlap{" .. mark .. "}"
+end
+
+local function hanging_space(mark, hex)
+  return string.format("%s\\hskip\\dimexpr\\fontcharwd\\font`%s+\\fontdimen2\\font\\relax ", hanging_mark(mark, hex), mark)
+end
+
+local function hang_punctuation(inlines)
   local changed = false
   for index = #inlines - 1, 1, -1 do
     local str, after = inlines[index], inlines[index + 1]
-    if str.t == "Str" and #str.text > 1 and str.text:sub(-1) == "." and (after.t == "Space" or after.t == "SoftBreak") then
-      inlines[index] = pandoc.Str(str.text:sub(1, -2))
-      inlines[index + 1] = pandoc.RawInline("latex", HANGING_PERIOD)
+    local rest, mark, hex = nil, nil, nil
+    if str.t == "Str" then
+      rest, mark, hex = hanging_end(str.text)
+    end
+    if mark and (after.t == "Space" or after.t == "SoftBreak") then
+      inlines[index] = pandoc.Str(rest)
+      inlines[index + 1] = pandoc.RawInline("latex", hanging_space(mark, hex))
+      changed = true
+    elseif mark and (after.t == "LineBreak" or (after.t == "RawInline" and after.text == "\\strut{}")) then
+      -- The line ends at the break: nothing follows the mark on it
+      inlines[index] = pandoc.Str(rest)
+      inlines:insert(index + 1, pandoc.RawInline("latex", hanging_mark(mark, hex)))
       changed = true
     end
   end
@@ -749,9 +796,13 @@ local function set_paragraph(para)
   local changed = false
   local list, index = last_word(para.content)
   local last = list and list[index]
-  if last and #last.text > 1 and last.text:sub(-1) == "." then
-    list[index] = pandoc.Str(last.text:sub(1, -2))
-    list:insert(index + 1, pandoc.RawInline("latex", "\\rlap{.}"))
+  local rest, mark, hex = nil, nil, nil
+  if last then
+    rest, mark, hex = hanging_end(last.text)
+  end
+  if mark then
+    list[index] = pandoc.Str(rest)
+    list:insert(index + 1, pandoc.RawInline("latex", hanging_mark(mark, hex)))
     changed = true
   end
   local visible = false
@@ -928,9 +979,6 @@ local function paragraph_gaps(blocks, starts_page)
   return result
 end
 
--- The characters of docx-actual-text, with the hex of their code point.
-local actual_texts = {}
-
 -- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI
 -- for U+FD3E, which the font maps to the same glyph. Each such character carries its own text, which a
 -- reader takes instead: an /ActualText around it, and none in a bookmark.
@@ -964,6 +1012,7 @@ local function read_title(meta)
   local skip = points(meta[SKIP])
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
   body_descent = points(meta[DESCENT])
+  hanging = meta[HANGING_PUNCTUATION] == nil or is_true(meta[HANGING_PUNCTUATION])
   body_ascent = points(meta["docx-body-ascent"])
   body_size, body_baseline = points(meta[SIZE]), points(meta[BASELINE])
   math_top, math_descent = points(meta["docx-math-top"]), points(meta["docx-math-descent"])
@@ -1057,7 +1106,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key == HANGING_PUNCTUATION or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end
@@ -1072,7 +1121,7 @@ return {
   { Meta = read_title, Pandoc = read_first_block },
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
-  { Para = function(para) return para:walk({ Inlines = hang_periods }) end, Plain = function(plain) return plain:walk({ Inlines = hang_periods }) end },
+  { Para = function(para) return para:walk({ Inlines = hang_punctuation }) end, Plain = function(plain) return plain:walk({ Inlines = hang_punctuation }) end },
   {
     Pandoc = function(doc)
       if FORMAT:match("latex") then

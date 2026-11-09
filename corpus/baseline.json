@@ -1823,18 +1823,18 @@
      "words_in_place": 153
     },
     "test_formulas_conversion": {
-     "any_page": 35,
+     "any_page": 36,
      "lines": 36,
-     "mean_shift": 3.05,
+     "mean_shift": 1.16,
      "pages": [
       4,
       4
      ],
-     "regions": 1603,
-     "regions_matched": 983,
-     "same_page": 35,
+     "regions": 1509,
+     "regions_matched": 1154,
+     "same_page": 36,
      "words": 651,
-     "words_in_place": 376
+     "words_in_place": 500
     },
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 25,
@@ -2092,11 +2092,11 @@
    "total": {
     "any_page": 99.7,
     "documents": 49,
-    "mean_shift": 0.34,
+    "mean_shift": 0.3,
     "pages_as_reference": 49,
-    "regions_matched": 95.6,
+    "regions_matched": 96.1,
     "same_page": 99.7,
-    "words_in_place": 96.4
+    "words_in_place": 97.6
    }
   }
  }
