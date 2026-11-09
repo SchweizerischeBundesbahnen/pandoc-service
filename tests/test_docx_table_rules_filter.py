@@ -19,7 +19,7 @@ from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 from PIL import Image
 from pypdf import PdfReader
 
@@ -721,3 +721,31 @@ def test_the_indent_of_a_cell_adds_to_its_left_skip_unless_it_is_centered(test_p
     cell = f'Cell ("",[],[]) {alignment} (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}li=7.1{CLOSE}Indented"]]'
     latex = _native_latex(test_parameters.container, _grid_table([cell, _cell('Str "Other"')]))
     assert expected in latex, latex
+
+
+def test_a_cell_of_small_text_hangs_from_the_top_of_a_row_with_large_text(test_parameters: TestParameters):
+    """Word sets the first line of each cell as high as its own text, from the top of the row.
+
+    The row took the line of its largest text, and the small text of the other cells sat on its baseline.
+    """
+    document = Document()
+    # A font the image knows the lines of: Word's line of 11pt is 10.32pt high, of 14pt 13.13pt
+    document.styles["Normal"].font.name = "Liberation Sans"
+    table = document.add_table(rows=2, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    for row, texts in zip(table.rows, ((("Above", 11), ("Other", 11)), (("Small", 11), ("Large", 14))), strict=True):
+        for cell, (text, size) in zip(row.cells, texts, strict=True):
+            run = cell.paragraphs[0].add_run(text)
+            # A run of a size and a color of its own, as Polarion writes it
+            run.font.size = Pt(size)
+            run.font.color.rgb = RGBColor(0x67, 0x4E, 0xA7)
+    pdf = _pdf_of(test_parameters, document)
+    textpage = pdfium.PdfDocument(pdf)[0].get_textpage()
+    text = textpage.get_text_range()
+    baselines = []
+    for word in ("Small", "Large"):
+        x, y = ctypes.c_double(), ctypes.c_double()
+        pdfium_c.FPDFText_GetCharOrigin(textpage.raw, text.index(word), ctypes.byref(x), ctypes.byref(y))
+        baselines.append(y.value)
+    assert abs(baselines[0] - baselines[1] - 2.81) < 0.1, baselines
