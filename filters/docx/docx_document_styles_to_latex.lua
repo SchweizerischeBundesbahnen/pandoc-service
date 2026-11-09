@@ -788,6 +788,27 @@ local function strut_line_breaks(inlines)
   return result
 end
 
+-- Word keeps a space which starts the line after a line break, TeX drops it with the break: a box before the space
+-- keeps it. Zero width spaces, which Polarion writes before it, are glue to TeX and drop as well.
+local ZERO_WIDTH = "\u{200B}"
+
+local function keep_spaces_after_breaks(inlines)
+  local changed = false
+  for index = #inlines - 1, 1, -1 do
+    if inlines[index].t == "LineBreak" then
+      local after = index + 1
+      if inlines[after].t == "Str" and inlines[after].text ~= "" and inlines[after].text:gsub(ZERO_WIDTH, "") == "" then
+        after = after + 1
+      end
+      if inlines[after] and inlines[after].t == "Space" then
+        inlines:insert(index + 1, pandoc.RawInline("latex", "\\hbox{}"))
+        changed = true
+      end
+    end
+  end
+  return changed and inlines or nil
+end
+
 local function set_paragraph(para)
   if not FORMAT:match("latex") then
     return nil
@@ -1125,6 +1146,10 @@ return {
   { Blocks = heading_spacing },
   { Div = title_div, Header = deep_heading, Para = set_paragraph, Meta = write_preamble },
   { Para = function(para) return para:walk({ Inlines = hang_punctuation }) end, Plain = function(plain) return plain:walk({ Inlines = hang_punctuation }) end },
+  {
+    Para = function(para) return FORMAT:match("latex") and para:walk({ Inlines = keep_spaces_after_breaks }) or nil end,
+    Plain = function(plain) return FORMAT:match("latex") and plain:walk({ Inlines = keep_spaces_after_breaks }) or nil end,
+  },
   {
     Pandoc = function(doc)
       if FORMAT:match("latex") then

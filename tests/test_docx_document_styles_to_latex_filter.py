@@ -827,3 +827,12 @@ def test_no_punctuation_hangs_where_word_lets_none(test_parameters: TestParamete
     body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-hanging-punctuation=false", native=native).split())
     assert "a) end." in body, body
     assert "rlap" not in body
+
+
+def test_a_space_which_starts_the_line_after_a_break_stays(test_parameters: TestParameters):
+    """Word keeps the space after a line break, TeX drops it with the break: the attribute line of a work item starts a space in."""
+    native = '[Para [Str "Title", LineBreak, Str "\\8203\\8203", Space, Str "[Draft]", LineBreak, Str "next", LineBreak, Space, Str "spaced"]]'
+    body = " ".join(_latex(test_parameters.container, native=native).split())
+    assert "\\\\ \\hbox{}\\hspace{0pt}\\hspace{0pt} {[}Draft" in body, body
+    assert "\\\\ next" in body, "a line which starts with text gets nothing"
+    assert "\\\\ \\hbox{} spaced" in body
