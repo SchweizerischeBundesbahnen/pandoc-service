@@ -355,9 +355,9 @@ def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameter
     metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.381", "docx-math-top=0.9502", "docx-math-descent=0.2222")
     preamble = _preamble(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "a^{2}"]]'))
     assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}}" in preamble, preamble
-    # The last paragraph of a cell: the cell ends the paragraph, and the row with it
+    # The last paragraph of a cell: the cell ends the paragraph, and the row with it. A cell sets the line lower
     last = "\\def\\pdcDisplayLineEnd#1{\\par\\centering\\arraybackslash"
-    assert last in preamble and "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}}" in preamble, preamble
+    assert last in preamble and "\\rule[-2.6664bp]{0pt}{15.6888bp}\\usebox{\\pdcEquationBox}}" in preamble, preamble
 
 
 def _numerator_top(container, equation: str) -> float:
