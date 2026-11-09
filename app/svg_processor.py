@@ -256,6 +256,14 @@ class SvgProcessor:
         return str(svg)
 
     @classmethod
+    def _mark_xhtml(cls, children: list[Tag]) -> None:
+        """Put the HTML children of a foreignObject in the XHTML namespace: in an SVG document a bare <div> would be an unknown SVG element."""
+        for child in children:
+            # An <svg> right in it is SVG: it takes its own namespace when it is walked
+            if child.name != "svg":
+                child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
+
+    @classmethod
     def _restore_svg_case(cls, root: Tag) -> None:
         """
         Give the elements and attributes of root and its children their SVG case.
@@ -275,11 +283,7 @@ class SvgProcessor:
                 node.attrs = {cls.SVG_ATTRIBUTES.get(name, name): value for name, value in node.attrs.items()}
             children = node.find_all(name=True, recursive=False)
             if in_svg and node.name == "foreignObject":
-                # Its HTML is in the XHTML namespace: in an SVG document a bare <div> would be an unknown SVG element
-                for child in children:
-                    # An <svg> right in it is SVG: it takes its own namespace when it is walked
-                    if child.name != "svg":
-                        child.attrs.setdefault("xmlns", cls.XHTML_NAMESPACE)
+                cls._mark_xhtml(children)
                 stack.extend((child, False) for child in children)
             else:
                 stack.extend((child, in_svg) for child in children)

@@ -596,18 +596,8 @@ def _continues_merge(tc: ET.Element) -> bool:
     return vmerge is not None and vmerge.get(_VAL_ATTR) in (None, "continue")
 
 
-def _cell_borders(tbl: ET.Element) -> dict[ET.Element, str] | None:
-    """The sides of each cell of a grid, top, right, bottom and left, when they are not all alike.
-
-    A side is the cell's own border, else the table's: its outer border at the
-    edge of the table, the inside one between two cells. A cell merged down to
-    later rows takes its bottom from the last of them, the cell pandoc keeps.
-    """
-    tblpr = tbl.find(_TBLPR_TAG)
-    table_borders = tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None
-    rows = tbl.findall(_TR_TAG)
-    columns = _table_column_count(tbl)
-    # Each cell pandoc keeps, with its row and column, its span and the cell and row it ends with
+def _kept_cells(rows: list[ET.Element]) -> list[list]:
+    """Each cell pandoc keeps, with its row and column, its span and the cell and row it ends with."""
     cells: list[list] = []
     open_merges: dict[int, list] = {}
     for index, tr in enumerate(rows):
@@ -621,6 +611,21 @@ def _cell_borders(tbl: ET.Element) -> dict[ET.Element, str] | None:
                 cells.append(entry)
                 open_merges[column] = entry
             column += span
+    return cells
+
+
+def _cell_borders(tbl: ET.Element) -> dict[ET.Element, str] | None:
+    """The sides of each cell of a grid, top, right, bottom and left, when they are not all alike.
+
+    A side is the cell's own border, else the table's: its outer border at the
+    edge of the table, the inside one between two cells. A cell merged down to
+    later rows takes its bottom from the last of them, the cell pandoc keeps.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    table_borders = tblpr.find(f"{{{W_NS}}}tblBorders") if tblpr is not None else None
+    rows = tbl.findall(_TR_TAG)
+    columns = _table_column_count(tbl)
+    cells = _kept_cells(rows)
 
     def side(tc: ET.Element, name: str, inner: str, edge: bool) -> str:
         own = tc.find(f"{_TCPR_TAG}/{{{W_NS}}}tcBorders/{{{W_NS}}}{name}")
