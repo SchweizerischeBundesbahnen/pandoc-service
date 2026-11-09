@@ -21,6 +21,10 @@
 --   docx-table-cell-margin    the left and right margin of a table cell
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
+--   docx-actual-text          the characters a font of the document shares a
+--                             glyph of with a higher code point, as hex code
+--                             points separated by commas: each gets its own
+--                             text in the PDF, see actual_text
 --   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
 --                             name:value fields separated by commas: font,
 --                             size, line, bold, italic, color, before,
@@ -49,6 +53,7 @@ local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemi
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
 local PAGE_NUMBERS = "docx-page-numbers"
+local ACTUAL_TEXT = "docx-actual-text"
 local STYLE_PREFIX = "docx-style-"
 
 -- The LaTeX command of each heading style, and a letter for the macro of its font.
@@ -923,6 +928,38 @@ local function paragraph_gaps(blocks, starts_page)
   return result
 end
 
+-- The characters of docx-actual-text, with the hex of their code point.
+local actual_texts = {}
+
+-- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI
+-- for U+FD3E, which the font maps to the same glyph. Each such character carries its own text, which a
+-- reader takes instead: an /ActualText around it, and none in a bookmark.
+local function actual_text(str)
+  local pieces, text, changed = {}, "", false
+  for _, code in utf8.codes(str.text) do
+    local character = utf8.char(code)
+    local hex = actual_texts[character]
+    if hex then
+      if text ~= "" then
+        pieces[#pieces + 1] = pandoc.Str(text)
+      end
+      local written = pandoc.write(pandoc.Pandoc({ pandoc.Plain({ pandoc.Str(character) }) }), "latex"):gsub("%s+$", "")
+      pieces[#pieces + 1] = pandoc.RawInline("latex", string.format(
+        "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF%s>>>BDC}%s\\special{pdf:content EMC}}{%s}", hex, written, written))
+      text, changed = "", true
+    else
+      text = text .. character
+    end
+  end
+  if not changed then
+    return nil
+  end
+  if text ~= "" then
+    pieces[#pieces + 1] = pandoc.Str(text)
+  end
+  return pieces
+end
+
 local function read_title(meta)
   local skip = points(meta[SKIP])
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
@@ -941,6 +978,9 @@ local function read_title(meta)
   caption_style = style_fields(meta[STYLE_PREFIX .. "Caption"], skip)
   for level, heading in ipairs(HEADINGS) do
     heading_styles[level] = style_fields(meta[STYLE_PREFIX .. heading.style], skip)
+  end
+  for hex in pandoc.utils.stringify(meta[ACTUAL_TEXT] or ""):gmatch("%x%x%x%x") do
+    actual_texts[utf8.char(tonumber(hex, 16))] = hex
   end
   return nil
 end
@@ -1017,7 +1057,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end
@@ -1039,6 +1079,14 @@ return {
         doc.blocks = paragraph_gaps(doc.blocks, doc.meta.title == nil)
       end
       return doc
+    end,
+  },
+  {
+    Str = function(str)
+      if FORMAT:match("latex") and next(actual_texts) then
+        return actual_text(str)
+      end
+      return nil
     end,
   },
 }
