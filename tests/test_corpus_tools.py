@@ -65,6 +65,12 @@ def test_the_next_cell_on_the_baseline_starts_a_line_of_its_own():
     assert not _continues(run, 700, 210.8, 12), "the next cell, two margins of 5.4 points on"
 
 
+def test_a_letter_which_reaches_under_the_one_before_goes_on_its_line():
+    """Aptos sets the x of Export 1.4 points into the box of the E, the y of Specify into that of the f."""
+    run = _Run(0, 72, 700, 200, 12)
+    assert _continues(run, 700, 198.6, 12)
+
+
 def test_a_pdf_without_text_has_no_lines(tmp_path: Path):
     buffer = io.BytesIO()
     Image.new("RGB", (612, 792), "white").save(buffer, "PDF")
