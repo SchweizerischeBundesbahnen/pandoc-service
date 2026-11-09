@@ -749,3 +749,46 @@ def test_a_cell_of_small_text_hangs_from_the_top_of_a_row_with_large_text(test_p
         pdfium_c.FPDFText_GetCharOrigin(textpage.raw, text.index(word), ctypes.byref(x), ctypes.byref(y))
         baselines.append(y.value)
     assert abs(baselines[0] - baselines[1] - 2.81) < 0.1, baselines
+
+
+def test_a_line_between_rows_under_a_merged_cell_adds_its_width_as_well(test_parameters: TestParameters):
+    """Word sets the row below a line its width lower, also where a cell merged down crosses the line.
+
+    The line under part of a row is a \\cline, which takes no room of its own: the row below it sat a line higher, 3.55pt
+    here. Word for Mac sets the two rows 0.16pt apart in pitch, this the rows of a merged cell and of a plain row 0.56pt.
+    """
+    document = Document()
+    # The cells of Polarion's tables keep a space below their paragraph, which makes them deeper than a row
+    document.styles["Normal"].paragraph_format.space_after = Pt(10)
+    table = document.add_table(rows=4, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="24" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    # Below a first row, which may be a header of its own
+    for (row, column), text in {(0, 0): "Head", (0, 1): "Top", (1, 0): "Merged", (1, 1): "First", (2, 1): "Second", (3, 0): "Low", (3, 1): "Third"}.items():
+        table.rows[row].cells[column].text = text
+    table.rows[1].cells[0]._tc.get_or_add_tcPr().append(parse_xml(f'<w:vMerge {nsdecls("w")} w:val="restart"/>'))
+    table.rows[2].cells[0]._tc.get_or_add_tcPr().append(parse_xml(f"<w:vMerge {nsdecls('w')}/>"))
+    pdf = _pdf_of(test_parameters, document)
+    first, second, third = (_top(pdf, text) for text in ("First", "Second", "Third"))
+    assert abs((second - first) - (third - second)) < 1, (first, second, third)
+
+
+def test_the_lines_of_cells_which_take_their_room_get_no_more(test_parameters: TestParameters):
+    """A table whose cells draw lines of their own sets each line with its width already: no cell reaches deeper."""
+    document = Document()
+    table = document.add_table(rows=3, cols=2)
+    for (row, column), text in {(0, 0): "Head", (0, 1): "Top", (1, 0): "Merged", (1, 1): "First", (2, 1): "Second"}.items():
+        table.rows[row].cells[column].text = text
+    # Lines of two colors: one grid for the table could not draw them
+    for row_index, row in enumerate(table.rows):
+        for cell in row.cells:
+            color = "FF0000" if row_index % 2 else "0000FF"
+            borders = "".join(f'<w:{side} w:val="single" w:sz="12" w:space="0" w:color="{color}"/>' for side in ("top", "left", "bottom", "right"))
+            cell._tc.get_or_add_tcPr().append(parse_xml(f"<w:tcBorders {nsdecls('w')}>{borders}</w:tcBorders>"))
+    table.rows[1].cells[0]._tc.get_or_add_tcPr().append(parse_xml(f'<w:vMerge {nsdecls("w")} w:val="restart"/>'))
+    table.rows[2].cells[0]._tc.get_or_add_tcPr().append(parse_xml(f"<w:vMerge {nsdecls('w')}/>"))
+    docx = io.BytesIO()
+    document.save(docx)
+    latex = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/latex", files={"source": ("in.docx", docx.getvalue())}).text
+    assert "\\pdcGridV" in latex, "a table which draws the lines of its cells"
+    assert "\\vadjust{\\kern\\arrayrulewidth}" not in latex

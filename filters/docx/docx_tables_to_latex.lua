@@ -1420,6 +1420,19 @@ local function grid_table(tbl, absolute)
   local lines = grid_row_lines(rows, columns_count)
   local numbered = draws_cell_lines(rows)
   local owners = numbered and cell_owners(rows, columns_count)
+  -- A \cline takes no room of its own, where Word sets the row below a line its width lower: each cell of the
+  -- row above reaches that much deeper, so the line crosses no gap in a cell merged down across it. The lines of
+  -- the cells of a table which draws them take their room already
+  for index, row in ipairs(numbered and {} or rows) do
+    if rows[index + 1] and lines[index]:find("\\cline", 1, true) then
+      for _, cell in ipairs(row.cells) do
+        local last = cell.contents[#cell.contents]
+        if last and (last.t == "Plain" or last.t == "Para") then
+          last.content:insert(pandoc.RawInline("latex", "\\vadjust{\\kern\\arrayrulewidth}"))
+        end
+      end
+    end
+  end
   if numbered then
     for index, row in ipairs(rows) do
       local split = row.attributes[SPLIT]
