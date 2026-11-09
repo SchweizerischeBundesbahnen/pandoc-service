@@ -25,6 +25,8 @@
 --                             glyph of with a higher code point, as hex code
 --                             points separated by commas: each gets its own
 --                             text in the PDF, see actual_text
+--   docx-hanging-punctuation  false when Word lets no punctuation hang past
+--                             the margin, see HANGING
 --   docx-style-<StyleId>      the Title or Heading1 to Heading9 style, as
 --                             name:value fields separated by commas: font,
 --                             size, line, bold, italic, color, before,
@@ -54,6 +56,7 @@ local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
 local CELL_MARGIN = "docx-table-cell-margin"
 local PAGE_NUMBERS = "docx-page-numbers"
 local ACTUAL_TEXT = "docx-actual-text"
+local HANGING_PUNCTUATION = "docx-hanging-punctuation"
 local STYLE_PREFIX = "docx-style-"
 
 -- The LaTeX command of each heading style, and a letter for the macro of its font.
@@ -699,8 +702,14 @@ local HANGING = {
   ["?"] = "?", ["]"] = "]", ["}"] = "\\}", ["°"] = "°", ["·"] = "·", ["’"] = "’", ["”"] = "”", ["‰"] = "‰",
 }
 
+-- Whether the punctuation hangs at all, see docx-hanging-punctuation
+local hanging = true
+
 -- The text without its last character, and the LaTeX of that character when it hangs
 local function hanging_end(text)
+  if not hanging then
+    return nil
+  end
   local start = utf8.offset(text, -1)
   local mark = start and start > 1 and HANGING[text:sub(start)]
   if mark then
@@ -995,6 +1004,7 @@ local function read_title(meta)
   local skip = points(meta[SKIP])
   title_style = style_fields(meta[STYLE_PREFIX .. "Title"], skip)
   body_descent = points(meta[DESCENT])
+  hanging = meta[HANGING_PUNCTUATION] == nil or is_true(meta[HANGING_PUNCTUATION])
   body_ascent = points(meta["docx-body-ascent"])
   body_size, body_baseline = points(meta[SIZE]), points(meta[BASELINE])
   math_top, math_descent = points(meta["docx-math-top"]), points(meta["docx-math-descent"])
@@ -1088,7 +1098,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key == HANGING_PUNCTUATION or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

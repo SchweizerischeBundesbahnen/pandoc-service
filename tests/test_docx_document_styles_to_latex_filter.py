@@ -13,6 +13,8 @@ import shlex
 import pypdfium2 as pdfium
 import pytest
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from pypdf import PdfReader
 
@@ -788,6 +790,13 @@ def test_a_line_which_fits_but_for_its_closing_colon_stays_one_line(test_paramet
     TeX moved its last word to a line of its own, and everything below the paragraph down by a line.
     """
     document = Document()
+    # As the documents of the corpus: Word hangs punctuation with Simplified Chinese as the East Asian language
+    defaults = document.styles.element.find(qn("w:docDefaults")).find(qn("w:rPrDefault")).find(qn("w:rPr"))
+    lang = defaults.find(qn("w:lang"))
+    if lang is None:
+        lang = OxmlElement("w:lang")
+        defaults.append(lang)
+    lang.set(qn("w:eastAsia"), "zh-CN")
     section = document.sections[0]
     section.left_margin = section.right_margin = Inches(1)
     section.page_width = Inches(8.5)
@@ -796,3 +805,10 @@ def test_a_line_which_fits_but_for_its_closing_colon_stays_one_line(test_paramet
     document.add_paragraph("Plain-TeX matrix macro + \\cr, multi-line (\\pmatrix -> pmatrix env, \\cr -> \\\\, <br> handling):")
     text = pdfium.PdfDocument(_docx_to_pdf(test_parameters, document))[0].get_textpage().get_text_range()
     assert "<br> handling):" in text, text
+
+
+def test_no_punctuation_hangs_where_word_lets_none(test_parameters: TestParameters):
+    native = '[Para [Str "a)", Space, Str "end."]]'
+    body = " ".join(_latex(test_parameters.container, "docx-body-size=12", "docx-hanging-punctuation=false", native=native).split())
+    assert "a) end." in body, body
+    assert "rlap" not in body
