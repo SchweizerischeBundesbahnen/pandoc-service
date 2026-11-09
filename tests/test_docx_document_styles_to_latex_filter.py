@@ -341,6 +341,12 @@ def test_an_equation_sets_its_rows_and_fractions_as_word(test_parameters: TestPa
     assert "\\newcommand{\\pdcEquationRow}{14.1bp}\\newcommand{\\pdcEquationGap}{3bp}" in _preamble(latex)
     assert "\\lineskip\\pdcEquationGap\\baselineskip\\pdcEquationRow\\lineskiplimit\\z@" in _preamble(latex), "rows which would overlap keep a gap"
     assert "\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}" in _preamble(latex)
+
+
+def test_the_rows_of_a_matrix_are_the_line_of_the_math_font_apart(test_parameters: TestParameters):
+    """Word sets the rows of a matrix the line of its math font apart: 1.2 times the size in Latin Modern Math, 14.4pt at 12pt."""
+    latex = _latex(test_parameters.container, "docx-body-size=12", "docx-math-top=0.806", "docx-math-descent=0.394", native='[Para [Math DisplayMath "a^{2}"]]')
+    assert "\\newcommand{\\pdcEquationRow}{14.4bp}" in _preamble(latex)
     assert "\\let\\frac\\pdcEquationFrac\\pdcEquationArrays\\sbox{\\pdcEquationBox}{#1}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+1.62bp\\relax}" in _preamble(latex)
 
 
