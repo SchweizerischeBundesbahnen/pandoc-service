@@ -749,3 +749,23 @@ def test_a_paragraph_in_the_line_of_its_runs_gets_its_struts_inside(test_paramet
     native = '[Para [RawInline (Format "latex") "{\\\\pdcParLine{12.8bp}{10.2bp}{2.6bp}", Str "text", RawInline (Format "latex") "\\\\par}"]]'
     body = " ".join(_latex(test_parameters.container, *metadata, native=native).split())
     assert "{\\pdcParLine{12.8bp}{10.2bp}{2.6bp}\\strut{}text\\strut{}\\par}" in body, body
+
+
+def test_a_character_of_a_shared_glyph_carries_its_own_text(test_parameters: TestParameters):
+    """A reader takes the ( of Segoe UI for U+FD3E, which the font maps to the same glyph: the PDF says it is a (."""
+    body = _latex(test_parameters.container, "docx-actual-text=0028", native='[Para [Str "(a)"]]')
+    body = body[body.index("\\begin{document}") :]
+    assert "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF0028>>>BDC}(\\special{pdf:content EMC}}{(}a)" in body, body
+
+
+def test_the_hyphen_of_a_font_which_shares_its_glyph_copies_out_as_a_hyphen(test_parameters: TestParameters):
+    """Noto Sans CJK maps - and U+2011 to one glyph, which xdvipdfmx writes as U+2011, NON-BREAKING HYPHEN."""
+    document = Document()
+    document.styles["Normal"].font.name = "Noto Sans CJK SC"
+    document.add_paragraph("e-mail")
+    docx = io.BytesIO()
+    document.save(docx)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    assert response.status_code == 200, response.text
+    assert "e-mail" in pdfium.PdfDocument(response.content)[0].get_textpage().get_text_range()

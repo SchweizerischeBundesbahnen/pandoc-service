@@ -239,6 +239,10 @@ local has_cellcolor = false  -- set when at least one cell gets \cellcolor
 local has_align = false      -- set when at least one cell gets an alignment switch
 local has_display = false    -- set when a cell holds an equation of its own paragraph
 local has_grid = false       -- set when a table is written as raw LaTeX
+local has_head = false       -- set when a table has a header row, see HEAD_PREAMBLE
+-- The characters of docx-actual-text, with the hex of their code point: see actual_text
+local ACTUAL_TEXT = "docx-actual-text"
+local actual_texts = {}
 local NESTED = "pdc-nested"   -- the attribute of a table in a cell of another
 
 -- True when a cell renders nothing, so there is nothing to align.
@@ -831,6 +835,18 @@ local GRID_PREAMBLE = table.concat({
   "\\makeatother",
 }, "\n")
 
+-- Word sets the header row of a table at the foot of a page where it fits, and repeats it above the rows on the
+-- next page. longtable starts a table on the next page unless its first row fits as well, and keeps the two together.
+local HEAD_PREAMBLE = table.concat({
+  "\\usepackage{etoolbox}",
+  "\\makeatletter",
+  "\\AtBeginDocument{\\ifdefined\\LT@start"
+    .. "\\patchcmd\\LT@start{\\advance\\dimen@\\ht\\ifdim\\ht\\@arstrutbox>\\ht\\tw@\\@arstrutbox\\else\\tw@\\fi"
+    .. "\\advance\\dimen@\\dp\\ifdim\\dp\\@arstrutbox>\\dp\\tw@\\@arstrutbox\\else\\tw@\\fi}{}{}{}"
+    .. "\\patchcmd\\LT@start{\\fi\\nobreak}{\\fi\\penalty\\z@}{}{}\\fi}",
+  "\\makeatother",
+}, "\n")
+
 -- The index of the brace which closes the one at `open`.
 local function closing_brace(s, open)
   local depth = 0
@@ -1052,13 +1068,11 @@ end
 -- Word sets a table as wide as the line out to the cell margin on both sides, and each column of it
 -- holds the margin on both sides of its text: pandoc shares the padding of the columns out by their
 -- widths, which makes a narrow column too wide. A table of an absolute width is that wide with its
--- margins; a column of it narrower than a twentieth of the line keeps the width pandoc gives it.
+-- margins, however narrow a column: the text of a column narrower than its margins reaches past it.
 local function word_widths(latex, absolute)
   local function width(fraction)
-    if absolute and tonumber(fraction) >= 0.05 then
+    if absolute then
       return string.format("\\dimexpr%s\\linewidth-2\\tabcolsep\\relax", fraction)
-    elseif absolute then
-      return nil
     end
     return string.format("\\dimexpr%s\\linewidth+%s\\tabcolsep+%s\\tabcolsep-2\\tabcolsep\\relax", fraction, fraction, fraction)
   end
@@ -1441,10 +1455,40 @@ local ALIGN_GLUE = {
 }
 local RESET_GLUE = "\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{\\fill}"
 
+-- xdvipdfmx writes the highest code point of a glyph into the PDF, and a reader takes the ( of Segoe UI for
+-- U+FD3E, which the font maps to the same glyph. Each such character carries its own text: an /ActualText
+-- around it. docx_document_styles_to_latex does the same for the text outside the tables this writes as LaTeX.
+local function actual_text(str)
+  local pieces, text, changed = {}, "", false
+  for _, code in utf8.codes(str.text) do
+    local character = utf8.char(code)
+    local hex = actual_texts[character]
+    if hex then
+      if text ~= "" then
+        pieces[#pieces + 1] = pandoc.Str(text)
+      end
+      local written = pandoc.write(pandoc.Pandoc({ pandoc.Plain({ pandoc.Str(character) }) }), LATEX):gsub("%s+$", "")
+      pieces[#pieces + 1] = pandoc.RawInline("latex", string.format(
+        "\\texorpdfstring{\\special{pdf:content /Span<</ActualText<FEFF%s>>>BDC}%s\\special{pdf:content EMC}}{%s}", hex, written, written))
+      text, changed = "", true
+    else
+      text = text .. character
+    end
+  end
+  if not changed then
+    return nil
+  end
+  if text ~= "" then
+    pieces[#pieces + 1] = pandoc.Str(text)
+  end
+  return pieces
+end
+
 local table_pass = {}
 
 function table_pass.Table(tbl)
   if not FORMAT:match("latex") then return nil end
+  if #tbl.head.rows > 0 then has_head = true end
 
   local modified = false
   local layout = {}
@@ -1458,6 +1502,14 @@ function table_pass.Table(tbl)
   if process_rows(tbl.foot.rows, layout, flags) then modified = true end
 
   hang_pictures(all_rows(tbl))
+  if next(actual_texts) then
+    for _, row in ipairs(all_rows(tbl)) do
+      for _, cell in ipairs(row.cells) do
+        cell.contents = pandoc.Blocks(cell.contents):walk({ Str = actual_text })
+      end
+    end
+    modified = true
+  end
 
   -- A table written as LaTeX, a grid or one of simple cells, breaks a row as Word does
   local grid_lines = layout.rl == "grid" and layout.lc and layout.lw
@@ -1555,13 +1607,8 @@ function table_pass.Table(tbl)
   -- Written as LaTeX, a table gets the columns of Word; pandoc's table its own
   local nested = tbl.attributes[NESTED] ~= nil
   tbl.attributes[NESTED] = nil
-  -- A table of an absolute width sets each column as wide as Word with Word's margins, when no column is
-  -- narrower than a twentieth of the line; a narrower one keeps tight margins, see word_widths
-  local wide = true
-  for _, colspec in ipairs(tbl.colspecs) do
-    wide = wide and type(colspec[2]) == "number" and colspec[2] >= 0.05
-  end
-  local simple = not grid and not nested and (not layout.aw or wide) and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
+  -- A table of an absolute width sets each column as wide as Word with Word's margins, see word_widths
+  local simple = not grid and not nested and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
   if layout.aw and not grid and not simple then
     -- A group: the table after this one gets the padding the document sets, not 6pt
     before[#before + 1] = "\\begingroup\\setlength{\\tabcolsep}{3pt}"
@@ -1644,7 +1691,7 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head) then return meta end
 
   local parts = {}
   -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
@@ -1661,6 +1708,7 @@ function preamble_pass.Meta(meta)
   end
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
+  if has_head then parts[#parts + 1] = HEAD_PREAMBLE end
   local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })
   local existing = meta["header-includes"]
   if existing == nil then
@@ -1717,6 +1765,13 @@ function caption_pass.Table(tbl)
     end
   end
   return inner and tbl or nil
+end
+
+function caption_pass.Meta(meta)
+  for hex in pandoc.utils.stringify(meta[ACTUAL_TEXT] or ""):gmatch("%x%x%x%x") do
+    actual_texts[utf8.char(tonumber(hex, 16))] = hex
+  end
+  return nil
 end
 
 function caption_pass.Blocks(blocks)

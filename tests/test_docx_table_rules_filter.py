@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import ctypes
 import io
+import itertools
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import parse_xml
-from docx.oxml.ns import nsdecls
+from docx.oxml.ns import nsdecls, qn
 from docx.shared import Pt
 from PIL import Image
 from pypdf import PdfReader
@@ -53,14 +54,6 @@ def test_an_unknown_kind_of_lines_is_left_out(test_parameters: TestParameters):
     latex = _latex(test_parameters.container, "rl=dashed")
     assert "\\begingroup" not in latex
     assert "\\toprule" in latex
-
-
-def test_a_narrow_absolute_table_restores_the_padding_of_the_document_after_it(test_parameters: TestParameters):
-    """Columns narrower than a twentieth of the line keep tight margins, in a group of their own."""
-    latex = _latex(test_parameters.container, "tw=0.0400;aw=1")
-    assert "\\begingroup\\setlength{\\tabcolsep}{3pt}" in latex
-    assert "\\setlength{\\tabcolsep}{6pt}" not in latex
-    assert latex.count("\\begingroup") == latex.count("\\endgroup")
 
 
 def test_a_table_of_compact_paragraphs_takes_the_rows_of_compact(test_parameters: TestParameters):
@@ -598,14 +591,6 @@ def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_
     assert "\\setlength{\\tabcolsep}{3pt}" not in latex
 
 
-def test_a_narrow_column_of_an_absolute_table_keeps_tight_margins(test_parameters: TestParameters):
-    columns = ", ".join(["(AlignDefault, ColWidth 0.02)"] * 2)
-    cells = [_cell(f'Str "{OPEN}tw=0.0400;aw=1{CLOSE}a"'), _cell('Str "b"')]
-    native = f'[Table ("",[],[]) (Caption Nothing []) [{columns}] (TableHead ("",[],[]) []) [TableBody ("",[],[]) (RowHeadColumns 0) [] [Row ("",[],[]) [{", ".join(cells)}]]] (TableFoot ("",[],[]) [])]'
-    latex = " ".join(_native_latex(test_parameters.container, native).split())
-    assert "\\setlength{\\tabcolsep}{3pt}" in latex, latex
-
-
 def _baseline(pdf: bytes, text: str) -> float:
     """The height of the baseline of the first character of the text given, in points from the top of the page."""
     page = pdfium.PdfDocument(pdf)[0]
@@ -642,3 +627,65 @@ def test_the_space_of_a_cell_goes_below_a_picture_lowered_below_the_descent(test
     plain = _baseline(pdf, "Icon") - _baseline(pdf, "Upper")
     lowered = _baseline(pdf, "Lower") - _baseline(pdf, "Icon")
     assert abs(lowered - plain - (3 - 0.2119 * 12)) < 0.1, (plain, lowered)
+
+
+def test_a_header_row_which_fits_at_the_foot_of_a_page_stays_there(test_parameters: TestParameters):
+    """Word sets the header row where it fits, at the foot of the page, and repeats it above the row on the next page.
+
+    longtable moved the whole table to the next page unless its first row fitted as well.
+    """
+    document = Document()
+    for number in range(23):
+        document.add_paragraph(f"Filler {number}")
+    # A last line which leaves room for the header row, not for the row below it
+    document.add_paragraph().add_run("Last").font.size = Pt(15.75)
+    table = document.add_table(rows=2, cols=2)
+    for index, text in enumerate(("Head A", "Head B")):
+        table.rows[0].cells[index].text = text
+    for index, text in enumerate(("Body A", "Body B")):
+        table.rows[1].cells[index].text = text
+    table.rows[0]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+    document.add_paragraph("After")
+    pdf = pdfium.PdfDocument(_pdf_of(test_parameters, document))
+    pages = [pdf[index].get_textpage().get_text_range().split() for index in range(len(pdf))]
+    assert pages[0][-4:] == ["Head", "A", "Head", "B"], pages
+    assert pages[1][:8] == ["Head", "A", "Head", "B", "Body", "A", "Body", "B"], pages
+
+
+def test_a_column_narrower_than_its_margins_keeps_the_width_of_word(test_parameters: TestParameters):
+    """Word sets a table of 50px, three columns of 12.5pt, as wide as that: the text of each starts its margin in.
+
+    The margins of the columns made them wider, 18.1pt with the tight margins of pandoc.
+    """
+    document = Document()
+    table = document.add_table(rows=1, cols=3)
+    grid = table._tbl.tblGrid
+    for column in grid.findall(qn("w:gridCol")):
+        column.set(qn("w:w"), "250")
+    width = table._tbl.tblPr.find(qn("w:tblW"))
+    width.set(qn("w:w"), "750")
+    width.set(qn("w:type"), "dxa")
+    table._tbl.tblPr.append(parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'))
+    for index, cell in enumerate(table.rows[0].cells):
+        cell.text = str(index + 1)
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:tcW {nsdecls("w")} w:w="250" w:type="dxa"/>'))
+    textpage = pdfium.PdfDocument(_pdf_of(test_parameters, document))[0].get_textpage()
+    text = textpage.get_text_range()
+    origins = []
+    for digit in "123":
+        x, y = ctypes.c_double(), ctypes.c_double()
+        pdfium_c.FPDFText_GetCharOrigin(textpage.raw, text.index(digit), ctypes.byref(x), ctypes.byref(y))
+        origins.append(x.value)
+    assert [round(right - left, 1) for left, right in itertools.pairwise(origins)] == [12.5, 12.5]
+
+
+def test_the_hyphen_of_a_shared_glyph_in_a_table_copies_out_as_a_hyphen(test_parameters: TestParameters):
+    """Noto Sans CJK maps - and U+2011 to one glyph: a table written as LaTeX gives its cells their own text as well."""
+    document = Document()
+    document.styles["Normal"].font.name = "Noto Sans CJK SC"
+    table = document.add_table(rows=1, cols=1)
+    table.rows[0].cells[0].text = "e-mail"
+    width = table._tbl.tblPr.find(qn("w:tblW"))
+    width.set(qn("w:w"), "2000")
+    width.set(qn("w:type"), "dxa")
+    assert "e-mail" in pdfium.PdfDocument(_pdf_of(test_parameters, document))[0].get_textpage().get_text_range()
