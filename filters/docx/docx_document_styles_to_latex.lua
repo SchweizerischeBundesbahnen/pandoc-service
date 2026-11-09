@@ -158,8 +158,9 @@ end
 
 local ROMAN = { "i", "ii", "iii", "iv" }
 
--- Word sets the rows of a matrix 1.175 times the size of the font apart, and an aligned row its own
--- height and 1.35pt below the one above: TeX the line of the body and 3pt
+-- Word sets the rows of a matrix the line of its math font apart, 1.175 times the size of the font in
+-- Cambria Math when the line is not known, and an aligned row its own height and 1.35pt below the one
+-- above: TeX the line of the body and 3pt
 local MATRIX_ROW = 1.175
 -- and rows which would overlap so that times the size of the font apart
 local ROW_GAP = 0.25
@@ -286,7 +287,9 @@ local function body_preamble(meta, lines)
   list_indents(meta, lines)
   local size = points(meta[SIZE])
   if size then
-    lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}\\newcommand{\\pdcEquationGap}{%gbp}", MATRIX_ROW * size, ROW_GAP * size)
+    local top, descent = points(meta["docx-math-top"]), points(meta["docx-math-descent"])
+    local row = (top and descent) and top + descent or MATRIX_ROW
+    lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}\\newcommand{\\pdcEquationGap}{%gbp}", row * size, ROW_GAP * size)
     lines[#lines + 1] = EQUATION_ARRAY
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
