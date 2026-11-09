@@ -53,6 +53,7 @@ end
 
 -- Parse the sentinel payload into a properties table. Supported segments:
 --   bg=RRGGBB  cell background colour (per cell)
+--   li=<points>  the left indent of the first paragraph of the cell (per cell)
 --   tw=<0..1>  table width as a fraction of the line (table-level, first cell)
 --   ta=left|center|right  table horizontal alignment (table-level, first cell)
 --   rl=none|head|grid  the lines Word draws (table-level, first cell)
@@ -73,6 +74,11 @@ local function parse_payload(payload)
       props.ta = value
     elseif key == "ha" and value == "justify" then
       props.ha = value
+    elseif key == "li" then
+      local n = tonumber(value)
+      if n and n > 0 and n <= 1584 then
+        props.li = n
+      end
     elseif key == "aw" and value == "1" then
       props.aw = true
     elseif key == "rl" and RULES[value] ~= nil then
@@ -769,7 +775,14 @@ local function process_rows(rows, layout, flags, head)
         -- has that line: before a list or a table the strut would be a line of its own
         local first = cell.contents[1]
         local strut = (head and first and (first.t == "Para" or first.t == "Plain")) and HEAD_STRUT or ""
-        inject_raw_at_start(cell.contents, align_latex .. strut)
+        -- Word sets the text of an indented paragraph in from the cell margin. The alignment switch sets
+        -- \leftskip, so the indent comes after it. Word centers a paragraph over the whole cell and only keeps
+        -- it off the indent, which glue cannot say: a centered cell stays centered
+        local indent = ""
+        if props and props.li and align_latex ~= ALIGN_LATEX.AlignCenter then
+          indent = string.format("\\advance\\leftskip%sbp\\relax ", props.li)
+        end
+        inject_raw_at_start(cell.contents, align_latex .. indent .. strut)
         flags.align = true
         modified = true
       end

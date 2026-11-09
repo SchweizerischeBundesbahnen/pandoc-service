@@ -29,7 +29,7 @@ Sentinel format (PUA delimiters U+E010 / U+E011), a ``;``-separated key map::
 
     <U+E010>bg=RRGGBB;ha=justify;tw=0.4000;ta=left<U+E011>
 
-``bg`` and ``ha`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
+``bg``, ``ha`` and ``li`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
 (left/center/right) are table-level and live on the first cell (merged into
 its sentinel if it also carries a per-cell key).
 
@@ -38,6 +38,10 @@ its ``Alignment`` is left/right/center/default — so a cell's ``w:jc="both"``
 reaches the reader as ``AlignLeft`` and ``distribute`` as ``AlignDefault``,
 and either way the text comes out flush left. The other three alignments
 survive on the ``Cell`` and need no sentinel.
+
+``li`` is the left indent of the cell's first paragraph, in points. pandoc reads
+an indented paragraph as a BlockQuote and the filter unwraps it, so the indent
+rides on the sentinel.
 
 This is the table companion to :mod:`app.docx_color_pre_process` /
 :mod:`app.docx_paragraph_pre_process`; it runs on the same docx->latex path
@@ -51,6 +55,7 @@ import logging
 from xml.etree import ElementTree as ET
 
 from . import docx_page_geometry
+from .docx_numbers import whole_number
 from .docx_ooxml import W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 logger = logging.getLogger(__name__)
@@ -68,6 +73,7 @@ _TBLGRID_TAG = f"{{{W_NS}}}tblGrid"
 _GRIDCOL_TAG = f"{{{W_NS}}}gridCol"
 _TBLW_TAG = f"{{{W_NS}}}tblW"
 _JC_TAG = f"{{{W_NS}}}jc"
+_IND_TAG = f"{{{W_NS}}}ind"
 _TR_TAG = f"{{{W_NS}}}tr"
 _TC_TAG = f"{{{W_NS}}}tc"
 _TCPR_TAG = f"{{{W_NS}}}tcPr"
@@ -360,10 +366,20 @@ def _extract_cell_justification(tc: ET.Element) -> str | None:
     return "justify" if jc.get(_VAL_ATTR) in _JUSTIFIED_JC_VALUES else None
 
 
+def _extract_cell_indent(tc: ET.Element) -> str | None:
+    """The left indent of the cell's own first paragraph in points, when it has a positive one."""
+    first_para = _own_first_para(tc)
+    ind = first_para.find(f"{_PPR_TAG}/{_IND_TAG}") if first_para is not None else None
+    if ind is None:
+        return None
+    twips = whole_number(ind.get(f"{{{W_NS}}}left") or ind.get(f"{{{W_NS}}}start"), signed=True)
+    return f"{twips / 20:g}" if twips is not None and twips > 0 else None
+
+
 def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:
     """The per-cell sentinel keys this cell needs, empty when it needs none.
 
-    Covers the background colour and justification; see the module docstring
+    Covers the background colour, justification and left indent; see the module docstring
     for why justification needs carrying and the other alignments do not.
     """
     props: dict[str, str] = {}
@@ -376,6 +392,10 @@ def _cell_properties(tc: ET.Element, tcpr: ET.Element | None) -> dict[str, str]:
     justification = _extract_cell_justification(tc)
     if justification:
         props["ha"] = justification
+
+    indent = _extract_cell_indent(tc)
+    if indent:
+        props["li"] = indent
 
     return props
 

@@ -14,6 +14,7 @@ import itertools
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
+import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import parse_xml
@@ -689,3 +690,34 @@ def test_the_hyphen_of_a_shared_glyph_in_a_table_copies_out_as_a_hyphen(test_par
     width.set(qn("w:w"), "2000")
     width.set(qn("w:type"), "dxa")
     assert "e-mail" in pdfium.PdfDocument(_pdf_of(test_parameters, document))[0].get_textpage().get_text_range()
+
+
+def test_an_indented_paragraph_of_a_cell_starts_its_indent_in(test_parameters: TestParameters):
+    """Word sets the text of a cell paragraph with a left indent of 142 twips 7.1pt further right.
+
+    pandoc read the paragraph as a BlockQuote, which the filter unwraps, and the indent was lost.
+    """
+    document = Document()
+    table = document.add_table(rows=2, cols=1)
+    table.rows[0].cells[0].text = "Plain"
+    table.rows[1].cells[0].text = "Indented"
+    table.rows[1].cells[0].paragraphs[0]._p.get_or_add_pPr().append(parse_xml(f'<w:ind {nsdecls("w")} w:left="142"/>'))
+    textpage = pdfium.PdfDocument(_pdf_of(test_parameters, document))[0].get_textpage()
+    text = textpage.get_text_range()
+    origins = []
+    for word in ("Plain", "Indented"):
+        x, y = ctypes.c_double(), ctypes.c_double()
+        pdfium_c.FPDFText_GetCharOrigin(textpage.raw, text.index(word), ctypes.byref(x), ctypes.byref(y))
+        origins.append(x.value)
+    assert round(origins[1] - origins[0], 1) == 7.1
+
+
+@pytest.mark.parametrize(("alignment", "expected"), [("AlignDefault", "\\pdcCellRaggedright{}\\advance\\leftskip7.1bp\\relax Indented"), ("AlignCenter", "\\pdcCellCentering{}Indented")])
+def test_the_indent_of_a_cell_adds_to_its_left_skip_unless_it_is_centered(test_parameters: TestParameters, alignment: str, expected: str):
+    """The alignment switch sets \\leftskip, so the indent comes after it.
+
+    Word centers a paragraph over the whole cell and only keeps it off the indent, which glue cannot say.
+    """
+    cell = f'Cell ("",[],[]) {alignment} (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}li=7.1{CLOSE}Indented"]]'
+    latex = _native_latex(test_parameters.container, _grid_table([cell, _cell('Str "Other"')]))
+    assert expected in latex, latex
