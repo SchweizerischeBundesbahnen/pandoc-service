@@ -110,7 +110,9 @@ local function table_preamble(meta, lines)
     lines[#lines + 1] = string.format("\\setlength{\\tabcolsep}{%gpt}", margin)
   end
   local space = points(meta[CELL_SPACE])
-  if space == nil then
+  -- A document without the Compact style of pandoc still sets a cell paragraph in Normal, with its space
+  local plain = points(meta[PLAIN_CELL_SPACE]) or space
+  if plain == nil then
     return
   end
   lines[#lines + 1] = "\\ifdefined\\LTpre\\setlength{\\LTpre}{\\parskip}\\setlength{\\LTpost}{0pt}\\fi"
@@ -120,10 +122,11 @@ local function table_preamble(meta, lines)
     -- A cell paragraph without a style is in Normal, at the top of its cell with the
     -- space of Normal below it: filters/docx/docx_tables_to_latex.lua adds it to the depth
     -- of each cell, and switches a table of paragraphs of the Compact style to its rows
-    local plain = points(meta[PLAIN_CELL_SPACE]) or space
     lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
     local descent = points(meta[DESCENT])
-    if descent ~= nil and descent > 0 and descent < baseline then
+    if space == nil then
+      -- No paragraph of a cell is in Compact: no row of it to set
+    elseif descent ~= nil and descent > 0 and descent < baseline then
       -- Word sets half the space of a row of Compact above its line and half below it: the stretch
       -- makes the depth of a row, and the extra height of array.sty takes off what it adds above
       local stretch = (descent + space / 2) / descent
