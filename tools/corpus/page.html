@@ -178,8 +178,10 @@ const follow = (event) => {
 pages.addEventListener("pointerdown", (event) => {
   const sheet = event.target.closest(".sheet.swipe");
   if (!sheet) return;
-  // No selection starts under a drag of the line
+  // No selection starts under a drag of the line, which also keeps the line from taking the focus: it takes it
+  // here, so the arrow keys move it on
   event.preventDefault();
+  sheet.querySelector(".line").focus({ preventScroll: true });
   dragged = sheet;
   sheet.setPointerCapture(event.pointerId);
   follow(event);
