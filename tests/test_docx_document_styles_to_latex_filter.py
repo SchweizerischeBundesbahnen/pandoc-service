@@ -836,3 +836,19 @@ def test_a_space_which_starts_the_line_after_a_break_stays(test_parameters: Test
     assert "\\\\ \\hbox{}\\hspace{0pt}\\hspace{0pt} {[}Draft" in body, body
     assert "\\\\ next" in body, "a line which starts with text gets nothing"
     assert "\\\\ \\hbox{} spaced" in body
+
+
+def test_an_equation_in_a_cell_sets_the_line_of_its_font_lower(test_parameters: TestParameters):
+    """Word sets the line of the font of an equation in a cell, whose paragraph has no space before it, 0.135 times the size lower.
+
+    In the body the space before its paragraph takes it. test_test_case_tables: the equation of a cell sat 2pt high.
+    """
+    metadata = ("docx-body-size=12", "docx-body-baseline=14.65", "docx-body-descent=3.4", "docx-math-top=0.9502", "docx-math-descent=0.2222")
+    preamble = _preamble(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "x"]]'))
+    assert "\\def\\pdcDisplayLine#1{" in preamble
+    body = preamble[preamble.index("\\def\\pdcDisplayLine#1{") :].split("\n")[0]
+    cell = preamble[preamble.index("\\def\\pdcCellDisplayLine#1{") :].split("\n")[0]
+    end = preamble[preamble.index("\\def\\pdcDisplayLineEnd#1{") :].split("\n")[0]
+    assert "\\rule[-2.6664bp]{0pt}{14.0688bp}" in body, body
+    assert "\\rule[-2.6664bp]{0pt}{15.6888bp}" in cell, cell
+    assert "\\rule[-2.6664bp]{0pt}{15.6888bp}" in end, end

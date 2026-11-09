@@ -559,7 +559,7 @@ def test_an_equation_of_its_own_paragraph_in_a_cell_is_a_centered_line(test_para
     first = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Math DisplayMath "y"], Plain [Str "after"]]'
     latex = " ".join(_native_latex(test_parameters.container, _grid_table([last, first])).split())
     assert "\\pdcDisplayLineEnd{\\(\\displaystyle x\\)} &" in latex, "the cell ends the line of its last equation, without an end of its own"
-    assert "\\pdcDisplayLine{\\(\\displaystyle y\\)}" in latex
+    assert "\\pdcCellDisplayLine{\\(\\displaystyle y\\)}" in latex
 
 
 def _formula_table(display: bool) -> Document:

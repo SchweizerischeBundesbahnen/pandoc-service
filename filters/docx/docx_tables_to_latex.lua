@@ -765,7 +765,7 @@ local function display_equations(blocks)
     local only = (block.t == "Plain" or block.t == "Para") and #block.content == 1 and block.content[1]
     if only and only.t == "Math" and only.mathtype == "DisplayMath" then
       blocks[index] = pandoc.Plain({
-        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcDisplayLine{"),
+        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcCellDisplayLine{"),
         pandoc.Math("InlineMath", "\\displaystyle " .. only.text),
         pandoc.RawInline("latex", "}"),
       })
@@ -1747,7 +1747,7 @@ function preamble_pass.Meta(meta)
 
   local parts = {}
   -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
-  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
+  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcCellDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
   if has_grid then parts[#parts + 1] = GRID_PREAMBLE end
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end
