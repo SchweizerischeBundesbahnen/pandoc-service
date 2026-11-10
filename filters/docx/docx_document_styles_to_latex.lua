@@ -199,6 +199,24 @@ local EQUATION_ARRAY = table.concat({
   "\\makeatother",
 }, "\n")
 
+-- Word sets a limit right above or below what it stands on: TeX puts the gap of a stack of the math font
+-- beyond it, which \pdcLimitSpace holds as a share of the size. \overset and \underset leave it out
+local LIMITS = table.concat({
+  "\\makeatletter",
+  "\\newsavebox{\\pdcLimitBox}",
+  "\\def\\pdc@limitspace#1{\\dimexpr\\pdcLimitSpace\\fontdimen6\\ifx#1\\scriptscriptstyle\\scriptscriptfont"
+    .. "\\else\\ifx#1\\scriptstyle\\scriptfont\\else\\textfont\\fi\\fi2\\relax}",
+  "\\def\\pdc@over#1#2{\\pdc@@over#1#2}",
+  "\\def\\pdc@@over#1#2#3{\\sbox\\pdcLimitBox{$\\m@th#1\\mathop{\\kern\\z@#3}\\limits^{#2}$}"
+    .. "\\ht\\pdcLimitBox\\dimexpr\\ht\\pdcLimitBox-\\pdc@limitspace#1\\relax\\usebox\\pdcLimitBox}",
+  "\\def\\pdc@under#1#2{\\pdc@@under#1#2}",
+  "\\def\\pdc@@under#1#2#3{\\sbox\\pdcLimitBox{$\\m@th#1\\mathop{\\kern\\z@#3}\\limits_{#2}$}"
+    .. "\\dp\\pdcLimitBox\\dimexpr\\dp\\pdcLimitBox-\\pdc@limitspace#1\\relax\\usebox\\pdcLimitBox}",
+  "\\DeclareRobustCommand{\\overset}[2]{\\binrel@{#2}\\binrel@@{\\mathpalette\\pdc@over{{#1}{#2}}}}",
+  "\\DeclareRobustCommand{\\underset}[2]{\\binrel@{#2}\\binrel@@{\\mathpalette\\pdc@under{{#1}{#2}}}}",
+  "\\makeatother",
+}, "\n")
+
 -- Word indents the text of each level of a list past the level above it, and sets the label at the
 -- start of the hanging indent, aligned left: LaTeX right-aligns it against the text.
 local function list_indents(meta, lines)
@@ -302,6 +320,11 @@ local function body_preamble(meta, lines)
     lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}\\newcommand{\\pdcEquationGap}{%gbp}", row * size, ROW_GAP * size)
     lines[#lines + 1] = EQUATION_ARRAY
     lines[#lines + 1] = string.format("\\delimiterfactor=%d", DELIMITER_FACTOR)
+    local limit_space = points(meta["docx-math-limit-space"])
+    if limit_space then
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcLimitSpace}{%g}", limit_space)
+      lines[#lines + 1] = LIMITS
+    end
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
     -- \\raggedright makes \\\\ end the paragraph, so the lines of a paragraph of line breaks were

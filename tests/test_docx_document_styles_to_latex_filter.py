@@ -408,6 +408,27 @@ def test_the_columns_of_a_matrix_stand_an_em_apart(test_parameters: TestParamete
     assert matrix - _origin_distance(test_parameters.container, "10") == pytest.approx(12, abs=0.05)
 
 
+def _equation_baseline(container, equation: str, *metadata: str) -> float:
+    """Where the bottom of the = of a display equation below a line of text stands, from the top of the page."""
+    native = f'[Para [Str "Text"], Para [Math DisplayMath "{equation}"]]'
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/limit.native << 'EOF'\n{native}\nEOF"])
+    options = " ".join(f"-M {item}" for item in ("docx-body-size=12", "docx-body-baseline=14.65", *metadata))
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} {options} --pdf-engine=tectonic -o /tmp/test/limit.pdf /tmp/test/limit.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/limit.pdf"])
+    page = pdfium.PdfDocument(pdf)[0]
+    text = page.get_textpage()
+    return page.get_height() - text.get_charbox(text.get_text_range().index("="))[1]
+
+
+def test_a_limit_above_an_equation_takes_no_gap_beyond_it(test_parameters: TestParameters):
+    """Word sets a limit right above what it stands on: TeX put the gap of a stack above it, 1.44pt in Latin Modern Math."""
+    plain = _equation_baseline(test_parameters.container, "A\\\\overset{\\\\frac{a}{b}}{=}B")
+    word = _equation_baseline(test_parameters.container, "A\\\\overset{\\\\frac{a}{b}}{=}B", "docx-math-limit-space=0.12")
+    assert plain - word == pytest.approx(1.44, abs=0.05)
+
+
 def _bracket_height(container, equation: str) -> float:
     """How high the PDF draws the opening bracket of a display equation, the first character of its page."""
     native = f'[Para [Math DisplayMath "{equation}"]]'

@@ -96,6 +96,7 @@ def test_sets_pandoc_template_like_word():
         "mathfontoptions": "Scale=1.083",
         "docx-math-top": "0.9502",
         "docx-math-descent": "0.2222",
+        "docx-math-limit-space": "0.13",
     }
 
 
@@ -120,6 +121,15 @@ def test_without_cambria_math_metric_math_stands_for_it_unscaled(installed: set[
     installed.add("Metric Math")
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
     assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("Metric Math", "Scale=1", "0.9502")
+
+
+@pytest.mark.parametrize(("settings", "installed_math", "space"), [(None, "Cambria Math", "0.1953"), (None, "Metric Math", "0.1953"), ("Latin Modern Math", None, "0.12")])
+def test_a_limit_loses_the_gap_tex_puts_beyond_it(installed: set[str], settings: str | None, installed_math: str | None, space: str):
+    """TeX puts the gap of a stack of the math font above an upper limit and below a lower one, Word nothing."""
+    if installed_math:
+        installed.add(installed_math)
+    math = f'<m:mathPr {M}><m:mathFont m:val="{settings}"/></m:mathPr>' if settings else None
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, settings=math))["docx-math-limit-space"] == space
 
 
 def test_the_math_font_of_the_settings_sets_an_equation_unscaled():
