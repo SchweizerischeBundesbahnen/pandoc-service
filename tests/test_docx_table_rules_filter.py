@@ -829,3 +829,25 @@ def test_a_cell_paragraph_of_a_document_without_compact_keeps_the_space_of_norma
     pdf = _pdf_of(test_parameters, document)
     first, second = _top(pdf, "First"), _top(pdf, "Second")
     assert 25 < second - first < 26.2, (first, second)
+
+
+def _rows_of_normal(after: int) -> Document:
+    """A table of three rows, in a document whose styles give no size, and the space below Normal given in twips."""
+    document = Document()
+    defaults = document.styles.element.find(qn("w:docDefaults"))
+    for size in defaults.iter(qn("w:sz")):
+        size.getparent().remove(size)
+    for spacing in defaults.iter(qn("w:spacing")):
+        spacing.set(qn("w:after"), str(after))
+    table = document.add_table(rows=3, cols=1)
+    for row, text in enumerate(("Top", "First", "Second")):
+        table.rows[row].cells[0].text = text
+    return document
+
+
+def test_a_cell_keeps_the_space_of_normal_where_the_styles_give_no_size(test_parameters: TestParameters):
+    """The space of Normal below a cell paragraph needs no size of the body: only the rows of Compact do."""
+    spaced = _pdf_of(test_parameters, _rows_of_normal(200))
+    tight = _pdf_of(test_parameters, _rows_of_normal(0))
+    pitch = (_top(spaced, "Second") - _top(spaced, "First")) - (_top(tight, "Second") - _top(tight, "First"))
+    assert abs(pitch - 10) < 0.5, pitch

@@ -117,12 +117,13 @@ local function table_preamble(meta, lines)
   end
   lines[#lines + 1] = "\\ifdefined\\LTpre\\setlength{\\LTpre}{\\parskip}\\setlength{\\LTpost}{0pt}\\fi"
   lines[#lines + 1] = "\\ifdefined\\aboverulesep\\setlength{\\aboverulesep}{0pt}\\setlength{\\belowrulesep}{0pt}\\fi"
+  -- A cell paragraph without a style is in Normal, at the top of its cell with the
+  -- space of Normal below it: filters/docx/docx_tables_to_latex.lua adds it to the depth
+  -- of each cell, and switches a table of paragraphs of the Compact style to its rows
+  lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
+  -- Only the rows of Compact need the line of the body
   local baseline = points(meta[BASELINE])
   if baseline ~= nil and baseline > 0 then
-    -- A cell paragraph without a style is in Normal, at the top of its cell with the
-    -- space of Normal below it: filters/docx/docx_tables_to_latex.lua adds it to the depth
-    -- of each cell, and switches a table of paragraphs of the Compact style to its rows
-    lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
     local descent = points(meta[DESCENT])
     if space == nil then
       -- No paragraph of a cell is in Compact: no row of it to set
