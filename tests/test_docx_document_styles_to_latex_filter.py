@@ -429,6 +429,22 @@ def test_a_limit_above_an_equation_takes_no_gap_beyond_it(test_parameters: TestP
     assert plain - word == pytest.approx(1.44, abs=0.05)
 
 
+def test_a_brace_below_is_a_limit_of_the_size_of_a_script(test_parameters: TestParameters):
+    """Word sets a lower limit of ⏟ alone as a character, 3.9pt wide under a+a+⋯+a: TeX stretched it across."""
+    native = '[Para [Math DisplayMath "\\\\underbrace{a + a + \\\\cdots + a}"]]'
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/brace.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 -M docx-math-limit-space=0.12 --pdf-engine=tectonic -o /tmp/test/brace.pdf /tmp/test/brace.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/brace.pdf"])
+    text = pdfium.PdfDocument(pdf)[0].get_textpage()
+    characters = text.get_text_range()
+    braces = [text.get_charbox(index) for index, character in enumerate(characters) if character == "⏟"]
+    assert len(braces) == 1, characters
+    assert braces[0][2] - braces[0][0] < 6
+
+
 def _bracket_height(container, equation: str) -> float:
     """How high the PDF draws the opening bracket of a display equation, the first character of its page."""
     native = f'[Para [Math DisplayMath "{equation}"]]'

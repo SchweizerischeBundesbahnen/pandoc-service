@@ -214,6 +214,10 @@ local LIMITS = table.concat({
     .. "\\dp\\pdcLimitBox\\dimexpr\\dp\\pdcLimitBox-\\pdc@limitspace#1\\relax\\usebox\\pdcLimitBox}",
   "\\DeclareRobustCommand{\\overset}[2]{\\binrel@{#2}\\binrel@@{\\mathpalette\\pdc@over{{#1}{#2}}}}",
   "\\DeclareRobustCommand{\\underset}[2]{\\binrel@{#2}\\binrel@@{\\mathpalette\\pdc@under{{#1}{#2}}}}",
+  -- pandoc reads a limit of a brace alone, which Word sets as a character the size of a limit, as a growing
+  -- brace. It reads a growing brace of Word, a group character, as one without content
+  "\\AtBeginDocument{\\renewcommand{\\underbrace}[1]{\\underset{\\Umathchar 0 \\symoperators \"23DF }{#1}}"
+    .. "\\renewcommand{\\overbrace}[1]{\\overset{\\Umathchar 0 \\symoperators \"23DE }{#1}}}",
   "\\makeatother",
 }, "\n")
 
