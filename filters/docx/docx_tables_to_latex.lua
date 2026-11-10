@@ -816,11 +816,10 @@ local function process_rows(rows, layout, flags, head)
         -- has that line: before a list or a table the strut would be a line of its own
         local first = cell.contents[1]
         local strut = (head and first and (first.t == "Para" or first.t == "Plain")) and HEAD_STRUT or ""
-        -- Word sets the text of an indented paragraph in from the cell margin. The alignment switch sets
-        -- \leftskip, so the indent comes after it. Word centers a paragraph over the whole cell and only keeps
-        -- it off the indent, which glue cannot say: a centered cell stays centered
+        -- Word sets the text of an indented paragraph in from the cell margin, and centers it between the
+        -- indent and the right margin. The alignment switch sets \leftskip, so the indent comes after it
         local indent = ""
-        if props and props.li and align_latex ~= ALIGN_LATEX.AlignCenter then
+        if props and props.li then
           indent = string.format("\\advance\\leftskip%sbp\\relax ", props.li)
         end
         inject_raw_at_start(cell.contents, align_latex .. indent .. strut)
