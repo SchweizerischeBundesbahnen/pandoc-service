@@ -17,6 +17,7 @@ import pytest
 from tests.test_container import TestParameters
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
 def _convert_html_to_docx(test_parameters: TestParameters, html: str, *, preserve_table_styles: bool = True) -> bytes:
@@ -493,3 +494,42 @@ def test_cell_background_is_not_repeated_as_run_shading(test_parameters: TestPar
     cell = _cell_with_text(root, "Shaded")
     assert cell.find(f"{{{W_NS}}}tcPr/{{{W_NS}}}shd") is not None, "the cell lost its fill"
     assert cell.find(f".//{{{W_NS}}}rPr/{{{W_NS}}}shd") is None, "the cell fill was repeated as run shading"
+
+
+def _link_with_text(root: ET.Element, text: str) -> ET.Element:
+    for link in _find_all(root, ".//w:tc//w:hyperlink"):
+        if text in "".join(t.text or "" for t in link.iter(f"{{{W_NS}}}t")):
+            return link
+    raise AssertionError(f"no link with the text {text!r} in a cell")
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        pytest.param('<a id="work-item-anchor-elibrary/EL-308"></a>', id="anchor-with-a-hashed-name"),
+        pytest.param('<a id="anchor_1"></a>', id="anchor-with-a-kept-name"),
+        pytest.param('<h2 id="überschrift">Heading</h2>', id="heading-with-a-non-ascii-name"),
+    ],
+)
+def test_link_into_the_document_in_a_styled_cell_finds_its_bookmark(test_parameters: TestParameters, target: str):
+    """Word jumps to the start of the document when a link names a bookmark the document does not have."""
+    identifier = target.split('"')[1]
+    html = f'{target}<p>Third One</p><table><tr><td style="background-color:#D9EAF7;"><a href="#{identifier}">to the third one</a></td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    link = _link_with_text(root, "to the third one")
+    bookmarks = [bookmark.get(f"{{{W_NS}}}name") for bookmark in _find_all(root, ".//w:bookmarkStart")]
+    assert link.get(f"{{{W_NS}}}anchor") in bookmarks, f"the link names {link.attrib!r}, the bookmarks are {bookmarks!r}"
+    assert link.get(f"{{{R_NS}}}id") is None, "a link into the document was written as a link to an address"
+    assert link.get(f"{{{W_NS}}}tooltip") is None
+
+
+def test_link_to_an_address_in_a_styled_cell_keeps_its_relationship(test_parameters: TestParameters):
+    html = '<table><tr><td style="background-color:#D9EAF7;"><a href="https://example.com/page#part">to the website</a></td></tr></table>'
+    docx = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx)) as zf:
+        relationships = {relationship.get("Id"): relationship.get("Target") for relationship in ET.fromstring(zf.read("word/_rels/document.xml.rels"))}
+
+    link = _link_with_text(_parse_document_xml(docx), "to the website")
+    assert relationships.get(link.get(f"{{{R_NS}}}id")) == "https://example.com/page#part"
+    assert link.get(f"{{{W_NS}}}anchor") is None
