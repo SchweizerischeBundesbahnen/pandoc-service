@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -234,3 +235,14 @@ def test_a_page_the_reference_lacks_matches_nothing(tmp_path: Path):
     assert all(page.matched == 0 for page in pages[1:])
     assert sum(page.inked for page in pages[1:]) > 0
     assert (tmp_path / f"doc-{len(pages)}.webp").exists()
+
+
+def test_the_pdfs_of_another_folder_are_scored_word_against_word(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The PDFs of Word for Mac stand in place of a conversion: the score shows where the two Words differ."""
+    (tmp_path / "reference" / "windows").mkdir(parents=True)
+    shutil.copy(REFERENCE.parent / "windows" / "test_alignment.pdf", tmp_path / "reference" / "windows")
+    monkeypatch.setattr(corpus, "REFERENCES", tmp_path / "reference")
+    result = corpus.score(tmp_path / "out", "windows", REFERENCE)
+    assert result["documents"]["test_alignment"]["pages"] == [1, 1]
+    assert result["documents"]["test_alignment"]["same_page"] > 0
+    assert (tmp_path / "out" / "score.json").exists()

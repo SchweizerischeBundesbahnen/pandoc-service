@@ -1,8 +1,8 @@
 """Convert the DOCX corpus with pandoc-service and compare the PDFs with the ones Word prints.
 
     python -m tools.corpus.corpus convert --image IMAGE [--fonts DIR] [--docx DIR] --out DIR
-    python -m tools.corpus.corpus score --out DIR [--reference macos] [--variant NAME] [--write-baseline | --against]
-    python -m tools.corpus.corpus page --out DIR [--reference macos]
+    python -m tools.corpus.corpus score --out DIR [--pdf DIR] [--reference macos] [--variant NAME] [--write-baseline | --against]
+    python -m tools.corpus.corpus page --out DIR [--pdf DIR] [--reference macos]
     python -m tools.corpus.corpus all --image IMAGE [--fonts DIR] --out DIR [score options]
 
 See corpus/README.md for what the numbers mean.
@@ -176,11 +176,12 @@ def _total(documents: dict[str, dict]) -> dict:
     }
 
 
-def score(out: Path, reference: str) -> dict:
-    """Score every converted PDF of OUT against the reference PDFs; writes OUT/score.json."""
-    references = REFERENCES / reference
-    documents = {pdf.stem: score_document(pdf, out / "pdf" / pdf.name) for pdf in sorted(references.glob("*.pdf"))}
+def score(out: Path, reference: str, pdf: Path | None = None) -> dict:
+    """Score every converted PDF of OUT, or of PDF, against the reference PDFs; writes OUT/score.json."""
+    converted = pdf or out / "pdf"
+    documents = {file.stem: score_document(file, converted / file.name) for file in sorted((REFERENCES / reference).glob("*.pdf"))}
     result = {"reference": reference, "total": _total(documents), "documents": documents}
+    out.mkdir(parents=True, exist_ok=True)
     (out / "score.json").write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n")
     return result
 
@@ -262,14 +263,14 @@ def _render(pdf: Path, target: Path, prefix: str) -> tuple[list[str], list[list[
     return names, sizes
 
 
-def page(out: Path, reference: str, docx: Path = DOCX) -> Path:
-    """Build OUT/site: the comparison page with the pages of the reference and of the conversion."""
+def page(out: Path, reference: str, docx: Path = DOCX, pdf: Path | None = None) -> Path:
+    """Build OUT/site: the comparison page with the pages of the reference and of the conversion, or of PDF."""
     result = json.loads((out / "score.json").read_text())
     site = out / "site"
     baseline = json.loads(BASELINE.read_text()).get(reference, {}) if BASELINE.exists() else {}
     documents = []
     for name, document in result["documents"].items():
-        converted = out / "pdf" / f"{name}.pdf"
+        converted = (pdf or out / "pdf") / f"{name}.pdf"
         reference_pages, sizes = _render(REFERENCES / reference / f"{name}.pdf", site / "reference", name)
         converted_pages = _render(converted, site / "converted", name)[0] if converted.exists() else []
         regions.compare_documents(REFERENCES / reference / f"{name}.pdf", converted if converted.exists() else None, site / "difference", name)
@@ -294,6 +295,7 @@ def main() -> int:
     parser.add_argument("--fonts", type=Path, help="a directory of fonts the container gets, Word's own for the variant word-fonts")
     parser.add_argument("--docx", type=Path, default=DOCX, help="the folder of the documents: corpus/docx, or corpus/docx-free with --reference macos-free")
     parser.add_argument("--reference", default="macos", help="the reference to compare with: a directory of corpus/reference")
+    parser.add_argument("--pdf", type=Path, help="the folder of the PDFs to score, OUT/pdf by default: another reference compares Word with Word")
     parser.add_argument("--variant", default="image", help="the name of the run in corpus/baseline.json: image or word-fonts")
     parser.add_argument("--write-baseline", action="store_true", help="store the score in corpus/baseline.json")
     parser.add_argument("--against", action="store_true", help="fail when a document got worse than corpus/baseline.json")
@@ -308,7 +310,7 @@ def main() -> int:
     # A conversion which failed fails the run, apart from what got worse
     status = 1 if failed else 0
     if arguments.command in ("score", "all"):
-        result = score(arguments.out, arguments.reference)
+        result = score(arguments.out, arguments.reference, arguments.pdf)
         text = report(result)
         if arguments.against:
             found = regressions(result, arguments.variant)
@@ -320,7 +322,7 @@ def main() -> int:
         if arguments.write_baseline:
             write_baseline(result, arguments.variant)
     if arguments.command in ("page", "all"):
-        print(f"page: {page(arguments.out, arguments.reference, arguments.docx)}")  # noqa: T201 - a command line tool
+        print(f"page: {page(arguments.out, arguments.reference, arguments.docx, arguments.pdf)}")  # noqa: T201 - a command line tool
     return status
 
 
