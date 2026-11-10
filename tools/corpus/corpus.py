@@ -3,7 +3,7 @@
     python -m tools.corpus.corpus convert --image IMAGE [--fonts DIR] [--docx DIR] --out DIR
     python -m tools.corpus.corpus score --out DIR [--pdf DIR] [--reference macos] [--variant NAME] [--write-baseline | --against]
     python -m tools.corpus.corpus page --out DIR [--pdf DIR] [--reference macos] [--site NAME]
-    python -m tools.corpus.corpus all --image IMAGE [--fonts DIR] --out DIR [score options]
+    python -m tools.corpus.corpus all --image IMAGE [--fonts DIR] --out DIR [--site NAME] [score options]
 
 See corpus/README.md for what the numbers mean.
 """
@@ -296,7 +296,8 @@ def _render(pdf: Path, target: Path, prefix: str) -> tuple[list[str], list[list[
 def page(out: Path, reference: str, docx: Path = DOCX, pdf: Path | None = None, name: str | None = None) -> Path:
     """Build OUT/site: the comparison page with the pages of the reference and of the conversion, or of PDF.
 
-    NAME is the page in SITES, the reference by default. A page of Word against Word has no baseline.
+    NAME is the page in SITES, the reference by default. Only a page with a NAME links the other pages of the site:
+    a page built alone has none next to it. A page of Word against Word has no baseline.
     """
     result = json.loads((out / "score.json").read_text())
     site = out / "site"
@@ -314,7 +315,7 @@ def page(out: Path, reference: str, docx: Path = DOCX, pdf: Path | None = None, 
         "reference": reference,
         "title": shown.title,
         "labels": {"reference": shown.reference, "converted": shown.converted},
-        "links": _links(name or reference),
+        "links": _links(name) if name else [],
         "total": result["total"],
         "baseline": {variant: stored["total"] for variant, stored in baseline.items()},
         "scale": SCALE,
@@ -340,7 +341,7 @@ def main() -> int:
     parser.add_argument("--docx", type=Path, default=DOCX, help="the folder of the documents: corpus/docx, or corpus/docx-free with --reference macos-free")
     parser.add_argument("--reference", default="macos", help="the reference to compare with: a directory of corpus/reference")
     parser.add_argument("--pdf", type=Path, help="the folder of the PDFs to score, OUT/pdf by default: another reference compares Word with Word")
-    parser.add_argument("--site", choices=tuple(SITES), help="the page of the published site page builds, the reference by default")
+    parser.add_argument("--site", choices=tuple(SITES), help="the page of the published site page builds, with the links to the others")
     parser.add_argument("--variant", default="image", help="the name of the run in corpus/baseline.json: image or word-fonts")
     parser.add_argument("--write-baseline", action="store_true", help="store the score in corpus/baseline.json")
     parser.add_argument("--against", action="store_true", help="fail when a document got worse than corpus/baseline.json")

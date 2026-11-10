@@ -263,7 +263,7 @@ def _page_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reference: str, 
 
 
 def test_a_page_of_the_site_links_every_other_page_from_its_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    data = _page_data(tmp_path, monkeypatch, "windows")
+    data = _page_data(tmp_path, monkeypatch, "windows", "windows")
     assert {link["title"]: link["href"] for link in data["links"]} == {
         "Word for Mac": "../",
         "Word for Windows": "../windows/",
@@ -281,6 +281,13 @@ def test_a_page_of_word_against_word_names_both_and_has_no_baseline(tmp_path: Pa
     assert data["labels"] == {"reference": "Word for Windows", "converted": "Word for Mac"}
     assert data["baseline"] == {}
     assert data["documents"][0]["converted_pages"] == ["test_alignment-1.webp"]
+
+
+def test_a_page_without_a_site_links_no_other_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A page built alone lies in OUT/site, without the pages of the site next to it."""
+    data = _page_data(tmp_path, monkeypatch, "windows")
+    assert data["links"] == []
+    assert data["title"] == "Word for Windows"
 
 
 def test_a_reference_of_its_own_gets_a_page_at_the_root():

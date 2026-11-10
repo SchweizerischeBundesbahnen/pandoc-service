@@ -87,6 +87,7 @@ const heading = `DOCX corpus: ${labels.converted} and ${labels.reference}`;
 document.title = heading;
 document.getElementById("heading").textContent = heading;
 document.getElementById("amount-name").textContent = labels.converted;
+document.getElementById("sites").hidden = !data.links.length;
 document.getElementById("sites").innerHTML = data.links.map(link => `<a href="${link.href}"${link.current ? ' aria-current="page"' : ""}>${link.title}</a>`).join("");
 const totals = document.getElementById("totals");
 const lines = [`Reference: ${labels.reference}. Lines on the same page ${data.total.same_page}%, on any page ${data.total.any_page}%, pages as ${labels.reference} ${data.total.pages_as_reference}/${data.total.documents}, mean shift ${data.total.mean_shift} pt. Words in place ${format(data.total.words_in_place)}%, regions matched ${format(data.total.regions_matched)}%.`];

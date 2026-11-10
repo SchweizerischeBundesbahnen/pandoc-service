@@ -121,13 +121,13 @@ uv run --group test python -m tools.corpus.corpus page --out out/corpus/mac-vs-w
 | Option of `page` | Effect |
 |---|---|
 | `--pdf DIR` | shows the PDFs of DIR in place of `OUT/pdf` |
-| `--site NAME` | the page of the site it builds, the reference by default: see below |
+| `--site NAME` | the page of the site it builds, with the links to the other pages: see below |
 
 A change which improves the score stores the new baseline in the same commit.
 
 The workflow `corpus.yml` runs `image` of both corpora on every push to `main`. It scores the PDFs of
 `docx/` against Word for Windows as well, and publishes the pages to GitHub Pages. Each page links the
-others:
+others, as it is built with `--site`:
 
 | Folder | Page |
 |---|---|
