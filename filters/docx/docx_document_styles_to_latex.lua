@@ -171,6 +171,9 @@ local ROW_GAP = 0.25
 -- Word sets the line of an equation 0.135 times the size of the font above its top
 local EQUATION_TOP = 0.135
 local ALIGNED_GAP = 1.35
+-- Word takes the smallest size of a growing bracket which covers 0.82 of the height it encloses and reaches
+-- 5pt short of it at most: TeX 0.901
+local DELIMITER_FACTOR = 820
 
 -- The array of array.sty with the rows of Word: no strut, and a pitch whatever the rows hold
 local EQUATION_ARRAY = table.concat({
@@ -295,6 +298,7 @@ local function body_preamble(meta, lines)
     local row = (top and descent) and top + descent or MATRIX_ROW
     lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}\\newcommand{\\pdcEquationGap}{%gbp}", row * size, ROW_GAP * size)
     lines[#lines + 1] = EQUATION_ARRAY
+    lines[#lines + 1] = string.format("\\delimiterfactor=%d", DELIMITER_FACTOR)
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
     -- \\raggedright makes \\\\ end the paragraph, so the lines of a paragraph of line breaks were
