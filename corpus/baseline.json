@@ -425,16 +425,16 @@
     "test_formulas_conversion": {
      "any_page": 34,
      "lines": 37,
-     "mean_shift": 0.76,
+     "mean_shift": 0.81,
      "pages": [
       4,
       4
      ],
-     "regions": 1502,
-     "regions_matched": 1303,
+     "regions": 1515,
+     "regions_matched": 1284,
      "same_page": 34,
      "words": 616,
-     "words_in_place": 557
+     "words_in_place": 553
     },
     "test_heading_numbers_with_localized_numbered_template": {
      "any_page": 25,
@@ -696,7 +696,7 @@
     "pages_as_reference": 49,
     "regions_matched": 94.9,
     "same_page": 99.4,
-    "words_in_place": 98.4
+    "words_in_place": 98.3
    }
   },
   "word-fonts": {
