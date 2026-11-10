@@ -164,7 +164,12 @@ def test_the_scripts_of_the_open_font_are_the_scripts_of_word(word: TTFont, sour
     assert scripts == tuple(round(value * 1000 / 2048) for value in (1229, 717, 1229, 154))
 
 
-def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], larger: list[str], italic: int) -> TTFont:
+SSTY = "feature ssty { sub a from [a.s1]; } ssty;"
+WORD_MATH = {"a": (1000, -20, 900), "a.s1": (800, -16, 700), "equal": (1100, 400, 700), "low": (1000, -300, -100), "paren": (600, -500, 1500), "paren.v1": (650, -800, 1800), "paren.v2": (700, -1400, 2400)}
+SOURCE_MATH = {"a": (520, -10, 460), "a.s1": (450, -10, 400), "equal": (550, 150, 250), "low": (500, -120, -60), "paren": (300, -250, 750), "paren.v1": (330, -600, 1100)}
+
+
+def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], larger: list[str], italic: int, features: str = SSTY, accent: int | None = None) -> TTFont:
     """A math font of box glyphs, each (advance, bottom, top): 'a' with a script form 'a.s1', = and _, and a bracket with its larger forms."""
     order = [".notdef", "a", "a.s1", "equal", "low", "paren", *larger]
     builder = FontBuilder(upm, isTTF=True)
@@ -186,7 +191,7 @@ def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], l
     builder.setupNameTable({"familyName": family, "styleName": "Regular"})
     builder.setupOS2(sTypoAscender=upm * 3 // 4, sTypoDescender=-upm // 4, usWinAscent=upm * 3 // 4, usWinDescent=upm // 4)
     builder.setupPost()
-    addOpenTypeFeaturesFromString(builder.font, "feature ssty { sub a from [a.s1]; } ssty;")
+    addOpenTypeFeaturesFromString(builder.font, features)
     table = otTables.MATH()
     table.Version = 0x00010000
     constants = otTables.MathConstants()
@@ -209,6 +214,14 @@ def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], l
     info.MathItalicsCorrectionInfo.ItalicsCorrection = [record]
     info.MathItalicsCorrectionInfo.ItalicsCorrectionCount = 1
     info.MathTopAccentAttachment = info.ExtendedShapeCoverage = info.MathKernInfo = None
+    if accent is not None:
+        info.MathTopAccentAttachment = otTables.MathTopAccentAttachment()
+        info.MathTopAccentAttachment.TopAccentCoverage = otTables.Coverage()
+        info.MathTopAccentAttachment.TopAccentCoverage.glyphs = ["a"]
+        record = otTables.MathValueRecord()
+        record.Value, record.DeviceTable = accent, None
+        info.MathTopAccentAttachment.TopAccentAttachment = [record]
+        info.MathTopAccentAttachment.TopAccentAttachmentCount = 1
     table.MathGlyphInfo = info
     variants = otTables.MathVariants()
     variants.MinConnectorOverlap = 0
@@ -236,14 +249,12 @@ def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], l
 
 @pytest.fixture
 def word_math() -> TTFont:
-    shapes = {"a": (1000, -20, 900), "a.s1": (800, -16, 700), "equal": (1100, 400, 700), "low": (1000, -300, -100), "paren": (600, -500, 1500), "paren.v1": (650, -800, 1800), "paren.v2": (700, -1400, 2400)}
-    return _math_font("Word Math", 2048, shapes, ["paren.v1", "paren.v2"], italic=60)
+    return _math_font("Word Math", 2048, WORD_MATH, ["paren.v1", "paren.v2"], italic=60)
 
 
 @pytest.fixture
 def source_math() -> TTFont:
-    shapes = {"a": (520, -10, 460), "a.s1": (450, -10, 400), "equal": (550, 150, 250), "low": (500, -120, -60), "paren": (300, -250, 750), "paren.v1": (330, -600, 1100)}
-    return _math_font("Open Math", 1000, shapes, ["paren.v1"], italic=10)
+    return _math_font("Open Math", 1000, SOURCE_MATH, ["paren.v1"], italic=10)
 
 
 def _built(word: TTFont, source: TTFont) -> TTFont:
@@ -308,3 +319,68 @@ def test_a_collection_gives_the_font_of_word_by_its_family(tmp_path: Path, word:
     collection.save(tmp_path / "fonts.ttc")
     style = metric_fonts.Style("Metric Math", "Regular", "fonts.ttc#Word Math", "open.ttf")
     assert metric_fonts.open_word(tmp_path, style)["name"].getDebugName(1) == "Word Math"
+
+
+def test_build_fits_the_math_font_into_word(tmp_path: Path, word_math: TTFont, source_math: TTFont, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / "sources").mkdir()
+    source_math.save(tmp_path / "sources" / "open.ttf")
+    (tmp_path / "word").mkdir()
+    word_math.save(tmp_path / "word" / "word.ttf")
+    monkeypatch.setattr(metric_fonts, "STYLES", (metric_fonts.Style("Metric Math", "Regular", "word.ttf", "open.ttf"),))
+    metrics = tmp_path / "metrics.json"
+    assert metric_fonts.main(["extract", str(tmp_path / "word"), str(tmp_path / "sources"), str(metrics)]) == 0
+    assert metric_fonts.main(["build", str(tmp_path / "sources"), str(metrics), str(tmp_path / "out")]) == 0
+    font = TTFont(tmp_path / "out" / "MetricMath-Regular.ttf")
+    assert font["glyf"]["a"].yMax == round(900 * 1000 / 2048)
+    assert "paren.metric2" in font.getGlyphOrder()
+
+
+def test_a_form_for_scripts_by_a_single_substitution_takes_the_shape_of_word(word_math: TTFont):
+    """An open font may give a script form by a single substitution, among lookups of other features."""
+    source = _math_font("Open Math", 1000, SOURCE_MATH, ["paren.v1"], italic=10, features="feature smcp { sub a by a.s1; } smcp; feature ssty { sub a by a.s1; } ssty;")
+    assert _built(word_math, source)["hmtx"].metrics["a.s1"][0] == round(800 * 1000 / 2048)
+
+
+def test_a_font_of_word_without_script_or_larger_forms_leaves_those_of_the_open_font(word_math: TTFont, source_math: TTFont):
+    del word_math["GSUB"]
+    variants = word_math["MATH"].table.MathVariants
+    variants.VertGlyphCoverage, variants.VertGlyphConstruction, variants.VertGlyphCount = None, [], 0
+    math = metric_fonts.word_metrics(word_math, source_math)["math"]
+    assert "scripts" not in math["glyphs"]["97"]
+    assert "larger" not in math["glyphs"]["40"]
+    font = _built(word_math, source_math)
+    records = font["MATH"].table.MathVariants.VertGlyphConstruction[0].MathGlyphVariantRecord
+    assert [record.VariantGlyph for record in records] == ["paren", "paren.v1"]
+    assert font["hmtx"].metrics["a.s1"][0] == 450
+
+
+def test_an_accent_sits_on_a_glyph_where_word_puts_it(word_math: TTFont):
+    word = _math_font("Word Math", 2048, WORD_MATH, ["paren.v1", "paren.v2"], italic=60, accent=700)
+    source = _math_font("Open Math", 1000, SOURCE_MATH, ["paren.v1"], italic=10, accent=250)
+    assert metric_fonts.word_metrics(word, source)["math"]["glyphs"]["97"]["accent"] == 700
+    accents = _built(word, source)["MATH"].table.MathGlyphInfo.MathTopAccentAttachment
+    assert accents.TopAccentAttachment[0].Value == round(700 * 1000 / 2048)
+
+
+def test_an_open_font_without_italic_corrections_takes_those_of_word(word_math: TTFont, source_math: TTFont):
+    source_math["MATH"].table.MathGlyphInfo.MathItalicsCorrectionInfo = None
+    italics = _built(word_math, source_math)["MATH"].table.MathGlyphInfo.MathItalicsCorrectionInfo
+    assert italics.Coverage.glyphs == ["a"]
+    assert italics.ItalicsCorrection[0].Value == round(60 * 1000 / 2048)
+
+
+def test_a_character_the_open_font_lacks_gets_no_shape(word_math: TTFont, source_math: TTFont):
+    metrics = metric_fonts.word_metrics(word_math, source_math)
+    for table in source_math["cmap"].tables:
+        table.cmap.pop(95, None)
+    assert "95" not in metric_fonts.word_metrics(word_math, source_math)["math"]["glyphs"]
+    metric_fonts.apply_math(source_math, metrics["math"], metrics["unitsPerEm"])
+    assert source_math["glyf"]["low"].yMax == -60
+
+
+def test_a_glyph_word_draws_empty_keeps_its_height(word_math: TTFont, source_math: TTFont):
+    """A space of Word has no height to fit an outline into."""
+    metrics = metric_fonts.word_metrics(word_math, source_math)
+    metrics["math"]["glyphs"]["95"] |= {"bottom": 0, "top": 0}
+    metric_fonts.apply_math(source_math, metrics["math"], metrics["unitsPerEm"])
+    assert (source_math["glyf"]["low"].yMin, source_math["glyf"]["low"].yMax) == (-120, -60)
