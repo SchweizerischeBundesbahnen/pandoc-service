@@ -8,10 +8,11 @@ import zipfile
 from typing import TYPE_CHECKING
 
 import pytest
+from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.ttLib import TTFont, newTable
-from fontTools.ttLib.tables import ttProgram
+from fontTools.ttLib import TTCollection, TTFont, newTable
+from fontTools.ttLib.tables import otTables, ttProgram
 
 from fonts import metric_fonts
 
@@ -161,3 +162,225 @@ def test_the_scripts_of_the_open_font_are_the_scripts_of_word(word: TTFont, sour
     metric_fonts.apply_metrics(source, metric_fonts.word_metrics(word, source))
     scripts = tuple(getattr(source["OS/2"], name) for name in metric_fonts.SCRIPTS)
     assert scripts == tuple(round(value * 1000 / 2048) for value in (1229, 717, 1229, 154))
+
+
+SSTY = "feature ssty { sub a from [a.s1]; } ssty;"
+WORD_MATH = {"a": (1000, -20, 900), "a.s1": (800, -16, 700), "equal": (1100, 400, 700), "low": (1000, -300, -100), "paren": (600, -500, 1500), "paren.v1": (650, -800, 1800), "paren.v2": (700, -1400, 2400)}
+SOURCE_MATH = {"a": (520, -10, 460), "a.s1": (450, -10, 400), "equal": (550, 150, 250), "low": (500, -120, -60), "paren": (300, -250, 750), "paren.v1": (330, -600, 1100)}
+
+
+def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], larger: list[str], italic: int, features: str = SSTY, accent: int | None = None) -> TTFont:
+    """A math font of box glyphs, each (advance, bottom, top): 'a' with a script form 'a.s1', = and _, and a bracket with its larger forms."""
+    order = [".notdef", "a", "a.s1", "equal", "low", "paren", *larger]
+    builder = FontBuilder(upm, isTTF=True)
+    builder.setupGlyphOrder(order)
+    builder.setupCharacterMap({97: "a", 61: "equal", 95: "low", 40: "paren"})
+    glyphs = {}
+    for name in order:
+        advance, bottom, top = shapes.get(name, (500, 0, 500))
+        pen = TTGlyphPen(None)
+        pen.moveTo((50, bottom))
+        pen.lineTo((50, top))
+        pen.lineTo((advance - 50, top))
+        pen.lineTo((advance - 50, bottom))
+        pen.closePath()
+        glyphs[name] = pen.glyph()
+    builder.setupGlyf(glyphs)
+    builder.setupHorizontalMetrics({name: (shapes.get(name, (500, 0, 500))[0], 50) for name in order})
+    builder.setupHorizontalHeader(ascent=upm * 3 // 4, descent=-upm // 4)
+    builder.setupNameTable({"familyName": family, "styleName": "Regular"})
+    builder.setupOS2(sTypoAscender=upm * 3 // 4, sTypoDescender=-upm // 4, usWinAscent=upm * 3 // 4, usWinDescent=upm // 4)
+    builder.setupPost()
+    addOpenTypeFeaturesFromString(builder.font, features)
+    table = otTables.MATH()
+    table.Version = 0x00010000
+    constants = otTables.MathConstants()
+    for converter in constants.getConverters():
+        if "Percent" in converter.name:
+            setattr(constants, converter.name, 70)
+        elif converter.name in ("DelimitedSubFormulaMinHeight", "DisplayOperatorMinHeight"):
+            setattr(constants, converter.name, upm)
+        else:
+            record = otTables.MathValueRecord()
+            record.Value, record.DeviceTable = upm // 4, None
+            setattr(constants, converter.name, record)
+    table.MathConstants = constants
+    info = otTables.MathGlyphInfo()
+    info.MathItalicsCorrectionInfo = otTables.MathItalicsCorrectionInfo()
+    info.MathItalicsCorrectionInfo.Coverage = otTables.Coverage()
+    info.MathItalicsCorrectionInfo.Coverage.glyphs = ["a"]
+    record = otTables.MathValueRecord()
+    record.Value, record.DeviceTable = italic, None
+    info.MathItalicsCorrectionInfo.ItalicsCorrection = [record]
+    info.MathItalicsCorrectionInfo.ItalicsCorrectionCount = 1
+    info.MathTopAccentAttachment = info.ExtendedShapeCoverage = info.MathKernInfo = None
+    if accent is not None:
+        info.MathTopAccentAttachment = otTables.MathTopAccentAttachment()
+        info.MathTopAccentAttachment.TopAccentCoverage = otTables.Coverage()
+        info.MathTopAccentAttachment.TopAccentCoverage.glyphs = ["a"]
+        record = otTables.MathValueRecord()
+        record.Value, record.DeviceTable = accent, None
+        info.MathTopAccentAttachment.TopAccentAttachment = [record]
+        info.MathTopAccentAttachment.TopAccentAttachmentCount = 1
+    table.MathGlyphInfo = info
+    variants = otTables.MathVariants()
+    variants.MinConnectorOverlap = 0
+    variants.VertGlyphCoverage = otTables.Coverage()
+    variants.VertGlyphCoverage.glyphs = ["paren"]
+    construction = otTables.MathGlyphConstruction()
+    construction.GlyphAssembly = None
+    construction.MathGlyphVariantRecord = []
+    for name in ("paren", *larger):
+        variant = otTables.MathGlyphVariantRecord()
+        variant.VariantGlyph, variant.AdvanceMeasurement = name, shapes[name][2] - shapes[name][1]
+        construction.MathGlyphVariantRecord.append(variant)
+    construction.VariantCount = len(construction.MathGlyphVariantRecord)
+    variants.VertGlyphConstruction = [construction]
+    variants.VertGlyphCount = 1
+    variants.HorizGlyphCoverage, variants.HorizGlyphConstruction, variants.HorizGlyphCount = None, [], 0
+    table.MathVariants = variants
+    builder.font["MATH"] = newTable("MATH")
+    builder.font["MATH"].table = table
+    buffer = io.BytesIO()
+    builder.font.save(buffer)
+    buffer.seek(0)
+    return TTFont(buffer)
+
+
+@pytest.fixture
+def word_math() -> TTFont:
+    return _math_font("Word Math", 2048, WORD_MATH, ["paren.v1", "paren.v2"], italic=60)
+
+
+@pytest.fixture
+def source_math() -> TTFont:
+    return _math_font("Open Math", 1000, SOURCE_MATH, ["paren.v1"], italic=10)
+
+
+def _built(word: TTFont, source: TTFont) -> TTFont:
+    metrics = metric_fonts.word_metrics(word, source)
+    metric_fonts.apply_metrics(source, metrics)
+    metric_fonts.apply_math(source, metrics["math"], metrics["unitsPerEm"])
+    buffer = io.BytesIO()
+    source.save(buffer)
+    buffer.seek(0)
+    return TTFont(buffer)
+
+
+def test_the_math_metrics_of_word_hold_its_constants_and_the_shapes_of_each_character(word_math: TTFont, source_math: TTFont):
+    math = metric_fonts.word_metrics(word_math, source_math)["math"]
+    assert math["constants"]["AxisHeight"] == 512
+    assert math["constants"]["ScriptPercentScaleDown"] == 70
+    assert math["glyphs"]["97"] == {"advance": 1000, "bottom": -20, "top": 900, "italic": 60, "scripts": [{"advance": 800, "bottom": -16, "top": 700}]}
+    assert [shape["top"] for shape in math["glyphs"]["40"]["larger"]] == [1800, 2400]
+    assert math["glyphs"]["40"]["larger"][1]["measure"] == 3800
+
+
+def test_a_math_glyph_is_as_high_and_as_deep_as_the_glyph_of_word(word_math: TTFont, source_math: TTFont):
+    """TeX sets a script, a radical and a fraction by the heights of the glyphs, which the outlines give."""
+    glyph = _built(word_math, source_math)["glyf"]["a"]
+    assert (glyph.yMin, glyph.yMax) == (round(-20 * 1000 / 2048), round(900 * 1000 / 2048))
+
+
+@pytest.mark.parametrize(("glyph", "bottom", "top"), [("equal", 400, 700), ("low", -300, -100)])
+def test_a_glyph_on_one_side_of_the_baseline_takes_both_edges_of_word(word_math: TTFont, source_math: TTFont, glyph: str, bottom: int, top: int):
+    """= stands above the baseline, _ below it: stretched from the baseline alone, one of its edges missed Word."""
+    outline = _built(word_math, source_math)["glyf"][glyph]
+    assert (outline.yMin, outline.yMax) == (round(bottom * 1000 / 2048), round(top * 1000 / 2048))
+
+
+def test_the_form_of_a_script_takes_the_width_and_the_height_of_word(word_math: TTFont, source_math: TTFont):
+    font = _built(word_math, source_math)
+    assert font["hmtx"].metrics["a.s1"][0] == round(800 * 1000 / 2048)
+    assert font["glyf"]["a.s1"].yMax == round(700 * 1000 / 2048)
+
+
+def test_each_larger_form_of_word_gets_a_glyph_of_its_own(word_math: TTFont, source_math: TTFont):
+    """The open font has one larger bracket, Word two: TeX takes the first one large enough, so each size of Word is there."""
+    font = _built(word_math, source_math)
+    records = font["MATH"].table.MathVariants.VertGlyphConstruction[0].MathGlyphVariantRecord
+    assert [record.VariantGlyph for record in records] == ["paren", "paren.metric1", "paren.metric2"]
+    largest = font["glyf"]["paren.metric2"]
+    assert (largest.yMin, largest.yMax) == (round(-1400 * 1000 / 2048), round(2400 * 1000 / 2048))
+    assert records[2].AdvanceMeasurement == round(3800 * 1000 / 2048)
+
+
+def test_the_math_font_takes_the_constants_and_the_italic_corrections_of_word(word_math: TTFont, source_math: TTFont):
+    table = _built(word_math, source_math)["MATH"].table
+    assert table.MathConstants.AxisHeight.Value == round(512 * 1000 / 2048)
+    assert table.MathConstants.ScriptPercentScaleDown == 70
+    italics = table.MathGlyphInfo.MathItalicsCorrectionInfo
+    assert italics.ItalicsCorrection[italics.Coverage.glyphs.index("a")].Value == round(60 * 1000 / 2048)
+
+
+def test_a_collection_gives_the_font_of_word_by_its_family(tmp_path: Path, word: TTFont, word_math: TTFont):
+    collection = TTCollection()
+    collection.fonts = [word, word_math]
+    collection.save(tmp_path / "fonts.ttc")
+    style = metric_fonts.Style("Metric Math", "Regular", "fonts.ttc#Word Math", "open.ttf")
+    assert metric_fonts.open_word(tmp_path, style)["name"].getDebugName(1) == "Word Math"
+
+
+def test_build_fits_the_math_font_into_word(tmp_path: Path, word_math: TTFont, source_math: TTFont, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / "sources").mkdir()
+    source_math.save(tmp_path / "sources" / "open.ttf")
+    (tmp_path / "word").mkdir()
+    word_math.save(tmp_path / "word" / "word.ttf")
+    monkeypatch.setattr(metric_fonts, "STYLES", (metric_fonts.Style("Metric Math", "Regular", "word.ttf", "open.ttf"),))
+    metrics = tmp_path / "metrics.json"
+    assert metric_fonts.main(["extract", str(tmp_path / "word"), str(tmp_path / "sources"), str(metrics)]) == 0
+    assert metric_fonts.main(["build", str(tmp_path / "sources"), str(metrics), str(tmp_path / "out")]) == 0
+    font = TTFont(tmp_path / "out" / "MetricMath-Regular.ttf")
+    assert font["glyf"]["a"].yMax == round(900 * 1000 / 2048)
+    assert "paren.metric2" in font.getGlyphOrder()
+
+
+def test_a_form_for_scripts_by_a_single_substitution_takes_the_shape_of_word(word_math: TTFont):
+    """An open font may give a script form by a single substitution, among lookups of other features."""
+    source = _math_font("Open Math", 1000, SOURCE_MATH, ["paren.v1"], italic=10, features="feature smcp { sub a by a.s1; } smcp; feature ssty { sub a by a.s1; } ssty;")
+    assert _built(word_math, source)["hmtx"].metrics["a.s1"][0] == round(800 * 1000 / 2048)
+
+
+def test_a_font_of_word_without_script_or_larger_forms_leaves_those_of_the_open_font(word_math: TTFont, source_math: TTFont):
+    del word_math["GSUB"]
+    variants = word_math["MATH"].table.MathVariants
+    variants.VertGlyphCoverage, variants.VertGlyphConstruction, variants.VertGlyphCount = None, [], 0
+    math = metric_fonts.word_metrics(word_math, source_math)["math"]
+    assert "scripts" not in math["glyphs"]["97"]
+    assert "larger" not in math["glyphs"]["40"]
+    font = _built(word_math, source_math)
+    records = font["MATH"].table.MathVariants.VertGlyphConstruction[0].MathGlyphVariantRecord
+    assert [record.VariantGlyph for record in records] == ["paren", "paren.v1"]
+    assert font["hmtx"].metrics["a.s1"][0] == 450
+
+
+def test_an_accent_sits_on_a_glyph_where_word_puts_it(word_math: TTFont):
+    word = _math_font("Word Math", 2048, WORD_MATH, ["paren.v1", "paren.v2"], italic=60, accent=700)
+    source = _math_font("Open Math", 1000, SOURCE_MATH, ["paren.v1"], italic=10, accent=250)
+    assert metric_fonts.word_metrics(word, source)["math"]["glyphs"]["97"]["accent"] == 700
+    accents = _built(word, source)["MATH"].table.MathGlyphInfo.MathTopAccentAttachment
+    assert accents.TopAccentAttachment[0].Value == round(700 * 1000 / 2048)
+
+
+def test_an_open_font_without_italic_corrections_takes_those_of_word(word_math: TTFont, source_math: TTFont):
+    source_math["MATH"].table.MathGlyphInfo.MathItalicsCorrectionInfo = None
+    italics = _built(word_math, source_math)["MATH"].table.MathGlyphInfo.MathItalicsCorrectionInfo
+    assert italics.Coverage.glyphs == ["a"]
+    assert italics.ItalicsCorrection[0].Value == round(60 * 1000 / 2048)
+
+
+def test_a_character_the_open_font_lacks_gets_no_shape(word_math: TTFont, source_math: TTFont):
+    metrics = metric_fonts.word_metrics(word_math, source_math)
+    for table in source_math["cmap"].tables:
+        table.cmap.pop(95, None)
+    assert "95" not in metric_fonts.word_metrics(word_math, source_math)["math"]["glyphs"]
+    metric_fonts.apply_math(source_math, metrics["math"], metrics["unitsPerEm"])
+    assert source_math["glyf"]["low"].yMax == -60
+
+
+def test_a_glyph_word_draws_empty_keeps_its_height(word_math: TTFont, source_math: TTFont):
+    """A space of Word has no height to fit an outline into."""
+    metrics = metric_fonts.word_metrics(word_math, source_math)
+    metrics["math"]["glyphs"]["95"] |= {"bottom": 0, "top": 0}
+    metric_fonts.apply_math(source_math, metrics["math"], metrics["unitsPerEm"])
+    assert (source_math["glyf"]["low"].yMin, source_math["glyf"]["low"].yMax) == (-120, -60)

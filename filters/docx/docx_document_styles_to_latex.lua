@@ -171,6 +171,9 @@ local ROW_GAP = 0.25
 -- Word sets the line of an equation 0.135 times the size of the font above its top
 local EQUATION_TOP = 0.135
 local ALIGNED_GAP = 1.35
+-- Word takes the smallest size of a growing bracket which covers 0.82 of the height it encloses and reaches
+-- 5pt short of it at most: TeX 0.901
+local DELIMITER_FACTOR = 820
 
 -- The array of array.sty with the rows of Word: no strut, and a pitch whatever the rows hold
 local EQUATION_ARRAY = table.concat({
@@ -184,12 +187,37 @@ local EQUATION_ARRAY = table.concat({
   "\\newcommand{\\pdcInnerFrac}[2]{\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}}",
   "\\newcommand{\\pdcEquationFrac}[2]{\\genfrac{}{}{}{0}{\\let\\frac\\pdcInnerFrac #1}{\\let\\frac\\pdcInnerFrac #2}}",
   "\\newcommand{\\pdcEquationArrays}{\\def\\@array[##1]##2{\\pdcEquationArray[##1]{##2}}}",
+  -- pandoc reads a fraction without a bar in brackets as \binom, whose brackets TeX sizes as those of a
+  -- fraction: Word sizes them as any growing bracket
+  "\\renewcommand{\\binom}[2]{\\left(\\genfrac{}{}{0pt}{}{#1}{#2}\\right)}",
   -- Word strikes a cancelled term out within its box: the slash of cancel.sty reaches a point beyond it,
   -- above and below, which set a fraction of it higher than in Word
   "\\ifdefined\\@can@slash\\renewcommand\\@cancel[3]{\\OriginalPictureCmds\\@begin@tempboxa\\hbox{\\m@th$#2{#3}$}\\dimen@\\height"
     .. "\\setbox\\@tempboxa\\hbox{$\\m@th\\vcenter{\\box\\@tempboxa}$}\\advance\\dimen@-\\height\\unitlength\\p@\\canc@thinlines"
     .. "{\\/\\setbox\\tw@\\hbox{\\ooalign{#1\\hfil\\copy\\@tempboxa\\hfil\\cr}}\\ht\\tw@\\ht\\@tempboxa\\dp\\tw@\\dp\\@tempboxa"
     .. "\\raise\\dimen@\\box\\tw@}\\@end@tempboxa}\\fi",
+  "\\makeatother",
+}, "\n")
+
+-- Word sets a limit right above or below what it stands on: TeX puts the gap of a stack of the math font
+-- beyond it, which \pdcLimitSpace holds as a share of the size. \overset and \underset leave it out
+local LIMITS = table.concat({
+  "\\makeatletter",
+  "\\newsavebox{\\pdcLimitBox}",
+  "\\def\\pdc@limitspace#1{\\dimexpr\\pdcLimitSpace\\fontdimen6\\ifx#1\\scriptscriptstyle\\scriptscriptfont"
+    .. "\\else\\ifx#1\\scriptstyle\\scriptfont\\else\\textfont\\fi\\fi2\\relax}",
+  "\\def\\pdc@over#1#2{\\pdc@@over#1#2}",
+  "\\def\\pdc@@over#1#2#3{\\sbox\\pdcLimitBox{$\\m@th#1\\mathop{\\kern\\z@#3}\\limits^{#2}$}"
+    .. "\\ht\\pdcLimitBox\\dimexpr\\ht\\pdcLimitBox-\\pdc@limitspace#1\\relax\\usebox\\pdcLimitBox}",
+  "\\def\\pdc@under#1#2{\\pdc@@under#1#2}",
+  "\\def\\pdc@@under#1#2#3{\\sbox\\pdcLimitBox{$\\m@th#1\\mathop{\\kern\\z@#3}\\limits_{#2}$}"
+    .. "\\dp\\pdcLimitBox\\dimexpr\\dp\\pdcLimitBox-\\pdc@limitspace#1\\relax\\usebox\\pdcLimitBox}",
+  "\\DeclareRobustCommand{\\overset}[2]{\\binrel@{#2}\\binrel@@{\\mathpalette\\pdc@over{{#1}{#2}}}}",
+  "\\DeclareRobustCommand{\\underset}[2]{\\binrel@{#2}\\binrel@@{\\mathpalette\\pdc@under{{#1}{#2}}}}",
+  -- pandoc reads a limit of a brace alone, which Word sets as a character the size of a limit, as a growing
+  -- brace. It reads a growing brace of Word, a group character, as one without content
+  "\\AtBeginDocument{\\renewcommand{\\underbrace}[1]{\\underset{\\Umathchar 0 \\symoperators \"23DF }{#1}}"
+    .. "\\renewcommand{\\overbrace}[1]{\\overset{\\Umathchar 0 \\symoperators \"23DE }{#1}}}",
   "\\makeatother",
 }, "\n")
 
@@ -295,6 +323,12 @@ local function body_preamble(meta, lines)
     local row = (top and descent) and top + descent or MATRIX_ROW
     lines[#lines + 1] = string.format("\\newcommand{\\pdcEquationRow}{%gbp}\\newcommand{\\pdcEquationGap}{%gbp}", row * size, ROW_GAP * size)
     lines[#lines + 1] = EQUATION_ARRAY
+    lines[#lines + 1] = string.format("\\delimiterfactor=%d", DELIMITER_FACTOR)
+    local limit_space = points(meta["docx-math-limit-space"])
+    if limit_space then
+      lines[#lines + 1] = string.format("\\newcommand{\\pdcLimitSpace}{%g}", limit_space)
+      lines[#lines + 1] = LIMITS
+    end
   end
   if meta[JUSTIFIED] ~= nil and not is_true(meta[JUSTIFIED]) then
     -- \\raggedright makes \\\\ end the paragraph, so the lines of a paragraph of line breaks were

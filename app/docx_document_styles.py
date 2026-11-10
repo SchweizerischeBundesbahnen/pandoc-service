@@ -64,6 +64,9 @@ CAMBRIA_MATH_LINE = (0.9502, 0.2222)
 # scaled to the small letters of Cambria Math
 LATIN_MODERN_MATH_X_HEIGHT = 431 / 1000
 CAMBRIA_MATH_X_HEIGHT = 956 / 2048
+# The gap of a stack of each, as a share of its size: TeX puts it above an upper limit and below a lower one
+LATIN_MODERN_MATH_STACK_GAP = 120 / 1000
+CAMBRIA_MATH_STACK_GAP = 400 / 2048
 M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"  # NOSONAR False positive - URI is OOXML namespace identifier (ECMA-376), it's never dereferenced
 # The open families the image has in place of fonts of Word, each as wide and as high as the font it stands for:
 # fonts/metric_fonts.py makes the Metric families, the others are metric compatible as they come
@@ -72,6 +75,7 @@ SUBSTITUTES = {
     "aptos display": "Metric Sans Display",
     "segoe ui": "Metric UI",
     "georgia": "Metric Serif",
+    "cambria math": "Metric Math",
     "calibri": "Carlito",
     "arial": "Liberation Sans",
     "times new roman": "Liberation Serif",
@@ -194,22 +198,28 @@ def _font_options(font: str | None, math_font: str = MATH_FONT) -> list[str]:
         options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
         options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
     scale = 1.0
-    if math_font in installed_families():
-        options += ["-V", f"mathfont={math_font}"]
+    family = installed_family(math_font)
+    if family is not None:
+        options += ["-V", f"mathfont={family}"]
         top, descent = CAMBRIA_MATH_LINE if math_font == MATH_FONT else LATIN_MODERN_MATH_LINE
-        math_top = top_ratio(math_font)
+        math_top = top_ratio(family)
         if math_top is not None:
-            top, descent = math_top, line_ratio(math_font) - math_top
+            top, descent = math_top, line_ratio(family) - math_top
+        gap = stack_gap_ratio(family) or (CAMBRIA_MATH_STACK_GAP if math_font == MATH_FONT else LATIN_MODERN_MATH_STACK_GAP)
     elif math_font == LATIN_MODERN_MATH:
         options += ["-V", f"mathfont={LATIN_MODERN_MATH_FILE}"]
         top, descent = LATIN_MODERN_MATH_LINE
+        gap = LATIN_MODERN_MATH_STACK_GAP
     else:
         options += ["-V", f"mathfont={LATIN_MODERN_MATH_FILE}"]
         scale = CAMBRIA_MATH_X_HEIGHT / LATIN_MODERN_MATH_X_HEIGHT
         top, descent = CAMBRIA_MATH_LINE
+        gap = LATIN_MODERN_MATH_STACK_GAP * scale
     options += ["-V", f"mathfontoptions=Scale={scale:.4g}"]
     # Word sets a line of an equation as high and as deep as the line of its font, at the least
     options += ["-M", f"docx-math-top={top:.4g}", "-M", f"docx-math-descent={descent:.4g}"]
+    # and a limit right above or below what it stands on: TeX adds the gap of a stack beyond it
+    options += ["-M", f"docx-math-limit-space={gap:.4g}"]
     return options
 
 
@@ -752,6 +762,20 @@ def top_ratio(family: str | None) -> float | None:
     """
     ascent = ascent_ratio(family)
     return ascent + gap_ratio(family) if ascent is not None else None
+
+
+@functools.cache
+def stack_gap_ratio(family: str) -> float | None:
+    """The gap of a stack of a math font as a share of its size, from its MATH table; None when unreadable."""
+    try:
+        font = _font_file(family)
+        # fontTools makes the fields of a table at run time, which a type checker does not see
+        table: Any = font["MATH"]
+        head: Any = font["head"]
+        return table.table.MathConstants.StackGapMin.Value / head.unitsPerEm
+    except Exception:  # noqa: BLE001 - a font fontTools cannot read gets the gap of the font it stands for
+        logger.info("docx_document_styles: no MATH table for %r", family)
+        return None
 
 
 @functools.cache

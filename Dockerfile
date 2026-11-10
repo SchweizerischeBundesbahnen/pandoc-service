@@ -117,7 +117,8 @@ ENV PATH="${WORKING_DIR}/.venv/bin:$PATH" \
     PYTHONPATH=${WORKING_DIR}
 
 # Open fonts as wide and as high as the fonts of Word they stand for, which app/docx_document_styles.py maps
-# the fonts of Word to: fonts/metric_fonts.py makes them from the outlines of open fonts and the metrics of Word.
+# the fonts of Word to: fonts/metric_fonts.py makes them from the outlines of open fonts and the metrics of Word,
+# Metric Math the font of equations from STIX Two Math and Cambria Math.
 # The open fonts and their licenses come from fixed commits, checked against fonts/sources.sha256.
 ARG GOOGLE_FONTS_COMMIT=86aced91de05cd4f96a06838124cca45be337b2b
 ARG SELAWIK_COMMIT=89362e84731d1f5777fa078fd4d5ebbd339e4378
@@ -132,6 +133,8 @@ RUN google="https://raw.githubusercontent.com/google/fonts/${GOOGLE_FONTS_COMMIT
     curl -fsSL -o "${sources}/Gelasio[wght].ttf" "${google}/gelasio/Gelasio%5Bwght%5D.ttf" && \
     curl -fsSL -o "${sources}/Gelasio-Italic[wght].ttf" "${google}/gelasio/Gelasio-Italic%5Bwght%5D.ttf" && \
     curl -fsSL -o "${sources}/Gelasio-OFL.txt" "${google}/gelasio/OFL.txt" && \
+    curl -fsSL -o "${sources}/STIXTwoMath-Regular.ttf" "${google}/stixtwomath/STIXTwoMath-Regular.ttf" && \
+    curl -fsSL -o "${sources}/STIXTwoMath-OFL.txt" "${google}/stixtwomath/OFL.txt" && \
     curl -fsSL -o "${sources}/Selawik_Release.zip" "https://github.com/microsoft/Selawik/releases/download/${SELAWIK_VERSION}/Selawik_Release.zip" && \
     curl -fsSL -o "${sources}/Selawik-LICENSE.txt" "https://raw.githubusercontent.com/microsoft/Selawik/${SELAWIK_COMMIT}/LICENSE.txt" && \
     sed "s|  |  ${sources}/|" /tmp/fonts/sources.sha256 > /tmp/fonts/sources.paths && \

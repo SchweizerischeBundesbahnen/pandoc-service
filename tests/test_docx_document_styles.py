@@ -60,6 +60,7 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.gap_ratio.cache_clear()
     docx_document_styles.script_ratios.cache_clear()
     docx_document_styles.shared_characters.cache_clear()
+    docx_document_styles.stack_gap_ratio.cache_clear()
     monkeypatch.setattr(subprocess, "run", missing)
     yield
     docx_document_styles.line_ratio.cache_clear()
@@ -67,6 +68,7 @@ def no_font_files(monkeypatch: pytest.MonkeyPatch):
     docx_document_styles.gap_ratio.cache_clear()
     docx_document_styles.script_ratios.cache_clear()
     docx_document_styles.shared_characters.cache_clear()
+    docx_document_styles.stack_gap_ratio.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +98,7 @@ def test_sets_pandoc_template_like_word():
         "mathfontoptions": "Scale=1.083",
         "docx-math-top": "0.9502",
         "docx-math-descent": "0.2222",
+        "docx-math-limit-space": "0.13",
     }
 
 
@@ -113,6 +116,55 @@ def test_cambria_math_sets_an_equation_unscaled(installed: set[str]):
     installed.add("Cambria Math")
     options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
     assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("Cambria Math", "Scale=1", "0.9502")
+
+
+def test_without_cambria_math_metric_math_stands_for_it_unscaled(installed: set[str]):
+    """The image draws Cambria Math as Metric Math: its glyphs as wide and as high, with its MATH table and its line."""
+    installed.add("Metric Math")
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("Metric Math", "Scale=1", "0.9502")
+
+
+@pytest.mark.parametrize(("settings", "installed_math", "space"), [(None, "Cambria Math", "0.1953"), (None, "Metric Math", "0.1953"), ("Latin Modern Math", None, "0.12")])
+def test_a_limit_loses_the_gap_tex_puts_beyond_it(installed: set[str], settings: str | None, installed_math: str | None, space: str):
+    """TeX puts the gap of a stack of the math font above an upper limit and below a lower one, Word nothing."""
+    if installed_math:
+        installed.add(installed_math)
+    math = f'<m:mathPr {M}><m:mathFont m:val="{settings}"/></m:mathPr>' if settings else None
+    assert _options(_docx(DEFAULTS + NORMAL + BODY_TEXT, settings=math))["docx-math-limit-space"] == space
+
+
+def _math_font_file(path, stack_gap: int) -> str:
+    """A math font of 1000 units an em, 1.25 lines high with a line gap of 0.1, and the gap of a stack given."""
+    from fontTools.ttLib import TTFont, newTable
+    from fontTools.ttLib.tables import otTables
+
+    font = TTFont(_font_file(path, 900, -250, 100))
+    table = otTables.MATH()
+    table.Version = 0x00010000
+    table.MathConstants = otTables.MathConstants()
+    for converter in table.MathConstants.getConverters():
+        if converter.name in ("ScriptPercentScaleDown", "ScriptScriptPercentScaleDown", "DelimitedSubFormulaMinHeight", "DisplayOperatorMinHeight", "RadicalDegreeBottomRaisePercent"):
+            setattr(table.MathConstants, converter.name, 0)
+        else:
+            record = otTables.MathValueRecord()
+            record.Value, record.DeviceTable = stack_gap if converter.name == "StackGapMin" else 0, None
+            setattr(table.MathConstants, converter.name, record)
+    table.MathGlyphInfo = table.MathVariants = None
+    font["MATH"] = newTable("MATH")
+    font["MATH"].table = table
+    file = path / "math.ttf"
+    font.save(str(file))
+    return str(file)
+
+
+def test_an_installed_math_font_sets_an_equation_on_its_own_line_and_stack_gap(monkeypatch: pytest.MonkeyPatch, tmp_path, installed: set[str]):
+    """The line of the math font from its hhea table, the gap TeX puts beyond a limit from its MATH table."""
+    installed.add("Metric Math")
+    file = _math_font_file(tmp_path, 150)
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=file))
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["docx-math-top"], options["docx-math-descent"], options["docx-math-limit-space"]) == ("1", "0.25", "0.15")
 
 
 def test_the_math_font_of_the_settings_sets_an_equation_unscaled():
@@ -151,7 +203,7 @@ def test_the_word_font_goes_before_its_substitute(installed: set[str]):
 
 @pytest.mark.parametrize(
     ("name", "substitute"),
-    [("segoe ui", "Metric UI"), ("Calibri", "Carlito"), ("Georgia", "Metric Serif"), ("Aptos Display", "Metric Sans Display"), ("Arial", "Liberation Sans")],
+    [("segoe ui", "Metric UI"), ("Calibri", "Carlito"), ("Georgia", "Metric Serif"), ("Aptos Display", "Metric Sans Display"), ("Arial", "Liberation Sans"), ("Cambria Math", "Metric Math")],
 )
 def test_a_font_a_run_names_takes_its_substitute(installed: set[str], name: str, substitute: str):
     installed.add(substitute)

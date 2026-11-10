@@ -17,6 +17,7 @@ import pypdfium2.raw as pdfium_c
 import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.shared import Pt, RGBColor
@@ -712,12 +713,33 @@ def test_an_indented_paragraph_of_a_cell_starts_its_indent_in(test_parameters: T
     assert round(origins[1] - origins[0], 1) == 7.1
 
 
-@pytest.mark.parametrize(("alignment", "expected"), [("AlignDefault", "\\pdcCellRaggedright{}\\advance\\leftskip7.1bp\\relax Indented"), ("AlignCenter", "\\pdcCellCentering{}Indented")])
-def test_the_indent_of_a_cell_adds_to_its_left_skip_unless_it_is_centered(test_parameters: TestParameters, alignment: str, expected: str):
-    """The alignment switch sets \\leftskip, so the indent comes after it.
+def test_a_centered_paragraph_of_a_cell_centers_between_its_indent_and_the_right_margin(test_parameters: TestParameters):
+    """Word centers a cell paragraph with a left indent of 1440 twips 36pt right of one without (35.7pt measured).
 
-    Word centers a paragraph over the whole cell and only keeps it off the indent, which glue cannot say.
+    The centered cell dropped the indent and stayed in the middle of the cell.
     """
+    document = Document()
+    table = document.add_table(rows=2, cols=1)
+    for row, (text, indent) in zip(table.rows, (("Plain", None), ("Indented", 1440)), strict=True):
+        paragraph = row.cells[0].paragraphs[0]
+        paragraph.add_run(text)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if indent:
+            paragraph._p.get_or_add_pPr().append(parse_xml(f'<w:ind {nsdecls("w")} w:left="{indent}"/>'))
+    textpage = pdfium.PdfDocument(_pdf_of(test_parameters, document))[0].get_textpage()
+    text = textpage.get_text_range()
+    middles = []
+    for word in ("Plain", "Indented"):
+        start = text.index(word)
+        left = textpage.get_charbox(start)[0]
+        right = textpage.get_charbox(start + len(word) - 1)[2]
+        middles.append((left + right) / 2)
+    assert abs(middles[1] - middles[0] - 36) < 0.5, middles
+
+
+@pytest.mark.parametrize(("alignment", "expected"), [("AlignDefault", "\\pdcCellRaggedright{}\\advance\\leftskip7.1bp\\relax Indented"), ("AlignCenter", "\\pdcCellCentering{}\\advance\\leftskip7.1bp\\relax Indented")])
+def test_the_indent_of_a_cell_adds_to_its_left_skip(test_parameters: TestParameters, alignment: str, expected: str):
+    """The alignment switch sets \\leftskip, so the indent comes after it."""
     cell = f'Cell ("",[],[]) {alignment} (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}li=7.1{CLOSE}Indented"]]'
     latex = _native_latex(test_parameters.container, _grid_table([cell, _cell('Str "Other"')]))
     assert expected in latex, latex

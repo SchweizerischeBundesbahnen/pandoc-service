@@ -13,7 +13,7 @@ import shlex
 import pypdfium2 as pdfium
 import pytest
 from docx import Document
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from pypdf import PdfReader
@@ -121,6 +121,15 @@ def test_a_font_the_container_lacks_keeps_latin_modern(test_parameters: TestPara
     document.add_paragraph("The body text of the document.")
     fonts = _fonts(_docx_to_pdf(test_parameters, document))
     assert any(font.startswith("LMRoman") for font in fonts), fonts
+
+
+def test_an_equation_takes_metric_math_in_place_of_cambria_math(test_parameters: TestParameters):
+    """The image builds Metric Math, Cambria Math to the layout of an equation: Latin Modern Math sets it narrower."""
+    document = Document()
+    math = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+    document.add_paragraph()._p.append(parse_xml(f"<m:oMathPara {math}><m:oMath><m:r><m:t>x+1</m:t></m:r></m:oMath></m:oMathPara>"))
+    fonts = _fonts(_docx_to_pdf(test_parameters, document))
+    assert "MetricMath-Regular" in fonts, fonts
 
 
 def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParameters):
@@ -397,6 +406,82 @@ def test_the_columns_of_a_matrix_stand_an_em_apart(test_parameters: TestParamete
     """Word sets the columns of a matrix 12pt apart in a body of 12pt, TeX two \\arraycolsep, 10pt."""
     matrix = _origin_distance(test_parameters.container, "\\\\begin{matrix} 1 & 0 \\\\end{matrix}")
     assert matrix - _origin_distance(test_parameters.container, "10") == pytest.approx(12, abs=0.05)
+
+
+def _equation_baseline(container, equation: str, *metadata: str) -> float:
+    """Where the bottom of the = of a display equation below a line of text stands, from the top of the page."""
+    native = f'[Para [Str "Text"], Para [Math DisplayMath "{equation}"]]'
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/limit.native << 'EOF'\n{native}\nEOF"])
+    options = " ".join(f"-M {item}" for item in ("docx-body-size=12", "docx-body-baseline=14.65", *metadata))
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} {options} --pdf-engine=tectonic -o /tmp/test/limit.pdf /tmp/test/limit.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/limit.pdf"])
+    page = pdfium.PdfDocument(pdf)[0]
+    text = page.get_textpage()
+    return page.get_height() - text.get_charbox(text.get_text_range().index("="))[1]
+
+
+def test_a_limit_above_an_equation_takes_no_gap_beyond_it(test_parameters: TestParameters):
+    """Word sets a limit right above what it stands on: TeX put the gap of a stack above it, 1.44pt in Latin Modern Math."""
+    plain = _equation_baseline(test_parameters.container, "A\\\\overset{\\\\frac{a}{b}}{=}B")
+    word = _equation_baseline(test_parameters.container, "A\\\\overset{\\\\frac{a}{b}}{=}B", "docx-math-limit-space=0.12")
+    assert plain - word == pytest.approx(1.44, abs=0.05)
+
+
+def test_a_brace_below_is_a_limit_of_the_size_of_a_script(test_parameters: TestParameters):
+    """Word sets a lower limit of ⏟ alone as a character, 3.9pt wide under a+a+⋯+a: TeX stretched it across."""
+    native = '[Para [Math DisplayMath "\\\\underbrace{a + a + \\\\cdots + a}"]]'
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/brace.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 -M docx-math-limit-space=0.12 --pdf-engine=tectonic -o /tmp/test/brace.pdf /tmp/test/brace.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/brace.pdf"])
+    text = pdfium.PdfDocument(pdf)[0].get_textpage()
+    characters = text.get_text_range()
+    braces = [text.get_charbox(index) for index, character in enumerate(characters) if character == "⏟"]
+    assert len(braces) == 1, characters
+    assert braces[0][2] - braces[0][0] < 6
+
+
+def test_a_label_below_a_brace_stands_below_the_brace(test_parameters: TestParameters):
+    """pandoc reads the label of a brace of Word as a lower limit around it, which stays below the brace."""
+    native = '[Para [Math DisplayMath "\\\\underset{n}{\\\\underbrace{a + a + \\\\cdots + a}}"]]'
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/label.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 -M docx-math-limit-space=0.12 --pdf-engine=tectonic -o /tmp/test/label.pdf /tmp/test/label.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/label.pdf"])
+    text = pdfium.PdfDocument(pdf)[0].get_textpage()
+    characters = text.get_text_range()
+    brace, label = (text.get_charbox(characters.index(character)) for character in ("⏟", "\N{MATHEMATICAL ITALIC SMALL N}"))
+    assert label[3] <= brace[1], characters
+    assert brace[2] - brace[0] < 6
+
+
+def _bracket_height(container, equation: str) -> float:
+    """How high the PDF draws the opening bracket of a display equation, the first character of its page."""
+    native = f'[Para [Math DisplayMath "{equation}"]]'
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/bracket.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 --pdf-engine=tectonic -o /tmp/test/bracket.pdf /tmp/test/bracket.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/bracket.pdf"])
+    _, bottom, _, top = pdfium.PdfDocument(pdf)[0].get_textpage().get_charbox(0)
+    return top - bottom
+
+
+def test_a_growing_bracket_covers_less_of_its_content_than_in_tex(test_parameters: TestParameters):
+    """Word sets (x²) in Latin Modern Math with the bracket of the text, 11.94pt high: TeX took the next size, 13.26pt."""
+    assert _bracket_height(test_parameters.container, "\\\\left( x^{2} \\\\right)") < 12.5
+
+
+def test_the_brackets_of_a_fraction_without_a_bar_grow_as_any_other(test_parameters: TestParameters):
+    """Word sets n over k in brackets 21.49pt high in Latin Modern Math, as a over b: TeX's \\binom took 28.96pt."""
+    binomial = _bracket_height(test_parameters.container, "\\\\binom{n}{k}")
+    assert binomial == pytest.approx(_bracket_height(test_parameters.container, "\\\\left( \\\\frac{a}{b} \\\\right)"), abs=0.1)
 
 
 def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
