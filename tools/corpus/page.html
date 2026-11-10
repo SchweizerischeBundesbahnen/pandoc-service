@@ -45,12 +45,15 @@
   .empty { display: grid; place-items: center; aspect-ratio: 612 / 792; color: var(--muted); background: var(--panel); }
   ul.problems { font-size: 12px; columns: 2; padding-left: 18px; }
   a { color: inherit; }
+  nav.sites { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; margin-bottom: 6px; }
+  nav.sites a[aria-current] { font-weight: 600; text-decoration: none; }
 </style>
 </head>
 <body>
 <aside>
   <header>
-    <h1>DOCX corpus: pandoc-service and Word</h1>
+    <h1 id="heading">DOCX corpus</h1>
+    <nav class="sites" id="sites" aria-label="Comparisons"></nav>
     <div class="totals" id="totals"></div>
   </header>
   <table>
@@ -66,7 +69,7 @@
     <label><input type="radio" name="mode" value="overlay"> overlay</label>
     <label><input type="radio" name="mode" value="swipe"> swipe</label>
     <label><input type="radio" name="mode" value="difference"> difference</label>
-    <label id="amount-label">conversion <input type="range" id="amount" min="0" max="100" value="50"></label>
+    <label id="amount-label"><span id="amount-name"></span> <input type="range" id="amount" min="0" max="100" value="50"></label>
     <span id="swipe-hint" class="totals">drag the line or move it with the arrow keys</span>
   </div>
   <div class="pages" id="pages"></div>
@@ -78,8 +81,15 @@ const data = JSON.parse(document.getElementById("corpus-data").textContent);
 const documents = data.documents;
 const percent = (part, whole) => whole ? (100 * part / whole) : 0;
 const format = (value, digits = 1) => value === null || value === undefined ? "–" : Number(value).toFixed(digits);
+// The names of the two sides: Word and pandoc-service, or one Word and the other
+const labels = data.labels;
+const heading = `DOCX corpus: ${labels.converted} and ${labels.reference}`;
+document.title = heading;
+document.getElementById("heading").textContent = heading;
+document.getElementById("amount-name").textContent = labels.converted;
+document.getElementById("sites").innerHTML = data.links.map(link => `<a href="${link.href}"${link.current ? ' aria-current="page"' : ""}>${link.title}</a>`).join("");
 const totals = document.getElementById("totals");
-const lines = [`Reference: Word on ${data.reference}. Lines on the same page ${data.total.same_page}%, on any page ${data.total.any_page}%, pages as Word ${data.total.pages_as_reference}/${data.total.documents}, mean shift ${data.total.mean_shift} pt. Words in place ${format(data.total.words_in_place)}%, regions matched ${format(data.total.regions_matched)}%.`];
+const lines = [`Reference: ${labels.reference}. Lines on the same page ${data.total.same_page}%, on any page ${data.total.any_page}%, pages as ${labels.reference} ${data.total.pages_as_reference}/${data.total.documents}, mean shift ${data.total.mean_shift} pt. Words in place ${format(data.total.words_in_place)}%, regions matched ${format(data.total.regions_matched)}%.`];
 for (const [variant, total] of Object.entries(data.baseline)) {
   lines.push(`Baseline ${variant}: same page ${total.same_page}%, mean shift ${total.mean_shift} pt, words in place ${format(total.words_in_place)}%, regions matched ${format(total.regions_matched)}%.`);
 }
@@ -113,7 +123,7 @@ function sheet(doc, number, side) {
   return `<div class="sheet"><img loading="lazy" src="${side}/${names[number]}" alt="${doc.name} page ${number + 1}, ${side}"></div>`;
 }
 
-// Where the line of swipe stands, as a share of the width: Word on its left, pandoc-service on its right
+// Where the line of swipe stands, as a share of the width: the reference on its left, the other side on its right
 let split = 0.5;
 
 function draw(doc) {
@@ -125,16 +135,16 @@ function draw(doc) {
   const parts = [];
   for (let number = 0; number < count; number++) {
     if (mode === "difference") {
-      parts.push(`<div><div class="caption">page ${number + 1}: Word in gray, pandoc-service in red, regions which differ framed</div><div class="pair stacked">` +
-        (number < doc.difference_pages.length ? `<div class="sheet"><img loading="lazy" src="difference/${doc.difference_pages[number]}" alt="${doc.name} page ${number + 1}, difference"></div>` : `<div class="sheet empty">no page ${number + 1} in Word</div>`) + `</div></div>`);
+      parts.push(`<div><div class="caption">page ${number + 1}: ${labels.reference} in gray, ${labels.converted} in red, regions which differ framed</div><div class="pair stacked">` +
+        (number < doc.difference_pages.length ? `<div class="sheet"><img loading="lazy" src="difference/${doc.difference_pages[number]}" alt="${doc.name} page ${number + 1}, difference"></div>` : `<div class="sheet empty">no page ${number + 1} in ${labels.reference}</div>`) + `</div></div>`);
     } else if (mode === "side") {
-      parts.push(`<div><div class="caption">page ${number + 1}: Word | pandoc-service</div><div class="pair">${sheet(doc, number, "reference")}${sheet(doc, number, "converted")}</div></div>`);
+      parts.push(`<div><div class="caption">page ${number + 1}: ${labels.reference} | ${labels.converted}</div><div class="pair">${sheet(doc, number, "reference")}${sheet(doc, number, "converted")}</div></div>`);
     } else if (number < doc.reference_pages.length && number < doc.converted_pages.length) {
       const swipe = mode === "swipe";
       const top = swipe ? `clip-path:inset(0 0 0 ${split * 100}%)` : `opacity:${amount / 100}`;
-      const line = swipe ? `<div class="line" tabindex="0" role="slider" aria-label="Split between Word and pandoc-service" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(split * 100)}" style="left:${split * 100}%"></div>` +
-        `<span class="tag left">Word</span><span class="tag right">pandoc-service</span>` : "";
-      parts.push(`<div><div class="caption">page ${number + 1}: Word under pandoc-service</div><div class="pair stacked"><div class="sheet${swipe ? " swipe" : ""}"><img loading="lazy" src="reference/${doc.reference_pages[number]}" alt="">` +
+      const line = swipe ? `<div class="line" tabindex="0" role="slider" aria-label="Split between ${labels.reference} and ${labels.converted}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(split * 100)}" style="left:${split * 100}%"></div>` +
+        `<span class="tag left">${labels.reference}</span><span class="tag right">${labels.converted}</span>` : "";
+      parts.push(`<div><div class="caption">page ${number + 1}: ${labels.reference} under ${labels.converted}</div><div class="pair stacked"><div class="sheet${swipe ? " swipe" : ""}"><img loading="lazy" src="reference/${doc.reference_pages[number]}" alt="">` +
         `<div class="top" style="${top}"><img loading="lazy" src="converted/${doc.converted_pages[number]}" alt=""></div>${line}</div></div></div>`);
     } else {
       parts.push(`<div><div class="caption">page ${number + 1}</div><div class="pair stacked">${sheet(doc, number, number < doc.reference_pages.length ? "reference" : "converted")}</div></div>`);
@@ -152,7 +162,7 @@ function pick() {
   for (const row of document.querySelectorAll("tr.doc")) row.classList.toggle("picked", row.dataset.name === name);
   if (!doc) return;
   document.getElementById("title").textContent = doc.name;
-  document.getElementById("facts").innerHTML = `Pages ${doc.pages[0]} in Word, ${doc.pages[1]} converted. ${doc.same_page} of ${doc.lines} lines on the same page, ` +
+  document.getElementById("facts").innerHTML = `Pages ${doc.pages[0]} in ${labels.reference}, ${doc.pages[1]} in ${labels.converted}. ${doc.same_page} of ${doc.lines} lines on the same page, ` +
     `${doc.any_page} on any page, mean shift ${format(doc.mean_shift, 2)} pt. ${doc.words_in_place} of ${doc.words} words in place, ${doc.regions_matched} of ${doc.regions} regions matched. <a href="docx/${doc.name}.docx">DOCX</a>`;
   document.getElementById("problems").innerHTML = doc.problems.map(problem =>
     `<li class="${problem.dy === null ? "bad" : "warn"}">p${problem.line.page + 1}: ${problem.line.text.replace(/</g, "&lt;")} ${problem.dy === null ? "(missing)" : `(${problem.dy > 0 ? "+" : ""}${problem.dy} pt)`}</li>`).join("");

@@ -246,3 +246,43 @@ def test_the_pdfs_of_another_folder_are_scored_word_against_word(tmp_path: Path,
     assert result["documents"]["test_alignment"]["pages"] == [1, 1]
     assert result["documents"]["test_alignment"]["same_page"] > 0
     assert (tmp_path / "out" / "score.json").exists()
+
+
+def _page_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reference: str, name: str | None = None) -> dict:
+    """The data of the comparison page of one document of Word for Windows against one of Word for Mac."""
+    (tmp_path / "reference" / reference).mkdir(parents=True)
+    shutil.copy(REFERENCE.parent / reference / "test_alignment.pdf", tmp_path / "reference" / reference)
+    (tmp_path / "docx").mkdir()
+    monkeypatch.setattr(corpus, "REFERENCES", tmp_path / "reference")
+    monkeypatch.setattr(corpus, "BASELINE", tmp_path / "baseline.json")
+    (tmp_path / "baseline.json").write_text(json.dumps({reference: {"image": {"total": {"same_page": 99.0}, "documents": {}}}}))
+    corpus.score(tmp_path / "out", reference, REFERENCE)
+    index = corpus.page(tmp_path / "out", reference, tmp_path / "docx", REFERENCE, name).read_text()
+    payload = index.split('<script id="corpus-data" type="application/json">', 1)[1].split("</script>", 1)[0]
+    return json.loads(payload)
+
+
+def test_a_page_of_the_site_links_every_other_page_from_its_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    data = _page_data(tmp_path, monkeypatch, "windows")
+    assert {link["title"]: link["href"] for link in data["links"]} == {
+        "Word for Mac": "../",
+        "Word for Windows": "../windows/",
+        "Open fonts on Word for Mac": "../free/",
+        "Word for Mac against Word for Windows": "../mac-vs-windows/",
+    }
+    assert [link["title"] for link in data["links"] if link["current"]] == ["Word for Windows"]
+    assert data["labels"] == {"reference": "Word for Windows", "converted": "pandoc-service"}
+    assert data["baseline"] == {"image": {"same_page": 99.0}}
+
+
+def test_a_page_of_word_against_word_names_both_and_has_no_baseline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The baseline of the reference scores pandoc-service, not the other Word."""
+    data = _page_data(tmp_path, monkeypatch, "windows", "mac-vs-windows")
+    assert data["labels"] == {"reference": "Word for Windows", "converted": "Word for Mac"}
+    assert data["baseline"] == {}
+    assert data["documents"][0]["converted_pages"] == ["test_alignment-1.webp"]
+
+
+def test_a_reference_of_its_own_gets_a_page_at_the_root():
+    assert corpus._site("linux") == corpus.Site("", "Word on linux", "Word on linux")
+    assert corpus._links("linux")[0]["href"] == "./"

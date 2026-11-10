@@ -2,7 +2,7 @@
 
     python -m tools.corpus.corpus convert --image IMAGE [--fonts DIR] [--docx DIR] --out DIR
     python -m tools.corpus.corpus score --out DIR [--pdf DIR] [--reference macos] [--variant NAME] [--write-baseline | --against]
-    python -m tools.corpus.corpus page --out DIR [--pdf DIR] [--reference macos]
+    python -m tools.corpus.corpus page --out DIR [--pdf DIR] [--reference macos] [--site NAME]
     python -m tools.corpus.corpus all --image IMAGE [--fonts DIR] --out DIR [score options]
 
 See corpus/README.md for what the numbers mean.
@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import httpx
@@ -44,6 +44,36 @@ SCALE = 1.5
 WORKERS = 4
 # Worse than the baseline by more than this fails --against
 TOLERANCE = 0.5
+
+
+@dataclass(frozen=True)
+class Site:
+    """A comparison page of the published site: the folder it lies in, its title and the names of its two sides."""
+
+    path: str
+    title: str
+    reference: str
+    converted: str = "pandoc-service"
+
+
+# The pages of the published site, Word for Mac at its root, by the name of --site
+SITES = {
+    "macos": Site("", "Word for Mac", "Word for Mac"),
+    "windows": Site("windows/", "Word for Windows", "Word for Windows"),
+    "macos-free": Site("free/", "Open fonts on Word for Mac", "Word for Mac"),
+    "mac-vs-windows": Site("mac-vs-windows/", "Word for Mac against Word for Windows", "Word for Windows", "Word for Mac"),
+}
+
+
+def _site(name: str) -> Site:
+    """The page of a name in SITES; a reference of its own gets a page at the root."""
+    return SITES.get(name, Site("", f"Word on {name}", f"Word on {name}"))
+
+
+def _links(current: str) -> list[dict]:
+    """The links of a page to every page of the site, from the folder it lies in."""
+    up = "../" if _site(current).path else ""
+    return [{"title": site.title, "href": f"{up}{site.path}" or "./", "current": name == current} for name, site in SITES.items()]
 
 
 def _documents(docx: Path = DOCX) -> list[Path]:
@@ -263,20 +293,34 @@ def _render(pdf: Path, target: Path, prefix: str) -> tuple[list[str], list[list[
     return names, sizes
 
 
-def page(out: Path, reference: str, docx: Path = DOCX, pdf: Path | None = None) -> Path:
-    """Build OUT/site: the comparison page with the pages of the reference and of the conversion, or of PDF."""
+def page(out: Path, reference: str, docx: Path = DOCX, pdf: Path | None = None, name: str | None = None) -> Path:
+    """Build OUT/site: the comparison page with the pages of the reference and of the conversion, or of PDF.
+
+    NAME is the page in SITES, the reference by default. A page of Word against Word has no baseline.
+    """
     result = json.loads((out / "score.json").read_text())
     site = out / "site"
-    baseline = json.loads(BASELINE.read_text()).get(reference, {}) if BASELINE.exists() else {}
+    shown = _site(name or reference)
+    baseline = json.loads(BASELINE.read_text()).get(reference, {}) if BASELINE.exists() and shown.converted == "pandoc-service" else {}
     documents = []
-    for name, document in result["documents"].items():
-        converted = (pdf or out / "pdf") / f"{name}.pdf"
-        reference_pages, sizes = _render(REFERENCES / reference / f"{name}.pdf", site / "reference", name)
-        converted_pages = _render(converted, site / "converted", name)[0] if converted.exists() else []
-        regions.compare_documents(REFERENCES / reference / f"{name}.pdf", converted if converted.exists() else None, site / "difference", name)
-        difference_pages = [f"{name}-{number + 1}.webp" for number in range(max(len(reference_pages), len(converted_pages)))]
-        documents.append({"name": name, **document, "reference_pages": reference_pages, "converted_pages": converted_pages, "difference_pages": difference_pages, "sizes": sizes})
-    data = {"reference": reference, "total": result["total"], "baseline": {variant: stored["total"] for variant, stored in baseline.items()}, "scale": SCALE, "shifted": SHIFTED, "documents": documents}
+    for document_name, document in result["documents"].items():
+        converted = (pdf or out / "pdf") / f"{document_name}.pdf"
+        reference_pages, sizes = _render(REFERENCES / reference / f"{document_name}.pdf", site / "reference", document_name)
+        converted_pages = _render(converted, site / "converted", document_name)[0] if converted.exists() else []
+        regions.compare_documents(REFERENCES / reference / f"{document_name}.pdf", converted if converted.exists() else None, site / "difference", document_name)
+        difference_pages = [f"{document_name}-{number + 1}.webp" for number in range(max(len(reference_pages), len(converted_pages)))]
+        documents.append({"name": document_name, **document, "reference_pages": reference_pages, "converted_pages": converted_pages, "difference_pages": difference_pages, "sizes": sizes})
+    data = {
+        "reference": reference,
+        "title": shown.title,
+        "labels": {"reference": shown.reference, "converted": shown.converted},
+        "links": _links(name or reference),
+        "total": result["total"],
+        "baseline": {variant: stored["total"] for variant, stored in baseline.items()},
+        "scale": SCALE,
+        "shifted": SHIFTED,
+        "documents": documents,
+    }
     template = PAGE_TEMPLATE.read_text()
     # The data sits in a script element, which only "</" can end
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
@@ -296,6 +340,7 @@ def main() -> int:
     parser.add_argument("--docx", type=Path, default=DOCX, help="the folder of the documents: corpus/docx, or corpus/docx-free with --reference macos-free")
     parser.add_argument("--reference", default="macos", help="the reference to compare with: a directory of corpus/reference")
     parser.add_argument("--pdf", type=Path, help="the folder of the PDFs to score, OUT/pdf by default: another reference compares Word with Word")
+    parser.add_argument("--site", choices=tuple(SITES), help="the page of the published site page builds, the reference by default")
     parser.add_argument("--variant", default="image", help="the name of the run in corpus/baseline.json: image or word-fonts")
     parser.add_argument("--write-baseline", action="store_true", help="store the score in corpus/baseline.json")
     parser.add_argument("--against", action="store_true", help="fail when a document got worse than corpus/baseline.json")
@@ -322,7 +367,7 @@ def main() -> int:
         if arguments.write_baseline:
             write_baseline(result, arguments.variant)
     if arguments.command in ("page", "all"):
-        print(f"page: {page(arguments.out, arguments.reference, arguments.docx, arguments.pdf)}")  # noqa: T201 - a command line tool
+        print(f"page: {page(arguments.out, arguments.reference, arguments.docx, arguments.pdf, arguments.site)}")  # noqa: T201 - a command line tool
     return status
 
 
