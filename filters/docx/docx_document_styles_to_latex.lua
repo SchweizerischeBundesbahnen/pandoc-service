@@ -187,6 +187,9 @@ local EQUATION_ARRAY = table.concat({
   "\\newcommand{\\pdcInnerFrac}[2]{\\genfrac{}{}{}{1}{\\displaystyle #1}{\\displaystyle #2}}",
   "\\newcommand{\\pdcEquationFrac}[2]{\\genfrac{}{}{}{0}{\\let\\frac\\pdcInnerFrac #1}{\\let\\frac\\pdcInnerFrac #2}}",
   "\\newcommand{\\pdcEquationArrays}{\\def\\@array[##1]##2{\\pdcEquationArray[##1]{##2}}}",
+  -- pandoc reads a fraction without a bar in brackets as \binom, whose brackets TeX sizes as those of a
+  -- fraction: Word sizes them as any growing bracket
+  "\\renewcommand{\\binom}[2]{\\left(\\genfrac{}{}{0pt}{}{#1}{#2}\\right)}",
   -- Word strikes a cancelled term out within its box: the slash of cancel.sty reaches a point beyond it,
   -- above and below, which set a fraction of it higher than in Word
   "\\ifdefined\\@can@slash\\renewcommand\\@cancel[3]{\\OriginalPictureCmds\\@begin@tempboxa\\hbox{\\m@th$#2{#3}$}\\dimen@\\height"

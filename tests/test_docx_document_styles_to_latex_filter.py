@@ -416,6 +416,12 @@ def test_a_growing_bracket_covers_less_of_its_content_than_in_tex(test_parameter
     assert _bracket_height(test_parameters.container, "\\\\left( x^{2} \\\\right)") < 12.5
 
 
+def test_the_brackets_of_a_fraction_without_a_bar_grow_as_any_other(test_parameters: TestParameters):
+    """Word sets n over k in brackets 21.49pt high in Latin Modern Math, as a over b: TeX's \\binom took 28.96pt."""
+    binomial = _bracket_height(test_parameters.container, "\\\\binom{n}{k}")
+    assert binomial == pytest.approx(_bracket_height(test_parameters.container, "\\\\left( \\\\frac{a}{b} \\\\right)"), abs=0.1)
+
+
 def test_a_coloured_numbered_heading_colours_its_number_and_its_text_inside_its_line(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-style-Heading1=size:20,color:0F4761,number:{1:arabic},numberhang:21.6"))
     assert "\\titleformat{\\section}[hang]{\\normalfont\\fontsize{20bp}{24bp}\\selectfont\\filright}{\\color[HTML]{0F4761}\\makebox[21.6pt][l]{\\thesection}}{0pt}{\\color[HTML]{0F4761}}" in preamble
