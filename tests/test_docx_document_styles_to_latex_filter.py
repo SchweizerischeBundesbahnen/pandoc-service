@@ -445,6 +445,22 @@ def test_a_brace_below_is_a_limit_of_the_size_of_a_script(test_parameters: TestP
     assert braces[0][2] - braces[0][0] < 6
 
 
+def test_a_label_below_a_brace_stands_below_the_brace(test_parameters: TestParameters):
+    """pandoc reads the label of a brace of Word as a lower limit around it, which stays below the brace."""
+    native = '[Para [Math DisplayMath "\\\\underset{n}{\\\\underbrace{a + a + \\\\cdots + a}}"]]'
+    container = test_parameters.container
+    container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && cat > /tmp/test/label.native << 'EOF'\n{native}\nEOF"])
+    command = f"{PANDOC_PATH} -s -f native --lua-filter={FILTER_PATH} -M docx-body-size=12 -M docx-body-baseline=14.65 -M docx-math-limit-space=0.12 --pdf-engine=tectonic -o /tmp/test/label.pdf /tmp/test/label.native"
+    exit_code, output = container.exec_run(["sh", "-c", command])
+    assert exit_code == 0, output.decode()
+    _, pdf = container.exec_run(["cat", "/tmp/test/label.pdf"])
+    text = pdfium.PdfDocument(pdf)[0].get_textpage()
+    characters = text.get_text_range()
+    brace, label = (text.get_charbox(characters.index(character)) for character in ("⏟", "\N{MATHEMATICAL ITALIC SMALL N}"))
+    assert label[3] <= brace[1], characters
+    assert brace[2] - brace[0] < 6
+
+
 def _bracket_height(container, equation: str) -> float:
     """How high the PDF draws the opening bracket of a display equation, the first character of its page."""
     native = f'[Para [Math DisplayMath "{equation}"]]'
