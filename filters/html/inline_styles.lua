@@ -435,9 +435,11 @@ local next_bookmark_id = 100000
 -- Lua has no table of them. So the names of identifiers with a non-ASCII
 -- character are asked of the writer itself, all at once before the main pass
 -- (resolve_bookmark_names): one document holding an empty bookmark for each is
--- written, and the names are read back from it. That is one extra write per
--- conversion, of a document that grows with the input like the conversion
--- itself, however many such identifiers the input holds.
+-- written, and the names are read back from it. The identifiers are those of
+-- the spans and those the links into the document name, since such a link may
+-- point at a heading or another element that is no span. That is one extra
+-- write per conversion, of a document that grows with the input like the
+-- conversion itself, however many such identifiers the input holds.
 local bookmark_names = {}
 
 local function has_non_ascii(identifier)
@@ -448,16 +450,23 @@ local function hashed_bookmark_name(identifier)
   return "_" .. pandoc.utils.sha1(identifier):sub(2)
 end
 
+-- The identifier a link into the document names ("#identifier"), nil for a
+-- link to an address.
+local function linked_identifier(target)
+  return target:match("^#(.*)$")
+end
+
 local function resolve_bookmark_names(doc)
   local identifiers, seen = {}, {}
+  local function collect(identifier)
+    if identifier and identifier ~= "" and has_non_ascii(identifier) and not seen[identifier] then
+      seen[identifier] = true
+      identifiers[#identifiers + 1] = identifier
+    end
+  end
   doc.blocks:walk({
-    Span = function(span)
-      local identifier = span.identifier
-      if identifier ~= "" and has_non_ascii(identifier) and not seen[identifier] then
-        seen[identifier] = true
-        identifiers[#identifiers + 1] = identifier
-      end
-    end,
+    Span = function(span) collect(span.identifier) end,
+    Link = function(link) collect(linked_identifier(link.target)) end,
   })
   if #identifiers == 0 then return end
 
@@ -490,6 +499,20 @@ local function bookmark_name(identifier)
   -- unresolved only if the writer's output was not as expected; the hash is
   -- then right whenever the identifier holds a symbol
   return bookmark_names[identifier] or hashed_bookmark_name(identifier)
+end
+
+-- The opening tag of a link written as raw OOXML. A link to an address needs
+-- a relationship, which only app/docx_post_process.py can register: it goes out
+-- with the address in a {{HREF:}} placeholder. A link into the document needs
+-- none: it names the bookmark of its identifier, as the writer's own links do.
+-- Written as an address, Word looks for a bookmark called like the identifier,
+-- finds none and jumps to the start of the document.
+local function hyperlink_start(target)
+  local identifier = linked_identifier(target)
+  if identifier then
+    return '<w:hyperlink w:anchor="' .. escape_attr(bookmark_name(identifier)) .. '">'
+  end
+  return '<w:hyperlink w:tooltip="{{HREF:' .. escape_attr(target) .. '}}">'
 end
 
 local function with_bookmark(span, runs)
@@ -772,8 +795,8 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- used by filter.Span, so nested <strong>/<em>/styled <span>s in the source
 -- still render correctly inside the formatted paragraph.
 --
--- Links and images can't be embedded in raw OOXML directly (both need
--- writer-level relationship entries), so they go out as the {{HREF:}} and
+-- Links to an address and images can't be embedded in raw OOXML directly (both
+-- need writer-level relationship entries), so they go out as the {{HREF:}} and
 -- {{IMG:}} placeholders app/docx_post_process.py resolves, exactly as the
 -- table-cell path does. They keep their indent/alignment.
 --
@@ -822,10 +845,11 @@ end
 -- a `lossy` flag, true when some inline had no OOXML form and survived only
 -- as its plain text (Note, Math, Cite, ...).
 --
--- Images and links are NOT lossy: neither can be embedded in raw OOXML
--- directly (both need writer-level relationship entries), so they go out as
--- the same {{IMG:}} / {{HREF:}} placeholders the table-cell path uses, and
--- app/docx_post_process.py resolves them into real relationships afterwards.
+-- Images and links are NOT lossy: an image and a link to an address cannot be
+-- embedded in raw OOXML directly (both need writer-level relationship entries),
+-- so they go out as the same {{IMG:}} / {{HREF:}} placeholders the table-cell
+-- path uses, and app/docx_post_process.py resolves them into real relationships
+-- afterwards. A link into the document names its bookmark and needs neither.
 --
 -- Callers decide what to do about `lossy`: a table cell keeps the plain text
 -- because it has no other way to render the cell, while a formatted paragraph
@@ -844,9 +868,8 @@ local function inlines_to_runs(inlines, seed)
         .. image_placeholder(r)
         .. "</w:t></w:r>"
     elseif r.t == "Link" then
-      -- Links need writer-level .rels entries for the hyperlink target.
-      -- Emit a <w:hyperlink> with a placeholder tooltip that encodes the
-      -- URL. The Python post-processor registers the real relationship.
+      -- The writer cannot be handed a Link inside raw OOXML, so the
+      -- <w:hyperlink> is written here (see hyperlink_start).
       -- Walk the link content, then replace rPr with just Hyperlink rStyle
       -- so the link renders blue/underlined. Inline CSS colors would
       -- override the Hyperlink style, so we strip them. Bold is kept: a
@@ -880,8 +903,7 @@ local function inlines_to_runs(inlines, seed)
             .. escape_xml(pandoc.utils.stringify(lr)) .. "</w:t></w:r>"
         end
       end
-      run_parts[#run_parts + 1] = '<w:hyperlink w:tooltip="{{HREF:'
-        .. escape_attr(r.target) .. '}}">'
+      run_parts[#run_parts + 1] = hyperlink_start(r.target)
         .. table.concat(link_runs) .. "</w:hyperlink>"
     elseif is_comment_marker(r) then
       -- A comment has no raw OOXML form: its text goes to word/comments.xml,
