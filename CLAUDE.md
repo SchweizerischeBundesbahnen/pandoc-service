@@ -101,6 +101,7 @@ A request may still name a filter by its path before the folders: `ALLOWED_PANDO
 ### Fonts of Word
 The image has open fonts in place of the fonts of Word, each as wide and as high: `SUBSTITUTES` in `app/docx_document_styles.py` maps the names.
 - `fonts/metric_fonts.py build` makes the Metric families in the image build: open outlines with the advances and line metrics of `fonts/word_metrics.json`.
+- Metric Math stands for Cambria Math: STIX Two Math fitted into the glyph heights, script forms, larger forms and MATH constants of Cambria Math. Each larger form of Cambria Math gets a glyph of its own, since TeX takes the first large enough.
 - `fonts/metric_fonts.py extract` writes that file from the fonts of Word. Run it by hand only; never commit a font of Word.
 - The Dockerfile downloads the open fonts from fixed commits and checks them against `fonts/sources.sha256`.
 

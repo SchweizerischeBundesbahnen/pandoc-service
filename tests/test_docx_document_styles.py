@@ -115,6 +115,13 @@ def test_cambria_math_sets_an_equation_unscaled(installed: set[str]):
     assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("Cambria Math", "Scale=1", "0.9502")
 
 
+def test_without_cambria_math_metric_math_stands_for_it_unscaled(installed: set[str]):
+    """The image draws Cambria Math as Metric Math: its glyphs as wide and as high, with its MATH table and its line."""
+    installed.add("Metric Math")
+    options = _options(_docx(DEFAULTS + NORMAL + BODY_TEXT))
+    assert (options["mathfont"], options["mathfontoptions"], options["docx-math-top"]) == ("Metric Math", "Scale=1", "0.9502")
+
+
 def test_the_math_font_of_the_settings_sets_an_equation_unscaled():
     """A document which names Latin Modern Math sets its equations in it, at their size, on its line."""
     settings = f'<m:mathPr {M}><m:mathFont m:val="Latin Modern Math"/></m:mathPr>'
@@ -151,7 +158,7 @@ def test_the_word_font_goes_before_its_substitute(installed: set[str]):
 
 @pytest.mark.parametrize(
     ("name", "substitute"),
-    [("segoe ui", "Metric UI"), ("Calibri", "Carlito"), ("Georgia", "Metric Serif"), ("Aptos Display", "Metric Sans Display"), ("Arial", "Liberation Sans")],
+    [("segoe ui", "Metric UI"), ("Calibri", "Carlito"), ("Georgia", "Metric Serif"), ("Aptos Display", "Metric Sans Display"), ("Arial", "Liberation Sans"), ("Cambria Math", "Metric Math")],
 )
 def test_a_font_a_run_names_takes_its_substitute(installed: set[str], name: str, substitute: str):
     installed.add(substitute)

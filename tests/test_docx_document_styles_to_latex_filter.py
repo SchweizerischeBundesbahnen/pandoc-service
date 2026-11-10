@@ -13,7 +13,7 @@ import shlex
 import pypdfium2 as pdfium
 import pytest
 from docx import Document
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from pypdf import PdfReader
@@ -121,6 +121,15 @@ def test_a_font_the_container_lacks_keeps_latin_modern(test_parameters: TestPara
     document.add_paragraph("The body text of the document.")
     fonts = _fonts(_docx_to_pdf(test_parameters, document))
     assert any(font.startswith("LMRoman") for font in fonts), fonts
+
+
+def test_an_equation_takes_metric_math_in_place_of_cambria_math(test_parameters: TestParameters):
+    """The image builds Metric Math, Cambria Math to the layout of an equation: Latin Modern Math sets it narrower."""
+    document = Document()
+    math = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+    document.add_paragraph()._p.append(parse_xml(f"<m:oMathPara {math}><m:oMath><m:r><m:t>x+1</m:t></m:r></m:oMath></m:oMathPara>"))
+    fonts = _fonts(_docx_to_pdf(test_parameters, document))
+    assert "MetricMath-Regular" in fonts, fonts
 
 
 def test_a_heading_style_becomes_its_titlesec_format(test_parameters: TestParameters):

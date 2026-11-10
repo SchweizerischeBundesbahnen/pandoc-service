@@ -72,6 +72,7 @@ SUBSTITUTES = {
     "aptos display": "Metric Sans Display",
     "segoe ui": "Metric UI",
     "georgia": "Metric Serif",
+    "cambria math": "Metric Math",
     "calibri": "Carlito",
     "arial": "Liberation Sans",
     "times new roman": "Liberation Serif",
@@ -194,12 +195,13 @@ def _font_options(font: str | None, math_font: str = MATH_FONT) -> list[str]:
         options += ["-V", f"mainfont={font}", "-V", "mainfontoptions=Kerning=Off", "-V", "mainfontoptions=WordSpace={1,1,0}"]
         options += ["-V", "mainfontoptions=Ligatures={TeXOff,NoCommon}"]
     scale = 1.0
-    if math_font in installed_families():
-        options += ["-V", f"mathfont={math_font}"]
+    family = installed_family(math_font)
+    if family is not None:
+        options += ["-V", f"mathfont={family}"]
         top, descent = CAMBRIA_MATH_LINE if math_font == MATH_FONT else LATIN_MODERN_MATH_LINE
-        math_top = top_ratio(math_font)
+        math_top = top_ratio(family)
         if math_top is not None:
-            top, descent = math_top, line_ratio(math_font) - math_top
+            top, descent = math_top, line_ratio(family) - math_top
     elif math_font == LATIN_MODERN_MATH:
         options += ["-V", f"mathfont={LATIN_MODERN_MATH_FILE}"]
         top, descent = LATIN_MODERN_MATH_LINE
