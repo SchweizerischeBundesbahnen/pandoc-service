@@ -811,3 +811,43 @@ def test_a_space_after_a_line_break_in_a_cell_of_a_grid_stays(test_parameters: T
     latex = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/latex", files={"source": ("in.docx", docx.getvalue())}).text
     assert "\\pdcGridV" in latex, "a table written as LaTeX"
     assert "\\\\ \\hbox{}\\hspace{0pt}\\hspace{0pt} {[}Draft" in " ".join(latex.split()), latex
+
+
+def test_a_cell_paragraph_of_a_document_without_compact_keeps_the_space_of_normal(test_parameters: TestParameters):
+    """Word sets a cell paragraph in Normal, with its space below: 10pt from the defaults of python-docx.
+
+    Word for Mac sets the rows of this table 25.5pt apart. Without the Compact style of pandoc the space of Normal
+    went missing in the cells, and the rows stood 16pt apart.
+    """
+    document = Document()
+    table = document.add_table(rows=3, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    for row, text in enumerate(("Top", "First", "Second")):
+        table.rows[row].cells[0].text = text
+        table.rows[row].cells[1].text = "x"
+    pdf = _pdf_of(test_parameters, document)
+    first, second = _top(pdf, "First"), _top(pdf, "Second")
+    assert 25 < second - first < 26.2, (first, second)
+
+
+def _rows_of_normal(after: int) -> Document:
+    """A table of three rows, in a document whose styles give no size, and the space below Normal given in twips."""
+    document = Document()
+    defaults = document.styles.element.find(qn("w:docDefaults"))
+    for size in defaults.iter(qn("w:sz")):
+        size.getparent().remove(size)
+    for spacing in defaults.iter(qn("w:spacing")):
+        spacing.set(qn("w:after"), str(after))
+    table = document.add_table(rows=3, cols=1)
+    for row, text in enumerate(("Top", "First", "Second")):
+        table.rows[row].cells[0].text = text
+    return document
+
+
+def test_a_cell_keeps_the_space_of_normal_where_the_styles_give_no_size(test_parameters: TestParameters):
+    """The space of Normal below a cell paragraph needs no size of the body: only the rows of Compact do."""
+    spaced = _pdf_of(test_parameters, _rows_of_normal(200))
+    tight = _pdf_of(test_parameters, _rows_of_normal(0))
+    pitch = (_top(spaced, "Second") - _top(spaced, "First")) - (_top(tight, "Second") - _top(tight, "First"))
+    assert abs(pitch - 10) < 0.5, pitch
