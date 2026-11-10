@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.15,<3.16"
 dependencies = [
     "python-docx==1.2.0",
-    "fastapi==0.162.1",
+    "fastapi==0.162.2",
     "uvicorn==0.54.0",
     "python-multipart==0.0.33",
     "defusedxml==0.7.1",
