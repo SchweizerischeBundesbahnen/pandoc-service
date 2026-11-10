@@ -99,7 +99,8 @@ uv run --group test python -m tools.corpus.corpus all --image pandoc-service:cor
 ```
 
 `all` converts the documents, scores them and builds the comparison page in `out/corpus/<run>/site/`.
-Open `index.html` there. Each command runs alone as well: `convert`, `score`, `page`.
+Open `index.html` there. Each command runs alone as well: `convert`, `score`, `page`. `page` reads the
+`score.json` that `score` writes into the same `--out`.
 
 `--pdf` scores the PDFs of another folder. The PDFs of a run compare with Word for Windows without a new
 conversion, and the PDFs of Word for Mac with those of Word for Windows:
@@ -107,6 +108,8 @@ conversion, and the PDFs of Word for Mac with those of Word for Windows:
 ```bash
 uv run --group test python -m tools.corpus.corpus score --out out/corpus/windows --pdf out/corpus/image/pdf \
   --reference windows --variant image --against
+uv run --group test python -m tools.corpus.corpus score --out out/corpus/mac-vs-windows --pdf corpus/reference/macos \
+  --reference windows
 uv run --group test python -m tools.corpus.corpus page --out out/corpus/mac-vs-windows --pdf corpus/reference/macos \
   --reference windows --site mac-vs-windows
 ```
