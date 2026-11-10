@@ -165,11 +165,11 @@ def test_the_scripts_of_the_open_font_are_the_scripts_of_word(word: TTFont, sour
 
 
 def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], larger: list[str], italic: int) -> TTFont:
-    """A math font of box glyphs, each (advance, bottom, top): 'a' with a script form 'a.s1', and a bracket with its larger forms."""
-    order = [".notdef", "a", "a.s1", "paren", *larger]
+    """A math font of box glyphs, each (advance, bottom, top): 'a' with a script form 'a.s1', = and _, and a bracket with its larger forms."""
+    order = [".notdef", "a", "a.s1", "equal", "low", "paren", *larger]
     builder = FontBuilder(upm, isTTF=True)
     builder.setupGlyphOrder(order)
-    builder.setupCharacterMap({97: "a", 40: "paren"})
+    builder.setupCharacterMap({97: "a", 61: "equal", 95: "low", 40: "paren"})
     glyphs = {}
     for name in order:
         advance, bottom, top = shapes.get(name, (500, 0, 500))
@@ -236,13 +236,13 @@ def _math_font(family: str, upm: int, shapes: dict[str, tuple[int, int, int]], l
 
 @pytest.fixture
 def word_math() -> TTFont:
-    shapes = {"a": (1000, -20, 900), "a.s1": (800, -16, 700), "paren": (600, -500, 1500), "paren.v1": (650, -800, 1800), "paren.v2": (700, -1400, 2400)}
+    shapes = {"a": (1000, -20, 900), "a.s1": (800, -16, 700), "equal": (1100, 400, 700), "low": (1000, -300, -100), "paren": (600, -500, 1500), "paren.v1": (650, -800, 1800), "paren.v2": (700, -1400, 2400)}
     return _math_font("Word Math", 2048, shapes, ["paren.v1", "paren.v2"], italic=60)
 
 
 @pytest.fixture
 def source_math() -> TTFont:
-    shapes = {"a": (520, -10, 460), "a.s1": (450, -10, 400), "paren": (300, -250, 750), "paren.v1": (330, -600, 1100)}
+    shapes = {"a": (520, -10, 460), "a.s1": (450, -10, 400), "equal": (550, 150, 250), "low": (500, -120, -60), "paren": (300, -250, 750), "paren.v1": (330, -600, 1100)}
     return _math_font("Open Math", 1000, shapes, ["paren.v1"], italic=10)
 
 
@@ -269,6 +269,13 @@ def test_a_math_glyph_is_as_high_and_as_deep_as_the_glyph_of_word(word_math: TTF
     """TeX sets a script, a radical and a fraction by the heights of the glyphs, which the outlines give."""
     glyph = _built(word_math, source_math)["glyf"]["a"]
     assert (glyph.yMin, glyph.yMax) == (round(-20 * 1000 / 2048), round(900 * 1000 / 2048))
+
+
+@pytest.mark.parametrize(("glyph", "bottom", "top"), [("equal", 400, 700), ("low", -300, -100)])
+def test_a_glyph_on_one_side_of_the_baseline_takes_both_edges_of_word(word_math: TTFont, source_math: TTFont, glyph: str, bottom: int, top: int):
+    """= stands above the baseline, _ below it: stretched from the baseline alone, one of its edges missed Word."""
+    outline = _built(word_math, source_math)["glyf"][glyph]
+    assert (outline.yMin, outline.yMax) == (round(bottom * 1000 / 2048), round(top * 1000 / 2048))
 
 
 def test_the_form_of_a_script_takes_the_width_and_the_height_of_word(word_math: TTFont, source_math: TTFont):

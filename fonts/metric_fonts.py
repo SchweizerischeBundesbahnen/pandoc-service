@@ -32,7 +32,7 @@ import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.pens.transformPen import TransformPen
@@ -40,6 +40,9 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.ttLib.tables import otTables
 from fontTools.varLib.instancer import instantiateVariableFont
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 SELAWIK = "Selawik_Release.zip"
 # The tables of the vertical metrics of a font, with the fields Word reads, the heights of x and the capitals,
@@ -256,15 +259,15 @@ def math_metrics(word: TTFont, source: TTFont) -> dict[str, Any]:
 
 
 class _Fit(DecomposingRecordingPen):
-    """Records a glyph with its outline stretched to a height above and a depth below the baseline, and to a width."""
+    """Records a glyph with its outline stretched to a width, and moved and stretched to a height and a depth."""
 
-    def __init__(self, glyph_set: Any, width: float, up: float, down: float) -> None:
+    def __init__(self, glyph_set: Any, width: float, vertical: Callable[[float], float]) -> None:
         super().__init__(glyph_set)
-        self.scale = (width, up, down)
+        self.width = width
+        self.vertical = vertical
 
     def _point(self, point: tuple[float, float]) -> tuple[float, float]:
-        width, up, down = self.scale
-        return (point[0] * width, point[1] * (up if point[1] > 0 else down))
+        return (point[0] * self.width, self.vertical(point[1]))
 
     def glyph(self) -> Any:
         pen = TTGlyphPen(None)
@@ -273,16 +276,28 @@ class _Fit(DecomposingRecordingPen):
         return pen.glyph()
 
 
+def _vertical(bottom: float, top: float, new_bottom: float, new_top: float) -> Callable[[float], float]:
+    """Where a height of an outline goes, so that its bottom and its top land on those of Word.
+
+    A glyph across the baseline stretches above and below it apart, and keeps its baseline. A glyph on one side
+    of it, as = is, moves as well, or one of its edges would miss.
+    """
+    if bottom < 0 < top and new_bottom < 0 < new_top:
+        return lambda y: y * (new_top / top if y > 0 else new_bottom / bottom)
+    if top > bottom and new_top > new_bottom:
+        factor = (new_top - new_bottom) / (top - bottom)
+        return lambda y: new_bottom + (y - bottom) * factor
+    return lambda y: y
+
+
 def _fitted(font: TTFont, glyph: str, shape: dict[str, Any], scale: float) -> tuple[Any, int]:
     """The glyph drawn as wide, as high and as deep as the shape of Word, in the units of the font."""
     old = _table(font, "glyf")[glyph]
     old.recalcBounds(_table(font, "glyf"))
-    top, bottom = getattr(old, "yMax", 0), getattr(old, "yMin", 0)
-    up = shape["top"] * scale / top if top > 0 and shape["top"] > 0 else 1
-    down = shape["bottom"] * scale / bottom if bottom < 0 and shape["bottom"] < 0 else 1
+    vertical = _vertical(getattr(old, "yMin", 0), getattr(old, "yMax", 0), shape["bottom"] * scale, shape["top"] * scale)
     advance = _table(font, "hmtx").metrics[glyph][0]
     target = round(shape["advance"] * scale)
-    pen = _Fit(font.getGlyphSet(), target / advance if advance else 1, up, down)
+    pen = _Fit(font.getGlyphSet(), target / advance if advance else 1, vertical)
     font.getGlyphSet()[glyph].draw(pen)
     return pen.glyph(), target
 
