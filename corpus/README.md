@@ -10,7 +10,7 @@ pandoc-service and measures how far each PDF is from Word's, line by line.
 | `docx-free/` | the same documents in open fonts of the image, see below |
 | `reference/macos/` | the PDFs of Word for Mac, see below |
 | `reference/macos-free/` | the PDFs of Word for Mac of `docx-free/` |
-| `reference/windows/` | the PDFs of Word for Windows, still to make |
+| `reference/windows/` | the PDFs of Word for Windows, see below |
 | `baseline.json` | the last accepted score, per reference and per run |
 
 ## The references
@@ -19,7 +19,7 @@ pandoc-service and measures how far each PDF is from Word's, line by line.
 |---|---|---|---|
 | `macos` | Word for Mac 16.114.1 (26102031) | macOS 26.6.2 | `tools/corpus/word-macos/export.sh` |
 | `macos-free` | Word for Mac 16.114.1 (26102031) | macOS 26.6.2 | `tools/corpus/word-macos/export.sh` |
-| `windows` | | | `tools/corpus/word-windows/export.ps1` |
+| `windows` | Word LTSC 2021 16.0.14334.20974 | Windows 11 Pro 25H2 (26200) | `tools/corpus/word-windows/export.ps1` |
 
 Word asks to update the fields of a document of pandoc-service when it opens it. Both scripts update
 them, and the whole table of contents, before the export.
@@ -30,9 +30,10 @@ under `~/Library/Containers/com.microsoft.Word/Data/`, then copy the PDFs here.
 To make the Windows references:
 
 1. Copy `docx/` and `tools/corpus/word-windows/export.ps1` to a Windows machine with Word.
-2. Run `powershell -ExecutionPolicy Bypass -File export.ps1 -Source docx -Target windows`.
-3. Copy the PDFs to `reference/windows/` and fill in the row of the table above.
-4. Store the score: `python -m tools.corpus.corpus score --reference windows --variant image --out ... --write-baseline`.
+2. Without Microsoft 365, install Microsoft's Aptos fonts for all users. Otherwise Word sets the documents in Calibri.
+3. Run `powershell -ExecutionPolicy Bypass -File export.ps1 -Source docx -Target windows`.
+4. Copy the PDFs to `reference/windows/` and fill in the row of the table above.
+5. Store the score: `python -m tools.corpus.corpus score --reference windows --variant image --out ... --write-baseline`.
 
 ## The two runs
 

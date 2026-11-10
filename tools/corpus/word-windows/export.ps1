@@ -6,6 +6,9 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $wdExportFormatPDF = 17
+$wdExportOptimizeForPrint = 0
+$wdExportAllDocument = 0
+$wdExportDocumentWithMarkup = 7
 $wdDoNotSaveChanges = 0
 $source = (Resolve-Path $Source).Path
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
@@ -17,7 +20,8 @@ $word.Visible = $false
 $word.DisplayAlerts = 0
 try {
     foreach ($file in Get-ChildItem -Path $source -Filter *.docx | Sort-Object Name) {
-        $out = Join-Path $target ($file.BaseName + ".pdf")
+        # A plain string: ExportAsFixedFormat hangs on the PSObject that Join-Path returns
+        $out = [string](Join-Path $target ($file.BaseName + ".pdf"))
         if (Test-Path $out) { continue }
         # ConfirmConversions false, ReadOnly true, AddToRecentFiles false
         $document = $word.Documents.Open($file.FullName, $false, $true, $false)
@@ -26,7 +30,8 @@ try {
             foreach ($toc in $document.TablesOfContents) { $toc.Update() }
             foreach ($tof in $document.TablesOfFigures) { $tof.Update() }
             $document.Fields.Update() | Out-Null
-            $document.ExportAsFixedFormat($out, $wdExportFormatPDF)
+            # With markup: Word for Mac prints the comments in the margin, the default leaves them out
+            $document.ExportAsFixedFormat($out, $wdExportFormatPDF, $false, $wdExportOptimizeForPrint, $wdExportAllDocument, 1, 1, $wdExportDocumentWithMarkup)
             Write-Output "$($file.BaseName): ok"
         } catch {
             Write-Output "$($file.BaseName): $($_.Exception.Message)"
