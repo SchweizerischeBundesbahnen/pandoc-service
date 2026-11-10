@@ -526,6 +526,22 @@ def test_align_preserves_inline_formatting_via_walk(test_parameters: TestParamet
     assert bold_run is not None and bold_run.find(f".//{{{W_NS}}}b") is not None, "bold run lost <w:b/> after Div handler rewrote the aligned Para"
 
 
+def test_indented_paragraph_links_into_the_document(test_parameters: TestParameters):
+    """A link to "#identifier" names the bookmark of the identifier, as the writer's own links do.
+
+    Written as a link to an address, Word looks for a bookmark called "identifier", finds none and jumps to the start of the document.
+    """
+    html = '<h2 id="anchor-1">Title</h2><div class="pandoc-para" data-indent-twips="600"><p>see <a href="#anchor-1">the heading</a> please</p></div>'
+    doc = _document_xml(test_parameters, html)
+
+    para = _w_p_with_text(doc, "the heading")
+    assert _ind_left(para) == "600", "indent dropped on a paragraph containing a link"
+    link = para.find(f".//{{{W_NS}}}hyperlink")
+    assert link is not None, "the <w:hyperlink> was lost"
+    assert link.get(f"{{{W_NS}}}anchor") == _pandoc_bookmark_name("anchor-1")
+    assert link.get(f"{{{R_NS}}}id") is None, "a link into the document was written as a link to an address"
+
+
 def test_align_survives_a_link_in_the_paragraph(test_parameters: TestParameters):
     """Same contract as the indent path: the link rides out on a placeholder,
     so the paragraph keeps both its alignment and its link."""
