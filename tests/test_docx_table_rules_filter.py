@@ -767,6 +767,21 @@ def test_a_nested_table_stands_below_a_paragraph_in_a_size_of_its_own_as_in_word
     assert abs(below - word) < 1, (below, word)
 
 
+def test_a_row_of_a_cell_of_two_paragraphs_keeps_the_space_between_them_out_of_the_split_of_a_row(test_parameters: TestParameters):
+    """The space between paragraphs goes only into a cell of two paragraphs or more; #380.
+
+    Such a row never goes out a line at a time (\\pdcWrapCell, split by \\vsplit): that takes a cell of one
+    paragraph in each column. A row of one paragraph per cell gets no space between paragraphs.
+    """
+    two = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}{GRID}{CLOSE}first"], Plain [Str "second"]]'
+    latex = " ".join(_native_latex(test_parameters.container, _grid_table([two, _cell('Str "b"')], [_cell('Str "c"'), _cell('Str "d"')])).split())
+    assert "first\\ifdefined\\pdcPlainParagraphSpace\\vadjust{\\kern\\pdcPlainParagraphSpace}\\fi second" in latex, latex
+    rows = latex.split("\\hline")
+    assert "\\pdcWrapCell" not in next(row for row in rows if "first" in row), "the row of two paragraphs goes out whole"
+    assert "\\pdcWrapCell" in next(row for row in rows if "{c" in row or "c\\ifdefined" in row), "the row of one paragraph per cell goes out a line at a time"
+    assert latex.count("\\vadjust{\\kern\\pdcPlainParagraphSpace}") == 1
+
+
 def test_two_paragraphs_of_a_cell_in_normal_stand_apart_by_its_space_after(test_parameters: TestParameters):
     """Word sets the second paragraph 24.7pt below the first, and the next row 25.4pt below the second; #380.
 
