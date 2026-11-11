@@ -96,7 +96,7 @@ for (const [variant, total] of Object.entries(data.baseline)) {
 }
 totals.innerHTML = lines.map(line => `<div>${line}</div>`).join("");
 
-let sortKey = "shift", sortDown = true;
+let sortKey = "name", sortDown = false;
 const value = (doc, key) => ({ name: doc.name, pages: doc.pages[0] === doc.pages[1] ? 0 : 1, same: percent(doc.same_page, doc.lines), shift: doc.mean_shift ?? 1000, words: percent(doc.words_in_place, doc.words), regions: percent(doc.regions_matched, doc.regions) })[key];
 function drawList() {
   const sorted = [...documents].sort((a, b) => {
