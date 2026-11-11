@@ -263,8 +263,9 @@ def test_a_table_ends_as_deep_as_word_sets_its_last_row(test_parameters: TestPar
     assert "\\AddToHook{env/longtable/after}{\\par\\prevdepth=\\dp\\strutbox}" in preamble
     assert "\\newcommand{\\pdcCompactCellStretch}{1.5294}" in preamble
     assert "\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}" in preamble
-    # Below an equation which ends a cell: what the row is deeper than a line
-    assert "\\newcommand{\\pdcCompactEquationSpace}{\\vadjust{\\kern\\dimexpr\\dp\\@arstrutbox-\\dp\\strutbox\\relax}}" in preamble
+    # Below an equation which ends a cell: what the equation is deeper than a line, up to what the row is
+    space = "\\newcommand{\\pdcCompactEquationSpace}{\\dimen@\\pdcCellLineDepth\\ifdim\\dimen@>\\dp\\@arstrutbox\\dimen@\\dp\\@arstrutbox\\fi"
+    assert space + "\\advance\\dimen@-\\dp\\strutbox\\ifdim\\dimen@>\\z@\\vadjust{\\kern\\dimen@}\\fi}" in preamble
 
 
 def test_a_paragraph_after_a_table_gets_only_its_own_space_before(test_parameters: TestParameters):

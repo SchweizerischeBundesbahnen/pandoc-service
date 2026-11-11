@@ -135,8 +135,12 @@ local function table_preamble(meta, lines)
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", stretch)
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellExtra}{%.4gbp}", (ascent + space / 2) / stretch - ascent)
       lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}\\makeatother"
-      -- Below an equation which ends a cell: what the row is deeper than a line, under the depth of the equation
-      lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactEquationSpace}{\\vadjust{\\kern\\dimexpr\\dp\\@arstrutbox-\\dp\\strutbox\\relax}}\\makeatother"
+      -- Below an equation which ends a cell: what the row is deeper than a line, under the depth of the equation.
+      -- The last line of a cell has the depth of the strut of the row already (\\@finalstrut of array.sty), so only
+      -- what the equation is deeper than a line goes below it: min(depth, strut of the row) - depth of a line
+      lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactEquationSpace}{\\dimen@\\pdcCellLineDepth"
+        .. "\\ifdim\\dimen@>\\dp\\@arstrutbox\\dimen@\\dp\\@arstrutbox\\fi\\advance\\dimen@-\\dp\\strutbox"
+        .. "\\ifdim\\dimen@>\\z@\\vadjust{\\kern\\dimen@}\\fi}\\makeatother"
     else
       -- Without the metrics of the font, the space of a row shared out by the stretch of the line
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)

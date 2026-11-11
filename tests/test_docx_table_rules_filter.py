@@ -664,6 +664,47 @@ def test_the_space_of_a_header_cell_goes_below_an_equation_which_ends_it(test_pa
     assert abs(below_the_header - below_a_row) < 1, (below_the_header, below_a_row)
 
 
+SUM = '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:oMath><m:r><m:t>x</m:t></m:r><m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>+</m:t></m:r><m:r><m:t>y</m:t></m:r></m:oMath></m:oMathPara>'
+
+
+def _compact_rows(equation: str) -> Document:
+    """Rows of Compact, 1.8pt before and after: two of text, one whose second cell ends with the equation, one of text."""
+    document = _fraction_rows()
+    compact = document.styles["Compact"]
+    compact.paragraph_format.space_before = Pt(1.8)
+    compact.paragraph_format.space_after = Pt(1.8)
+    table = document.tables[0]
+    cell = table.rows[2].cells[1]
+    cell.paragraphs[0]._p.remove(cell.paragraphs[0]._p.find(qn("m:oMathPara")))
+    cell.paragraphs[0].add_run("Formula:")
+    cell.add_paragraph()._p.append(parse_xml(equation))
+    for row in table.rows:
+        for each in row.cells:
+            for paragraph in each.paragraphs:
+                paragraph.style = compact
+    return document
+
+
+def test_an_equation_as_deep_as_a_line_ends_a_row_of_compact_as_a_line(test_parameters: TestParameters):
+    """Word sets the row below such an equation as far below it as the rows of text: 0.02pt off.
+
+    The last line of a cell has the depth of the strut of its row already, which holds the space of Compact below
+    the line. The space went below that once more, and the rows below the equation stood 1.8pt lower.
+    """
+    pdf = _pdf_of(test_parameters, _compact_rows(SUM))
+    rows_of_text = _baseline(pdf, "Middle") - _baseline(pdf, "Upper")
+    below_the_equation = _baseline(pdf, "Lower") - _baseline(pdf, "+")
+    assert abs(below_the_equation - rows_of_text) < 0.5, (below_the_equation, rows_of_text)
+
+
+def test_an_equation_deeper_than_a_line_ends_a_row_of_compact_with_the_space_below_it(test_parameters: TestParameters):
+    """Word sets the space of Compact below the denominator of a fraction: 2.1pt less than a row of text below its baseline."""
+    pdf = _pdf_of(test_parameters, _compact_rows(FRACTION))
+    rows_of_text = _baseline(pdf, "Middle") - _baseline(pdf, "Upper")
+    below_the_fraction = _baseline(pdf, "Lower") - _baseline(pdf, "7")
+    assert abs(below_the_fraction - (rows_of_text - 2.1)) < 1, (below_the_fraction, rows_of_text)
+
+
 def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):
     """A table of twips sets each column as wide as its twips, with the cell margins of Word."""
     native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;aw=1{CLOSE}a"'), _cell('Str "b"')])
