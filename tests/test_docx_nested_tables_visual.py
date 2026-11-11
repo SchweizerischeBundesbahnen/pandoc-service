@@ -40,3 +40,33 @@ def test_a_table_with_the_lines_of_its_style_in_a_cell(test_parameters: TestPara
     assert pdf.status_code == 200, pdf.text
 
     assert_pages_match("nested_table_with_the_lines_of_its_style", pdf.content)
+
+
+def test_a_table_nested_below_a_paragraph_in_a_size_of_its_own(test_parameters: TestParameters):
+    """The text of every cell in 9pt, as docx-exporter writes the cells of a Polarion table; #379.
+
+    The inner table starts as far below "Attributes:" as in Word. The space of the cell started an empty line of
+    its own after a paragraph in a size of its own: the inner table stood 16.6pt lower.
+    """
+    small = "font-size: 9pt;"
+
+    def cell(text: str, shade: str = "") -> str:
+        return f'<td style="{LINE} {shade}"><span style="{small}">{text}</span></td>'
+
+    inner = f'<table style="border-collapse: collapse;"><tr>{cell("Status", "background-color: #eeeeee;")}{cell("Approved")}</tr><tr>{cell("Owner", "background-color: #eeeeee;")}{cell("Admin")}</tr></table>'
+    html = f"""<html><body>
+        <p>A table in 9pt with a nested table in a cell.</p>
+        <table style="border-collapse: collapse;">
+        <tr>{cell("Work item", "background-color: #dddddd;")}{cell("Details", "background-color: #dddddd;")}</tr>
+        <tr>{cell("EL-20")}<td style="{LINE}"><span style="{small}">Attributes:</span>{inner}</td></tr>
+        <tr>{cell("EL-21")}{cell("No attributes")}</tr>
+        </table>
+        <p>A paragraph after the table.</p>
+    </body></html>"""
+    session, base_url = test_parameters.request_session, test_parameters.base_url
+    docx = session.post(f"{base_url}/convert/html/to/docx?preserve_table_styles=true", data=html.encode())
+    assert docx.status_code == 200, docx.text
+    pdf = session.post(f"{base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.content, DOCX_MIME)})
+    assert pdf.status_code == 200, pdf.text
+
+    assert_pages_match("nested_table_below_a_paragraph_in_9pt", pdf.content)

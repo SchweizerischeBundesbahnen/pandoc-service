@@ -705,6 +705,41 @@ def test_an_equation_deeper_than_a_line_ends_a_row_of_compact_with_the_space_bel
     assert abs(below_the_fraction - (rows_of_text - 2.1)) < 1, (below_the_fraction, rows_of_text)
 
 
+def _nested_table_html(size: str) -> str:
+    """A table with a table nested in a cell below "Attributes:", the text of every cell in the size given; #379."""
+    line, text = "border: 1px solid #000;", f"font-size: {size};"
+
+    def cell(content: str) -> str:
+        return f'<td style="{line}"><span style="{text}">{content}</span></td>'
+
+    nested = f'<table style="border-collapse: collapse;"><tr>{cell("Status")}{cell("Approved")}</tr><tr>{cell("Owner")}{cell("Admin")}</tr></table>'
+    attributes = f'<td style="{line}"><span style="{text}">Attributes:</span>{nested}</td>'
+    rows = f"<tr>{cell('Work item')}{cell('Details')}</tr><tr>{cell('EL-20')}{attributes}</tr><tr>{cell('Next')}{cell('Row')}</tr>"
+    return f'<html><body><p>A table with a nested table in a cell.</p><table style="border-collapse: collapse;">{rows}</table><p>After the table.</p></body></html>'
+
+
+def _html_to_pdf(test_parameters: TestParameters, html: str) -> bytes:
+    session, base_url = test_parameters.request_session, test_parameters.base_url
+    docx = session.post(f"{base_url}/convert/html/to/docx?preserve_table_styles=true", data=html.encode())
+    assert docx.status_code == 200, docx.text
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    pdf = session.post(f"{base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.content, mime)})
+    assert pdf.status_code == 200, pdf.text
+    return pdf.content
+
+
+@pytest.mark.parametrize(("size", "word"), [("9pt", 21.6), ("12pt", 25.4)])
+def test_a_nested_table_stands_below_a_paragraph_in_a_size_of_its_own_as_in_word(test_parameters: TestParameters, size: str, word: float):
+    """Word sets the first row of the nested table 21.6pt below "Attributes:" in 9pt, 25.4pt below it in the size of the body.
+
+    A paragraph in a size of its own ends with the line of that size. The space of the cell went after that end,
+    where it started an empty line: the nested table stood 16.6pt lower than in Word.
+    """
+    pdf = _html_to_pdf(test_parameters, _nested_table_html(size))
+    below = _baseline(pdf, "Status") - _baseline(pdf, "Attributes")
+    assert abs(below - word) < 1, (below, word)
+
+
 def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):
     """A table of twips sets each column as wide as its twips, with the cell margins of Word."""
     native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;aw=1{CLOSE}a"'), _cell('Str "b"')])
