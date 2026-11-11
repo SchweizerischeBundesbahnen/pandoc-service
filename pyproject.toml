@@ -21,6 +21,10 @@ dependencies = [
     "weasysvg[convert]==0.6.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/SchweizerischeBundesbahnen/pandoc-service"
+Repository = "https://github.com/SchweizerischeBundesbahnen/pandoc-service"
+
 [dependency-groups]
 dev = [
     "pre-commit==4.7.0",
