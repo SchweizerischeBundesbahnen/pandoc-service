@@ -73,3 +73,26 @@ def test_equations_which_end_rows_of_compact(test_parameters: TestParameters):
     document.element.body.insert(len(document.element.body) - 1, second)
     document.add_paragraph("A paragraph after the tables.")
     assert_pages_match("equations_which_end_rows_of_compact", _docx_to_pdf(test_parameters, _saved(document)))
+
+
+def test_paragraphs_of_cells_in_normal(test_parameters: TestParameters):
+    """Word puts the space after of Normal between two paragraphs of a cell, before and after an equation as well; #380.
+
+    The paragraphs of a cell stood a line apart, the space only after the last one of the cell.
+    """
+    cell = 'style="border: 1px solid #999999;"'
+    html = f"""<html><body>
+        <p>A table with the styles of its cells: the paragraphs of its cells are in Normal.</p>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr><td {cell}>Two paragraphs</td><td {cell}><p>First paragraph:</p><p>Second paragraph</p></td></tr>
+            <tr><td {cell}>A paragraph and an equation</td><td {cell}>Expected formula:<script type="math/tex; mode=display">x + x = y</script></td></tr>
+            <tr><td {cell}>An equation and a paragraph</td><td {cell}>Expected formula:<script type="math/tex; mode=display">x + x = y</script>After the formula</td></tr>
+            <tr><td {cell}>One paragraph</td><td {cell}>Row</td></tr>
+        </table>
+        <p>A paragraph after the table.</p>
+    </body></html>"""
+    session, base_url = test_parameters.request_session, test_parameters.base_url
+    docx = session.post(f"{base_url}/convert/html/to/docx", data=html.encode(), params={"preserve_table_styles": "true"})
+    assert docx.status_code == 200, docx.text
+
+    assert_pages_match("paragraphs_of_cells_in_normal", _docx_to_pdf(test_parameters, docx.content))

@@ -944,3 +944,5 @@ def test_an_equation_in_a_cell_sets_the_line_of_its_font_lower(test_parameters: 
     # In a cell the line may hang from the top of the row, in the body it does not
     assert "\\pdcCellHang{\\rule{0pt}" in cell and "\\pdcCellHang{\\rule{0pt}" in end
     assert "\\pdcCellHang" not in body
+    # What the line stands lower: the space between two paragraphs of a cell in Normal takes it off; #380
+    assert "\\def\\pdcCellEquationTop{1.62bp}" in preamble

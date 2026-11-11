@@ -1179,6 +1179,11 @@ local function write_preamble(meta)
   lines[#lines + 1] = "\\def\\pdcDisplayLine#1{" .. open .. "#1" .. close .. "}"
   local cell_open, cell_close = display_line(true)
   lines[#lines + 1] = "\\def\\pdcCellDisplayLine#1{" .. cell_open .. "#1" .. cell_close .. "}"
+  if body_size and math_top and math_descent and body_descent then
+    -- What the line of an equation in a cell stands lower for the space before it, which a cell of Compact
+    -- leaves out: the space between two paragraphs of a cell in Normal takes it off, see docx_tables_to_latex
+    lines[#lines + 1] = string.format("\\def\\pdcCellEquationTop{%gbp}", EQUATION_TOP * body_size)
+  end
   -- The last paragraph of a cell: the cell ends it, centered, where a paragraph ended in the cell would add a line
   local last_close = cell_close:match("^(.-)\\par[^\\]*}$") or cell_close:match("^(.-)\\par\\prevdepth\\dp\\strutbox}$") or ""
   -- \\arraybackslash: the \\\\ after the cell ends the row, which \\centering would make a break of the line.

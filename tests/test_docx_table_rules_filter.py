@@ -728,6 +728,14 @@ def _html_to_pdf(test_parameters: TestParameters, html: str) -> bytes:
     return pdf.content
 
 
+def _styled_cell_pdf(test_parameters: TestParameters, content: str) -> bytes:
+    """A table with the styles of its cells, as docx-exporter sends it: the paragraphs of its cells are in Normal."""
+    line = "border: 1px solid #CCCCCC; padding: 5px;"
+    rows = f'<tr><td style="{line}">Step</td><td style="{line}">{content}</td></tr><tr><td style="{line}">Next</td><td style="{line}">Row</td></tr>'
+    html = f'<html><body><p>Before the table.</p><table style="width: 100%; border-collapse: collapse;">{rows}</table></body></html>'
+    return _html_to_pdf(test_parameters, html)
+
+
 @pytest.mark.parametrize(("size", "word"), [("9pt", 21.6), ("12pt", 25.4)])
 def test_a_nested_table_stands_below_a_paragraph_in_a_size_of_its_own_as_in_word(test_parameters: TestParameters, size: str, word: float):
     """Word sets the first row of the nested table 21.6pt below "Attributes:" in 9pt, 25.4pt below it in the size of the body.
@@ -738,6 +746,32 @@ def test_a_nested_table_stands_below_a_paragraph_in_a_size_of_its_own_as_in_word
     pdf = _html_to_pdf(test_parameters, _nested_table_html(size))
     below = _baseline(pdf, "Status") - _baseline(pdf, "Attributes")
     assert abs(below - word) < 1, (below, word)
+
+
+def test_two_paragraphs_of_a_cell_in_normal_stand_apart_by_its_space_after(test_parameters: TestParameters):
+    """Word sets the second paragraph 24.7pt below the first, and the next row 25.4pt below the second; #380.
+
+    The space after of Normal went only after the last paragraph of a cell: the second stood 10pt higher.
+    """
+    pdf = _styled_cell_pdf(test_parameters, "<p>First paragraph:</p><p>Second paragraph</p>")
+    between, below = _baseline(pdf, "Second") - _baseline(pdf, "First"), _baseline(pdf, "Next") - _baseline(pdf, "Second")
+    assert abs(between - 24.7) < 1, between
+    assert abs(below - 25.4) < 1, below
+
+
+def test_an_equation_after_a_paragraph_of_a_cell_in_normal_stands_below_its_space_after(test_parameters: TestParameters):
+    """Word sets the equation 25.0pt below "Expected formula:", and the next row 24.5pt below the equation; #380."""
+    pdf = _styled_cell_pdf(test_parameters, 'Expected formula:<script type="math/tex; mode=display">x + x = y</script>')
+    between, below = _baseline(pdf, "+") - _baseline(pdf, "Expected"), _baseline(pdf, "Next") - _baseline(pdf, "+")
+    assert abs(between - 25.0) < 1, between
+    assert abs(below - 24.5) < 1, below
+
+
+def test_a_paragraph_after_an_equation_of_a_cell_in_normal_stands_below_its_space_after(test_parameters: TestParameters):
+    """Word sets "After the formula" 23.8pt below the equation, which ends its own paragraph; #380."""
+    pdf = _styled_cell_pdf(test_parameters, 'Expected formula:<script type="math/tex; mode=display">x + x = y</script>After the formula')
+    below = _baseline(pdf, "After the formula") - _baseline(pdf, "+")
+    assert abs(below - 23.8) < 1, below
 
 
 def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):
