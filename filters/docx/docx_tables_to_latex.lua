@@ -1624,15 +1624,16 @@ local function space_before_tables(rows)
 end
 
 -- A word wider than its cell: Word keeps the widths of the grid and breaks the word at a character, as far
--- out as the line goes; #371. \pdcWord measures a word in the font it stands in. A word which fits the line,
--- or reaches only into the margin of its cell, stays as it is: the columns of TeX come out a little
--- narrower than those of Word. A wider one goes out a character at a time, each line as full as the
--- line of the cell holds: a line into the margin breaks the paragraph once more, before the next.
+-- out as the line goes; #371. \pdcWord measures a word in the font it stands in, against the line of the cell
+-- within the indents of the paragraph. A word which fits the line, or reaches only into the margin of its
+-- cell, stays as it is: the columns of TeX come out a little narrower than those of Word. A wider one goes
+-- out a character at a time, each line as full as the line holds: a line into the margin breaks the
+-- paragraph once more, before the next.
 local has_word = false
 local WORD_PREAMBLE = table.concat({
   "\\newbox\\pdcWordBox\\newbox\\pdcWordLine\\newdimen\\pdcWordWidth\\def\\pdcWordEnd{\\pdcWordEnd}",
-  "\\providecommand{\\pdcWord}[1]{\\pdcWordWidth=\\dimexpr\\linewidth+\\tabcolsep\\relax\\setbox\\pdcWordBox\\hbox{#1}"
-    .. "\\ifdim\\wd\\pdcWordBox>\\pdcWordWidth\\pdcWordWidth=\\linewidth\\setbox\\pdcWordLine\\hbox{}\\expandafter\\pdcWordNext"
+  "\\providecommand{\\pdcWord}[1]{\\pdcWordWidth=\\dimexpr\\linewidth-\\leftskip-\\rightskip+\\tabcolsep\\relax\\setbox\\pdcWordBox\\hbox{#1}"
+    .. "\\ifdim\\wd\\pdcWordBox>\\pdcWordWidth\\advance\\pdcWordWidth-\\tabcolsep\\setbox\\pdcWordLine\\hbox{}\\expandafter\\pdcWordNext"
     .. "\\else\\unhbox\\pdcWordBox\\expandafter\\pdcWordSkip\\fi#1\\pdcWordEnd}",
   "\\def\\pdcWordSkip#1\\pdcWordEnd{}",
   "\\def\\pdcWordNext#1{\\def\\pdcWordCharacter{#1}\\ifx\\pdcWordCharacter\\pdcWordEnd\\unhbox\\pdcWordLine\\else"
@@ -1641,8 +1642,9 @@ local WORD_PREAMBLE = table.concat({
     .. "\\else\\setbox\\pdcWordLine\\box\\pdcWordBox\\fi\\expandafter\\pdcWordNext\\fi}",
 }, "\n")
 -- Only a word which might not fit goes to \pdcWord: as many characters as the narrowest column would hold
--- of a narrow font of 14pt, the size of a large cell, on a line of 400pt, narrower than that of a page
-local WORD_CHARACTER_PT = 0.4 * 14
+-- of the widest letters of a font of 14pt, the size of a large cell, an em each, on a line of 400pt,
+-- narrower than that of a page
+local WORD_CHARACTER_PT = 14
 local WORD_LINE_PT = 400
 local written_characters = {}
 
@@ -1671,12 +1673,29 @@ local function breakable_words(tbl)
       if utf8.len(str.text) < fewest or str.text:find(OPEN, 1, true) then
         return nil
       end
-      local groups = {}
-      for _, code in utf8.codes(str.text) do
-        groups[#groups + 1] = "{" .. written_character(utf8.char(code)) .. "}"
+      -- A hyphen stays in the paragraph, where a line may break after it as Word breaks it there
+      local inlines, wide = {}, false
+      for piece, hyphen in str.text:gmatch("([^-]*)(%-?)") do
+        if piece == "" and hyphen == "" then break end
+        if utf8.len(piece) >= fewest then
+          local groups = {}
+          for _, code in utf8.codes(piece) do
+            groups[#groups + 1] = "{" .. written_character(utf8.char(code)) .. "}"
+          end
+          inlines[#inlines + 1] = pandoc.RawInline("latex", "\\pdcWord{" .. table.concat(groups) .. "}")
+          wide = true
+        elseif piece ~= "" then
+          inlines[#inlines + 1] = pandoc.Str(piece)
+        end
+        if hyphen ~= "" then
+          inlines[#inlines + 1] = pandoc.Str(hyphen)
+        end
+      end
+      if not wide then
+        return nil
       end
       has_word = true
-      return pandoc.RawInline("latex", "\\pdcWord{" .. table.concat(groups) .. "}")
+      return inlines
     end,
   }
   for _, row in ipairs(all_rows(tbl)) do

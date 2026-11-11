@@ -945,3 +945,56 @@ def test_a_word_which_fits_its_cell_keeps_breaking_at_spaces_only(test_parameter
 
     words = _boxes(pdf, "Specificationoftheproduct")
     assert max(box[3] for box in words) - min(box[1] for box in words) < 15, "the text fits one line and stays on it"
+
+
+def test_a_short_word_of_wide_letters_wider_than_its_cell_breaks_as_well(test_parameters: TestParameters):
+    """Six letters W are wider than a column of 916 twips: the count of the letters says nothing of their width."""
+    document = _narrow_first_column()
+    document.tables[0].rows[0].cells[0].text = "WWWWWW"
+    pdf = _pdf_of(test_parameters, document)
+
+    word, link = _boxes(pdf, "WWWWWW"), _boxes(pdf, "Link")
+    assert max(box[2] for box in word) < link[0][0], "the word stays in its column"
+
+
+def test_a_word_in_an_indented_cell_breaks_within_the_indent(test_parameters: TestParameters):
+    """The indent of the paragraph takes its part of the line of the cell: each line of the word ends before the next column."""
+    document = _narrow_first_column()
+    document.tables[0].rows[0].cells[0].paragraphs[0].paragraph_format.left_indent = Pt(12)
+    pdf = _pdf_of(test_parameters, document)
+
+    word, link = _boxes(pdf, "Requirements"), _boxes(pdf, "Link")
+    # The margins of the cells between the text of the two columns: 5.4pt each
+    assert max(box[2] for box in word) < link[0][0] - 10.8, "each line ends at the line of the cell"
+    drops = [above[1] - below[1] for above, below in itertools.pairwise(word) if above[1] - below[1] > 8]
+    assert drops and all(drop < 20 for drop in drops), "the word goes on line by line, each right below the one before"
+
+
+def _span(pdf: bytes, text: str) -> float:
+    boxes = _boxes(pdf, text)
+    return boxes[-1][2] - boxes[0][0]
+
+
+def test_a_word_which_fits_its_cell_keeps_its_kerning(test_parameters: TestParameters):
+    """A narrow column makes the filter measure the words of the table: one which fits is set as it was, kerned."""
+    narrow = _narrow_first_column()
+    narrow.tables[0].rows[1].cells[1].text = "WAVEAVATAR"
+    even = _narrow_first_column()
+    for column in even.tables[0]._tbl.tblGrid.findall(qn("w:gridCol")):
+        column.set(qn("w:w"), "4513")
+    for row in even.tables[0].rows:
+        for cell in row.cells:
+            cell.width = Twips(4513)
+    even.tables[0].rows[1].cells[1].text = "WAVEAVATAR"
+
+    measured, plain = _pdf_of(test_parameters, narrow), _pdf_of(test_parameters, even)
+    assert abs(_span(measured, "WAVEAVATAR") - _span(plain, "WAVEAVATAR")) < 0.05
+
+
+def test_a_hyphen_of_a_long_word_stays_a_place_to_break_the_line(test_parameters: TestParameters):
+    """Word breaks a line after the hyphen of "drop-down": the hyphen stays out of the box which measures the word."""
+    word = "short-averyveryverylongpiece-end"
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "{word}"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "short-\\pdcWord{{a}{v}{e}{r}{y}" in latex, latex
+    assert "{g}{p}{i}{e}{c}{e}}-end" in latex, latex
