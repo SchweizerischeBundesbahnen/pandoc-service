@@ -1090,7 +1090,7 @@ local GRID_INLINES = {
 -- which LaTeX cannot set in a cell
 local NESTED_GRID = table.concat({
   "\\begingroup",
-  "\\def\\longtable{\\par\\noindent\\hskip\\LTleft\\relax\\tabular}",
+  "\\def\\longtable{\\par\\nointerlineskip\\noindent\\hskip\\LTleft\\relax\\tabular}",
   "\\def\\endlongtable{\\endtabular\\hskip\\LTright\\relax\\par}",
   "\\def\\endhead{}\\def\\endfirsthead{}\\def\\endfoot{}\\def\\endlastfoot{}",
 })
@@ -1654,7 +1654,11 @@ local function space_before_tables(rows)
         end
         local following = cell.contents[next_index]
         if (block.t == "Plain" or block.t == "Para") and #block.content > 0 and following and nested_table(following) then
-          block.content:insert(pandoc.RawInline("latex", PLAIN_CELL_SPACE))
+          -- A paragraph in a size of its own ends with "\par}" (docx_colors_to_latex): the space goes into its
+          -- last line, before it. After it, the space started an empty line of its own; #379
+          local last = block.content[#block.content]
+          local own_line = last.t == "RawInline" and last.text == "\\par}"
+          block.content:insert(own_line and #block.content or #block.content + 1, pandoc.RawInline("latex", PLAIN_CELL_SPACE))
         end
       end
     end
