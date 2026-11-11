@@ -42,6 +42,16 @@ def test_a_nested_table_of_a_docx_reaches_the_pdf(test_parameters: TestParameter
     assert "\ue010" not in text and "\ue011" not in text
 
 
+def test_a_nested_table_of_a_docx_with_its_styles_reaches_the_pdf(test_parameters: TestParameters):
+    """The preserved style draws the lines of every cell: a grid, which is written as LaTeX."""
+    docx = _post(test_parameters, "/convert/html/to/docx?preserve_table_styles=true", data=NESTED.encode())
+
+    pdf = _post(test_parameters, "/convert/docx/to/pdf", files={"source": ("nested.docx", docx)})
+
+    text = _text(pdf)
+    assert all(word in text for word in ("Outer", "Details", "Status", "Approved", "Owner", "Admin")), text
+
+
 def test_a_nested_table_with_a_caption_or_of_the_float_class_reaches_the_pdf(test_parameters: TestParameters):
     html = '<table><tr><td>Outer</td><td><table><caption>Inner caption</caption><tr><td>Captioned</td></tr></table><table class="float"><tr><td>Floating</td></tr></table></td></tr></table>'
 
