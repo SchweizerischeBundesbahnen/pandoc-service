@@ -1047,17 +1047,31 @@ local GRID_INLINES = {
   Superscript = true, Subscript = true, Quoted = true, Code = true, Image = true, Strikeout = true,
 }
 
+-- A grid in a cell of another, set as latex_nested_tables.lua sets a nested Table: its longtable as a tabular,
+-- which a cell can hold. The text of the group starts with this, by which simple_cells tells it from a table
+-- which LaTeX cannot set in a cell
+local NESTED_GRID = table.concat({
+  "\\begingroup",
+  "\\def\\longtable{\\par\\noindent\\hskip\\LTleft\\relax\\tabular}",
+  "\\def\\endlongtable{\\endtabular\\hskip\\LTright\\relax\\par}",
+  "\\def\\endhead{}\\def\\endfirsthead{}\\def\\endfoot{}\\def\\endlastfoot{}",
+})
+
+local function nested_grid(text)
+  return text:sub(1, #NESTED_GRID) == NESTED_GRID
+end
+
 local function simple_cells(rows)
   local simple = true
   local check = {
     Block = function(block)
-      if not GRID_BLOCKS[block.t] or (block.t == "RawBlock" and block.text:find("\\begin{longtable}", 1, true)) then
+      if not GRID_BLOCKS[block.t] or (block.t == "RawBlock" and block.text:find("\\begin{longtable}", 1, true) and not nested_grid(block.text)) then
         simple = false
       end
     end,
     Inline = function(inline)
       -- A table inside, written as LaTeX already, cannot sit in the LaTeX of another
-      if not GRID_INLINES[inline.t] or (inline.t == "RawInline" and inline.text:find("\\begin{longtable}", 1, true)) then
+      if not GRID_INLINES[inline.t] or (inline.t == "RawInline" and inline.text:find("\\begin{longtable}", 1, true) and not nested_grid(inline.text)) then
         simple = false
       end
     end,
@@ -1559,6 +1573,56 @@ local function actual_text(str)
   return pieces
 end
 
+-- Whether a block of a cell is a table in it: a Table, which latex_nested_tables.lua sets, or a nested grid
+local function nested_table(block)
+  if block.t == "Table" then
+    return true
+  end
+  if block.t == "RawBlock" then
+    return nested_grid(block.text)
+  end
+  local first = block.t == "Plain" and block.content[1]
+  return first and first.t == "RawInline" and nested_grid(first.text) or false
+end
+
+-- A cell ends with a paragraph, an empty one after a table in it. Word gives that paragraph no line
+local function drop_end_after_table(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      local count = #cell.contents
+      local last = cell.contents[count]
+      if count > 1 and (last.t == "Para" or last.t == "Plain") and #last.content == 0 then
+        -- The groups a nested Table is written in stand between it and the paragraph
+        local index = count - 1
+        while index > 1 and cell.contents[index].t == "RawBlock" and not nested_table(cell.contents[index]) do
+          index = index - 1
+        end
+        if nested_table(cell.contents[index]) then
+          cell.contents = pandoc.Blocks({ table.unpack(cell.contents, 1, count - 1) })
+        end
+      end
+    end
+  end
+end
+
+-- The paragraph before a table in a cell keeps the space below it, which the end of the cell gets otherwise
+local function space_before_tables(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      for index, block in ipairs(cell.contents) do
+        local next_index = index + 1
+        while cell.contents[next_index] and cell.contents[next_index].t == "RawBlock" and not nested_table(cell.contents[next_index]) do
+          next_index = next_index + 1
+        end
+        local following = cell.contents[next_index]
+        if (block.t == "Plain" or block.t == "Para") and #block.content > 0 and following and nested_table(following) then
+          block.content:insert(pandoc.RawInline("latex", PLAIN_CELL_SPACE))
+        end
+      end
+    end
+  end
+end
+
 local table_pass = {}
 
 function table_pass.Table(tbl)
@@ -1569,6 +1633,7 @@ function table_pass.Table(tbl)
   local layout = {}
   local flags = {}
 
+  drop_end_after_table(all_rows(tbl))
   if process_rows(tbl.head.rows, layout, flags, true) then modified = true end
   for _, body in ipairs(tbl.bodies) do
     if process_rows(body.body, layout, flags) then modified = true end
@@ -1611,6 +1676,9 @@ function table_pass.Table(tbl)
       add_plain_cell_space(body.body, cell_end)
     end
     add_plain_cell_space(tbl.foot.rows, cell_end)
+    if not layout.cc then
+      space_before_tables(all_rows(tbl))
+    end
     modified = true
   end
 
@@ -1660,16 +1728,21 @@ function table_pass.Table(tbl)
   --    \LTleft/\LTright glue (pandoc drops <w:jc>, defaulting to centered).
   local before, after = {}, {}
   local grid = nil
-  -- A table in a cell stays a Table: latex_nested_tables.lua sets it as a tabular
-  if tbl.attributes[NESTED] == nil and layout.rl == "grid" and layout.lc and layout.lw then
-    grid = grid_table(tbl, layout.aw)
+  local nested = tbl.attributes[NESTED] ~= nil
+  if layout.rl == "grid" and layout.lc and layout.lw then
+    -- A table in a cell is as wide as the line of the cell with its margins
+    grid = grid_table(tbl, layout.aw or nested)
   end
   if grid then
     -- The lines of the cells in their colour and width, the table out to the cell margin as Word sets it
     has_cellcolor = true
     has_grid = true
     before[#before + 1] = string.format("\\begingroup\\pdcGridtrue\\def\\toprule{\\hline}\\def\\midrule{}\\def\\bottomrule{}\\setlength{\\arrayrulewidth}{%gpt}\\arrayrulecolor[HTML]{%s}", layout.lw, layout.lc)
-    if layout.ta == nil or layout.ta == "left" then
+    if nested then
+      -- Word sets a table in a cell from the start of the line of the cell, its margin inside
+      before[#before + 1] = "\\setlength{\\LTleft}{0pt}\\setlength{\\LTright}{\\fill}"
+      layout.ta = nil
+    elseif layout.ta == nil or layout.ta == "left" then
       before[#before + 1] = "\\setlength{\\LTleft}{-\\tabcolsep}\\setlength{\\LTright}{\\fill}"
       layout.ta = nil
       after[#after + 1] = RESET_GLUE
@@ -1688,7 +1761,6 @@ function table_pass.Table(tbl)
   end
   local rows = all_rows(tbl)
   -- Written as LaTeX, a table gets the columns of Word; pandoc's table its own
-  local nested = tbl.attributes[NESTED] ~= nil
   tbl.attributes[NESTED] = nil
   -- A table of an absolute width sets each column as wide as Word with Word's margins, see word_widths
   local simple = not grid and not nested and layout.tw and #tbl.colspecs > 0 and simple_cells(rows)
@@ -1719,7 +1791,17 @@ function table_pass.Table(tbl)
   end
   if grid then
     after[#after + 1] = "\\endgroup"
-    return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
+    if not nested then
+      return { pandoc.RawBlock("latex", table.concat(before)), grid, pandoc.RawBlock("latex", table.concat(after)) }
+    end
+    -- One block in the cell, which the grid of the outer table can hold
+    local open, close = NESTED_GRID .. table.concat(before), table.concat(after) .. "\\endgroup"
+    if grid.t == "RawBlock" then
+      return pandoc.RawBlock("latex", open .. grid.text .. close)
+    end
+    grid.content:insert(1, pandoc.RawInline("latex", open))
+    grid.content:insert(pandoc.RawInline("latex", close))
+    return grid
   end
   local raw = nil
   if simple then
