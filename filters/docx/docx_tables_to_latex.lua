@@ -1660,7 +1660,8 @@ function table_pass.Table(tbl)
   --    \LTleft/\LTright glue (pandoc drops <w:jc>, defaulting to centered).
   local before, after = {}, {}
   local grid = nil
-  if layout.rl == "grid" and layout.lc and layout.lw then
+  -- A table in a cell stays a Table: latex_nested_tables.lua sets it as a tabular
+  if tbl.attributes[NESTED] == nil and layout.rl == "grid" and layout.lc and layout.lw then
     grid = grid_table(tbl, layout.aw)
   end
   if grid then

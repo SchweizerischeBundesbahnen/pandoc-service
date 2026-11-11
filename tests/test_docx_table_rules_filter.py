@@ -183,6 +183,15 @@ def test_a_table_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_pa
     assert "\\real{" in latex, "pandoc writes the outer table, with the inner one in it"
 
 
+def test_a_grid_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_parameters: TestParameters):
+    """A grid is written as LaTeX: a longtable in the minipage of a cell, which LaTeX cannot set."""
+    inner = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}x"'), _cell('Str "y"')])[1:-1]
+    outer = _grid_table([_cell(f'Str "{OPEN}tw=1.0000{CLOSE}a"'), _cell('Str "b"')])
+    native = outer.replace('[Plain [Str "b"]]', f"[{inner}]")
+    latex = _native_latex(test_parameters.container, native)
+    assert latex.count("\\real{") == 4, "pandoc writes both tables, the inner one in the outer"
+
+
 def test_a_row_of_line_breaks_becomes_a_row_per_line_which_a_page_may_break(test_parameters: TestParameters):
     """Word breaks a row between the lines of a cell; longtable only between rows."""
     lines = 'Plain [Str "one", LineBreak, Str "two", LineBreak, Str "three"]'
