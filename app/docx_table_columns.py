@@ -56,8 +56,6 @@ MATH_MATRIX_GAP_EM = 1.0
 _MATH_BRACKETS = frozenset("()[]{}|,.;:!'\"\u2032\u2033\u2034")
 # Characters which take no room: format characters such as a zero-width space, and combining marks.
 _NO_WIDTH_CATEGORIES = frozenset({"Cf", "Mn", "Me"})
-# The scripts of an element, and the element which holds what they are set against.
-_MATH_SCRIPTS = {"sSup": ("sup",), "sSub": ("sub",), "sSubSup": ("sub", "sup"), "sPre": ("sub", "sup"), "limLow": ("lim",), "limUpp": ("lim",)}
 
 # What ends a word in the text of a run: whitespace a line may break at, not a no-break space
 _WHITESPACE = re.compile(r"[^\S\u00a0\u2007\u202f]+")
@@ -365,45 +363,95 @@ def _equation_extent(equation: Any, em: float) -> tuple[int, int]:
     return round(max(widest, part) * em), round(whole * em)
 
 
-def _math_em(element: Any) -> float:  # noqa: PLR0911 - one case for each kind of element
+def _math_em(element: Any) -> float:
     """The width of a part of an equation set on one line, in ems of the size of the equation."""
     if not isinstance(element.tag, str) or not element.tag.startswith(_M) or element.tag.endswith("Pr"):
         return 0.0
-    name = element.tag[len(_M) :]
-    if name == "r":
-        return sum(_character_em(character) for character in _run_text(element))
-    if name == "f":
-        numerator, denominator = _part_em(element, "num"), _part_em(element, "den")
-        kind = element.find(f"{_M}fPr/{_M}type")
-        # A fraction on one line sets its parts side by side, with the slash between them
-        linear = kind is not None and kind.get(f"{_M}val") in ("lin", "skw")
-        return numerator + denominator + MATH_BRACKET_EM if linear else max(numerator, denominator)
-    if name in _MATH_SCRIPTS:
-        scripts = MATH_SCRIPT_SCALE * max(_part_em(element, script) for script in _MATH_SCRIPTS[name])
-        # A limit stands above or below what it belongs to, an index beside it
-        return max(_part_em(element, "e"), scripts) if name.startswith("lim") else _part_em(element, "e") + scripts
-    if name == "rad":
-        return MATH_RADICAL_EM + _part_em(element, "e")
-    if name == "nary":
-        limits = MATH_SCRIPT_SCALE * max(_part_em(element, "sub"), _part_em(element, "sup"))
-        location = element.find(f"{_M}naryPr/{_M}limLoc")
-        above = location is not None and location.get(f"{_M}val") == "undOvr"
-        return (max(MATH_NARY_EM, limits) if above else MATH_NARY_EM + limits) + _part_em(element, "e")
-    if name == "d":
-        parts = [_math_em(part) for part in element.findall(f"{_M}e")]
-        # The brackets around, and a separator between each two of the parts
-        return sum(parts) + MATH_BRACKET_EM * (len(parts) + 1)
-    if name == "m":
-        rows = [[_math_em(cell) for cell in row.findall(f"{_M}e")] for row in element.findall(f"{_M}mr")]
-        columns = max((len(row) for row in rows), default=0)
-        widths = [max((row[index] for row in rows if index < len(row)), default=0.0) for index in range(columns)]
-        return sum(widths) + MATH_MATRIX_GAP_EM * max(columns - 1, 0)
-    if name == "eqArr":
-        return max((_math_em(row) for row in element.findall(f"{_M}e")), default=0.0)
-    if name == "func":
-        return _part_em(element, "fName") + MATH_SPACE_EM + _part_em(element, "e")
-    # What holds a part of an equation, or decorates one: as wide as what it holds
+    # What holds a part of an equation, or decorates one, is as wide as what it holds
+    return _MATH_ELEMENTS.get(element.tag[len(_M) :], _children_em)(element)
+
+
+def _children_em(element: Any) -> float:
     return sum(_math_em(child) for child in element)
+
+
+def _run_em(run: Any) -> float:
+    return sum(_character_em(character) for character in _run_text(run))
+
+
+def _fraction_em(fraction: Any) -> float:
+    numerator, denominator = _part_em(fraction, "num"), _part_em(fraction, "den")
+    kind = fraction.find(f"{_M}fPr/{_M}type")
+    if kind is not None and kind.get(f"{_M}val") in ("lin", "skw"):
+        # A fraction on one line sets its parts side by side, with the slash between them
+        return numerator + denominator + MATH_BRACKET_EM
+    return max(numerator, denominator)
+
+
+def _scripts_em(element: Any) -> float:
+    """The indexes of an element, a limit among them, at the size they are set in."""
+    return MATH_SCRIPT_SCALE * max(_part_em(element, script) for script in ("sub", "sup", "lim"))
+
+
+def _indexed_em(element: Any) -> float:
+    # An index stands beside what it belongs to
+    return _part_em(element, "e") + _scripts_em(element)
+
+
+def _limit_em(element: Any) -> float:
+    # A limit stands above or below what it belongs to
+    return max(_part_em(element, "e"), _scripts_em(element))
+
+
+def _root_em(root: Any) -> float:
+    return MATH_RADICAL_EM + _part_em(root, "e")
+
+
+def _nary_em(nary: Any) -> float:
+    location = nary.find(f"{_M}naryPr/{_M}limLoc")
+    above = location is not None and location.get(f"{_M}val") == "undOvr"
+    sign = max(MATH_NARY_EM, _scripts_em(nary)) if above else MATH_NARY_EM + _scripts_em(nary)
+    return sign + _part_em(nary, "e")
+
+
+def _brackets_em(brackets: Any) -> float:
+    parts = [_math_em(part) for part in brackets.findall(f"{_M}e")]
+    # The brackets around, and a separator between each two of the parts
+    return sum(parts) + MATH_BRACKET_EM * (len(parts) + 1)
+
+
+def _matrix_em(matrix: Any) -> float:
+    rows = [[_math_em(cell) for cell in row.findall(f"{_M}e")] for row in matrix.findall(f"{_M}mr")]
+    columns = max((len(row) for row in rows), default=0)
+    widths = [max((row[index] for row in rows if index < len(row)), default=0.0) for index in range(columns)]
+    return sum(widths) + MATH_MATRIX_GAP_EM * max(columns - 1, 0)
+
+
+def _array_em(array: Any) -> float:
+    return max((_math_em(row) for row in array.findall(f"{_M}e")), default=0.0)
+
+
+def _function_em(function: Any) -> float:
+    return _part_em(function, "fName") + MATH_SPACE_EM + _part_em(function, "e")
+
+
+# How the width of each kind of element is counted; any other is as wide as what it holds.
+_MATH_ELEMENTS: dict[str, Callable[[Any], float]] = {
+    "r": _run_em,
+    "f": _fraction_em,
+    "sSup": _indexed_em,
+    "sSub": _indexed_em,
+    "sSubSup": _indexed_em,
+    "sPre": _indexed_em,
+    "limLow": _limit_em,
+    "limUpp": _limit_em,
+    "rad": _root_em,
+    "nary": _nary_em,
+    "d": _brackets_em,
+    "m": _matrix_em,
+    "eqArr": _array_em,
+    "func": _function_em,
+}
 
 
 def _part_em(element: Any, name: str) -> float:
