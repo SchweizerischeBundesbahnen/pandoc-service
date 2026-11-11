@@ -295,9 +295,11 @@ local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at
 local AFTER_EQUATION = "equation"
 local EQUATION_CELL_SPACE = {
   [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\pdcPlainCellSpace}\\fi",
-  -- A cell of the header stands on its last line, so its space goes into the depth of that line, as for a
-  -- line of text: below the depth of the equation, which \\pdcCellHang has kept in \\pdcCellLineDepth
-  [PLAIN_HEAD_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\pdcCellLineDepth+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi",
+  -- The space of a cell of the header goes into the depth of its last line, as for a line of text: below the
+  -- depth of the equation, which \\pdcCellHang has kept in \\pdcCellLineDepth, and at least that of a line
+  -- of text. Without the metrics of the font of the equations its line is no deeper than the equation; #372
+  [PLAIN_HEAD_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\ifdim\\pdcCellLineDepth<\\dp\\strutbox\\global\\pdcCellLineDepth\\dp\\strutbox\\fi"
+    .. "\\rule[-\\dimexpr\\pdcCellLineDepth+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi",
   [COMPACT_CELL_DEPTH] = "\\ifdefined\\pdcCompactEquationSpace\\pdcCompactEquationSpace\\fi",
 }
 local BORDERS = "pdc-borders"  -- the lines of a cell of a grid: top/right/bottom/left, each style.eighths.RRGGBB or -
