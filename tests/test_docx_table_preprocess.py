@@ -887,3 +887,71 @@ def test_a_cell_is_tagged_only_when_its_paragraphs_share_the_indent(paragraphs, 
         assert "li=" not in text
     else:
         assert expected in text
+
+
+# --- vertical alignment of the cells of the first row; #372 ----------------
+
+_ALIGNED_STYLES = (
+    f"<w:styles {W_DECL}>"
+    '<w:style w:type="table" w:default="1" w:styleId="Table"><w:tblStylePr w:type="firstRow"><w:tcPr><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr></w:style>'
+    '<w:style w:type="table" w:styleId="Centered"><w:tcPr><w:vAlign w:val="center"/></w:tcPr></w:style>'
+    '<w:style w:type="table" w:styleId="Derived"><w:basedOn w:val="Table"/></w:style>'
+    '<w:style w:type="table" w:styleId="Loop"><w:basedOn w:val="Loop"/></w:style>'
+    '<w:style w:type="paragraph" w:styleId="Normal"/>'
+    "</w:styles>"
+)
+
+
+def test_the_table_styles_give_the_alignment_of_the_first_row_and_of_the_table():
+    alignments = docx_table_pre_process.head_alignments(ET.fromstring(_ALIGNED_STYLES))
+    assert alignments["Table"] == ("b", None)
+    assert alignments["Centered"] == (None, "c")
+    assert alignments["Derived"] == ("b", None), "a style takes what the style it is based on gives"
+    assert alignments["Loop"] == (None, None), "a style based on itself gives nothing"
+    assert alignments[""] == ("b", None), "a table without a style takes the default one"
+    assert docx_table_pre_process.head_alignments(None) == {}
+
+
+def _two_rows(tblpr: str = "", first_tcpr: str = "", header: bool = False) -> str:
+    trpr = '<w:trPr><w:tblHeader w:val="on"/></w:trPr>' if header else ""
+    first = f"<w:tc>{first_tcpr}<w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Other</w:t></w:r></w:p></w:tc>"
+    body = "<w:tc><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>More</w:t></w:r></w:p></w:tc>"
+    return f"<w:tbl><w:tblPr>{tblpr}</w:tblPr><w:tr>{trpr}{first}</w:tr><w:tr>{body}</w:tr></w:tbl>"
+
+
+def _alignments_of(table: str) -> dict[str, str]:
+    """The va key of each cell, by the text of the cell."""
+    styles = docx_table_pre_process.head_alignments(ET.fromstring(_ALIGNED_STYLES))
+    xml, _ = docx_table_pre_process.rewrite_part(f"<w:document {W_DECL}><w:body>{table}</w:body></w:document>".encode(), 9360, frozenset(), styles)
+    found = {}
+    for tc in ET.fromstring(xml).iter(f"{{{W_NS}}}tc"):
+        text = "".join(t.text or "" for t in tc.iter(f"{{{W_NS}}}t"))
+        if SENTINEL_OPEN in text:
+            payload, rest = text[text.index(SENTINEL_OPEN) + 1 : text.index(SENTINEL_CLOSE)], text[text.index(SENTINEL_CLOSE) + 1 :]
+            kv = dict(item.split("=", 1) for item in payload.split(";"))
+            if "va" in kv:
+                found[rest] = kv["va"]
+    return found
+
+
+@pytest.mark.parametrize(
+    ("table", "expected"),
+    [
+        # The first row of a style which aligns it at the bottom, the header for pandoc
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="1"/>'), {"Head": "b", "Other": "b"}, id="style-first-row"),
+        # The alignment of the cell goes before that of the style
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="1"/>', '<w:tcPr><w:vAlign w:val="top"/></w:tcPr>'), {"Head": "t", "Other": "b"}, id="cell"),
+        # A header without an alignment anywhere stands at the top, as Word sets it
+        pytest.param(_two_rows('<w:tblStyle w:val="Missing"/><w:tblLook w:firstRow="1"/>'), {"Head": "t", "Other": "t"}, id="top"),
+        # The style aligns every cell, the first row among them
+        pytest.param(_two_rows('<w:tblStyle w:val="Centered"/><w:tblLook w:firstRow="1"/>'), {"Head": "c", "Other": "c"}, id="style-table"),
+        # A row which repeats on each page is a header too; the formatting of the first row is turned off
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0"/>', header=True), {"Head": "t", "Other": "t"}, id="repeated-row"),
+        # Without a look pandoc makes no header: a row of the body stands at the top
+        pytest.param(_two_rows(), {}, id="no-look"),
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0"/>'), {}, id="look-off"),
+    ],
+)
+def test_the_cells_of_the_first_row_carry_their_vertical_alignment(table: str, expected: dict[str, str]):
+    """pandoc sets a cell of the header at the bottom of its row, Word as the cell or its table style aligns it."""
+    assert _alignments_of(table) == expected

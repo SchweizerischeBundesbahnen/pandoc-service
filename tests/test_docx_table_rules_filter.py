@@ -540,6 +540,39 @@ def test_a_wide_line_between_rows_adds_its_width_to_the_table(test_parameters: T
     assert abs((_top(thick, "Lower") - _top(thin, "Lower")) - 5) < 0.3
 
 
+def _head_of_two_lines(alignment: str | None) -> Document:
+    """A table whose header row has a cell of two lines beside cells of one line, aligned as given; #372."""
+    document = Document()
+    document.add_paragraph("A table whose header row has a cell of two lines.")
+    table = document.add_table(rows=3, cols=3)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    widths = (1800, 3600, 3626)
+    for column, width in zip(table._tbl.tblGrid.findall(qn("w:gridCol")), widths, strict=True):
+        column.set(qn("w:w"), str(width))
+    rows = (("Requirement of the system", "Status", "Owner"), ("REQ-1 Stores every change", "Approved", "Admin"), ("REQ-2", "Draft", "Editor"))
+    for row, texts in zip(table.rows, rows, strict=True):
+        for cell, text, width in zip(row.cells, texts, widths, strict=True):
+            cell.text = text
+            cell.width = Twips(width)
+    if alignment:
+        for cell in table.rows[0].cells:
+            cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="{alignment}"/>'))
+    return document
+
+
+@pytest.mark.parametrize(("alignment", "word"), [(None, 0.0), ("center", 7.2), ("bottom", 14.6)], ids=["none", "center", "bottom"])
+def test_a_cell_of_the_header_takes_its_vertical_alignment(test_parameters: TestParameters, alignment: str | None, word: float):
+    """Word sets "Status" as far below "Requirement" as the alignment of its cell says: on its line without one; #372.
+
+    pandoc sets every cell of the header at the bottom of its row: "Status" stood on the second line.
+    """
+    pdf = _pdf_of(test_parameters, _head_of_two_lines(alignment))
+    below = _baseline(pdf, "Status") - _baseline(pdf, "Requirement")
+    assert abs(below - word) < 1, (below, word)
+    assert _baseline(pdf, "system") - _baseline(pdf, "Requirement") > 10, "the first cell takes two lines"
+
+
 def _sized(text: str, payload: str = "") -> str:
     start = "{\\\\fontsize{8bp}{9.6bp}\\\\selectfont \\\\setbox\\\\strutbox\\\\hbox{\\\\vrule height 7.5133bp depth 2.2541bp width 0pt}"
     marker = f'Str "{OPEN}{payload}{CLOSE}", ' if payload else ""
