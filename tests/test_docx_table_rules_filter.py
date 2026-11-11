@@ -8,10 +8,13 @@ markdown table whose first cell carries the sentinel.
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import io
 import itertools
+import re
 import zipfile
+from xml.etree import ElementTree as ET
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
@@ -25,6 +28,7 @@ from docx.shared import Pt, RGBColor, Twips
 from PIL import Image
 from pypdf import PdfReader
 
+from app import docx_table_pre_process
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
@@ -559,6 +563,46 @@ def _head_of_two_lines(alignment: str | None) -> Document:
         for cell in table.rows[0].cells:
             cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="{alignment}"/>'))
     return document
+
+
+@pytest.mark.parametrize(
+    ("look", "repeated"),
+    [("1", 0), ("0", 2), ("1", 2), (None, 0), ("0", 0), (None, 1), (None, 2)],
+    ids=["first-row", "repeated-rows", "both", "neither", "first-row-off", "one-repeated-row", "two-repeated-rows"],
+)
+def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters: TestParameters, look: str | None, repeated: int):
+    """The preprocessor carries an alignment for each row pandoc makes the header of, and no other; #372.
+
+    pandoc's reader makes a header of the rows which repeat on each page, and of the first row of a table whose
+    look turns its formatting on.
+    """
+    document = Document()
+    table = document.add_table(rows=4, cols=2)
+    properties = table._tbl.tblPr
+    for found in properties.findall(qn("w:tblLook")):
+        properties.remove(found)
+    if look is not None:
+        properties.append(parse_xml(f'<w:tblLook {nsdecls("w")} w:firstRow="{look}"/>'))
+    for index in range(repeated):
+        table.rows[index]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+    for index, row in enumerate(table.rows):
+        for cell in row.cells:
+            cell.text = f"row {index}"
+    docx = io.BytesIO()
+    document.save(docx)
+
+    with zipfile.ZipFile(docx) as package:
+        root = ET.fromstring(package.read("word/document.xml"))
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    tbl = root.find(f".//{w}tbl")
+    tagged = docx_table_pre_process._head_cell_alignments(tbl, {})
+    ours = sum(1 for row in tbl.findall(f"{w}tr") if any(tc in tagged for tc in row.findall(f"{w}tc")))
+
+    encoded = base64.b64encode(docx.getvalue()).decode()
+    exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && echo {encoded} | base64 -d > /tmp/test/head.docx && {PANDOC_PATH} -f docx -t native /tmp/test/head.docx"])
+    assert exit_code == 0, output.decode()
+    head = output.decode().split("TableHead", 1)[1].split("TableBody", 1)[0]
+    assert ours == len(re.findall(r"\bRow\b", head))
 
 
 @pytest.mark.parametrize(("alignment", "word"), [(None, 0.0), ("center", 7.2), ("bottom", 14.6)], ids=["none", "center", "bottom"])
