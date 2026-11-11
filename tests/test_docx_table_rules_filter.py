@@ -574,8 +574,10 @@ def test_an_equation_of_its_own_paragraph_in_a_cell_is_a_centered_line(test_para
     last = f'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Str "{OPEN}{GRID}{CLOSE}Formula:"], Plain [Math DisplayMath "x"]]'
     first = 'Cell ("",[],[]) AlignDefault (RowSpan 1) (ColSpan 1) [Plain [Math DisplayMath "y"], Plain [Str "after"]]'
     latex = " ".join(_native_latex(test_parameters.container, _grid_table([last, first])).split())
-    assert "\\pdcDisplayLineEnd{\\(\\displaystyle x\\)} &" in latex, "the cell ends the line of its last equation, without an end of its own"
-    assert "\\pdcCellDisplayLine{\\(\\displaystyle y\\)}" in latex
+    # the cell ends the line of its last equation, with the space of the cell below it and no depth of a line of text
+    assert "\\pdcDisplayLineEnd{\\(\\displaystyle x\\)}\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\pdcPlainCellSpace}\\fi &" in latex, latex
+    assert "\\pdcCellFirstLine\\pdcCellDisplayLine{\\(\\displaystyle y\\)}" in latex, "an equation which starts its cell hangs from the top of the row"
+    assert "\\pdcCellFirstLine\\pdcDisplayLineEnd" not in latex, "an equation below a paragraph starts a line of its own"
 
 
 def _formula_table(display: bool) -> Document:
@@ -598,6 +600,109 @@ def test_a_cell_which_ends_with_an_equation_ends_its_row_there(test_parameters: 
     """\\centering made the end of the row a break of the line: the row got an empty line more."""
     text, display = _pdf_of(test_parameters, _formula_table(False)), _pdf_of(test_parameters, _formula_table(True))
     assert abs(_top(display, "After") - _top(text, "After")) < 4, (_top(display, "After"), _top(text, "After"))
+
+
+FRACTION = '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:oMath><m:f><m:num><m:r><m:t>5</m:t></m:r></m:num><m:den><m:r><m:t>7</m:t></m:r></m:den></m:f></m:oMath></m:oMathPara>'
+
+
+def _fraction_rows() -> Document:
+    """Rows with lines between them: two of text, one whose second cell is a fraction of its own paragraph, one of text."""
+    document = Document()
+    normal = document.styles["Normal"]
+    normal.font.name = "Liberation Sans"
+    normal.font.size = Pt(12)
+    normal.paragraph_format.space_after = Pt(10)
+    # The styles of pandoc's reference document, which give a cell without a style the space of Normal
+    document.styles.add_style("Compact", WD_STYLE_TYPE.PARAGRAPH)
+    table = document.add_table(rows=4, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    for row, text in enumerate(("Upper", "Middle", "Label", "Lower")):
+        table.rows[row].cells[0].text = text
+    table.rows[2].cells[1].paragraphs[0]._p.append(parse_xml(FRACTION))
+    return document
+
+
+def test_an_equation_which_starts_a_cell_hangs_from_the_top_of_its_row(test_parameters: TestParameters):
+    """Word sets the numerator of a fraction which starts a cell about where the first line of the next cell is.
+
+    The cell had begun its first line, and the equation stood a line below it: its numerator below the baseline of that line.
+    """
+    pdf = _pdf_of(test_parameters, _fraction_rows())
+    label, numerator, denominator = _baseline(pdf, "Label"), _baseline(pdf, "5"), _baseline(pdf, "7")
+    assert numerator < label < denominator, (numerator, label, denominator)
+    assert label - numerator < 8, "the equation is no higher than the top of the row"
+
+
+def test_the_space_of_a_cell_goes_below_an_equation_which_ends_it(test_parameters: TestParameters):
+    """Word sets the space of the paragraph below the fraction, as below a line of text: the fraction stood on the line of the cell."""
+    pdf = _pdf_of(test_parameters, _fraction_rows())
+    rows_of_text = _baseline(pdf, "Middle") - _baseline(pdf, "Upper")
+    below_the_fraction = _baseline(pdf, "Lower") - _baseline(pdf, "7")
+    assert abs(below_the_fraction - rows_of_text) < 5, (below_the_fraction, rows_of_text)
+
+
+def _fraction_in_the_header() -> Document:
+    """As _fraction_rows, with a header row whose second cell is a fraction of its own paragraph as well."""
+    document = _fraction_rows()
+    table = document.tables[0]
+    table.rows[0].cells[0].paragraphs[0].runs[0].text = "Head"
+    table.rows[1].cells[0].paragraphs[0].runs[0].text = "Upper"
+    table.rows[0]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+    table.rows[0].cells[1].paragraphs[0]._p.append(parse_xml(FRACTION.replace(">5<", ">1<").replace(">7<", ">2<")))
+    return document
+
+
+def test_the_space_of_a_header_cell_goes_below_an_equation_which_ends_it(test_parameters: TestParameters):
+    """A cell of the header stands on its last line, and gets its space as the depth of that line.
+
+    An equation which ended one got none: the fraction stood on the line below the header.
+    """
+    pdf = _pdf_of(test_parameters, _fraction_in_the_header())
+    below_the_header = _baseline(pdf, "Upper") - _baseline(pdf, "2")
+    below_a_row = _baseline(pdf, "Lower") - _baseline(pdf, "7")
+    assert abs(below_the_header - below_a_row) < 1, (below_the_header, below_a_row)
+
+
+SUM = '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:oMath><m:r><m:t>x</m:t></m:r><m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>+</m:t></m:r><m:r><m:t>y</m:t></m:r></m:oMath></m:oMathPara>'
+
+
+def _compact_rows(equation: str) -> Document:
+    """Rows of Compact, 1.8pt before and after: two of text, one whose second cell ends with the equation, one of text."""
+    document = _fraction_rows()
+    compact = document.styles["Compact"]
+    compact.paragraph_format.space_before = Pt(1.8)
+    compact.paragraph_format.space_after = Pt(1.8)
+    table = document.tables[0]
+    cell = table.rows[2].cells[1]
+    cell.paragraphs[0]._p.remove(cell.paragraphs[0]._p.find(qn("m:oMathPara")))
+    cell.paragraphs[0].add_run("Formula:")
+    cell.add_paragraph()._p.append(parse_xml(equation))
+    for row in table.rows:
+        for each in row.cells:
+            for paragraph in each.paragraphs:
+                paragraph.style = compact
+    return document
+
+
+def test_an_equation_as_deep_as_a_line_ends_a_row_of_compact_as_a_line(test_parameters: TestParameters):
+    """Word sets the row below such an equation as far below it as the rows of text: 0.02pt off.
+
+    The last line of a cell has the depth of the strut of its row already, which holds the space of Compact below
+    the line. The space went below that once more, and the rows below the equation stood 1.8pt lower.
+    """
+    pdf = _pdf_of(test_parameters, _compact_rows(SUM))
+    rows_of_text = _baseline(pdf, "Middle") - _baseline(pdf, "Upper")
+    below_the_equation = _baseline(pdf, "Lower") - _baseline(pdf, "+")
+    assert abs(below_the_equation - rows_of_text) < 0.5, (below_the_equation, rows_of_text)
+
+
+def test_an_equation_deeper_than_a_line_ends_a_row_of_compact_with_the_space_below_it(test_parameters: TestParameters):
+    """Word sets the space of Compact below the denominator of a fraction: 2.1pt less than a row of text below its baseline."""
+    pdf = _pdf_of(test_parameters, _compact_rows(FRACTION))
+    rows_of_text = _baseline(pdf, "Middle") - _baseline(pdf, "Upper")
+    below_the_fraction = _baseline(pdf, "Lower") - _baseline(pdf, "7")
+    assert abs(below_the_fraction - (rows_of_text - 2.1)) < 1, (below_the_fraction, rows_of_text)
 
 
 def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):

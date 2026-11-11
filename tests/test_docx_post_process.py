@@ -2250,6 +2250,34 @@ def _processed(doc, **kwargs) -> object:
     return Document(io.BytesIO(process(buffer.getvalue(), **kwargs)))
 
 
+def _columns_beside_a_fraction(numerator: str) -> list[int]:
+    """The columns of a table of a line of text and a fraction over b, whose numerator is given as OMML, in twips."""
+    from docx import Document
+    from docx.oxml import parse_xml
+
+    math = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.cell(0, 0).paragraphs[0].add_run("A row with a longer text in the first column of the table")
+    fraction = f"<m:f><m:num>{numerator}</m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>"
+    table.cell(0, 1).paragraphs[0]._p.append(parse_xml(f'<m:oMathPara xmlns:m="{math}"><m:oMath>{fraction}</m:oMath></m:oMathPara>'))
+    grid = _processed(doc).tables[0]._tbl.tblGrid
+    return [int(column.get(f"{{{SCHEMA}}}w")) for column in grid.findall(f"{{{SCHEMA}}}gridCol")]
+
+
+def test_the_markers_of_a_colour_count_for_nothing_in_the_width_of_a_column():
+    """The colour of a part of an equation travels through pandoc as marker text around it.
+
+    The columns were decided with the markers still in the equation: a red a over b took
+    eleven times the width of a black one, and the text beside it was squeezed.
+    """
+    letter = "<m:r><m:t>a</m:t></m:r>"
+    plain = _columns_beside_a_fraction(letter)
+    coloured = _columns_beside_a_fraction(f"<m:r><m:t>@@PMC:FF0000@@</m:t></m:r>{letter}<m:r><m:t>@@PMCEND@@</m:t></m:r>")
+
+    assert coloured == plain
+
+
 def test_pandoc_text_width_is_the_page_less_its_side_margins():
     from app.docx_post_process import _pandoc_text_width_emu
 

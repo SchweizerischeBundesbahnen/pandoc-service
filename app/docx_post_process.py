@@ -123,9 +123,10 @@ def process(
     _state_inline_distances(doc)
     # Before the tables, so a column is decided by the size an image asks for.
     _size_images_for_their_page(doc, image_sizes, text_width)
+    # Before the tables, so the markers of a colour count for nothing in the width of an equation's column.
+    apply_math_colors(doc)
     _replace_table_properties(doc, table_layouts)
     _separate_adjacent_tables(doc)
-    apply_math_colors(doc)
     apply_group_characters(doc)
     _fit_images_to_text_width(doc)
     _cap_image_heights(doc)

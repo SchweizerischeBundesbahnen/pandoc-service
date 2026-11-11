@@ -293,6 +293,125 @@ def test_a_nested_table_needs_the_room_of_its_columns():
     assert widths[1] >= 4 * INCH + 3 * MARGINS
 
 
+# ----------------------- equations -----------------------
+
+_M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+# The size of an equation without styles, 10 pt, in EMU: its widths are counted in ems of it
+EM = 10 * 12700
+
+
+def _run(text: str) -> str:
+    return f"<m:r><m:t>{text}</m:t></m:r>"
+
+
+def _fraction(numerator: str, denominator: str) -> str:
+    return f"<m:f><m:num>{numerator}</m:num><m:den>{denominator}</m:den></m:f>"
+
+
+def _add_equation(cell, parts: str, *, display: bool = True) -> None:
+    equation = f"<m:oMath>{parts}</m:oMath>"
+    if display:
+        equation = f"<m:oMathPara>{equation}</m:oMathPara>"
+    cell.paragraphs[0]._p.append(parse_xml(equation.replace(">", f' xmlns:m="{_M}">', 1)))
+
+
+def _squeezed(parts: str, *, display: bool = True) -> int:
+    """The width a column of the equation keeps beside a picture wider than the table: the narrowest it can be."""
+    _, table = _table(2)
+    _add_equation(table.cell(0, 0), parts, display=display)
+    table.cell(0, 1).paragraphs[0].add_run().add_picture(io.BytesIO(_png()), width=Inches(9))
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+    assert widths is not None
+    return widths[0] - MARGINS
+
+
+def test_a_column_of_equations_gets_the_room_of_its_equations():
+    """An equation counted for nothing: its column got the width of the letter in its header, and Word cut the equation off."""
+    _, table = _table(3, rows=2)
+    for index, text in enumerate(("Text", "F", "N")):
+        table.cell(0, index).paragraphs[0].add_run(text)
+    table.cell(1, 0).paragraphs[0].add_run("A row with a longer text in the first column of the table")
+    _add_equation(table.cell(1, 1), _run("x") + _run("=") + _fraction(_run("\u2212b\u00b1bbbb\u22124ac"), _run("2a")))
+    table.cell(1, 2).paragraphs[0].add_run("t")
+
+    widths = decide(table._tbl, int(6.5 * INCH), None, _margins)
+
+    assert widths is not None
+    assert sum(widths) == pytest.approx(int(6.5 * INCH), abs=3)
+    # the sign and the fraction after it: three signs and eight letters, some 0.8 inch at 10 pt
+    assert widths[1] >= (4 * 1.2 + 8 * 0.55) * EM + MARGINS
+    assert widths[1] > 5 * widths[2]
+
+
+def test_an_inline_equation_needs_its_room_as_well():
+    assert _squeezed(_run("aaaaaaaaaa"), display=False) == pytest.approx(10 * 0.55 * EM, abs=2)
+
+
+def test_a_bracket_and_a_space_of_an_equation_are_narrower_than_a_letter():
+    assert _squeezed(_run("f(a)")) == pytest.approx((2 * 0.55 + 2 * 0.4) * EM, abs=2)
+    assert _squeezed(_run("aa aa")) == pytest.approx((4 * 0.55 + 0.25) * EM, abs=2)
+
+
+def test_an_equation_breaks_before_a_sign_of_its_own_level():
+    """Word breaks a long sum before its signs: the column needs its widest term, not the whole of it."""
+    narrowest = _squeezed(_run("aaaaaaaaaa+bb+cc"))
+
+    assert narrowest == pytest.approx(10 * 0.55 * EM, abs=2)
+
+
+def test_an_equation_does_not_break_inside_a_fraction():
+    narrowest = _squeezed(_fraction(_run("aaaa+bbbb+cccc"), _run("d")))
+
+    assert narrowest == pytest.approx((12 * 0.55 + 2 * 1.2) * EM, abs=2)
+
+
+def test_a_fraction_is_as_wide_as_the_wider_of_its_parts():
+    assert _squeezed(_fraction(_run("a"), _run("bbbbbbbb"))) == pytest.approx(8 * 0.55 * EM, abs=2)
+    linear = '<m:f><m:fPr><m:type m:val="lin"/></m:fPr><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>bbbbbbbb</m:t></m:r></m:den></m:f>'
+    assert _squeezed(linear) == pytest.approx((9 * 0.55 + 0.4) * EM, abs=2)
+
+
+def test_an_index_is_narrower_than_its_letters_on_the_line():
+    index = f"<m:sSup><m:e>{_run('aaaa')}</m:e><m:sup>{_run('bbbb')}</m:sup></m:sSup>"
+    both = f"<m:sSubSup><m:e>{_run('aaaa')}</m:e><m:sub>{_run('b')}</m:sub><m:sup>{_run('bbbb')}</m:sup></m:sSubSup>"
+
+    assert _squeezed(index) == pytest.approx((4 + 0.7 * 4) * 0.55 * EM, abs=2)
+    assert _squeezed(both) == pytest.approx((4 + 0.7 * 4) * 0.55 * EM, abs=2)
+
+
+def test_a_root_a_sum_and_brackets_add_their_signs():
+    root = f'<m:rad><m:radPr><m:degHide m:val="on"/></m:radPr><m:deg/><m:e>{_run("aaaa")}</m:e></m:rad>'
+    total = f'<m:nary><m:naryPr><m:chr m:val="\u2211"/><m:limLoc m:val="undOvr"/></m:naryPr><m:sub>{_run("i")}</m:sub><m:sup>{_run("n")}</m:sup><m:e>{_run("aaaa")}</m:e></m:nary>'
+    integral = f'<m:nary><m:naryPr><m:limLoc m:val="subSup"/></m:naryPr><m:sub>{_run("a")}</m:sub><m:sup>{_run("b")}</m:sup><m:e>{_run("aaaa")}</m:e></m:nary>'
+    brackets = f"<m:d><m:e>{_run('aaaa')}</m:e><m:e>{_run('bb')}</m:e></m:d>"
+
+    assert _squeezed(root) == pytest.approx((0.8 + 4 * 0.55) * EM, abs=2)
+    assert _squeezed(total) == pytest.approx((1.3 + 4 * 0.55) * EM, abs=2)
+    assert _squeezed(integral) == pytest.approx((1.3 + 0.7 * 0.55 + 4 * 0.55) * EM, abs=2)
+    assert _squeezed(brackets) == pytest.approx((6 * 0.55 + 3 * 0.4) * EM, abs=2)
+
+
+def test_a_matrix_is_as_wide_as_its_columns_and_an_array_as_its_widest_row():
+    matrix = f"<m:m><m:mr><m:e>{_run('aaaa')}</m:e><m:e>{_run('b')}</m:e></m:mr><m:mr><m:e>{_run('c')}</m:e><m:e>{_run('dddd')}</m:e></m:mr></m:m>"
+    array = f"<m:eqArr><m:e>{_run('aa')}</m:e><m:e>{_run('bbbbbb')}</m:e></m:eqArr>"
+    function = f"<m:func><m:fName>{_run('sin')}</m:fName><m:e>{_run('x')}</m:e></m:func>"
+    limit = f"<m:limLow><m:e>{_run('lim')}</m:e><m:lim>{_run('nnnnnnnn')}</m:lim></m:limLow>"
+
+    assert _squeezed(matrix) == pytest.approx((8 * 0.55 + 1.0) * EM, abs=2)
+    assert _squeezed(array) == pytest.approx(6 * 0.55 * EM, abs=2)
+    assert _squeezed(function) == pytest.approx((4 * 0.55 + 0.25) * EM, abs=2)
+    assert _squeezed(limit) == pytest.approx(0.7 * 8 * 0.55 * EM, abs=2)
+
+
+def test_what_takes_no_room_in_an_equation_counts_for_nothing():
+    """A zero-width space, the properties of a run and a comment between the parts add nothing."""
+    plain = _squeezed(_run("aaaa"))
+    run = '<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>aa\u200baa</m:t></m:r>'
+    decorated = f'<m:acc><m:accPr><m:chr m:val="\u0302"/></m:accPr><m:e>{run}</m:e></m:acc><!-- a comment -->'
+
+    assert _squeezed(decorated) == plain
+
+
 def test_text_in_a_larger_font_needs_a_wider_column():
     doc, table = _table(2)
     table.cell(0, 0).paragraphs[0].add_run(" ".join(["word"] * 10))

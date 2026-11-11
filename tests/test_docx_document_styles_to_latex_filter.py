@@ -263,6 +263,9 @@ def test_a_table_ends_as_deep_as_word_sets_its_last_row(test_parameters: TestPar
     assert "\\AddToHook{env/longtable/after}{\\par\\prevdepth=\\dp\\strutbox}" in preamble
     assert "\\newcommand{\\pdcCompactCellStretch}{1.5294}" in preamble
     assert "\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}" in preamble
+    # Below an equation which ends a cell: what the equation is deeper than a line, up to what the row is
+    space = "\\newcommand{\\pdcCompactEquationSpace}{\\dimen@\\pdcCellLineDepth\\ifdim\\dimen@>\\dp\\@arstrutbox\\dimen@\\dp\\@arstrutbox\\fi"
+    assert space + "\\advance\\dimen@-\\dp\\strutbox\\ifdim\\dimen@>\\z@\\vadjust{\\kern\\dimen@}\\fi}" in preamble
 
 
 def test_a_paragraph_after_a_table_gets_only_its_own_space_before(test_parameters: TestParameters):
@@ -365,8 +368,9 @@ def test_an_equation_is_as_high_and_as_deep_as_a_line_of_its_font(test_parameter
     preamble = _preamble(_latex(test_parameters.container, *metadata, native='[Para [Math DisplayMath "a^{2}"]]'))
     assert "\\rule[-2.6664bp]{0pt}{14.0688bp}\\usebox{\\pdcEquationBox}\\par\\prevdepth\\dp\\strutbox}}" in preamble, preamble
     # The last paragraph of a cell: the cell ends the paragraph, and the row with it. A cell sets the line lower
-    last = "\\def\\pdcDisplayLineEnd#1{\\par\\centering\\arraybackslash"
-    assert last in preamble and "\\rule[-2.6664bp]{0pt}{15.6888bp}\\usebox{\\pdcEquationBox}}" in preamble, preamble
+    # An equation which starts its cell is in the first line of the cell, and hangs from the top of the row
+    last = "\\def\\pdcDisplayLineEnd#1{\\ifpdcCellFirstLine\\else\\par\\fi\\centering\\arraybackslash"
+    assert last in preamble and "\\rule[-2.6664bp]{0pt}{15.6888bp}\\usebox{\\pdcEquationBox}}}" in preamble, preamble
 
 
 def _numerator_top(container, equation: str) -> float:
@@ -937,3 +941,6 @@ def test_an_equation_in_a_cell_sets_the_line_of_its_font_lower(test_parameters: 
     assert "\\rule[-2.6664bp]{0pt}{14.0688bp}" in body, body
     assert "\\rule[-2.6664bp]{0pt}{15.6888bp}" in cell, cell
     assert "\\rule[-2.6664bp]{0pt}{15.6888bp}" in end, end
+    # In a cell the line may hang from the top of the row, in the body it does not
+    assert "\\pdcCellHang{\\rule{0pt}" in cell and "\\pdcCellHang{\\rule{0pt}" in end
+    assert "\\pdcCellHang" not in body
