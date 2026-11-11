@@ -20,7 +20,7 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Twips
 from PIL import Image
 from pypdf import PdfReader
 
@@ -888,3 +888,113 @@ def test_a_cell_keeps_the_space_of_normal_where_the_styles_give_no_size(test_par
     tight = _pdf_of(test_parameters, _rows_of_normal(0))
     pitch = (_top(spaced, "Second") - _top(spaced, "First")) - (_top(tight, "Second") - _top(tight, "First"))
     assert abs(pitch - 10) < 0.5, pitch
+
+
+URL = "https://example.com/polarion/project/elibrary/wiki/Specification/ProductSpecification"
+
+
+def _narrow_first_column() -> Document:
+    """A table as wide as the line, its first column narrower than the word in it: #371."""
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    properties = table._tbl.tblPr
+    properties.append(parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>'))
+    properties.append(parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="autofit"/>'))
+    for column, width in zip(table._tbl.tblGrid.findall(qn("w:gridCol")), (916, 8110), strict=True):
+        column.set(qn("w:w"), str(width))
+    for row, texts in zip(table.rows, (("Requirements", "Link"), ("Spec", URL)), strict=True):
+        for cell, text, width in zip(row.cells, texts, (916, 8110), strict=True):
+            cell.text = text
+            cell.width = Twips(width)
+    return document
+
+
+def _boxes(pdf: bytes, text: str) -> list[tuple[float, float, float, float]]:
+    """The boxes of the characters of TEXT, which may run over lines: left, bottom, right, top."""
+    page = pdfium.PdfDocument(pdf)[0]
+    textpage = page.get_textpage()
+    chars = [(textpage.get_text_range(index, 1), textpage.get_charbox(index)) for index in range(textpage.count_chars())]
+    printed = [(char, box) for char, box in chars if not char.isspace()]
+    joined = "".join(char for char, _ in printed)
+    start = joined.find(text)
+    assert start >= 0, joined
+    return [box for _, box in printed[start : start + len(text)]]
+
+
+def test_a_word_wider_than_its_cell_breaks_at_the_end_of_the_line(test_parameters: TestParameters):
+    """Word keeps the widths of the grid and breaks such a word at a character, as far out as the line goes."""
+    pdf = _pdf_of(test_parameters, _narrow_first_column())
+
+    word, link = _boxes(pdf, "Requirements"), _boxes(pdf, "Link")
+    assert max(box[2] for box in word) < link[0][0], "the word stays in its column"
+    first = [box for box in word if box[3] > word[0][1]]
+    assert len(first) < len(word), "the word goes on over the next line"
+    following = word[len(first)]
+    # The margins of the cells between the text of the two columns: 5.4pt each
+    assert first[-1][2] + following[2] - following[0] > link[0][0] - 10.8, "the first line holds as many characters as fit"
+    page_width = pdfium.PdfDocument(pdf)[0].get_width()
+    url = _boxes(pdf, URL)
+    assert max(box[2] for box in url) < page_width - 71, "the URL stays inside the right margin"
+    assert url[-1][3] < url[0][1], "the URL goes on over a second line"
+
+
+def test_a_word_which_fits_its_cell_keeps_breaking_at_spaces_only(test_parameters: TestParameters):
+    document = _narrow_first_column()
+    document.tables[0].rows[1].cells[1].text = "Specification of the product"
+    pdf = _pdf_of(test_parameters, document)
+
+    words = _boxes(pdf, "Specificationoftheproduct")
+    assert max(box[3] for box in words) - min(box[1] for box in words) < 15, "the text fits one line and stays on it"
+
+
+def test_a_short_word_of_wide_letters_wider_than_its_cell_breaks_as_well(test_parameters: TestParameters):
+    """Six letters W are wider than a column of 916 twips: the count of the letters says nothing of their width."""
+    document = _narrow_first_column()
+    document.tables[0].rows[0].cells[0].text = "WWWWWW"
+    pdf = _pdf_of(test_parameters, document)
+
+    word, link = _boxes(pdf, "WWWWWW"), _boxes(pdf, "Link")
+    assert max(box[2] for box in word) < link[0][0], "the word stays in its column"
+
+
+def test_a_word_in_an_indented_cell_breaks_within_the_indent(test_parameters: TestParameters):
+    """The indent of the paragraph takes its part of the line of the cell: each line of the word ends before the next column."""
+    document = _narrow_first_column()
+    document.tables[0].rows[0].cells[0].paragraphs[0].paragraph_format.left_indent = Pt(12)
+    pdf = _pdf_of(test_parameters, document)
+
+    word, link = _boxes(pdf, "Requirements"), _boxes(pdf, "Link")
+    # The margins of the cells between the text of the two columns: 5.4pt each
+    assert max(box[2] for box in word) < link[0][0] - 10.8, "each line ends at the line of the cell"
+    drops = [above[1] - below[1] for above, below in itertools.pairwise(word) if above[1] - below[1] > 8]
+    assert drops and all(drop < 20 for drop in drops), "the word goes on line by line, each right below the one before"
+
+
+def _span(pdf: bytes, text: str) -> float:
+    boxes = _boxes(pdf, text)
+    return boxes[-1][2] - boxes[0][0]
+
+
+def test_a_word_which_fits_its_cell_keeps_its_kerning(test_parameters: TestParameters):
+    """A narrow column makes the filter measure the words of the table: one which fits is set as it was, kerned."""
+    narrow = _narrow_first_column()
+    narrow.tables[0].rows[1].cells[1].text = "WAVEAVATAR"
+    even = _narrow_first_column()
+    for column in even.tables[0]._tbl.tblGrid.findall(qn("w:gridCol")):
+        column.set(qn("w:w"), "4513")
+    for row in even.tables[0].rows:
+        for cell in row.cells:
+            cell.width = Twips(4513)
+    even.tables[0].rows[1].cells[1].text = "WAVEAVATAR"
+
+    measured, plain = _pdf_of(test_parameters, narrow), _pdf_of(test_parameters, even)
+    assert abs(_span(measured, "WAVEAVATAR") - _span(plain, "WAVEAVATAR")) < 0.05
+
+
+def test_a_hyphen_of_a_long_word_stays_a_place_to_break_the_line(test_parameters: TestParameters):
+    """Word breaks a line after the hyphen of "drop-down": the hyphen stays out of the box which measures the word."""
+    word = "short-averyveryverylongpiece-end"
+    native = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell(f'Str "{word}"')])
+    latex = " ".join(_native_latex(test_parameters.container, native).split())
+    assert "short-\\pdcWord{{a}{v}{e}{r}{y}" in latex, latex
+    assert "{g}{p}{i}{e}{c}{e}}-end" in latex, latex

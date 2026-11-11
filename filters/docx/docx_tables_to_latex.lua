@@ -1623,6 +1623,88 @@ local function space_before_tables(rows)
   end
 end
 
+-- A word wider than its cell: Word keeps the widths of the grid and breaks the word at a character, as far
+-- out as the line goes; #371. \pdcWord measures a word in the font it stands in, against the line of the cell
+-- within the indents of the paragraph. A word which fits the line, or reaches only into the margin of its
+-- cell, stays as it is: the columns of TeX come out a little narrower than those of Word. A wider one goes
+-- out a character at a time, each line as full as the line holds: a line into the margin breaks the
+-- paragraph once more, before the next.
+local has_word = false
+local WORD_PREAMBLE = table.concat({
+  "\\newbox\\pdcWordBox\\newbox\\pdcWordLine\\newdimen\\pdcWordWidth\\def\\pdcWordEnd{\\pdcWordEnd}",
+  "\\providecommand{\\pdcWord}[1]{\\pdcWordWidth=\\dimexpr\\linewidth-\\leftskip-\\rightskip+\\tabcolsep\\relax\\setbox\\pdcWordBox\\hbox{#1}"
+    .. "\\ifdim\\wd\\pdcWordBox>\\pdcWordWidth\\advance\\pdcWordWidth-\\tabcolsep\\setbox\\pdcWordLine\\hbox{}\\expandafter\\pdcWordNext"
+    .. "\\else\\unhbox\\pdcWordBox\\expandafter\\pdcWordSkip\\fi#1\\pdcWordEnd}",
+  "\\def\\pdcWordSkip#1\\pdcWordEnd{}",
+  "\\def\\pdcWordNext#1{\\def\\pdcWordCharacter{#1}\\ifx\\pdcWordCharacter\\pdcWordEnd\\unhbox\\pdcWordLine\\else"
+    .. "\\setbox\\pdcWordBox\\hbox{\\unhcopy\\pdcWordLine#1}\\ifdim\\wd\\pdcWordBox>\\pdcWordWidth"
+    .. "\\unhbox\\pdcWordLine\\hfil\\break\\setbox\\pdcWordLine\\hbox{#1}"
+    .. "\\else\\setbox\\pdcWordLine\\box\\pdcWordBox\\fi\\expandafter\\pdcWordNext\\fi}",
+}, "\n")
+-- Only a word which might not fit goes to \pdcWord: as many characters as the narrowest column would hold
+-- of the widest letters of a font of 14pt, the size of a large cell, an em each, on a line of 400pt,
+-- narrower than that of a page
+local WORD_CHARACTER_PT = 14
+local WORD_LINE_PT = 400
+local written_characters = {}
+
+local function written_character(character)
+  local written = written_characters[character]
+  if written == nil then
+    written = character:match("^[%w]$") or pandoc.write(pandoc.Pandoc({ pandoc.Plain({ pandoc.Str(character) }) }), LATEX):gsub("%s+$", "")
+    written_characters[character] = written
+  end
+  return written
+end
+
+local function breakable_words(tbl)
+  local narrowest = 1
+  for _, colspec in ipairs(tbl.colspecs) do
+    local width = type(colspec[2]) == "number" and colspec[2] > 0 and colspec[2] or 1 / #tbl.colspecs
+    narrowest = math.min(narrowest, width)
+  end
+  local fewest = narrowest * WORD_LINE_PT / WORD_CHARACTER_PT
+  local filter = {
+    traverse = "topdown",
+    -- soul sets the text of these a character at a time itself
+    Underline = function(element) return element, false end,
+    Strikeout = function(element) return element, false end,
+    Str = function(str)
+      if utf8.len(str.text) < fewest or str.text:find(OPEN, 1, true) then
+        return nil
+      end
+      -- A hyphen stays in the paragraph, where a line may break after it as Word breaks it there
+      local inlines, wide = {}, false
+      for piece, hyphen in str.text:gmatch("([^-]*)(%-?)") do
+        if piece == "" and hyphen == "" then break end
+        if utf8.len(piece) >= fewest then
+          local groups = {}
+          for _, code in utf8.codes(piece) do
+            groups[#groups + 1] = "{" .. written_character(utf8.char(code)) .. "}"
+          end
+          inlines[#inlines + 1] = pandoc.RawInline("latex", "\\pdcWord{" .. table.concat(groups) .. "}")
+          wide = true
+        elseif piece ~= "" then
+          inlines[#inlines + 1] = pandoc.Str(piece)
+        end
+        if hyphen ~= "" then
+          inlines[#inlines + 1] = pandoc.Str(hyphen)
+        end
+      end
+      if not wide then
+        return nil
+      end
+      has_word = true
+      return inlines
+    end,
+  }
+  for _, row in ipairs(all_rows(tbl)) do
+    for _, cell in ipairs(row.cells) do
+      cell.contents = pandoc.Blocks(cell.contents):walk(filter)
+    end
+  end
+end
+
 local table_pass = {}
 
 function table_pass.Table(tbl)
@@ -1726,6 +1808,9 @@ function table_pass.Table(tbl)
   --    document after it.
   --  * the recovered horizontal alignment is applied via longtable
   --    \LTleft/\LTright glue (pandoc drops <w:jc>, defaulting to centered).
+  breakable_words(tbl)
+  modified = true
+
   local before, after = {}, {}
   local grid = nil
   local nested = tbl.attributes[NESTED] ~= nil
@@ -1856,7 +1941,7 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head or has_word) then return meta end
 
   local parts = {}
   -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
@@ -1874,6 +1959,7 @@ function preamble_pass.Meta(meta)
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
   if has_head then parts[#parts + 1] = HEAD_PREAMBLE end
+  if has_word then parts[#parts + 1] = WORD_PREAMBLE end
   local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })
   local existing = meta["header-includes"]
   if existing == nil then
