@@ -11,6 +11,7 @@ writes the result into the grid and into each cell, so Word lays the table out t
 """
 
 import re
+import unicodedata
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from app.docx_numbers import whole_number
@@ -20,7 +21,9 @@ if TYPE_CHECKING:
 
 SCHEMA = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"  # NOSONAR
 WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"  # NOSONAR
+MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"  # NOSONAR
 _W = f"{{{SCHEMA}}}"
+_M = f"{{{MATH_NS}}}"
 
 EMU_PER_TWIP = 635
 EMU_PER_POINT = 12700
@@ -35,6 +38,26 @@ CAPPED_PICTURE_WIDTH_EMU = 914400
 TAB_WIDTH_EMU = 457200
 # Word's font size where neither the text nor its styles state one: 10 pt, in half-points.
 DEFAULT_FONT_SIZE_HALF_POINTS = 20
+
+# How wide the characters of an equation are, in ems of its size, about as Word sets them in Cambria
+# Math: a letter or a digit, a bracket or a punctuation mark, a space, and a sign between two terms
+# with the space Word puts around it.
+MATH_LETTER_EM = 0.55
+MATH_BRACKET_EM = 0.4
+MATH_SPACE_EM = 0.25
+MATH_SIGN_EM = 1.2
+# The sign of a root, and the sign of a sum or an integral.
+MATH_RADICAL_EM = 0.8
+MATH_NARY_EM = 1.3
+# An index, a limit and the like are set at about 0.7 of the size.
+MATH_SCRIPT_SCALE = 0.7
+# The columns of a matrix stand an em apart.
+MATH_MATRIX_GAP_EM = 1.0
+_MATH_BRACKETS = frozenset("()[]{}|,.;:!'\"\u2032\u2033\u2034")
+# Characters which take no room: format characters such as a zero-width space, and combining marks.
+_NO_WIDTH_CATEGORIES = frozenset({"Cf", "Mn", "Me"})
+# The scripts of an element, and the element which holds what they are set against.
+_MATH_SCRIPTS = {"sSup": ("sup",), "sSub": ("sub",), "sSubSup": ("sub", "sup"), "sPre": ("sub", "sup"), "limLow": ("lim",), "limUpp": ("lim",)}
 
 # What ends a word in the text of a run: whitespace a line may break at, not a no-break space
 _WHITESPACE = re.compile(r"[^\S\u00a0\u2007\u202f]+")
@@ -275,16 +298,24 @@ def _content_extent(container: Any, font_sizes: _FontSizes, cell_margins: Callab
 
 
 def _paragraph_extent(p: Any, font_sizes: _FontSizes) -> tuple[int, int, int]:
-    """The longest word or picture of a paragraph, its longest line, and its floor, in EMU.
+    """The longest word, picture or unbreakable part of an equation of a paragraph, its longest line, and its floor, in EMU.
 
-    The floor is the longest word, or picture lowered to an inch.
+    The floor is the longest word or part of an equation, or picture lowered to an inch.
     """
     paragraph_size = font_sizes.paragraph(p)
     minimum = line = longest = floor = 0
     # The width of the word being read: formatting can split one word into several runs
     word = 0
-    for element in p.iter(f"{_W}t", f"{_W}br", f"{_W}cr", f"{_W}tab", f"{{{WP_NS}}}extent"):
-        if element.tag == f"{{{WP_NS}}}extent":
+    for element in p.iter(f"{_W}t", f"{_W}br", f"{_W}cr", f"{_W}tab", f"{{{WP_NS}}}extent", f"{_M}oMath"):
+        if element.tag == f"{_M}oMath":
+            # An equation holds no text of the paragraph: counted for nothing, a column of equations
+            # got the width of its margins, and Word cut the equations off or broke them a term a line
+            unbreakable, whole = _equation_extent(element, paragraph_size * EMU_PER_POINT / 2)
+            minimum = max(minimum, unbreakable)
+            floor = max(floor, unbreakable)
+            word = 0
+            line += whole
+        elif element.tag == f"{{{WP_NS}}}extent":
             width = _int_attribute(element, "cx")
             # A browser keeps a picture of its size and wraps the text beside it
             minimum = max(minimum, width)
@@ -307,6 +338,93 @@ def _paragraph_extent(p: Any, font_sizes: _FontSizes) -> tuple[int, int, int]:
             longest = max(longest, line)
             line = word = 0
     return minimum, max(longest, line), floor
+
+
+def _equation_extent(equation: Any, em: float) -> tuple[int, int]:
+    """The widest part of an equation no line breaks, and the equation on one line, in EMU.
+
+    `em` is the size of the equation in EMU. Word breaks an equation before a sign between two terms
+    of its own level, and nowhere inside a fraction, a root, brackets or an index: the narrowest a
+    column can hold it is its widest part between two such signs. The widths are estimates from the
+    characters, as those of the text are: see the MATH constants.
+    """
+    widest = part = whole = 0.0
+    for child in equation:
+        if child.tag == f"{_M}r":
+            for character in _run_text(child):
+                width = _character_em(character)
+                if width == MATH_SIGN_EM:
+                    # A line may break before the sign: it starts the next part
+                    widest, part = max(widest, part), 0.0
+                part += width
+                whole += width
+        else:
+            width = _math_em(child)
+            part += width
+            whole += width
+    return round(max(widest, part) * em), round(whole * em)
+
+
+def _math_em(element: Any) -> float:  # noqa: PLR0911 - one case for each kind of element
+    """The width of a part of an equation set on one line, in ems of the size of the equation."""
+    if not isinstance(element.tag, str) or not element.tag.startswith(_M) or element.tag.endswith("Pr"):
+        return 0.0
+    name = element.tag[len(_M) :]
+    if name == "r":
+        return sum(_character_em(character) for character in _run_text(element))
+    if name == "f":
+        numerator, denominator = _part_em(element, "num"), _part_em(element, "den")
+        kind = element.find(f"{_M}fPr/{_M}type")
+        # A fraction on one line sets its parts side by side, with the slash between them
+        linear = kind is not None and kind.get(f"{_M}val") in ("lin", "skw")
+        return numerator + denominator + MATH_BRACKET_EM if linear else max(numerator, denominator)
+    if name in _MATH_SCRIPTS:
+        scripts = MATH_SCRIPT_SCALE * max(_part_em(element, script) for script in _MATH_SCRIPTS[name])
+        # A limit stands above or below what it belongs to, an index beside it
+        return max(_part_em(element, "e"), scripts) if name.startswith("lim") else _part_em(element, "e") + scripts
+    if name == "rad":
+        return MATH_RADICAL_EM + _part_em(element, "e")
+    if name == "nary":
+        limits = MATH_SCRIPT_SCALE * max(_part_em(element, "sub"), _part_em(element, "sup"))
+        location = element.find(f"{_M}naryPr/{_M}limLoc")
+        above = location is not None and location.get(f"{_M}val") == "undOvr"
+        return (max(MATH_NARY_EM, limits) if above else MATH_NARY_EM + limits) + _part_em(element, "e")
+    if name == "d":
+        parts = [_math_em(part) for part in element.findall(f"{_M}e")]
+        # The brackets around, and a separator between each two of the parts
+        return sum(parts) + MATH_BRACKET_EM * (len(parts) + 1)
+    if name == "m":
+        rows = [[_math_em(cell) for cell in row.findall(f"{_M}e")] for row in element.findall(f"{_M}mr")]
+        columns = max((len(row) for row in rows), default=0)
+        widths = [max((row[index] for row in rows if index < len(row)), default=0.0) for index in range(columns)]
+        return sum(widths) + MATH_MATRIX_GAP_EM * max(columns - 1, 0)
+    if name == "eqArr":
+        return max((_math_em(row) for row in element.findall(f"{_M}e")), default=0.0)
+    if name == "func":
+        return _part_em(element, "fName") + MATH_SPACE_EM + _part_em(element, "e")
+    # What holds a part of an equation, or decorates one: as wide as what it holds
+    return sum(_math_em(child) for child in element)
+
+
+def _part_em(element: Any, name: str) -> float:
+    part = element.find(f"{_M}{name}")
+    return _math_em(part) if part is not None else 0.0
+
+
+def _run_text(run: Any) -> str:
+    return "".join(text.text or "" for text in run.findall(f"{_M}t"))
+
+
+def _character_em(character: str) -> float:
+    if character.isalnum():
+        return MATH_LETTER_EM
+    if character.isspace():
+        return MATH_SPACE_EM
+    if unicodedata.category(character) in _NO_WIDTH_CATEGORIES:
+        return 0.0
+    if character in _MATH_BRACKETS:
+        return MATH_BRACKET_EM
+    return MATH_SIGN_EM
 
 
 class _FontSizes:

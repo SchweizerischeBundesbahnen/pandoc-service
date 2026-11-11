@@ -515,6 +515,110 @@ local function hyperlink_start(target)
   return '<w:hyperlink w:tooltip="{{HREF:' .. escape_attr(target) .. '}}">'
 end
 
+-- A formula written as raw OOXML. Only pandoc's writer turns the TeX of a
+-- formula into the OMML of a Word equation, and it never sees a formula in a
+-- table cell or in a paragraph this filter writes itself: there the TeX source
+-- came out as the text of the paragraph. So the writer is asked, as for the
+-- bookmark names above: one document with a paragraph for each formula of the
+-- input is written, and the OMML of each is read back from it. That happens
+-- when the first formula is needed, so a conversion with no formula in such a
+-- place writes nothing extra.
+--
+-- A formula the writer cannot read has no OMML: the writer keeps its source as
+-- text, and so does inlines_to_runs. The OMML goes into the document as the
+-- writer made it, with the text of the formula escaped by the writer.
+local document_blocks = nil
+local formulas = nil
+
+local function formula_key(formula)
+  return formula.mathtype .. "\0" .. formula.text
+end
+
+local function resolve_formulas()
+  formulas = {}
+  if not document_blocks then return end
+  local keys, paragraphs, seen = {}, {}, {}
+  document_blocks:walk({
+    Math = function(formula)
+      local key = formula_key(formula)
+      if formula.text ~= "" and not seen[key] then
+        seen[key] = true
+        keys[#keys + 1] = key
+        paragraphs[#paragraphs + 1] = pandoc.Para({ pandoc.Math(formula.mathtype, formula.text) })
+      end
+    end,
+  })
+  if #keys == 0 then return end
+
+  local archive = pandoc.zip.Archive(pandoc.write(pandoc.Pandoc(paragraphs), "docx"))
+  for _, entry in ipairs(archive.entries) do
+    if entry.path == "word/document.xml" then
+      local written = {}
+      for paragraph in entry:contents():gmatch("<w:p>(.-)</w:p>") do
+        -- a display formula is an <m:oMathPara>, an inline one an <m:oMath>
+        written[#written + 1] = paragraph:match("<m:oMathPara>.*</m:oMathPara>")
+          or paragraph:match("<m:oMath>.*</m:oMath>")
+          or false
+      end
+      -- the writer keeps the paragraphs in order; anything else is not trusted
+      if #written == #keys then
+        for i, key in ipairs(keys) do
+          if written[i] then formulas[key] = written[i] end
+        end
+      end
+    end
+  end
+end
+
+-- The OMML of a formula, nil for one the writer cannot read.
+local function formula_ooxml(formula)
+  if not formulas then resolve_formulas() end
+  return formulas[formula_key(formula)]
+end
+
+-- A display formula has a paragraph of its own in Word. pandoc's writer cuts a
+-- paragraph which holds display formulas and something else at them
+-- (fixDisplayMath in Writers/Shared.hs): the text before a formula, the formula
+-- and the text after it become paragraphs of their own, without the spaces at
+-- their ends. Left in the paragraph of its text, Word draws the formula in the
+-- line and as small as an inline one. A paragraph written as raw OOXML is cut
+-- the same way: split_at_display_formulas returns the inlines of each of its
+-- paragraphs.
+local function is_display_formula(inline)
+  if inline.t == "Span" and #inline.content == 1 then inline = inline.content[1] end
+  return inline.t == "Math" and inline.mathtype == "DisplayMath"
+end
+
+local function is_space(inline)
+  return inline.t == "Space" or inline.t == "SoftBreak"
+end
+
+local function split_at_display_formulas(inlines)
+  local display_formulas = 0
+  for _, inline in ipairs(inlines) do
+    if is_display_formula(inline) then display_formulas = display_formulas + 1 end
+  end
+  if display_formulas == 0 or display_formulas == #inlines then return { inlines } end
+
+  local groups = {}
+  local group, group_is_display
+  for _, inline in ipairs(inlines) do
+    local display = is_display_formula(inline)
+    if not group or display ~= group_is_display then
+      group, group_is_display = pandoc.Inlines({}), display
+      groups[#groups + 1] = group
+    end
+    group:insert(inline)
+  end
+  local paragraphs = {}
+  for _, inlines_of_group in ipairs(groups) do
+    while #inlines_of_group > 0 and is_space(inlines_of_group[1]) do inlines_of_group:remove(1) end
+    while #inlines_of_group > 0 and is_space(inlines_of_group[#inlines_of_group]) do inlines_of_group:remove() end
+    if #inlines_of_group > 0 then paragraphs[#paragraphs + 1] = inlines_of_group end
+  end
+  return paragraphs
+end
+
 local function with_bookmark(span, runs)
   if not span.identifier or span.identifier == "" then return runs end
   next_bookmark_id = next_bookmark_id + 1
@@ -712,6 +816,7 @@ end
 
 function meta_pass.Pandoc(doc)
   resolve_bookmark_names(doc)
+  document_blocks = doc.blocks
 end
 
 -- ---- Pass 2: rewrite AST elements ----
@@ -800,10 +905,14 @@ function filter.Strikeout(el) return wrap_native(el, { strikeout = true }, nil) 
 -- {{IMG:}} placeholders app/docx_post_process.py resolves, exactly as the
 -- table-cell path does. They keep their indent/alignment.
 --
--- Graceful degradation: anything else with no OOXML form (a footnote, math, a
--- citation) would survive only as its plain text, so we drop the paragraph
--- formatting rather than corrupt its content. The Para passes through with its
--- semantics intact, just without the indent/alignment applied.
+-- A formula goes out as the OMML the writer makes of it (see formula_ooxml)
+-- and keeps the indent/alignment of its paragraph too.
+--
+-- Graceful degradation: anything else with no OOXML form (a footnote, a
+-- citation, a formula the writer cannot read) would survive only as its plain
+-- text, so we drop the paragraph formatting rather than corrupt its content.
+-- The Para passes through with its semantics intact, just without the
+-- indent/alignment applied.
 
 -- An Image's width and height, validated, as empty strings when it has none.
 --
@@ -843,13 +952,14 @@ end
 
 -- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
 -- a `lossy` flag, true when some inline had no OOXML form and survived only
--- as its plain text (Note, Math, Cite, ...).
+-- as its plain text (Note, Cite, a formula the writer cannot read, ...).
 --
 -- Images and links are NOT lossy: an image and a link to an address cannot be
 -- embedded in raw OOXML directly (both need writer-level relationship entries),
 -- so they go out as the same {{IMG:}} / {{HREF:}} placeholders the table-cell
 -- path uses, and app/docx_post_process.py resolves them into real relationships
 -- afterwards. A link into the document names its bookmark and needs neither.
+-- A formula is not lossy either: it is the OMML of the writer (formula_ooxml).
 --
 -- Callers decide what to do about `lossy`: a table cell keeps the plain text
 -- because it has no other way to render the cell, while a formatted paragraph
@@ -892,6 +1002,8 @@ local function inlines_to_runs(inlines, seed)
           link_runs[#link_runs + 1] = "<w:r><w:t xml:space=\"preserve\">"
             .. image_placeholder(lr)
             .. "</w:t></w:r>"
+        elseif lr.t == "Math" and formula_ooxml(lr) then
+          link_runs[#link_runs + 1] = formula_ooxml(lr)
         elseif is_comment_marker(lr) then
           -- As for a comment outside a link (below): no raw OOXML form, so
           -- nothing is emitted rather than the comment's text as link text.
@@ -905,6 +1017,9 @@ local function inlines_to_runs(inlines, seed)
       end
       run_parts[#run_parts + 1] = hyperlink_start(r.target)
         .. table.concat(link_runs) .. "</w:hyperlink>"
+    elseif r.t == "Math" and formula_ooxml(r) then
+      -- An equation of Word, as the writer makes it outside a table
+      run_parts[#run_parts + 1] = formula_ooxml(r)
     elseif is_comment_marker(r) then
       -- A comment has no raw OOXML form: its text goes to word/comments.xml,
       -- which only the writer creates. The comment cannot be kept here, but
@@ -913,12 +1028,20 @@ local function inlines_to_runs(inlines, seed)
       -- alignment instead and the writer keeps the comment.
       lossy = true
     else
-      -- Nested tables, lists, footnotes, math — fall back to plain text.
+      -- Footnotes, citations, a formula the writer cannot read — fall back
+      -- to plain text.
       lossy = true
       run_parts[#run_parts + 1] = "<w:r><w:t xml:space=\"preserve\">"
         .. escape_xml(pandoc.utils.stringify(r))
         .. "</w:t></w:r>"
     end
+  end
+  -- Word draws an inline formula which is alone in its paragraph as a display
+  -- one. The writer puts a zero-width space after it against that (Para in
+  -- Writers/Docx/OpenXML.hs), and so does a paragraph written here.
+  local only = #inlines == 1 and inlines[1]
+  if only and only.t == "Math" and only.mathtype == "InlineMath" and formula_ooxml(only) then
+    run_parts[#run_parts + 1] = '<w:r><w:t xml:space="preserve">\u{200B}</w:t></w:r>'
   end
   return table.concat(run_parts), lossy
 end
@@ -945,7 +1068,8 @@ local function contains_caption_span(inlines)
   return false
 end
 
--- Build the single OOXML <w:p> for a formatted paragraph, or nil to signal
+-- Build the OOXML <w:p> for a formatted paragraph (several of them when it is
+-- cut at its display formulas), or nil to signal
 -- "fall back to the original Para". Both `twips` and `jc` are trusted here:
 -- callers MUST pass an already-validated non-negative integer (Lua number, not
 -- string) and an allowlisted justification literal. See filter.Div below for
@@ -953,12 +1077,19 @@ end
 -- set — an empty <w:pPr> would be pointless, so we return nil in that case and
 -- let the caller keep pandoc's native Para.
 local function build_para_w_p(inlines, twips, jc)
-  local body, lossy = inlines_to_runs(inlines)
-  -- Something here has no OOXML form and would survive only as its plain text
-  -- (a footnote, math, a citation). Keeping the content intact matters more
-  -- than the indent, so hand the Para back to pandoc's writer unformatted.
-  -- Links and images are not lossy: they ride out as placeholders.
-  if lossy then return nil end
+  -- One body for each paragraph the writer would make of it (see
+  -- split_at_display_formulas); each gets the indent and the alignment.
+  local bodies = {}
+  for _, inlines_of_paragraph in ipairs(split_at_display_formulas(inlines)) do
+    local body, lossy = inlines_to_runs(inlines_of_paragraph)
+    -- Something here has no OOXML form and would survive only as its plain text
+    -- (a footnote, a citation, a formula the writer cannot read). Keeping the
+    -- content intact matters more than the indent, so hand the Para back to
+    -- pandoc's writer unformatted. Links and images are not lossy: they ride
+    -- out as placeholders. Nor is a formula: it is the OMML of the writer.
+    if lossy then return nil end
+    bodies[#bodies + 1] = body
+  end
   -- <w:pPr> children must follow the CT_PPr schema sequence (ECMA-376 Part 1
   -- §17.3.1.26): <w:ind> precedes <w:jc>. Word/LibreOffice are version-
   -- dependent about out-of-order children (silent reorder, recovery warning,
@@ -985,8 +1116,11 @@ local function build_para_w_p(inlines, twips, jc)
     ppr[#ppr + 1] = '<w:jc w:val="' .. jc .. '"/>'
   end
   if #ppr == 0 then return nil end
-  return pandoc.RawBlock("openxml",
-    "<w:p><w:pPr>" .. table.concat(ppr) .. "</w:pPr>" .. body .. "</w:p>")
+  local paragraphs = {}
+  for i, body in ipairs(bodies) do
+    paragraphs[i] = "<w:p><w:pPr>" .. table.concat(ppr) .. "</w:pPr>" .. body .. "</w:p>"
+  end
+  return pandoc.RawBlock("openxml", table.concat(paragraphs))
 end
 
 local function has_class(el, name)
@@ -1399,8 +1533,12 @@ block_to_ooxml = function(block, jc_val, ind_twips, props)
   if block.t == "Para" or block.t == "Plain" then
     -- A cell has no fallback to hand the content back to, so the `lossy`
     -- flag is ignored here: plain text beats an empty cell.
-    local runs = inlines_to_runs(block.content, props)
-    return "<w:p>" .. ppr .. runs .. "</w:p>"
+    local paragraphs = {}
+    for _, inlines in ipairs(split_at_display_formulas(block.content)) do
+      local runs = inlines_to_runs(inlines, props)
+      paragraphs[#paragraphs + 1] = "<w:p>" .. ppr .. runs .. "</w:p>"
+    end
+    return table.concat(paragraphs)
   end
 
   if block.t == "RawBlock" and block.format == "openxml" then

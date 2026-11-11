@@ -30,6 +30,7 @@ from tests.test_container import TestParameters
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 
 def _pandoc_bookmark_name(identifier: str) -> str:
@@ -423,20 +424,50 @@ def test_indent_survives_an_image_in_the_paragraph(test_parameters: TestParamete
     assert b"{{IMG:" not in doc_xml, "an {{IMG:}} placeholder survived into the output"
 
 
-def test_indent_falls_back_when_para_contains_math(test_parameters: TestParameters):
-    """Math has no raw-OOXML form, so it would survive only as its plain text.
-
-    Content wins over formatting: the filter hands the Para back to pandoc's
-    writer, which renders a real OMML equation, and the indent is dropped.
+def test_indent_survives_a_formula_in_the_paragraph(test_parameters: TestParameters):
+    """A formula is written as the OMML pandoc's writer makes of it, so the
+    paragraph keeps both its indent and a real equation.
     """
     html = '<div class="pandoc-para" data-indent-twips="600"><p>val <math xmlns="http://www.w3.org/1998/Math/MathML"><mi>a</mi></math> end</p></div>'
     docx_bytes = _convert_html_to_docx(test_parameters, html)
     with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
-        doc_xml = zf.read("word/document.xml")
+        doc = ET.fromstring(zf.read("word/document.xml"))
 
-    doc = ET.fromstring(doc_xml)
-    assert _ind_left(_w_p_with_text(doc, "val")) is None, "indent applied to a paragraph whose math can only be flattened"
-    assert b"oMath" in doc_xml, "the equation was flattened to text instead of staying a real OMML equation"
+    paragraph = _w_p_with_text(doc, "val")
+    assert _ind_left(paragraph) == "600", "indent dropped on a paragraph containing a formula"
+    assert paragraph.find(f"{{{M_NS}}}oMath") is not None, "the equation was flattened to text instead of staying a real OMML equation"
+    assert "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t")) == "val  end"
+
+
+def test_indented_paragraph_is_cut_at_a_display_formula(test_parameters: TestParameters):
+    """pandoc's writer gives a display formula a paragraph of its own; each
+    paragraph the indented one is cut into keeps the indent.
+    """
+    html = '<div class="pandoc-para" data-indent-twips="600"><p>val <script type="math/tex; mode=display">a^2</script> end</p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    paragraphs = doc.findall(f"{{{W_NS}}}body/{{{W_NS}}}p")
+    assert ["".join(t.text or "" for t in p.iter(f"{{{W_NS}}}t")) for p in paragraphs] == ["val", "", "end"]
+    assert [_ind_left(p) for p in paragraphs] == ["600", "600", "600"]
+    assert paragraphs[1].find(f"{{{M_NS}}}oMathPara") is not None, "the display formula is no equation of its own paragraph"
+
+
+def test_indent_falls_back_when_the_formula_cannot_be_read(test_parameters: TestParameters):
+    """A formula pandoc's writer cannot read has no OMML and would survive only as its plain text.
+
+    Content wins over formatting: the filter hands the Para back to the writer,
+    which keeps the TeX source between its dollar signs, and the indent is dropped.
+    """
+    html = '<div class="pandoc-para" data-indent-twips="600"><p>val <script type="math/tex">\\foo{bar</script> end</p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    paragraph = _w_p_with_text(doc, "val")
+    assert _ind_left(paragraph) is None, "indent applied to a paragraph whose formula can only be flattened"
+    assert "$\\foo{bar$" in "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t"))
 
 
 def test_plain_div_is_left_alone(test_parameters: TestParameters):

@@ -285,6 +285,14 @@ local ROW_SPAN = "pdc-row-span"   -- the rows a cell spans, which its \\multirow
 local COVERED = "pdc-covered"     -- a cell which only carries the colour of the cell above
 local SPLIT = "pdc-split"      -- the attribute of a row: what follows it, see SPLIT_PREAMBLE
 local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at its end
+-- Its value for a cell which ends with an equation of its own paragraph: the line of the equation is open,
+-- and the space of the cell goes below it. Word sets that space below the deepest of the equation, as below
+-- a line of text: without it a fraction stood on the line of the cell below it.
+local AFTER_EQUATION = "equation"
+local EQUATION_CELL_SPACE = {
+  [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\pdcPlainCellSpace}\\fi",
+  [COMPACT_CELL_DEPTH] = "\\ifdefined\\pdcCompactEquationSpace\\pdcCompactEquationSpace\\fi",
+}
 local BORDERS = "pdc-borders"  -- the lines of a cell of a grid: top/right/bottom/left, each style.eighths.RRGGBB or -
 local WRAPPED = "pdc-wrapped"  -- the attribute of a row which goes out a line at a time
 local BACKGROUND = "pdc-background"  -- the color of a cell, for the line of a grid through a merged cell
@@ -736,10 +744,13 @@ local function add_plain_cell_space(rows, raw)
   raw = raw or PLAIN_CELL_SPACE
   for _, row in ipairs(rows) do
     for _, cell in ipairs(row.cells) do
-      local skip = cell.attributes[NO_END] ~= nil
+      local no_end = cell.attributes[NO_END]
       cell.attributes[NO_END] = nil
       local last = cell.contents[#cell.contents]
-      if skip then
+      if no_end == AFTER_EQUATION and EQUATION_CELL_SPACE[raw] and last and last.t == "Plain" then
+        last.content:insert(pandoc.RawInline("latex", EQUATION_CELL_SPACE[raw]))
+      end
+      if no_end then
         last = false
       end
       if last == nil then
@@ -758,6 +769,10 @@ end
 
 -- An equation of its own paragraph in a cell, as Word sets it in the body: centered, in display style, on a
 -- line as high as the font of the equations. docx_document_styles_to_latex defines \\pdcDisplayLine.
+-- Word hangs the line of an equation which starts a cell from the top of the row, as the first line of the
+-- text of the other cells: TeX sets the cells of a row on the baseline of their first lines, and the cell
+-- has begun its first line already, so the equation stood a line below the top. \\pdcCellFirstLine tells
+-- its line to hang, see DISPLAY_PREAMBLE.
 -- Returns whether it did, and whether the cell ends with one, which then sets the depth of its own line.
 local function display_equations(blocks)
   local changed, last = false, false
@@ -765,7 +780,7 @@ local function display_equations(blocks)
     local only = (block.t == "Plain" or block.t == "Para") and #block.content == 1 and block.content[1]
     if only and only.t == "Math" and only.mathtype == "DisplayMath" then
       blocks[index] = pandoc.Plain({
-        pandoc.RawInline("latex", index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcCellDisplayLine{"),
+        pandoc.RawInline("latex", (index == 1 and "\\pdcCellFirstLine" or "") .. (index == #blocks and "\\pdcDisplayLineEnd{" or "\\pdcCellDisplayLine{")),
         pandoc.Math("InlineMath", "\\displaystyle " .. only.text),
         pandoc.RawInline("latex", "}"),
       })
@@ -775,6 +790,20 @@ local function display_equations(blocks)
   end
   return changed, last
 end
+
+-- The line of an equation which starts a cell hangs from the top of its row. \\pdcCellHang lowers it by
+-- what it is higher than the first line of the text of a cell: the strut of the row less the space the row
+-- has above that line, which is what the strut is deeper than a line. The cell is in its first line, so
+-- the last equation of a cell ends no line before it then.
+-- docx_document_styles_to_latex sets the line of the equation; without it, a centered line.
+local DISPLAY_PREAMBLE = table.concat({
+  "\\makeatletter\\newif\\ifpdcCellFirstLine\\providecommand{\\pdcCellFirstLine}{\\global\\pdcCellFirstLinetrue}",
+  "\\providecommand{\\pdcCellHang}[1]{\\ifpdcCellFirstLine\\global\\pdcCellFirstLinefalse\\setbox\\z@\\hbox{#1}"
+    .. "\\dimen@=\\dimexpr\\ht\\z@-\\ht\\@arstrutbox+\\dp\\@arstrutbox-\\dp\\strutbox\\relax"
+    .. "\\leavevmode\\ifdim\\dimen@>\\z@\\lower\\dimen@\\fi\\box\\z@\\else#1\\fi}\\makeatother",
+  "\\providecommand{\\pdcCellDisplayLine}[1]{{\\centering\\pdcCellHang{#1}\\par}}",
+  "\\providecommand{\\pdcDisplayLineEnd}[1]{\\ifpdcCellFirstLine\\else\\par\\fi\\centering\\arraybackslash\\pdcCellHang{#1}}",
+}, "\n")
 
 -- Walk all rows in a row-set (head, body, foot) and process sentinels.
 -- Injects cell background colour and per-cell alignment, and captures any
@@ -798,8 +827,9 @@ local function process_rows(rows, layout, flags, head)
         modified = true
       end
       if ends_with_display then
-        -- The line of the equation is as deep as Word's: an end after it would start a line of its own
-        cell.attributes[NO_END] = "1"
+        -- The line of the equation is as deep as Word's: the end of a line of text would give it the depth
+        -- of that line. It gets the space of the cell alone, see AFTER_EQUATION
+        cell.attributes[NO_END] = AFTER_EQUATION
       end
       -- Alignment first, background second: both insert at the front, so the
       -- \cellcolor ends up ahead of the declaration, which is where colortbl
@@ -1776,8 +1806,7 @@ function preamble_pass.Meta(meta)
   if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head) then return meta end
 
   local parts = {}
-  -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line
-  if has_display then parts[#parts + 1] = "\\providecommand{\\pdcCellDisplayLine}[1]{{\\centering#1\\par}}\\providecommand{\\pdcDisplayLineEnd}[1]{\\par\\centering\\arraybackslash#1}" end
+  if has_display then parts[#parts + 1] = DISPLAY_PREAMBLE end
   if has_grid then parts[#parts + 1] = GRID_PREAMBLE end
   if has_cell_picture then parts[#parts + 1] = CELL_PICTURE_PREAMBLE end
   if has_split then parts[#parts + 1] = SPLIT_PREAMBLE .. "\n\\providecommand{\\pdcSplitRow}[1]{}" end

@@ -135,6 +135,8 @@ local function table_preamble(meta, lines)
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", stretch)
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellExtra}{%.4gbp}", (ascent + space / 2) / stretch - ascent)
       lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactCellDepth}{\\rule[-\\dp\\@arstrutbox]{0pt}{0pt}}\\makeatother"
+      -- Below an equation which ends a cell: what the row is deeper than a line, under the depth of the equation
+      lines[#lines + 1] = "\\makeatletter\\newcommand{\\pdcCompactEquationSpace}{\\vadjust{\\kern\\dimexpr\\dp\\@arstrutbox-\\dp\\strutbox\\relax}}\\makeatother"
     else
       -- Without the metrics of the font, the space of a row shared out by the stretch of the line
       lines[#lines + 1] = string.format("\\newcommand{\\pdcCompactCellStretch}{%.4f}", (baseline + space) / baseline)
@@ -634,10 +636,15 @@ end
 -- a display which starts a paragraph, and its matrices take the row height
 -- of the tables: the equation is set as a centred paragraph in display style.
 -- In a cell, whose paragraph has no space before it, Word sets the line of the font of the equations that
--- much further down as well.
+-- much further down as well. There the line is in \\pdcCellHang of docx_tables_to_latex, which hangs
+-- the line of an equation which starts its cell from the top of the row.
 local function display_line(cell)
   local open = "{\\centering\\renewcommand{\\arraystretch}{1}\\setlength{\\jot}{" .. ALIGNED_GAP .. "pt}"
   local close = "\\par}"
+  if cell and not body_size then
+    open = open .. "\\pdcCellHang{"
+    close = "}" .. close
+  end
   if body_size then
     -- Word sets a fraction inside a fraction of an equation as large as the outer one, closer to its line.
     -- The rows of an array that far apart whatever they hold, and the array as high as its first row and
@@ -652,8 +659,11 @@ local function display_line(cell)
       local top = math_top + (cell and EQUATION_TOP or 0)
       line = string.format("\\rule[-%gbp]{0pt}{%gbp}", math_descent * body_size, (top + math_descent) * body_size)
     end
-    close = string.format("}\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}%s\\usebox{\\pdcEquationBox}\\par%s}",
-      EQUATION_TOP * body_size, line, line ~= "" and "\\prevdepth\\dp\\strutbox" or "")
+    local set = string.format("\\rule{0pt}{\\dimexpr\\ht\\pdcEquationBox+%gbp\\relax}%s\\usebox{\\pdcEquationBox}", EQUATION_TOP * body_size, line)
+    if cell then
+      set = "\\pdcCellHang{" .. set .. "}"
+    end
+    close = "}" .. set .. "\\par" .. (line ~= "" and "\\prevdepth\\dp\\strutbox" or "") .. "}"
   end
   return open, close
 end
@@ -1163,12 +1173,14 @@ local function write_preamble(meta)
   -- After docx_tables_to_latex, whose \\providecommand stands for it without the styles
   local open, close = display_line()
   lines[#lines + 1] = "\\def\\pdcDisplayLine#1{" .. open .. "#1" .. close .. "}"
-  local _, cell_close = display_line(true)
-  lines[#lines + 1] = "\\def\\pdcCellDisplayLine#1{" .. open .. "#1" .. cell_close .. "}"
+  local cell_open, cell_close = display_line(true)
+  lines[#lines + 1] = "\\def\\pdcCellDisplayLine#1{" .. cell_open .. "#1" .. cell_close .. "}"
   -- The last paragraph of a cell: the cell ends it, centered, where a paragraph ended in the cell would add a line
   local last_close = cell_close:match("^(.-)\\par[^\\]*}$") or cell_close:match("^(.-)\\par\\prevdepth\\dp\\strutbox}$") or ""
-  -- \\arraybackslash: the \\\\ after the cell ends the row, which \\centering would make a break of the line
-  lines[#lines + 1] = "\\def\\pdcDisplayLineEnd#1{\\par" .. open:sub(2):gsub("^\\centering", "\\centering\\arraybackslash") .. "#1" .. last_close .. "}"
+  -- \\arraybackslash: the \\\\ after the cell ends the row, which \\centering would make a break of the line.
+  -- An equation which starts its cell is in the first line of the cell: ending that line would leave it empty
+  -- above the equation
+  lines[#lines + 1] = "\\def\\pdcDisplayLineEnd#1{\\ifpdcCellFirstLine\\else\\par\\fi" .. cell_open:sub(2):gsub("^\\centering", "\\centering\\arraybackslash") .. "#1" .. last_close .. "}"
   headings_preamble(meta, lines)
   title_preamble(lines)
   caption_preamble(lines)

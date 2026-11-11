@@ -18,6 +18,7 @@ from tests.test_container import TestParameters
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 
 def _convert_html_to_docx(test_parameters: TestParameters, html: str, *, preserve_table_styles: bool = True) -> bytes:
@@ -533,3 +534,106 @@ def test_link_to_an_address_in_a_styled_cell_keeps_its_relationship(test_paramet
     link = _link_with_text(_parse_document_xml(docx), "to the website")
     assert relationships.get(link.get(f"{{{R_NS}}}id")) == "https://example.com/page#part"
     assert link.get(f"{{{W_NS}}}anchor") is None
+
+
+def _text(element: ET.Element) -> str:
+    return "".join(t.text or "" for t in element.iter(f"{{{W_NS}}}t"))
+
+
+def _formula_text(element: ET.Element) -> str:
+    return "".join(t.text or "" for t in element.iter(f"{{{M_NS}}}t"))
+
+
+@pytest.mark.parametrize(
+    ("formula", "equation"),
+    [
+        pytest.param('<script type="math/tex">a^2+b^2</script>', "oMath", id="inline"),
+        pytest.param('<script type="math/tex; mode=display">a^2+b^2</script>', "oMathPara", id="display"),
+    ],
+)
+def test_formula_in_a_styled_cell_is_an_equation(test_parameters: TestParameters, formula: str, equation: str):
+    """A styled cell is written as raw OOXML, where the TeX source of a formula came out as the text of the cell."""
+    html = f'<table><tr><td style="background-color:#D9EAF7;">Sum {formula} of squares</td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    cell = _cell_with_text(root, "Sum")
+    assert cell.find(f"{{{W_NS}}}p/{{{M_NS}}}{equation}") is not None, "the formula is no equation of Word"
+    assert _formula_text(cell) == "a2+b2"
+    assert "^" not in _text(cell), f"the TeX source is in the text of the cell: {_text(cell)!r}"
+
+
+def test_display_formula_in_a_styled_cell_has_a_paragraph_of_its_own(test_parameters: TestParameters):
+    """pandoc's writer cuts a paragraph at a display formula; left in the paragraph of its text, Word draws it in the line."""
+    html = '<table><tr><td style="background-color:#D9EAF7;">Expected: <script type="math/tex; mode=display">a^2</script> after it</td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    paragraphs = _find_all(root, ".//w:tc/w:p")
+    assert [_text(paragraph) for paragraph in paragraphs] == ["Expected:", "", "after it"]
+    assert [child.tag for child in paragraphs[1]] == [f"{{{M_NS}}}oMathPara"]
+
+
+def test_each_formula_of_a_styled_table_is_its_own_equation(test_parameters: TestParameters):
+    cells = "".join(f'<td style="background-color:#D9EAF7;">{label} <script type="math/tex">{tex}</script></td>' for label, tex in (("first", "a^2"), ("second", "b_3"), ("third", "a^2")))
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, f"<table><tr>{cells}</tr></table>"))
+
+    assert [_formula_text(_cell_with_text(root, label)) for label in ("first", "second", "third")] == ["a2", "b3", "a2"]
+
+
+def test_lone_inline_formula_in_a_styled_cell_stays_inline(test_parameters: TestParameters):
+    """Word draws an inline formula alone in its paragraph as a display one; the writer puts a zero-width space after it."""
+    html = '<table><tr><td style="background-color:#D9EAF7;"><script type="math/tex">a^2</script></td><td>lone</td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    paragraph = _find_all(root, ".//w:tc/w:p")[0]
+    assert [child.tag for child in paragraph] == [f"{{{M_NS}}}oMath", f"{{{W_NS}}}r"]
+    assert _text(paragraph) == "\u200b"
+
+
+def test_formula_in_a_link_of_a_styled_cell_is_an_equation(test_parameters: TestParameters):
+    """MathML, since pandoc's reader ends a link at a formula written as a script."""
+    formula = '<math xmlns="http://www.w3.org/1998/Math/MathML"><msup><mi>a</mi><mn>2</mn></msup></math>'
+    html = f'<table><tr><td style="background-color:#D9EAF7;"><a href="https://example.com/">see {formula}</a></td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    assert _formula_text(_link_with_text(root, "see")) == "a2"
+
+
+def test_formula_the_writer_cannot_read_stays_text_in_a_styled_cell(test_parameters: TestParameters):
+    html = '<table><tr><td style="background-color:#D9EAF7;">Broken <script type="math/tex">\\foo{bar</script></td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    cell = _cell_with_text(root, "Broken")
+    assert cell.find(f".//{{{M_NS}}}oMath") is None
+    assert "\\foo{bar" in _text(cell)
+
+
+def test_coloured_formula_in_a_styled_cell_keeps_its_colour(test_parameters: TestParameters):
+    """The markers which carry the colour of a formula through pandoc were printed with its TeX source."""
+    html = '<table><tr><td style="background-color:#D9EAF7;">Root <script type="math/tex; mode=display">x=\\sqrt{\\color{red}{b^2-4ac}}</script></td></tr></table>'
+    docx = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx)) as zf:
+        assert b"@@PMC" not in zf.read("word/document.xml"), "a colour marker is left in the document"
+
+    cell = _cell_with_text(_parse_document_xml(docx), "Root")
+    colours = {color.get(f"{{{W_NS}}}val") for color in cell.iterfind(f".//{{{M_NS}}}r//{{{W_NS}}}color")}
+    assert colours == {"FF0000"}
+    assert _formula_text(cell) == "x=b2\u22124ac"
+
+
+@pytest.mark.parametrize("preserve_table_styles", [True, False], ids=["preserved-table-styles", "plain"])
+@pytest.mark.parametrize("width", ["width: 1500px;", "width: 100%;"], ids=["shrunk-to-the-page", "of-the-page-width"])
+def test_a_column_of_formulas_gets_the_room_of_its_formulas(test_parameters: TestParameters, width: str, preserve_table_styles: bool):
+    """A formula counted for nothing in the width of its column: beside a column of text it got the width of the letter in its header.
+
+    Word cut the formula off in a table of a fixed width, and broke it a term a line in a table of the width of the page.
+    """
+    quadratic = '<script type="math/tex; mode=display">x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}</script>'
+    cell = 'style="border: 1px solid #CCCCCC;"'
+    html = f'<table style="{width}"><tr><th {cell}>Text</th><th {cell}>F</th><th {cell}>N</th></tr><tr><td {cell}>A row with a longer text in the first column of the table</td><td {cell}>{quadratic}</td><td {cell}>t</td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
+
+    text, formulas, note = (int(column.get(f"{{{W_NS}}}w")) for column in _find_all(root, ".//w:tblGrid/w:gridCol"))
+    assert len(_find_all(root, f".//w:tc//{{{M_NS}}}oMath")) == 1, "the formula is no equation of Word"
+    # The numerator, which no line breaks, holds nine characters: more than 5 points each, 900 twips
+    assert formulas >= 900, f"the columns are {text}, {formulas} and {note} twips wide"
+    assert formulas > 3 * note
