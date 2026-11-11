@@ -183,6 +183,21 @@ def test_a_table_in_a_cell_stays_a_table_for_the_filter_of_nested_tables(test_pa
     assert "\\real{" in latex, "pandoc writes the outer table, with the inner one in it"
 
 
+def test_a_grid_in_a_cell_is_set_as_a_tabular_in_the_grid_of_the_outer_table(test_parameters: TestParameters):
+    """Word draws the lines of both tables. A longtable cannot stand in the minipage of a cell: the inner one is a tabular."""
+    inner = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}x"'), _cell('Str "y"')])[1:-1]
+    outer = _grid_table([_cell(f'Str "{OPEN}{GRID}{CLOSE}a"'), _cell('Str "b"')])
+    native = outer.replace('[Plain [Str "b"]]', f"[{inner}]")
+    latex = _native_latex(test_parameters.container, native)
+    assert "\\real{" not in latex, "both tables are grids, written as LaTeX"
+    outer_start = latex.index("\\begin{longtable}")
+    inner_start = latex.index("\\begin{longtable}", outer_start + 1)
+    assert latex.rfind("\\def\\longtable{", 0, inner_start) > outer_start, "the inner longtable is a tabular"
+    # Word sets a table in a cell from the start of the line of the cell, as wide as that line
+    assert latex.rfind("\\setlength{\\LTleft}{0pt}", 0, inner_start) > outer_start
+    assert "\\linewidth-2\\tabcolsep\\relax}" in latex[inner_start:]
+
+
 def test_a_row_of_line_breaks_becomes_a_row_per_line_which_a_page_may_break(test_parameters: TestParameters):
     """Word breaks a row between the lines of a cell; longtable only between rows."""
     lines = 'Plain [Str "one", LineBreak, Str "two", LineBreak, Str "three"]'
