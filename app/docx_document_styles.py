@@ -180,6 +180,9 @@ def _cell_options(styles: Element) -> list[str]:
     plain_chain = _style_chain(styles, "Normal", fallback=None)
     plain_space = sum(_spacing_twips(plain_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
     options += ["-M", f"docx-table-plain-cell-space={plain_space:g}"]
+    # Between two of its paragraphs Word puts the larger of the spaces of Normal, as between paragraphs of the body
+    plain_between = max(_spacing_twips(plain_chain, styles, side) for side in ("before", "after")) / TWIPS_PER_POINT
+    options += ["-M", f"docx-table-plain-paragraph-space={plain_between:g}"]
     return options
 
 

@@ -1666,23 +1666,28 @@ local function space_before_tables(rows)
 end
 
 -- Between two paragraphs of a cell in Normal, Word puts the larger of the space after the first and before
--- the second, as between paragraphs of the body: the space after of Normal. A cell set the paragraphs of a
--- cell a line apart, and the space only after its last one; #380. The space goes below the last line of the
--- first paragraph, as the space at the end of a cell does: a block of its own would turn the cell into a
--- minipage.
-local PARAGRAPH_SPACE = "\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\pdcPlainCellSpace}\\fi"
+-- the second, as between paragraphs of the body: \\pdcPlainParagraphSpace of docx_document_styles_to_latex.
+-- A cell set the paragraphs of a cell a line apart, and the space only after its last one; #380. The space goes
+-- below the last line of the first paragraph, as the space at the end of a cell does: a block of its own would
+-- turn the cell into a minipage.
+local PARAGRAPH_SPACE = "\\ifdefined\\pdcPlainParagraphSpace\\vadjust{\\kern\\pdcPlainParagraphSpace}\\fi"
 -- After an equation, whose line ends its paragraph: between the two paragraphs
-local AFTER_EQUATION_SPACE = "\\ifdefined\\pdcPlainCellSpace\\vskip\\pdcPlainCellSpace\\fi"
+local AFTER_EQUATION_SPACE = "\\ifdefined\\pdcPlainParagraphSpace\\vskip\\pdcPlainParagraphSpace\\fi"
 -- Before an equation, less what its line stands lower in a cell for the space a cell of Compact leaves out
-local EQUATION_SPACE = "\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\dimexpr\\pdcPlainCellSpace\\ifdefined\\pdcCellEquationTop-\\pdcCellEquationTop\\fi\\relax}\\fi"
+local EQUATION_SPACE = "\\ifdefined\\pdcPlainParagraphSpace\\vadjust{\\kern\\dimexpr\\pdcPlainParagraphSpace\\ifdefined\\pdcCellEquationTop-\\pdcCellEquationTop\\fi\\relax}\\fi"
 
 local function paragraph(block)
   return block and (block.t == "Plain" or block.t == "Para") and #block.content > 0
 end
 
+-- An equation of its own paragraph (see display_equations), behind the commands a cell puts before its text
 local function equation(block)
-  local first = block.content[1]
-  return first.t == "RawInline" and (first.text:find("\\pdcDisplayLineEnd{", 1, true) or first.text:find("\\pdcCellDisplayLine{", 1, true)) ~= nil
+  for _, inline in ipairs(block.content) do
+    if inline.t == "RawInline" and (inline.text:find("\\pdcDisplayLineEnd{", 1, true) or inline.text:find("\\pdcCellDisplayLine{", 1, true)) then
+      return true
+    end
+  end
+  return false
 end
 
 local function space_between_paragraphs(rows)

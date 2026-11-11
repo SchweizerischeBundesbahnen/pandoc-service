@@ -11,6 +11,7 @@ from __future__ import annotations
 import ctypes
 import io
 import itertools
+import zipfile
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
@@ -502,8 +503,12 @@ def test_a_merged_cell_of_a_grid_numbers_the_separators_of_its_columns(test_para
 def _pdf_of(test_parameters: TestParameters, document: Document) -> bytes:
     docx = io.BytesIO()
     document.save(docx)
+    return _pdf_of_docx(test_parameters, docx.getvalue())
+
+
+def _pdf_of_docx(test_parameters: TestParameters, docx: bytes) -> bytes:
     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.getvalue(), mime)})
+    response = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx, mime)})
     assert response.status_code == 200, response.text
     return response.content
 
@@ -736,6 +741,20 @@ def _styled_cell_pdf(test_parameters: TestParameters, content: str) -> bytes:
     return _html_to_pdf(test_parameters, html)
 
 
+def _html_to_docx_with_normal_before(test_parameters: TestParameters, html: str, before_twips: int) -> bytes:
+    """The DOCX of an HTML with preserved table styles, its paragraphs of Normal given a space before."""
+    docx = test_parameters.request_session.post(f"{test_parameters.base_url}/convert/html/to/docx?preserve_table_styles=true", data=html.encode())
+    assert docx.status_code == 200, docx.text
+    source, output = zipfile.ZipFile(io.BytesIO(docx.content)), io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/styles.xml":
+                data = data.replace(b'<w:spacing w:after="200"/>', f'<w:spacing w:before="{before_twips}" w:after="200"/>'.encode(), 1)
+            target.writestr(item, data)
+    return output.getvalue()
+
+
 @pytest.mark.parametrize(("size", "word"), [("9pt", 21.6), ("12pt", 25.4)])
 def test_a_nested_table_stands_below_a_paragraph_in_a_size_of_its_own_as_in_word(test_parameters: TestParameters, size: str, word: float):
     """Word sets the first row of the nested table 21.6pt below "Attributes:" in 9pt, 25.4pt below it in the size of the body.
@@ -765,6 +784,31 @@ def test_an_equation_after_a_paragraph_of_a_cell_in_normal_stands_below_its_spac
     between, below = _baseline(pdf, "+") - _baseline(pdf, "Expected"), _baseline(pdf, "Next") - _baseline(pdf, "+")
     assert abs(between - 25.0) < 1, between
     assert abs(below - 24.5) < 1, below
+
+
+def test_a_paragraph_after_an_equation_which_starts_its_cell_stands_below_its_space_after(test_parameters: TestParameters):
+    """Word sets "After the formula" 23.8pt below an equation which starts its cell; #380.
+
+    The equation stands behind the commands which start the cell: the space after it took the form for a line
+    of text, which LaTeX refused after the line of the equation, and the conversion failed.
+    """
+    pdf = _styled_cell_pdf(test_parameters, '<script type="math/tex; mode=display">x + x = y</script>After the formula')
+    below = _baseline(pdf, "After the formula") - _baseline(pdf, "+")
+    assert abs(below - 23.8) < 1, below
+
+
+def test_two_paragraphs_of_a_cell_take_the_larger_space_of_normal_between_them(test_parameters: TestParameters):
+    """Normal 6pt before and 10pt after: Word sets the second paragraph 24.7pt below the first, the next row 31.4pt below; #380.
+
+    The sum of both spaces went between them, as at the end of a cell: 30.6pt.
+    """
+    line = "border: 1px solid #CCCCCC; padding: 5px;"
+    rows = f'<tr><td style="{line}">Step</td><td style="{line}"><p>First paragraph:</p><p>Second paragraph</p></td></tr><tr><td style="{line}">Next</td><td style="{line}">Row</td></tr>'
+    html = f'<html><body><p>Before the table.</p><table style="width: 100%; border-collapse: collapse;">{rows}</table></body></html>'
+    pdf = _pdf_of_docx(test_parameters, _html_to_docx_with_normal_before(test_parameters, html, 120))
+    between, below = _baseline(pdf, "Second") - _baseline(pdf, "First"), _baseline(pdf, "Next") - _baseline(pdf, "Second")
+    assert abs(between - 24.7) < 1, between
+    assert abs(below - 31.4) < 1, below
 
 
 def test_a_paragraph_after_an_equation_of_a_cell_in_normal_stands_below_its_space_after(test_parameters: TestParameters):

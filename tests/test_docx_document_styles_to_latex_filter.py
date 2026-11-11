@@ -634,6 +634,16 @@ def test_a_table_gets_the_space_and_rows_of_word(test_parameters: TestParameters
 def test_a_cell_paragraph_without_a_style_takes_the_space_of_normal(test_parameters: TestParameters):
     preamble = _preamble(_latex(test_parameters.container, "docx-table-cell-space=3.6", "docx-table-plain-cell-space=10", "docx-body-baseline=14.65", "docx-body-size=12"))
     assert "\\newcommand{\\pdcPlainCellSpace}{10pt}" in preamble
+    # Without a space between paragraphs of its own, the space of the cell stands for it
+    assert "\\newcommand{\\pdcPlainParagraphSpace}{10pt}" in preamble
+
+
+def test_two_cell_paragraphs_in_normal_take_the_larger_of_its_spaces_between_them(test_parameters: TestParameters):
+    """Normal 6pt before and 10pt after: 16pt at the end of a cell, 10pt between two of its paragraphs; #380."""
+    metadata = ("docx-table-cell-space=3.6", "docx-table-plain-cell-space=16", "docx-table-plain-paragraph-space=10", "docx-body-baseline=14.65", "docx-body-size=12")
+    preamble = _preamble(_latex(test_parameters.container, *metadata))
+    assert "\\newcommand{\\pdcPlainCellSpace}{16pt}" in preamble
+    assert "\\newcommand{\\pdcPlainParagraphSpace}{10pt}" in preamble
     assert "\\newcommand{\\pdcCompactCellStretch}{1.2457}" in preamble
 
 

@@ -93,6 +93,7 @@ def test_sets_pandoc_template_like_word():
         "docx-hanging-punctuation": "false",
         "docx-page-numbers": "false",
         "docx-table-plain-cell-space": "10",
+        "docx-table-plain-paragraph-space": "10",
         "docx-paragraph-spacing": "Normal:Normal:0:10",
         "mathfont": "latinmodern-math.otf",
         "mathfontoptions": "Scale=1.083",
@@ -242,6 +243,14 @@ def test_no_size_leaves_the_size_of_the_template():
 def test_the_paragraph_skip_is_the_larger_of_before_and_after():
     body = BODY_TEXT.replace('w:before="180" w:after="180"', 'w:before="60" w:after="240"')
     assert _options(_docx(DEFAULTS + NORMAL + body))["docx-body-paragraph-skip"] == "12"
+
+
+def test_a_cell_in_normal_ends_with_both_its_spaces_and_has_the_larger_between_its_paragraphs():
+    """Word sets a cell paragraph in Normal with its space before and after; between two of them the larger; #380."""
+    normal = NORMAL.replace("</w:style>", '<w:pPr><w:spacing w:before="120" w:after="200"/></w:pPr></w:style>')
+    options = _options(_docx(DEFAULTS + normal + BODY_TEXT))
+    assert options["docx-table-plain-cell-space"] == "16"
+    assert options["docx-table-plain-paragraph-space"] == "10"
 
 
 def test_a_side_the_style_leaves_out_comes_from_the_style_it_is_based_on():

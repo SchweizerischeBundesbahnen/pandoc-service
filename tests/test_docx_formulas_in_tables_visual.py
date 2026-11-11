@@ -87,6 +87,7 @@ def test_paragraphs_of_cells_in_normal(test_parameters: TestParameters):
             <tr><td {cell}>Two paragraphs</td><td {cell}><p>First paragraph:</p><p>Second paragraph</p></td></tr>
             <tr><td {cell}>A paragraph and an equation</td><td {cell}>Expected formula:<script type="math/tex; mode=display">x + x = y</script></td></tr>
             <tr><td {cell}>An equation and a paragraph</td><td {cell}>Expected formula:<script type="math/tex; mode=display">x + x = y</script>After the formula</td></tr>
+            <tr><td {cell}>An equation which starts its cell</td><td {cell}><script type="math/tex; mode=display">x + x = y</script>After the formula</td></tr>
             <tr><td {cell}>One paragraph</td><td {cell}>Row</td></tr>
         </table>
         <p>A paragraph after the table.</p>
