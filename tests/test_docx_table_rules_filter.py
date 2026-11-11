@@ -627,6 +627,28 @@ def test_the_space_of_a_cell_goes_below_an_equation_which_ends_it(test_parameter
     assert abs(below_the_fraction - rows_of_text) < 5, (below_the_fraction, rows_of_text)
 
 
+def _fraction_in_the_header() -> Document:
+    """As _fraction_rows, with a header row whose second cell is a fraction of its own paragraph as well."""
+    document = _fraction_rows()
+    table = document.tables[0]
+    table.rows[0].cells[0].paragraphs[0].runs[0].text = "Head"
+    table.rows[1].cells[0].paragraphs[0].runs[0].text = "Upper"
+    table.rows[0]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+    table.rows[0].cells[1].paragraphs[0]._p.append(parse_xml(FRACTION.replace(">5<", ">1<").replace(">7<", ">2<")))
+    return document
+
+
+def test_the_space_of_a_header_cell_goes_below_an_equation_which_ends_it(test_parameters: TestParameters):
+    """A cell of the header stands on its last line, and gets its space as the depth of that line.
+
+    An equation which ended one got none: the fraction stood on the line below the header.
+    """
+    pdf = _pdf_of(test_parameters, _fraction_in_the_header())
+    below_the_header = _baseline(pdf, "Upper") - _baseline(pdf, "2")
+    below_a_row = _baseline(pdf, "Lower") - _baseline(pdf, "7")
+    assert abs(below_the_header - below_a_row) < 1, (below_the_header, below_a_row)
+
+
 def test_a_table_of_an_absolute_width_takes_the_widths_and_margins_of_word(test_parameters: TestParameters):
     """A table of twips sets each column as wide as its twips, with the cell margins of Word."""
     native = _grid_table([_cell(f'Str "{OPEN}tw=1.0000;aw=1{CLOSE}a"'), _cell('Str "b"')])

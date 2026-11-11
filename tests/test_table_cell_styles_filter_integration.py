@@ -637,3 +637,19 @@ def test_a_column_of_formulas_gets_the_room_of_its_formulas(test_parameters: Tes
     # The numerator, which no line breaks, holds nine characters: more than 5 points each, 900 twips
     assert formulas >= 900, f"the columns are {text}, {formulas} and {note} twips wide"
     assert formulas > 3 * note
+
+
+@pytest.mark.parametrize("preserve_table_styles", [True, False], ids=["preserved-table-styles", "plain"])
+def test_a_coloured_formula_needs_no_more_room_than_a_black_one(test_parameters: TestParameters, preserve_table_styles: bool):
+    """The colour of a part of a formula travels through pandoc as marker text, which counted as a part of the formula.
+
+    A fraction with a red numerator took eleven times the width of a black one, and the text beside it was squeezed.
+    """
+
+    def columns(formula: str) -> list[int]:
+        cell = 'style="border: 1px solid #CCCCCC;"'
+        html = f'<table style="width: 100%;"><tr><td {cell}>A row with a longer text in the first column of the table</td><td {cell}><script type="math/tex; mode=display">{formula}</script></td></tr></table>'
+        root = _parse_document_xml(_convert_html_to_docx(test_parameters, html, preserve_table_styles=preserve_table_styles))
+        return [int(column.get(f"{{{W_NS}}}w")) for column in _find_all(root, ".//w:tblGrid/w:gridCol")]
+
+    assert columns("\\frac{\\color{red}{a}}{b}") == columns("\\frac{a}{b}")

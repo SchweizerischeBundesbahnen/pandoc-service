@@ -291,6 +291,9 @@ local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at
 local AFTER_EQUATION = "equation"
 local EQUATION_CELL_SPACE = {
   [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\pdcPlainCellSpace}\\fi",
+  -- A cell of the header stands on its last line, so its space goes into the depth of that line, as for a
+  -- line of text: below the depth of the equation, which \\pdcCellHang has kept in \\pdcCellLineDepth
+  [PLAIN_HEAD_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\pdcCellLineDepth+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi",
   [COMPACT_CELL_DEPTH] = "\\ifdefined\\pdcCompactEquationSpace\\pdcCompactEquationSpace\\fi",
 }
 local BORDERS = "pdc-borders"  -- the lines of a cell of a grid: top/right/bottom/left, each style.eighths.RRGGBB or -
@@ -794,13 +797,18 @@ end
 -- The line of an equation which starts a cell hangs from the top of its row. \\pdcCellHang lowers it by
 -- what it is higher than the first line of the text of a cell: the strut of the row less the space the row
 -- has above that line, which is what the strut is deeper than a line. The cell is in its first line, so
--- the last equation of a cell ends no line before it then.
+-- the last equation of a cell ends no line before it then. It keeps the depth of the line it has set in
+-- \\pdcCellLineDepth, for the space of a header cell which goes below it: see EQUATION_CELL_SPACE.
 -- docx_document_styles_to_latex sets the line of the equation; without it, a centered line.
 local DISPLAY_PREAMBLE = table.concat({
   "\\makeatletter\\newif\\ifpdcCellFirstLine\\providecommand{\\pdcCellFirstLine}{\\global\\pdcCellFirstLinetrue}",
-  "\\providecommand{\\pdcCellHang}[1]{\\ifpdcCellFirstLine\\global\\pdcCellFirstLinefalse\\setbox\\z@\\hbox{#1}"
+  "\\newdimen\\pdcCellLineDepth",
+  "\\providecommand{\\pdcCellHang}[1]{\\setbox\\z@\\hbox{#1}\\dimen@\\z@"
+    .. "\\ifpdcCellFirstLine\\global\\pdcCellFirstLinefalse"
     .. "\\dimen@=\\dimexpr\\ht\\z@-\\ht\\@arstrutbox+\\dp\\@arstrutbox-\\dp\\strutbox\\relax"
-    .. "\\leavevmode\\ifdim\\dimen@>\\z@\\lower\\dimen@\\fi\\box\\z@\\else#1\\fi}\\makeatother",
+    .. "\\ifdim\\dimen@<\\z@\\dimen@\\z@\\fi\\fi"
+    .. "\\global\\pdcCellLineDepth\\dimexpr\\dp\\z@+\\dimen@\\relax"
+    .. "\\leavevmode\\lower\\dimen@\\box\\z@}\\makeatother",
   "\\providecommand{\\pdcCellDisplayLine}[1]{{\\centering\\pdcCellHang{#1}\\par}}",
   "\\providecommand{\\pdcDisplayLineEnd}[1]{\\ifpdcCellFirstLine\\else\\par\\fi\\centering\\arraybackslash\\pdcCellHang{#1}}",
 }, "\n")
