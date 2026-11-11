@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.15.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.0...v2.15.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* break a word wider than its table cell ([#373](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/373)) ([6e1b420](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/6e1b4202c0048636bbb4121811d81e8ae774f3c9)), closes [#339](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/339)
+* draw the lines of a grid nested in a cell ([#370](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/370)) ([f97bb5d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/f97bb5dd649354ffa188979fb09126d98799f040)), closes [#339](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/339)
+* render formulas in tables as equations ([#375](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/375)) ([2085360](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/20853602578deb0cf41a3a440f8103a0adbd554e))
+
 ## [2.15.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.14.2...v2.15.0) (2026-11-11)
 
 
