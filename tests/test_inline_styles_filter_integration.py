@@ -439,6 +439,19 @@ def test_indent_survives_a_formula_in_the_paragraph(test_parameters: TestParamet
     assert "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t")) == "val  end"
 
 
+def test_lone_inline_formula_in_bold_in_an_indented_paragraph_stays_inline(test_parameters: TestParameters):
+    """The bold around the formula shows nothing: the formula is alone in its paragraph, and Word would draw it as a display one."""
+    html = '<div class="pandoc-para" data-indent-twips="600"><p><strong><script type="math/tex">a^2</script></strong></p></div>'
+    docx_bytes = _convert_html_to_docx(test_parameters, html)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    paragraph = doc.find(f"{{{W_NS}}}body/{{{W_NS}}}p")
+    assert _ind_left(paragraph) == "600"
+    assert [child.tag for child in paragraph] == [f"{{{W_NS}}}pPr", f"{{{M_NS}}}oMath", f"{{{W_NS}}}r"]
+    assert "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t")) == "\u200b"
+
+
 def test_indented_paragraph_is_cut_at_a_display_formula(test_parameters: TestParameters):
     """pandoc's writer gives a display formula a paragraph of its own; each
     paragraph the indented one is cut into keeps the indent.

@@ -950,6 +950,26 @@ local function image_placeholder(img)
   return "{{IMG:" .. width .. "|" .. height .. "|" .. escape_xml(img.src) .. "}}"
 end
 
+-- The inline formula which is all there is to see of a paragraph, given as the
+-- runs walk() made of it, or nil.
+--
+-- The runs are asked, not the inlines: a styled span, a bold or an anchor
+-- beside the formula is one of the inlines and leaves no run, or only the
+-- markers of its bookmark, which show nothing. Asked of the inlines, such a
+-- formula was not alone, and Word drew it as a display one.
+local function lone_inline_formula(runs)
+  local formula = nil
+  for _, run in ipairs(runs) do
+    local bookmark = run.t == "RawInline" and run.format == "openxml"
+      and (run.text:match("^<w:bookmarkStart ") or run.text:match("^<w:bookmarkEnd "))
+    if not bookmark then
+      if formula or run.t ~= "Math" or run.mathtype ~= "InlineMath" then return nil end
+      formula = run
+    end
+  end
+  return formula
+end
+
 -- Turn a paragraph's inlines into its OOXML runs. Returns the run string and
 -- a `lossy` flag, true when some inline had no OOXML form and survived only
 -- as its plain text (Note, Cite, a formula the writer cannot read, ...).
@@ -1039,8 +1059,8 @@ local function inlines_to_runs(inlines, seed)
   -- Word draws an inline formula which is alone in its paragraph as a display
   -- one. The writer puts a zero-width space after it against that (Para in
   -- Writers/Docx/OpenXML.hs), and so does a paragraph written here.
-  local only = #inlines == 1 and inlines[1]
-  if only and only.t == "Math" and only.mathtype == "InlineMath" and formula_ooxml(only) then
+  local only = lone_inline_formula(runs)
+  if only and formula_ooxml(only) then
     run_parts[#run_parts + 1] = '<w:r><w:t xml:space="preserve">\u{200B}</w:t></w:r>'
   end
   return table.concat(run_parts), lossy

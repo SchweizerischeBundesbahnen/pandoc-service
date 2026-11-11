@@ -589,6 +589,45 @@ def test_lone_inline_formula_in_a_styled_cell_stays_inline(test_parameters: Test
     assert _text(paragraph) == "\u200b"
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param('<span style="color: #FF0000;"><script type="math/tex">a^2</script></span>', id="in-a-styled-span"),
+        pytest.param('<strong><script type="math/tex">a^2</script></strong>', id="in-bold"),
+        pytest.param('<em><span style="font-size: 14pt;"><script type="math/tex">a^2</script></span></em>', id="in-a-span-in-italics"),
+        pytest.param('<a id="anchor"></a><script type="math/tex">a^2</script>', id="after-an-anchor"),
+        pytest.param('<strong><math xmlns="http://www.w3.org/1998/Math/MathML"><msup><mi>a</mi><mn>2</mn></msup></math></strong>', id="mathml-in-bold"),
+    ],
+)
+def test_lone_inline_formula_beside_what_shows_nothing_stays_inline(test_parameters: TestParameters, content: str):
+    """A styled span, a bold or an anchor around or beside the formula shows nothing: the formula is alone in its paragraph all the same.
+
+    It was looked for among the inlines of the paragraph, where such a wrapper is one more: Word drew the formula as a display one.
+    """
+    html = f'<table><tr><td style="background-color:#D9EAF7;">{content}</td><td>lone</td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    paragraph = _find_all(root, ".//w:tc/w:p")[0]
+    shown = [child.tag for child in paragraph if child.tag not in (f"{{{W_NS}}}bookmarkStart", f"{{{W_NS}}}bookmarkEnd")]
+    assert shown == [f"{{{M_NS}}}oMath", f"{{{W_NS}}}r"]
+    assert _text(paragraph) == "\u200b"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param('text <script type="math/tex">a^2</script>', id="after-text"),
+        pytest.param('<span style="color: #FF0000;">red</span><script type="math/tex">a^2</script>', id="after-a-styled-word"),
+        pytest.param('<script type="math/tex">a^2</script><script type="math/tex">b^2</script>', id="beside-another-formula"),
+    ],
+)
+def test_inline_formula_beside_something_to_see_gets_no_zero_width_space(test_parameters: TestParameters, content: str):
+    html = f'<table><tr><td style="background-color:#D9EAF7;">{content}</td><td>lone</td></tr></table>'
+    root = _parse_document_xml(_convert_html_to_docx(test_parameters, html))
+
+    assert "\u200b" not in _text(_find_all(root, ".//w:tc/w:p")[0])
+
+
 def test_formula_in_a_link_of_a_styled_cell_is_an_equation(test_parameters: TestParameters):
     """MathML, since pandoc's reader ends a link at a formula written as a script."""
     formula = '<math xmlns="http://www.w3.org/1998/Math/MathML"><msup><mi>a</mi><mn>2</mn></msup></math>'
