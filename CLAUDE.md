@@ -64,8 +64,15 @@ Word is the reference of every conversion: of a DOCX to PDF, and of the DOCX of 
 when its result matches Word, the corpus did not get worse, and the PR shows both.
 
 1. Make the smallest document which shows the problem. Export it to PDF with Word.
-   - Word for Mac: `tools/corpus/word-macos/export.sh SRC DST`.
-   - SRC and DST must be under `~/Library/Containers/com.microsoft.Word/Data/`. Word saves nowhere else.
+   - Word for Mac exports every DOCX of a folder into another folder. Both folders must exist.
+   - Both must be under `~/Library/Containers/com.microsoft.Word/Data/`. Word saves nowhere else.
+
+   ```bash
+   word=~/Library/Containers/com.microsoft.Word/Data/fix
+   mkdir -p "$word/docx" "$word/pdf" && cp case.docx "$word/docx/"
+   tools/corpus/word-macos/export.sh "$word/docx" "$word/pdf"
+   ```
+
 2. Measure the problem in Word's PDF and in the service's PDF, for example the baselines with pypdfium2.
 3. Write a test which fails before the fix. Its docstring names the value Word gives.
 4. Fix it. Measure again against Word, not against what the fix intends.
@@ -74,11 +81,15 @@ when its result matches Word, the corpus did not get worse, and the PR shows bot
    - Look at every new or changed PNG before the commit.
 6. For a change of the DOCX of an HTML, open the DOCX in Word and look at it.
    - The DOCX is what the user gets. The PDF of the service shows only what pandoc-service reads from it.
-7. Run the corpus with the image of the branch, and compare it with `corpus/baseline.json`:
+7. Run the corpus with the image of the branch, and compare it with `corpus/baseline.json`.
+   - Run the three checks of CI (`.github/workflows/corpus.yml`): Word for Mac, its free fonts, and Word for Windows.
 
    ```bash
    docker build --tag pandoc-service:branch .
-   uv run --group test python -m tools.corpus.corpus all --image pandoc-service:branch --out out/corpus/image --against
+   corpus() { uv run --group test python -m tools.corpus.corpus "$@"; }
+   corpus all --image pandoc-service:branch --out out/corpus/image --against
+   corpus all --image pandoc-service:branch --docx corpus/docx-free --reference macos-free --out out/corpus/free --site macos-free --variant image --against
+   corpus score --out out/corpus/windows --pdf out/corpus/image/pdf --reference windows --variant image --against
    ```
 
    - Every line `worse:` is a regression. Find its cause and fix it before the push.
