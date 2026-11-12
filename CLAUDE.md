@@ -139,6 +139,8 @@ The filters lie in a folder per format they read, as the image installs them und
 
 A request may still name a filter by its path before the folders: `ALLOWED_PANDOC_OPTIONS` maps it to the new one.
 
+`filters/html/inline_styles.lua` writes a styled table and a paragraph with an indent or an alignment as raw OOXML, where pandoc's writer sees no comment. The filter writes the markers of such a comment itself and names the comment to the writer in a paragraph at the end of the document, with the bookmark `pandoc_service_comments`; the writer makes the entry in `word/comments.xml`, and `app/docx_post_process.py` removes the paragraph.
+
 ### Fonts of Word
 The image has open fonts in place of the fonts of Word, each as wide and as high: `SUBSTITUTES` in `app/docx_document_styles.py` maps the names.
 - `fonts/metric_fonts.py build` makes the Metric families in the image build: open outlines with the advances and line metrics of `fonts/word_metrics.json`.

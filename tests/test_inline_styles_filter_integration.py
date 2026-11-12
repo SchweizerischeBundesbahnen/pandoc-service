@@ -1633,16 +1633,28 @@ def test_comment_inside_styled_span_is_kept(test_parameters: TestParameters):
     assert "second" in bold_texts, f"the styled text lost its bold: {bold_texts}"
 
 
-def test_comment_inside_styled_span_in_formatted_paragraph_is_kept(test_parameters: TestParameters):
-    """A formatted paragraph (indent/alignment) is written as raw OOXML, where a comment has no form.
+def _comment_markers(element: ET.Element, comment_id: str) -> dict[str, int]:
+    """How often the element holds the start, the end and the reference of a comment."""
+    return {tag: sum(1 for e in element.iter(f"{{{W_NS}}}{tag}") if e.get(f"{{{W_NS}}}id") == comment_id) for tag in ("commentRangeStart", "commentRangeEnd", "commentReference")}
 
-    inlines_to_runs() marks the paragraph lossy, so it falls back to a plain paragraph and the
-    writer keeps the comment; its text must not end up in the paragraph.
+
+ONE_COMMENT = {"commentRangeStart": 1, "commentRangeEnd": 1, "commentReference": 1}
+
+
+def test_comment_in_formatted_paragraph_keeps_its_place_and_the_indent(test_parameters: TestParameters):
+    """A paragraph with an indent or an alignment keeps both them and its comment.
+
+    Such a paragraph is written as raw OOXML. The comment is written there too, and pandoc's writer
+    learns its text from a paragraph at the end of the document, which the service removes.
+    Before, the paragraph gave up its indent and its alignment for the comment.
     """
     html = (
         '<div class="pandoc-para" data-indent-twips="600"><p>Indented: <span style="font-weight: bold;">'
         '<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment four</span>fourth<span class="comment-end" id="0"></span>'
         "</span> end.</p></div>"
+        '<div class="pandoc-para" data-text-align="center"><p>Centered: fifth'
+        '<span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">Comment five</span><span class="comment-end" id="1"></span>'
+        " end.</p></div>"
     )
 
     docx_bytes = _convert_html_to_docx(test_parameters, html)
@@ -1650,18 +1662,26 @@ def test_comment_inside_styled_span_in_formatted_paragraph_is_kept(test_paramete
         doc = ET.fromstring(zf.read("word/document.xml"))
         comments = _comment_texts(zf)
 
-    assert list(comments.values()) == ["Comment four"], f"unexpected comments: {comments}"
-    paragraph = _paragraph_with(doc, "Indented:")
-    assert _commented_text(paragraph, next(iter(comments))) == "fourth"
-    text = "".join(t.text or "" for t in paragraph.iter(f"{{{W_NS}}}t"))
-    assert "Comment four" not in text, f"the comment's text leaked into the paragraph: {text!r}"
+    assert sorted(comments.values()) == ["Comment five", "Comment four"], f"unexpected comments: {comments}"
+    ids = {text: comment_id for comment_id, text in comments.items()}
+
+    indented = _paragraph_with(doc, "Indented:")
+    assert _commented_text(indented, ids["Comment four"]) == "fourth"
+    assert _ind_left(indented) == "600", "the paragraph lost its indent"
+    centered = _paragraph_with(doc, "Centered:")
+    assert _commented_text(centered, ids["Comment five"]) == ""
+    assert _jc_val(centered) == "center", "the paragraph lost its alignment"
+    for text, comment_id in ids.items():
+        assert _comment_markers(doc, comment_id) == ONE_COMMENT, f"{text!r} is not set once in the document"
+    body_text = "".join(t.text or "" for t in doc.iter(f"{{{W_NS}}}t"))
+    assert "Comment" not in body_text, f"the text of a comment leaked into the document: {body_text!r}"
 
 
-def test_comment_in_styled_table_cell_does_not_print_its_text(test_parameters: TestParameters):
-    """A styled table cell (preserve_table_styles) is written as raw OOXML and keeps no comment.
+def test_comment_in_styled_table_cell_is_kept(test_parameters: TestParameters):
+    """A comment in a cell of a styled table (preserve_table_styles) is a comment of Word, at its place.
 
-    The comment cannot be kept there, but its text must not be printed into the cell - neither
-    beside the text nor as the text of a link, which inlines_to_runs() walks separately.
+    The cell is written as raw OOXML. Before, the comment was dropped there: beside the text, and
+    in a link, which inlines_to_runs() walks separately.
     """
     html = (
         '<table><tr><td style="background-color:#EEEEEE">'
@@ -1673,13 +1693,118 @@ def test_comment_in_styled_table_cell_does_not_print_its_text(test_parameters: T
     docx_bytes = _convert_html_to_docx(test_parameters, html, query="?preserve_table_styles=true")
     with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
         doc = ET.fromstring(zf.read("word/document.xml"))
+        comments = _comment_texts(zf)
+
+    assert sorted(comments.values()) == ["Comment five", "Comment six"], f"unexpected comments: {comments}"
+    ids = {text: comment_id for comment_id, text in comments.items()}
 
     cell = doc.find(f".//{{{W_NS}}}tc")
     assert cell is not None, "no table cell in document.xml"
     text = "".join(t.text or "" for t in cell.iter(f"{{{W_NS}}}t"))
-    assert "cell" in text, f"the cell lost its text: {text!r}"
-    assert "Comment five" not in text, f"the comment's text was printed into the cell: {text!r}"
+    assert text == "cell and link", f"the cell holds another text: {text!r}"
+    assert _commented_text(cell, ids["Comment five"]) == ""
+    assert _commented_text(cell, ids["Comment six"]) == "link"
     hyperlink = cell.find(f".//{{{W_NS}}}hyperlink")
     assert hyperlink is not None, "the link in the cell was lost"
-    link_text = "".join(t.text or "" for t in hyperlink.iter(f"{{{W_NS}}}t"))
-    assert link_text == "link", f"the comment's text was printed as link text: {link_text!r}"
+    assert "".join(t.text or "" for t in hyperlink.iter(f"{{{W_NS}}}t")) == "link"
+    for comment_text, comment_id in ids.items():
+        assert _comment_markers(doc, comment_id) == ONE_COMMENT, f"{comment_text!r} is not set once in the document"
+        assert _comment_markers(cell, comment_id) == ONE_COMMENT, f"{comment_text!r} is not set in the cell"
+    assert [p for p in doc.iter(f"{{{W_NS}}}p") if not list(p.iter(f"{{{W_NS}}}t")) and list(p.iter(f"{{{W_NS}}}commentRangeStart"))] == [], "the paragraph which names the comments to the writer stayed in the document"
+
+
+def test_rich_comment_in_styled_table_cell_keeps_its_formatting(test_parameters: TestParameters):
+    """The text of a comment in a styled cell is written as that of a comment outside a table: with its lines and its bold."""
+    comment = 'Rich text<br/><span style="font-weight: bold;">with bold</span>'
+    html = (
+        f'<p>Outside<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">{comment}</span><span class="comment-end" id="0"></span></p>'
+        '<table><tr><td style="background-color:#EEEEEE">'
+        f'cell<span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">{comment}</span><span class="comment-end" id="1"></span>'
+        "</td></tr></table>"
+    )
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html, query="?preserve_table_styles=true")
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        comments = {c.get(f"{{{W_NS}}}id"): c for c in ET.fromstring(zf.read("word/comments.xml")).iter(f"{{{W_NS}}}comment")}
+
+    def runs(comment_id: str) -> list[tuple[str, bool]]:
+        """The text of each run of the comment, or the name of what the run holds in its place, and whether it is bold."""
+        return [("".join(t.text or "" for t in r.iter(f"{{{W_NS}}}t")) or r[-1].tag.rsplit("}", 1)[-1], r.find(f"{{{W_NS}}}rPr/{{{W_NS}}}b") is not None) for r in comments[comment_id].iter(f"{{{W_NS}}}r")]
+
+    assert sorted(comments) == ["0", "1"], f"unexpected comments: {sorted(comments)}"
+    assert "".join(text for text, bold in runs("0") if bold) == "with bold"
+    assert ("br", False) in runs("0"), f"the comment lost its line break: {runs('0')}"
+    assert runs("1") == runs("0"), "the comment in the cell is not written as the one outside the table"
+    for name in ("author", "date"):
+        assert comments["1"].get(f"{{{W_NS}}}{name}") == comments["0"].get(f"{{{W_NS}}}{name}")
+
+
+def test_comment_in_a_list_of_a_styled_table_cell_is_kept(test_parameters: TestParameters):
+    """A list or a heading in a cell of a styled table is written as its plain text, and keeps its comments.
+
+    The text of the comment was printed into the cell with the text of the list. The comment
+    follows the text now, since the plain text has no place inside it.
+    """
+    html = (
+        '<table><tr><td style="background-color:#EEEEEE">'
+        '<ul><li>first<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment nine</span><span class="comment-end" id="0"></span></li><li>second</li></ul>'
+        '<h3>Heading<span class="comment-start" id="1" author="Damien" date="2026-11-05T10:00:00Z">Comment ten</span><span class="comment-end" id="1"></span></h3>'
+        "</td></tr></table>"
+    )
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html, query="?preserve_table_styles=true")
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+        comments = _comment_texts(zf)
+
+    assert sorted(comments.values()) == ["Comment nine", "Comment ten"], f"unexpected comments: {comments}"
+    ids = {text: comment_id for comment_id, text in comments.items()}
+    cell = doc.find(f".//{{{W_NS}}}tc")
+    assert cell is not None, "no table cell in document.xml"
+    assert ["".join(t.text or "" for t in p.iter(f"{{{W_NS}}}t")) for p in cell.iter(f"{{{W_NS}}}p")] == ["firstsecond", "Heading"]
+    assert _comment_markers(_paragraph_with(cell, "firstsecond"), ids["Comment nine"]) == ONE_COMMENT
+    assert _comment_markers(_paragraph_with(cell, "Heading"), ids["Comment ten"]) == ONE_COMMENT
+    for comment_text, comment_id in ids.items():
+        assert _comment_markers(doc, comment_id) == ONE_COMMENT, f"{comment_text!r} is not set once in the document"
+
+
+def test_comment_in_styled_table_cell_leaves_no_page_at_the_end(test_parameters: TestParameters):
+    """The paragraph which names the comments of raw OOXML to the writer follows the last page break of the document.
+
+    It is removed before the empty last page is looked for, so the document ends as it does without such a comment:
+    with its last text, and without the page break and the section break which only an empty page followed.
+    """
+    comment = '<span class="comment-start" id="0" author="Damien" date="2026-11-05T10:00:00Z">Comment eight</span><span class="comment-end" id="0"></span>'
+    html = f'<table><tr><td style="background-color:#EEEEEE">cell{comment}</td></tr></table><p>Chapter</p><p>\\newpage</p><p>\\pageLandscape</p><p><br/></p>'
+
+    docx_bytes = _convert_with_template(test_parameters, html, _a4_template(test_parameters))
+    body = _body(docx_bytes)
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        comments = _comment_texts(zf)
+
+    assert list(comments.values()) == ["Comment eight"]
+    assert _paragraph_texts(body) == ["Chapter"]
+    assert _page_break_count(body) == 0
+    assert _section_break_count(body) == 0
+
+
+def test_comment_with_an_id_word_cannot_read_stays_out_of_raw_ooxml(test_parameters: TestParameters):
+    """The id of a comment goes into raw OOXML only as digits, so an id cannot write OOXML of its own.
+
+    Such a comment is not kept in a styled cell, as before; its text is not printed there either.
+    """
+    html = (
+        '<table><tr><td style="background-color:#EEEEEE">'
+        'cell<span class="comment-start" id="x&quot;/&gt;&lt;w:r&gt;&lt;w:t&gt;INJECTED&lt;/w:t&gt;&lt;/w:r&gt;&lt;w:p w:x=&quot;" author="Damien">Comment seven</span>'
+        '<span class="comment-end" id="x&quot;/&gt;&lt;w:r&gt;&lt;w:t&gt;INJECTED&lt;/w:t&gt;&lt;/w:r&gt;&lt;w:p w:x=&quot;"></span>'
+        "</td></tr></table>"
+    )
+
+    docx_bytes = _convert_html_to_docx(test_parameters, html, query="?preserve_table_styles=true")
+    with zipfile.ZipFile(BytesIO(docx_bytes)) as zf:
+        doc = ET.fromstring(zf.read("word/document.xml"))
+
+    cell = doc.find(f".//{{{W_NS}}}tc")
+    assert cell is not None, "no table cell in document.xml"
+    assert "".join(t.text or "" for t in cell.iter(f"{{{W_NS}}}t")) == "cell"
+    assert list(doc.iter(f"{{{W_NS}}}commentRangeStart")) == []

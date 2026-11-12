@@ -18,10 +18,10 @@ from tests.visual import assert_pages_match
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def _html_to_pdf(test_parameters: TestParameters, html: str) -> bytes:
+def _html_to_pdf(test_parameters: TestParameters, html: str, params: dict[str, str] | None = None) -> bytes:
     """Convert HTML to DOCX, then that DOCX to PDF, both through the service."""
     session, base_url = test_parameters.request_session, test_parameters.base_url
-    docx = session.post(f"{base_url}/convert/html/to/docx", data=html.encode())
+    docx = session.post(f"{base_url}/convert/html/to/docx", data=html.encode(), params=params)
     assert docx.status_code == 200, docx.text
     pdf = session.post(f"{base_url}/convert/docx/to/pdf", files={"source": ("in.docx", docx.content, DOCX_MIME)})
     assert pdf.status_code == 200, pdf.text
@@ -90,3 +90,34 @@ def test_inline_image_vertical_align_and_margins(test_parameters: TestParameters
     </body></html>"""
 
     assert_pages_match("inline_image_layout", _html_to_pdf(test_parameters, html))
+
+
+def _comment(number: int, text: str) -> str:
+    """A comment as docx-exporter sends it: at one place, after the text it is made on."""
+    return f'<span class="comment-start" id="{number}" author="Damien" date="2026-11-05T10:00:00Z">{text}</span><span class="comment-end" id="{number}"></span>'
+
+
+def test_comments_in_a_styled_table_and_in_formatted_paragraphs(test_parameters: TestParameters):
+    """A comment in a cell of a styled table, and in a paragraph with an indent or an alignment, is a comment of Word.
+
+    With preserve_table_styles the comments of the cells were lost, and a paragraph gave up its indent and
+    its alignment for its comment. Word reads five comments in this document, two of them in the table,
+    and sets the second paragraph in by 600 twips and the third one in the middle.
+    """
+    cell = "border: 1px solid #000000;"
+    html = f"""<html><body>
+        <p>Plain paragraph with a comment after plain{_comment(0, "Comment on a plain paragraph")} text.</p>
+        <div class="pandoc-para" data-indent-twips="600"><p>Indented paragraph with a comment after
+            <span style="font-weight: bold;">bold{_comment(1, "Comment on an indented paragraph")}</span> text.</p></div>
+        <div class="pandoc-para" data-text-align="center"><p>Centered paragraph with a comment after centered{_comment(2, "Comment on a centered paragraph")} text.</p></div>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr><th style="{cell} background-color: #CCCCCC;">Header</th><th style="{cell} background-color: #CCCCCC;">Cell with a comment</th></tr>
+            <tr><td style="{cell}">Bold text</td><td style="{cell} background-color: #FFFF99;">A comment after
+                <span style="font-weight: bold;">bold{_comment(3, 'Rich comment in a cell<br/><span style="font-weight: bold;">with bold</span>')}</span> text.</td></tr>
+            <tr><td style="{cell}">Link</td><td style="{cell}">A comment on a
+                <a href="https://example.com/x"><span class="comment-start" id="4" author="Damien" date="2026-11-05T10:00:00Z">Comment on a link in a cell</span>link<span class="comment-end" id="4"></span></a>
+                in a cell.</td></tr>
+        </table>
+    </body></html>"""
+
+    assert_pages_match("comments_in_a_styled_table", _html_to_pdf(test_parameters, html, {"preserve_table_styles": "true"}))

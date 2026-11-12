@@ -630,16 +630,68 @@ local function with_bookmark(span, runs)
   return result
 end
 
--- Is this inline the start or end marker of a comment? Pandoc's DOCX writer
--- turns <span class="comment-start"> / <span class="comment-end"> into a
--- Word comment; the content of comment-start is the comment's own text, not
--- text of the paragraph.
-local function is_comment_marker(inline)
-  if inline.t ~= "Span" or not inline.classes then return false end
+-- Which marker of a comment is this inline: "comment-start", "comment-end",
+-- or nil for another inline? Pandoc's DOCX writer turns
+-- <span class="comment-start"> / <span class="comment-end"> into a Word
+-- comment; the content of comment-start is the comment's own text, not text
+-- of the paragraph.
+local function comment_marker(inline)
+  if inline.t ~= "Span" or not inline.classes then return nil end
   for _, cls in ipairs(inline.classes) do
-    if cls == "comment-start" or cls == "comment-end" then return true end
+    if cls == "comment-start" or cls == "comment-end" then return cls end
   end
-  return false
+  return nil
+end
+
+local function is_comment_marker(inline)
+  return comment_marker(inline) ~= nil
+end
+
+-- The number of a comment, or nil for an id which is not a number. Word reads
+-- no other id, and digits cannot close the attribute they are written into and
+-- write OOXML of their own.
+local function comment_number(span)
+  -- The writer prefers an `id` attribute over the identifier
+  -- (inlineToOpenXML' in Writers/Docx/OpenXML.hs)
+  local id = span.attributes["id"] or span.identifier
+  if id and id:match("^%d+$") then return id end
+  return nil
+end
+
+-- The raw OOXML of a comment marker, as the writer makes it of the Span, or
+-- nil for a comment without a number.
+local function comment_marker_ooxml(span)
+  local id = comment_number(span)
+  if not id then return nil end
+  if comment_marker(span) == "comment-start" then
+    return '<w:commentRangeStart w:id="' .. id .. '"/>'
+  end
+  return '<w:commentRangeEnd w:id="' .. id .. '"/>'
+    .. '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr>'
+    .. '<w:commentReference w:id="' .. id .. '"/></w:r>'
+end
+
+-- The comments whose start was written as raw OOXML, in the order of the
+-- document, and their numbers. Only the writer makes word/comments.xml, and
+-- it sees no comment inside a raw block: register_raw_comments names them to
+-- it.
+local raw_comments = {}
+local raw_comment_numbers = {}
+
+-- The bookmark of the paragraph register_raw_comments adds. The bookmark of an
+-- identifier starts with an underscore (bookmark_name), so no identifier of a
+-- document makes this name. app/docx_post_process.py removes the paragraph.
+local RAW_COMMENTS_BOOKMARK = "pandoc_service_comments"
+
+-- Keep the comments of a paragraph which is written as raw OOXML.
+local function keep_raw_comments(comments)
+  for _, span in ipairs(comments) do
+    local id = comment_number(span)
+    if not raw_comment_numbers[id] then
+      raw_comment_numbers[id] = true
+      raw_comments[#raw_comments + 1] = span
+    end
+  end
 end
 
 -- Forward declaration: walk and walk_with_flag recurse into each other,
@@ -980,6 +1032,10 @@ end
 -- path uses, and app/docx_post_process.py resolves them into real relationships
 -- afterwards. A link into the document names its bookmark and needs neither.
 -- A formula is not lossy either: it is the OMML of the writer (formula_ooxml).
+-- Nor is a comment: its markers are written as the writer writes them, and
+-- the third result holds the comment-start Spans of these. A caller which
+-- keeps the runs hands them to keep_raw_comments, so the writer makes their
+-- entries in word/comments.xml. A comment without a number is lossy.
 --
 -- Callers decide what to do about `lossy`: a table cell keeps the plain text
 -- because it has no other way to render the cell, while a formatted paragraph
@@ -988,6 +1044,18 @@ local function inlines_to_runs(inlines, seed)
   local runs = walk(inlines, seed or {}, nil)
   local run_parts = {}
   local lossy = false
+  local comments = {}
+  -- The raw OOXML of a comment marker. A comment without a number has none:
+  -- nothing is written for it, so its text does not end up in the paragraph.
+  local function comment_ooxml(span)
+    local ooxml = comment_marker_ooxml(span)
+    if not ooxml then
+      lossy = true
+      return ""
+    end
+    if comment_marker(span) == "comment-start" then comments[#comments + 1] = span end
+    return ooxml
+  end
   for _, r in ipairs(runs) do
     if r.t == "RawInline" and r.format == "openxml" then
       run_parts[#run_parts + 1] = r.text
@@ -1025,9 +1093,8 @@ local function inlines_to_runs(inlines, seed)
         elseif lr.t == "Math" and formula_ooxml(lr) then
           link_runs[#link_runs + 1] = formula_ooxml(lr)
         elseif is_comment_marker(lr) then
-          -- As for a comment outside a link (below): no raw OOXML form, so
-          -- nothing is emitted rather than the comment's text as link text.
-          lossy = true
+          -- As for a comment outside a link (below)
+          link_runs[#link_runs + 1] = comment_ooxml(lr)
         else
           lossy = true
           link_runs[#link_runs + 1] = '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
@@ -1041,12 +1108,9 @@ local function inlines_to_runs(inlines, seed)
       -- An equation of Word, as the writer makes it outside a table
       run_parts[#run_parts + 1] = formula_ooxml(r)
     elseif is_comment_marker(r) then
-      -- A comment has no raw OOXML form: its text goes to word/comments.xml,
-      -- which only the writer creates. The comment cannot be kept here, but
-      -- its text must not end up in the paragraph either, so nothing is
-      -- emitted. Lossy, so a formatted paragraph gives up its indent and
-      -- alignment instead and the writer keeps the comment.
-      lossy = true
+      -- The markers of the comment stay at their place. Its text goes to
+      -- word/comments.xml, which only the writer creates (keep_raw_comments).
+      run_parts[#run_parts + 1] = comment_ooxml(r)
     else
       -- Footnotes, citations, a formula the writer cannot read — fall back
       -- to plain text.
@@ -1063,7 +1127,7 @@ local function inlines_to_runs(inlines, seed)
   if only and formula_ooxml(only) then
     run_parts[#run_parts + 1] = '<w:r><w:t xml:space="preserve">\u{200B}</w:t></w:r>'
   end
-  return table.concat(run_parts), lossy
+  return table.concat(run_parts), lossy, comments
 end
 
 -- True when `inlines` contains (at any depth) Polarion's caption counter span
@@ -1100,8 +1164,9 @@ local function build_para_w_p(inlines, twips, jc)
   -- One body for each paragraph the writer would make of it (see
   -- split_at_display_formulas); each gets the indent and the alignment.
   local bodies = {}
+  local comments = {}
   for _, inlines_of_paragraph in ipairs(split_at_display_formulas(inlines)) do
-    local body, lossy = inlines_to_runs(inlines_of_paragraph)
+    local body, lossy, body_comments = inlines_to_runs(inlines_of_paragraph)
     -- Something here has no OOXML form and would survive only as its plain text
     -- (a footnote, a citation, a formula the writer cannot read). Keeping the
     -- content intact matters more than the indent, so hand the Para back to
@@ -1109,6 +1174,7 @@ local function build_para_w_p(inlines, twips, jc)
     -- out as placeholders. Nor is a formula: it is the OMML of the writer.
     if lossy then return nil end
     bodies[#bodies + 1] = body
+    append_all(comments, body_comments)
   end
   -- <w:pPr> children must follow the CT_PPr schema sequence (ECMA-376 Part 1
   -- §17.3.1.26): <w:ind> precedes <w:jc>. Word/LibreOffice are version-
@@ -1136,6 +1202,8 @@ local function build_para_w_p(inlines, twips, jc)
     ppr[#ppr + 1] = '<w:jc w:val="' .. jc .. '"/>'
   end
   if #ppr == 0 then return nil end
+  -- Only here is it certain that the paragraph is written raw
+  keep_raw_comments(comments)
   local paragraphs = {}
   for i, body in ipairs(bodies) do
     paragraphs[i] = "<w:p><w:pPr>" .. table.concat(ppr) .. "</w:pPr>" .. body .. "</w:p>"
@@ -1555,7 +1623,8 @@ block_to_ooxml = function(block, jc_val, ind_twips, props)
     -- flag is ignored here: plain text beats an empty cell.
     local paragraphs = {}
     for _, inlines in ipairs(split_at_display_formulas(block.content)) do
-      local runs = inlines_to_runs(inlines, props)
+      local runs, _, comments = inlines_to_runs(inlines, props)
+      keep_raw_comments(comments)
       paragraphs[#paragraphs + 1] = "<w:p>" .. ppr .. runs .. "</w:p>"
     end
     return table.concat(paragraphs)
@@ -1571,9 +1640,25 @@ block_to_ooxml = function(block, jc_val, ind_twips, props)
     if raw then return raw.text end
   end
 
-  -- Fallback: extract plain text
+  -- Fallback: extract plain text. The text of a comment is none of it: the
+  -- markers of the comments follow the text, so the paragraph keeps them.
+  local markers = {}
+  local comments = {}
+  local text = block:walk({
+    Span = function(span)
+      if not is_comment_marker(span) then return nil end
+      local ooxml = comment_marker_ooxml(span)
+      if ooxml then
+        markers[#markers + 1] = ooxml
+        if comment_marker(span) == "comment-start" then comments[#comments + 1] = span end
+      end
+      return {}
+    end,
+  })
+  keep_raw_comments(comments)
   return "<w:p>" .. ppr .. "<w:r><w:t xml:space=\"preserve\">"
-    .. escape_xml(pandoc.utils.stringify(block)) .. "</w:t></w:r></w:p>"
+    .. escape_xml(pandoc.utils.stringify(text)) .. "</w:t></w:r>"
+    .. table.concat(markers) .. "</w:p>"
 end
 
 -- Convert all blocks in a cell to OOXML. Always returns at least "<w:p/>":
@@ -1846,7 +1931,27 @@ local function separate_raw_tables(blocks)
   return result
 end
 
+-- Name the comments of the raw paragraphs to the writer, which makes
+-- word/comments.xml of the comment-start Spans it meets. They go into one
+-- paragraph at the end of the document; there the writer leaves the start of
+-- each range a second time, so app/docx_post_process.py removes the paragraph
+-- by its bookmark.
+local function register_raw_comments(doc)
+  if #raw_comments == 0 then return nil end
+  next_bookmark_id = next_bookmark_id + 1
+  local id = tostring(next_bookmark_id)
+  local inlines = { pandoc.RawInline("openxml",
+    '<w:bookmarkStart w:id="' .. id .. '" w:name="' .. RAW_COMMENTS_BOOKMARK .. '"/>'
+    .. '<w:bookmarkEnd w:id="' .. id .. '"/>') }
+  append_all(inlines, raw_comments)
+  -- The main pass never met the text of these comments: it replaced the block
+  -- around them. Walk it here, so a comment in a cell is written as one outside.
+  doc.blocks:insert(pandoc.Para(inlines):walk(filter))
+  return doc
+end
+
 -- Return three passes, executed in order: the meta_pass sets module-level
 -- flags the main pass consults, the main pass rewrites AST elements, and the
--- last one separates the tables the main pass turned into raw OOXML.
-return { meta_pass, filter, { Blocks = separate_raw_tables } }
+-- last one separates the tables the main pass turned into raw OOXML and names
+-- the comments inside raw OOXML to the writer.
+return { meta_pass, filter, { Blocks = separate_raw_tables, Pandoc = register_raw_comments } }
