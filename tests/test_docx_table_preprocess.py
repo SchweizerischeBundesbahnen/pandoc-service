@@ -688,6 +688,10 @@ def test_a_look_value_which_is_no_number_is_no_first_row():
     assert _rules_of(_styled_table('<w:tblLook w:val="zz"/>', header=True)) == "none"
 
 
+def test_a_first_row_turned_off_goes_before_the_bit_of_the_look():
+    assert _rules_of(_styled_table('<w:tblLook w:firstRow="0" w:val="0020"/>', header=True)) == "none"
+
+
 def test_a_first_row_look_without_a_header_row_draws_no_line():
     assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>')) == "none"
 
@@ -912,11 +916,13 @@ def test_the_table_styles_give_the_alignment_of_the_first_row_and_of_the_table()
     assert docx_table_pre_process.head_alignments(None) == {}
 
 
-def _two_rows(tblpr: str = "", first_tcpr: str = "", header: bool = False) -> str:
-    trpr = '<w:trPr><w:tblHeader w:val="on"/></w:trPr>' if header else ""
+def _two_rows(tblpr: str = "", first_tcpr: str = "", header: bool = False, headers: int | None = None) -> str:
+    """A table of two rows; the first ``headers`` rows repeat on each page, the first one if ``header``."""
+    trpr = '<w:trPr><w:tblHeader w:val="on"/></w:trPr>'
+    count = headers if headers is not None else int(header)
     first = f"<w:tc>{first_tcpr}<w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Other</w:t></w:r></w:p></w:tc>"
     body = "<w:tc><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>More</w:t></w:r></w:p></w:tc>"
-    return f"<w:tbl><w:tblPr>{tblpr}</w:tblPr><w:tr>{trpr}{first}</w:tr><w:tr>{body}</w:tr></w:tbl>"
+    return f"<w:tbl><w:tblPr>{tblpr}</w:tblPr><w:tr>{trpr if count > 0 else ''}{first}</w:tr><w:tr>{trpr if count > 1 else ''}{body}</w:tr><w:tr>{body}</w:tr></w:tbl>"
 
 
 def _alignments_of(table: str) -> dict[str, str]:
@@ -950,6 +956,14 @@ def _alignments_of(table: str) -> dict[str, str]:
         # Without a look pandoc makes no header: a row of the body stands at the top
         pytest.param(_two_rows(), {}, id="no-look"),
         pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0"/>'), {}, id="look-off"),
+        # Word gives every row which repeats the first-row formatting, not only the first one
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="1"/>', headers=2), {"Head": "b", "Other": "b", "Body": "b", "More": "b"}, id="two-repeated-rows"),
+        # w:firstRow goes before the bit of w:val, for Word and for pandoc
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0" w:val="0020"/>', header=True), {"Head": "t", "Other": "t"}, id="first-row-off-over-val"),
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0" w:val="0020"/>'), {}, id="no-header-over-val"),
+        # Word turns the formatting on for "true", pandoc makes a header only of "1"
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="true"/>', header=True), {"Head": "b", "Other": "b"}, id="true-formats"),
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="true"/>'), {}, id="true-is-no-header"),
     ],
 )
 def test_the_cells_of_the_first_row_carry_their_vertical_alignment(table: str, expected: dict[str, str]):

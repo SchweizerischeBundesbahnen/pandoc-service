@@ -692,10 +692,23 @@ def _look_bits(value: str | None) -> int:
         return 0
 
 
-def _first_row_look(tblpr: ET.Element | None) -> bool:
-    """Whether the table turns the formatting of its first row on, which also makes it the header for pandoc."""
+def _first_row_look(tblpr: ET.Element | None, on: tuple[str, ...]) -> bool:
+    """Whether the look of the table turns its first row on: w:firstRow if given, else the bit of w:val."""
     look = tblpr.find(f"{{{W_NS}}}tblLook") if tblpr is not None else None
-    return look is not None and (look.get(f"{{{W_NS}}}firstRow") in ("1", "true", "on") or _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0)
+    if look is None:
+        return False
+    first_row = look.get(f"{{{W_NS}}}firstRow")
+    return first_row in on if first_row is not None else _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0
+
+
+def _first_row_formatting(tblpr: ET.Element | None) -> bool:
+    """Whether Word formats the header rows with the first-row formatting of the table style."""
+    return _first_row_look(tblpr, ("1", "true", "on"))
+
+
+def _first_row_head(tblpr: ET.Element | None) -> bool:
+    """Whether pandoc's reader makes the first row the header: it takes only "1" for w:firstRow."""
+    return _first_row_look(tblpr, ("1",))
 
 
 # The vertical alignment of a cell, as the key the filter reads.
@@ -757,21 +770,21 @@ def _head_cell_alignments(tbl: ET.Element, alignments: Mapping[str, tuple[str | 
     """The vertical alignment of each cell of the header rows: of the cell, else of its table style, else the top.
 
     The header rows are those pandoc makes the header of: the rows which repeat on each page, and the first
-    row of a table which turns its formatting on. Only the first row takes the formatting of the first row.
+    row of a table whose look turns it on. Word gives each of them the first-row formatting of the style.
     """
     tblpr = tbl.find(_TBLPR_TAG)
-    first_row = _first_row_look(tblpr)
+    first_row = _first_row_formatting(tblpr)
     rows = tbl.findall(_TR_TAG)
     count = 0
     while count < len(rows) and rows[count].find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None:
         count += 1
-    count = max(count, 1 if first_row and rows else 0)
+    count = max(count, 1 if _first_row_head(tblpr) and rows else 0)
     style = tblpr.find(f"{{{W_NS}}}tblStyle") if tblpr is not None else None
     style_first_row, style_table = alignments.get(style.get(_VAL_ATTR) or "" if style is not None else "", (None, None))
     found = {}
-    for index, row in enumerate(rows[:count]):
+    for row in rows[:count]:
         for tc in row.findall(_TC_TAG):
-            found[tc] = _vertical_alignment(tc.find(_TCPR_TAG)) or (style_first_row if index == 0 and first_row else None) or style_table or "t"
+            found[tc] = _vertical_alignment(tc.find(_TCPR_TAG)) or (style_first_row if first_row else None) or style_table or "t"
     return found
 
 
@@ -787,7 +800,7 @@ def _rules(tbl: ET.Element, bordered_styles: frozenset[str]) -> str:
         or any(_draws_a_border(cell.find(f"{{{W_NS}}}tcBorders")) for cell in tbl.iter(_TCPR_TAG))
     ):
         return "grid"
-    first_row = _first_row_look(tblpr)
+    first_row = _first_row_formatting(tblpr)
     has_header = any(row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None for row in tbl.findall(f"{{{W_NS}}}tr"))
     return "head" if first_row and has_header else "none"
 

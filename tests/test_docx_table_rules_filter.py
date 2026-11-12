@@ -594,10 +594,49 @@ def test_a_table_in_a_header_cell_leaves_the_alignment_of_the_cell(test_paramete
     assert abs(_baseline(pdf, "Second header") - _baseline(pdf, "Last line")) < 1
 
 
+def test_every_repeated_header_row_takes_the_first_row_alignment_of_the_style(test_parameters: TestParameters):
+    """Word sets "Short" of both rows which repeat on the last line of the cell beside it; #372.
+
+    The style aligns its first row at the bottom. Only the first row took it: "Short1" stood at the top.
+    """
+    document = Document()
+    style = document.styles.add_style("Header at the bottom", WD_STYLE_TYPE.TABLE)
+    style.element.append(parse_xml(f'<w:tblStylePr {nsdecls("w")} w:type="firstRow"><w:tcPr><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr>'))
+    table = document.add_table(rows=3, cols=2)
+    table.style = style
+    properties = table._tbl.tblPr
+    for found in properties.findall(qn("w:tblLook")):
+        properties.remove(found)
+    properties.append(parse_xml(f'<w:tblLook {nsdecls("w")} w:firstRow="1"/>'))
+    for index, row in enumerate(table.rows):
+        row.cells[0].text = f"Lead{index}"
+        row.cells[0].add_paragraph(f"End{index}")
+        row.cells[1].text = f"Short{index}"
+        if index < 2:
+            row._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+
+    pdf = _pdf_of(test_parameters, document)
+    for index in range(2):
+        assert abs(_baseline(pdf, f"Short{index}") - _baseline(pdf, f"End{index}")) < 1, index
+    assert abs(_baseline(pdf, "Short2") - _baseline(pdf, "Lead2")) < 1, "a row of the body stands at the top"
+
+
 @pytest.mark.parametrize(
     ("look", "repeated"),
-    [("1", 0), ("0", 2), ("1", 2), (None, 0), ("0", 0), (None, 1), (None, 2)],
-    ids=["first-row", "repeated-rows", "both", "neither", "first-row-off", "one-repeated-row", "two-repeated-rows"],
+    [
+        ('w:firstRow="1"', 0),
+        ('w:firstRow="0"', 2),
+        ('w:firstRow="1"', 2),
+        (None, 0),
+        ('w:firstRow="0"', 0),
+        (None, 1),
+        (None, 2),
+        ('w:firstRow="true"', 0),
+        ('w:firstRow="on"', 0),
+        ('w:val="0020"', 0),
+        ('w:firstRow="0" w:val="0020"', 0),
+    ],
+    ids=["first-row", "repeated-rows", "both", "neither", "first-row-off", "one-repeated-row", "two-repeated-rows", "true", "on", "val", "first-row-off-over-val"],
 )
 def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters: TestParameters, look: str | None, repeated: int):
     """The preprocessor carries an alignment for each row pandoc makes the header of, and no other; #372.
@@ -611,7 +650,7 @@ def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters
     for found in properties.findall(qn("w:tblLook")):
         properties.remove(found)
     if look is not None:
-        properties.append(parse_xml(f'<w:tblLook {nsdecls("w")} w:firstRow="{look}"/>'))
+        properties.append(parse_xml(f"<w:tblLook {nsdecls('w')} {look}/>"))
     for index in range(repeated):
         table.rows[index]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
     for index, row in enumerate(table.rows):
