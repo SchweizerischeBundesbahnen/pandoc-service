@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.15.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.1...v2.15.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* align the cells of a table header as Word does ([#385](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/385)) ([5485388](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/5485388b2cd97f8a7908c9ff89966075427b9d53)), closes [#372](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/372)
+* keep a nested table close below a paragraph of its own size ([#382](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/382)) ([475035c](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/475035c488174e3d4466ffb6267393583a40a2c0)), closes [#379](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/379)
+* put the space after of Normal between paragraphs of a cell ([#384](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/384)) ([2df4a11](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/2df4a11ef6c86e530a55d43e842d54fd0c05ba4a)), closes [#380](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/380)
+* read only the cache of tectonic in a conversion ([#386](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/386)) ([408bd84](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/408bd84a1db084a34d622d16ee274b09ab8542a2)), closes [#378](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/378)
+
 ## [2.15.1](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.0...v2.15.1) (2026-11-11)
 
 
