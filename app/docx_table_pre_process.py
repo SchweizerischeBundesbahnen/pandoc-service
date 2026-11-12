@@ -29,7 +29,7 @@ Sentinel format (PUA delimiters U+E010 / U+E011), a ``;``-separated key map::
 
     <U+E010>bg=RRGGBB;ha=justify;tw=0.4000;ta=left<U+E011>
 
-``bg``, ``ha`` and ``li`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
+``bg``, ``ha``, ``li`` and ``va`` are per cell; ``tw`` (0..1 line fraction) and ``ta``
 (left/center/right) are table-level and live on the first cell (merged into
 its sentinel if it also carries a per-cell key).
 
@@ -43,6 +43,10 @@ survive on the ``Cell`` and need no sentinel.
 an indented paragraph as a BlockQuote and the filter unwraps it, so the indent
 rides on the sentinel.
 
+``va`` is the vertical alignment of a cell of the header row: ``t``, ``c`` or ``b``. pandoc sets
+every cell of the header at the bottom of its row; Word takes the alignment of the cell, else that
+of the first row or of the whole table in the table style, else the top.
+
 This is the table companion to :mod:`app.docx_color_pre_process` /
 :mod:`app.docx_paragraph_pre_process`; it runs on the same docx->latex path
 and is independent of them (table cells carry ``<w:tcPr>``, not
@@ -52,11 +56,16 @@ run/paragraph properties).
 from __future__ import annotations
 
 import logging
+from types import MappingProxyType
+from typing import TYPE_CHECKING, NamedTuple
 from xml.etree import ElementTree as ET
 
 from . import docx_page_geometry
 from .docx_numbers import whole_number
-from .docx_ooxml import W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
+from .docx_ooxml import STYLES_PART, W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +144,10 @@ def preprocess(docx_bytes: bytes) -> bytes:
 
     changed = False
     width = docx_page_geometry.package_text_width_twips(entries)
+    # The table styles of the document, as the combined preprocess reads them (docx_latex_pre_process)
+    styles = table_styles(parse_xml(entries[STYLES_PART]) if STYLES_PART in entries else None)
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_changed = rewrite_part(entries[part], width)
+        rewritten, part_changed = rewrite_part(entries[part], width, styles.bordered, styles.alignments)
         if part_changed:
             entries[part] = rewritten
             changed = True
@@ -431,7 +442,7 @@ def _already_tagged(para: ET.Element, props: dict[str, str]) -> bool:
     return all(existing.get(key) == value for key, value in props.items())
 
 
-def _tag_cell_properties(tbl: ET.Element) -> bool:
+def _tag_cell_properties(tbl: ET.Element, alignments: Mapping[str, tuple[str | None, str | None]] | None = None) -> bool:
     """Prepend sentinels encoding the per-cell properties pandoc would drop.
 
     Returns True when any cell was modified.
@@ -439,12 +450,15 @@ def _tag_cell_properties(tbl: ET.Element) -> bool:
     changed = False
     # The lines of each cell of a grid whose cells draw lines of their own
     borders = _cell_borders(tbl) if _grid_lines(tbl) is not None else None
+    head = _head_cell_alignments(tbl, alignments or {})
 
     for tc in tbl.iter(_TC_TAG):
         tcpr = tc.find(_TCPR_TAG)
         props = _cell_properties(tc, tcpr)
         if borders is not None and tc in borders:
             props["bd"] = borders[tc]
+        if tc in head:
+            props["va"] = head[tc]
         if not props:
             continue
 
@@ -678,6 +692,108 @@ def _look_bits(value: str | None) -> int:
         return 0
 
 
+def _first_row_look(tblpr: ET.Element | None, on: tuple[str, ...]) -> bool:
+    """Whether the look of the table turns its first row on: w:firstRow if given, else the bit of w:val."""
+    look = tblpr.find(f"{{{W_NS}}}tblLook") if tblpr is not None else None
+    if look is None:
+        return False
+    first_row = look.get(f"{{{W_NS}}}firstRow")
+    return first_row in on if first_row is not None else _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0
+
+
+def _repeats(row: ET.Element) -> bool:
+    """Whether the row repeats on each page, which makes it a header for pandoc: it takes every w:tblHeader but "0"."""
+    header = row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader")
+    return header is not None and header.get(_VAL_ATTR) != "0"
+
+
+def _first_row_formatting(tblpr: ET.Element | None) -> bool:
+    """Whether Word formats the header rows with the first-row formatting of the table style."""
+    return _first_row_look(tblpr, ("1", "true", "on"))
+
+
+def _first_row_head(tblpr: ET.Element | None) -> bool:
+    """Whether pandoc's reader makes the first row the header: it takes only "1" for w:firstRow."""
+    return _first_row_look(tblpr, ("1",))
+
+
+# The vertical alignment of a cell, as the key the filter reads.
+_VERTICAL_ALIGNMENTS = {"top": "t", "center": "c", "bottom": "b"}
+
+
+def _vertical_alignment(tcpr: ET.Element | None) -> str | None:
+    v_align = tcpr.find(f"{{{W_NS}}}vAlign") if tcpr is not None else None
+    return _VERTICAL_ALIGNMENTS.get(v_align.get(_VAL_ATTR) or "") if v_align is not None else None
+
+
+def head_alignments(styles: ET.Element | None) -> dict[str, tuple[str | None, str | None]]:
+    """The vertical alignment each table style gives the cells of the first row, and the cells of the table.
+
+    A style without one of its own takes that of the style it is based on.
+    """
+    if styles is None:
+        return {}
+    by_id = {style.get(f"{{{W_NS}}}styleId") or "": style for style in styles.iter(f"{{{W_NS}}}style") if style.get(f"{{{W_NS}}}type") == "table"}
+
+    def own(style: ET.Element) -> tuple[str | None, str | None]:
+        first_row = None
+        for conditional in style.findall(f"{{{W_NS}}}tblStylePr"):
+            if conditional.get(f"{{{W_NS}}}type") == "firstRow":
+                first_row = _vertical_alignment(conditional.find(_TCPR_TAG))
+        return first_row, _vertical_alignment(style.find(_TCPR_TAG))
+
+    def resolve(style_id: str, seen: frozenset[str]) -> tuple[str | None, str | None]:
+        style = by_id.get(style_id)
+        if style is None or style_id in seen:
+            return None, None
+        first_row, table = own(style)
+        based_on = style.find(f"{{{W_NS}}}basedOn")
+        if based_on is not None and (first_row is None or table is None):
+            base_first_row, base_table = resolve(based_on.get(_VAL_ATTR) or "", seen | {style_id})
+            first_row, table = first_row or base_first_row, table or base_table
+        return first_row, table
+
+    found = {style_id: resolve(style_id, frozenset()) for style_id in by_id}
+    # A table without a style of its own takes the default table style, under the empty name
+    default = next((style_id for style_id, style in by_id.items() if style.get(f"{{{W_NS}}}default") in ("1", "true", "on")), None)
+    if default is not None:
+        found[""] = found[default]
+    return found
+
+
+class TableStyles(NamedTuple):
+    """What the table styles of a document give its tables: borders, and the vertical alignment of cells."""
+
+    bordered: frozenset[str] = frozenset()
+    alignments: Mapping[str, tuple[str | None, str | None]] = MappingProxyType({})
+
+
+def table_styles(styles: ET.Element | None) -> TableStyles:
+    return TableStyles(bordered_table_styles(styles), head_alignments(styles))
+
+
+def _head_cell_alignments(tbl: ET.Element, alignments: Mapping[str, tuple[str | None, str | None]]) -> dict[ET.Element, str]:
+    """The vertical alignment of each cell of the header rows: of the cell, else of its table style, else the top.
+
+    The header rows are those pandoc makes the header of: the rows which repeat on each page, and the first
+    row of a table whose look turns it on. Word gives each of them the first-row formatting of the style.
+    """
+    tblpr = tbl.find(_TBLPR_TAG)
+    first_row = _first_row_formatting(tblpr)
+    rows = tbl.findall(_TR_TAG)
+    count = 0
+    while count < len(rows) and _repeats(rows[count]):
+        count += 1
+    count = max(count, 1 if _first_row_head(tblpr) and rows else 0)
+    style = tblpr.find(f"{{{W_NS}}}tblStyle") if tblpr is not None else None
+    style_first_row, style_table = alignments.get(style.get(_VAL_ATTR) or "" if style is not None else "", (None, None))
+    found = {}
+    for row in rows[:count]:
+        for tc in row.findall(_TC_TAG):
+            found[tc] = _vertical_alignment(tc.find(_TCPR_TAG)) or (style_first_row if first_row else None) or style_table or "t"
+    return found
+
+
 def _rules(tbl: ET.Element, bordered_styles: frozenset[str]) -> str:
     """The lines Word draws in a table: ``grid`` for borders of its own, of its cells or of its style,
     ``head`` for the line under the header row of pandoc's Table style, ``none`` without one.
@@ -690,9 +806,8 @@ def _rules(tbl: ET.Element, bordered_styles: frozenset[str]) -> str:
         or any(_draws_a_border(cell.find(f"{{{W_NS}}}tcBorders")) for cell in tbl.iter(_TCPR_TAG))
     ):
         return "grid"
-    look = tblpr.find(f"{{{W_NS}}}tblLook") if tblpr is not None else None
-    first_row = look is not None and (look.get(f"{{{W_NS}}}firstRow") in ("1", "true", "on") or _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0)
-    has_header = any(row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None for row in tbl.findall(f"{{{W_NS}}}tr"))
+    first_row = _first_row_formatting(tblpr)
+    has_header = any(_repeats(row) for row in tbl.findall(f"{{{W_NS}}}tr"))
     return "head" if first_row and has_header else "none"
 
 
@@ -774,7 +889,12 @@ def _neutralize_caption_paragraphs(tree: ET.Element) -> bool:
     return changed
 
 
-def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None, bordered_styles: frozenset[str] = frozenset()) -> tuple[bytes, bool]:
+def rewrite_part(
+    xml_bytes: bytes,
+    text_width_twips: float | None = None,
+    bordered_styles: frozenset[str] = frozenset(),
+    alignments: Mapping[str, tuple[str | None, str | None]] | None = None,
+) -> tuple[bytes, bool]:
     """Fix grid-column widths, tag styled table cells, carry table width/
     alignment, and neutralise caption styles in one body part.
 
@@ -803,7 +923,7 @@ def rewrite_part(xml_bytes: bytes, text_width_twips: float | None = None, border
             changed = True
         if _tag_table_layout(tbl, section_widths.get(tbl, width), bordered_styles):
             changed = True
-        if _tag_cell_properties(tbl):
+        if _tag_cell_properties(tbl, alignments):
             changed = True
 
     if _neutralize_caption_paragraphs(tree):

@@ -349,7 +349,7 @@ def test_empty_cells_get_no_alignment_switch(test_parameters: TestParameters):
 
     latex = _to_latex(test_parameters.container, buffer.getvalue())
 
-    assert latex.count("\\pdcCell") == 1, f"expected one switch, for the one non-empty cell:\n{latex}"
+    assert latex.count("\\pdcCell") - latex.count("\\pdcCellPos") == 1, f"expected one switch, for the one non-empty cell:\n{latex}"
 
 
 def test_blank_shaded_cell_gets_no_alignment_switch(test_parameters: TestParameters):
@@ -368,7 +368,7 @@ def test_blank_shaded_cell_gets_no_alignment_switch(test_parameters: TestParamet
 
     latex = _to_latex(test_parameters.container, buffer.getvalue())
 
-    assert latex.count("\\pdcCell") == 1, f"the blank shaded cell was given a switch:\n{latex}"
+    assert latex.count("\\pdcCell") - latex.count("\\pdcCellPos") == 1, f"the blank shaded cell was given a switch:\n{latex}"
     assert "\\cellcolor[HTML]{F2F2F2}" in latex, "the blank cell lost its background"
 
 

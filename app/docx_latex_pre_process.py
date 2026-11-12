@@ -84,7 +84,7 @@ def _rewrite_body_part(
     para_styles: dict[str, docx_paragraph_pre_process._StyleSpec],
     text_width_twips: int,
     toc_styles: dict[str, docx_toc_pre_process._StyleSpec],
-    bordered_styles: frozenset[str] = frozenset(),
+    table_styles: docx_table_pre_process.TableStyles | None = None,
     style_colors: dict[str, docx_color_pre_process.StyleColors] | None = None,
     toc_style_ids: frozenset[str] = frozenset(),
     break_styles: frozenset[str | None] = frozenset(),
@@ -92,6 +92,7 @@ def _rewrite_body_part(
     """Run the page break → colour → paragraph → list → table rewrites over one
     body part, collecting any synthetic styles into the shared dicts.  Returns
     (new_xml, changed)."""
+    styles = table_styles or docx_table_pre_process.TableStyles()
     # First, so a page break run sheds its properties before the colour rewrite reads them.
     xml, changed = docx_page_break_pre_process.rewrite_part(xml, break_styles)
     if has_styles:
@@ -99,7 +100,7 @@ def _rewrite_body_part(
         changed = changed or styled_changed
     rewrites: tuple[Callable[[bytes], tuple[bytes, bool]], ...] = (
         docx_list_level_pre_process.rewrite_part,
-        lambda part: docx_table_pre_process.rewrite_part(part, text_width_twips, bordered_styles),
+        lambda part: docx_table_pre_process.rewrite_part(part, text_width_twips, styles.bordered, styles.alignments),
         # Before the color rewrite, whose markers then hold the style markers
         docx_math_style_pre_process.rewrite_part,
         docx_math_color_pre_process.rewrite_part,
@@ -143,7 +144,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
     text_width_twips = docx_page_geometry.package_text_width_twips(entries)
     # The table styles which draw borders, for the lines of each table
     styles = parse_xml(entries[STYLES_PART]) if has_styles else None
-    bordered_styles = docx_table_pre_process.bordered_table_styles(styles)
+    table_styles = docx_table_pre_process.table_styles(styles)
     # The paragraph styles which start a new page before their paragraphs
     break_styles = docx_page_break_pre_process.page_break_styles(styles)
     # The colors of the character styles (a link's Hyperlink style), read once for every part
@@ -151,7 +152,7 @@ def preprocess(docx_bytes: bytes) -> bytes:
     toc_style_ids = docx_color_pre_process.table_of_contents_styles(entries[STYLES_PART]) if has_styles else frozenset()
 
     for part in body_parts:
-        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, bordered_styles, style_colors, toc_style_ids, break_styles)
+        entries[part], part_changed = _rewrite_body_part(entries[part], has_styles, color_styles, para_styles, text_width_twips, toc_styles, table_styles, style_colors, toc_style_ids, break_styles)
         changed = changed or part_changed
 
     if not changed:

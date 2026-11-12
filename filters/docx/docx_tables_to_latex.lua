@@ -53,6 +53,7 @@ end
 
 -- Parse the sentinel payload into a properties table. Supported segments:
 --   bg=RRGGBB  cell background colour (per cell)
+--   va=t|c|b  the vertical alignment of a cell of the header row (per cell)
 --   li=<points>  the left indent of the first paragraph of the cell (per cell)
 --   tw=<0..1>  table width as a fraction of the line (table-level, first cell)
 --   ta=left|center|right  table horizontal alignment (table-level, first cell)
@@ -94,6 +95,8 @@ local function parse_payload(payload)
       end
     elseif key == "bd" and value:match("^[%a%d%./%-]+$") then
       props.bd = value
+    elseif key == "va" and (value == "t" or value == "c" or value == "b") then
+      props.va = value
     end
   end
   return props
@@ -246,6 +249,7 @@ local has_align = false      -- set when at least one cell gets an alignment swi
 local has_display = false    -- set when a cell holds an equation of its own paragraph
 local has_grid = false       -- set when a table is written as raw LaTeX
 local has_head = false       -- set when a table has a header row, see HEAD_PREAMBLE
+local has_cell_pos = false   -- set when a cell takes a vertical alignment of its own, see CELL_POS_PREAMBLE
 -- The characters of docx-actual-text, with the hex of their code point: see actual_text
 local ACTUAL_TEXT = "docx-actual-text"
 local actual_texts = {}
@@ -291,9 +295,11 @@ local NO_END = "pdc-no-end"    -- the attribute of a cell which gets no space at
 local AFTER_EQUATION = "equation"
 local EQUATION_CELL_SPACE = {
   [PLAIN_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\vadjust{\\kern\\pdcPlainCellSpace}\\fi",
-  -- A cell of the header stands on its last line, so its space goes into the depth of that line, as for a
-  -- line of text: below the depth of the equation, which \\pdcCellHang has kept in \\pdcCellLineDepth
-  [PLAIN_HEAD_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\rule[-\\dimexpr\\pdcCellLineDepth+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi",
+  -- The space of a cell of the header goes into the depth of its last line, as for a line of text: below the
+  -- depth of the equation, which \\pdcCellHang has kept in \\pdcCellLineDepth, and at least that of a line
+  -- of text. Without the metrics of the font of the equations its line is no deeper than the equation; #372
+  [PLAIN_HEAD_CELL_SPACE] = "\\ifdefined\\pdcPlainCellSpace\\ifdim\\pdcCellLineDepth<\\dp\\strutbox\\global\\pdcCellLineDepth\\dp\\strutbox\\fi"
+    .. "\\rule[-\\dimexpr\\pdcCellLineDepth+\\pdcPlainCellSpace\\relax]{0pt}{0pt}\\fi",
   [COMPACT_CELL_DEPTH] = "\\ifdefined\\pdcCompactEquationSpace\\pdcCompactEquationSpace\\fi",
 }
 local BORDERS = "pdc-borders"  -- the lines of a cell of a grid: top/right/bottom/left, each style.eighths.RRGGBB or -
@@ -879,6 +885,13 @@ local function process_rows(rows, layout, flags, head)
         if props.lc then layout.lc = props.lc end
         if props.lw then layout.lw = props.lw end
         if props.bd then cell.attributes[BORDERS] = props.bd end
+        if head and props.va and not cell_is_blank(cell.contents) then
+          -- pandoc sets a cell of the header in a minipage on its last line, at the bottom of the row. Word
+          -- takes the alignment of the cell or of the table style, the top without one; #372
+          inject_raw_at_start(cell.contents, "\\pdcCellPos{" .. props.va .. "}")
+          flags.cell_pos = true
+          modified = true
+        end
       end
     end
   end
@@ -928,6 +941,26 @@ local GRID_PREAMBLE = table.concat({
 
 -- Word sets the header row of a table at the foot of a page where it fits, and repeats it above the rows on the
 -- next page. longtable starts a table on the next page unless its first row fits as well, and keeps the two together.
+-- A minipage takes its position from \\@mpargs, {pos}{height}[inner]{width}, at its end: a cell of the header
+-- sets its own from inside it. The change goes out of the box of the minipage by \\aftergroup, a group at a time
+-- until the box itself has closed (\\currentgrouptype 4, a vbox), whatever groups the minipage opens inside it.
+-- So it applies to that minipage alone, and to no minipage around it, a cell holding a table among them. Each
+-- position has its own macros, so the position of an inner cell cannot take the place of an outer one. Outside a
+-- minipage the command changes nothing
+local CELL_POS_PREAMBLE = {
+  "\\makeatletter",
+  "\\def\\pdcCellPos#1{\\ifdefined\\@mpargs\\csname pdc@after@#1\\endcsname\\fi}",
+  "\\def\\pdc@cellpos#1#2[#3]#4#5{\\def\\@mpargs{{#5}{#2}[#3]{#4}}}",
+}
+for _, position in ipairs({ "t", "c", "b" }) do
+  CELL_POS_PREAMBLE[#CELL_POS_PREAMBLE + 1] = string.format(
+    "\\def\\pdc@after@%s{\\ifnum\\currentgrouptype=4 \\aftergroup\\pdc@apply@%s\\else\\aftergroup\\pdc@after@%s\\fi}"
+      .. "\\def\\pdc@apply@%s{\\expandafter\\pdc@cellpos\\@mpargs %s}",
+    position, position, position, position, position)
+end
+CELL_POS_PREAMBLE[#CELL_POS_PREAMBLE + 1] = "\\makeatother"
+CELL_POS_PREAMBLE = table.concat(CELL_POS_PREAMBLE, "\n")
+
 local HEAD_PREAMBLE = table.concat({
   "\\usepackage{etoolbox}",
   "\\makeatletter",
@@ -1856,6 +1889,7 @@ function table_pass.Table(tbl)
   if flags.cellcolor then has_cellcolor = true end
   if flags.align then has_align = true end
   if flags.display then has_display = true end
+  if flags.cell_pos then has_cell_pos = true end
 
   -- Table width: pandoc's DOCX reader normalises column widths to sum to 1.0
   -- (discarding the table's <w:tblW> share of the line) OR, when the DOCX
@@ -2028,7 +2062,7 @@ function preamble_pass.Meta(meta)
     meta.tables = true
     meta.multirow = true
   end
-  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head or has_word) then return meta end
+  if not (has_grid or has_cellcolor or has_align or has_split or has_cell_picture or has_wrap or has_display or has_head or has_word or has_cell_pos) then return meta end
 
   local parts = {}
   if has_display then parts[#parts + 1] = DISPLAY_PREAMBLE end
@@ -2045,6 +2079,7 @@ function preamble_pass.Meta(meta)
   if has_cellcolor then parts[#parts + 1] = COLORTBL_PREAMBLE end
   if has_align then parts[#parts + 1] = ALIGN_PREAMBLE end
   if has_head then parts[#parts + 1] = HEAD_PREAMBLE end
+  if has_cell_pos then parts[#parts + 1] = CELL_POS_PREAMBLE end
   if has_word then parts[#parts + 1] = WORD_PREAMBLE end
   local block = pandoc.MetaBlocks({ pandoc.RawBlock("latex", table.concat(parts, "\n")) })
   local existing = meta["header-includes"]

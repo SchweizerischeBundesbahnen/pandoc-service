@@ -8,10 +8,13 @@ markdown table whose first cell carries the sentinel.
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import io
 import itertools
+import re
 import zipfile
+from xml.etree import ElementTree as ET
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
@@ -25,6 +28,7 @@ from docx.shared import Pt, RGBColor, Twips
 from PIL import Image
 from pypdf import PdfReader
 
+from app import docx_table_pre_process
 from tests.test_container import TestParameters
 
 PANDOC_PATH = "/usr/local/bin/pandoc"
@@ -538,6 +542,149 @@ def test_a_wide_line_between_rows_adds_its_width_to_the_table(test_parameters: T
     thin, thick = _pdf_of(test_parameters, _two_rows(8)), _pdf_of(test_parameters, _two_rows(48))
     assert abs(_top(thick, "Upper") - _top(thin, "Upper")) < 0.1
     assert abs((_top(thick, "Lower") - _top(thin, "Lower")) - 5) < 0.3
+
+
+def _head_of_two_lines(alignment: str | None) -> Document:
+    """A table whose header row has a cell of two lines beside cells of one line, aligned as given; #372."""
+    document = Document()
+    document.add_paragraph("A table whose header row has a cell of two lines.")
+    table = document.add_table(rows=3, cols=3)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    widths = (1800, 3600, 3626)
+    for column, width in zip(table._tbl.tblGrid.findall(qn("w:gridCol")), widths, strict=True):
+        column.set(qn("w:w"), str(width))
+    rows = (("Requirement of the system", "Status", "Owner"), ("REQ-1 Stores every change", "Approved", "Admin"), ("REQ-2", "Draft", "Editor"))
+    for row, texts in zip(table.rows, rows, strict=True):
+        for cell, text, width in zip(row.cells, texts, widths, strict=True):
+            cell.text = text
+            cell.width = Twips(width)
+    if alignment:
+        for cell in table.rows[0].cells:
+            cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="{alignment}"/>'))
+    return document
+
+
+def test_a_table_in_a_header_cell_leaves_the_alignment_of_the_cell(test_parameters: TestParameters):
+    """Word sets "Second header cell" on the last line of the header cell beside it, both at the bottom; #372.
+
+    That header cell holds a table whose header stands at the top. The position of the inner cell took the place
+    of the outer one, and the second cell stood 75pt high, at the top of the row.
+    """
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    head = table.rows[0].cells
+    for cell in head:
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="bottom"/>'))
+    head[0].text = "Outer header above a table:"
+    inner = head[0].add_table(rows=2, cols=2)
+    inner._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    for row, texts in zip(inner.rows, (("Inner A", "Inner B"), ("a", "b")), strict=True):
+        for cell, text in zip(row.cells, texts, strict=True):
+            cell.text = text
+    for cell in inner.rows[0].cells:
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="top"/>'))
+    head[0].add_paragraph("Last line of the outer header")
+    head[1].text = "Second header cell"
+    table.rows[1].cells[0].text = "Body"
+
+    pdf = _pdf_of(test_parameters, document)
+    assert abs(_baseline(pdf, "Second header") - _baseline(pdf, "Last line")) < 1
+
+
+def test_every_repeated_header_row_takes_the_first_row_alignment_of_the_style(test_parameters: TestParameters):
+    """Word sets "Short" of both rows which repeat on the last line of the cell beside it; #372.
+
+    The style aligns its first row at the bottom. Only the first row took it: "Short1" stood at the top.
+    """
+    document = Document()
+    style = document.styles.add_style("Header at the bottom", WD_STYLE_TYPE.TABLE)
+    style.element.append(parse_xml(f'<w:tblStylePr {nsdecls("w")} w:type="firstRow"><w:tcPr><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr>'))
+    table = document.add_table(rows=3, cols=2)
+    table.style = style
+    properties = table._tbl.tblPr
+    for found in properties.findall(qn("w:tblLook")):
+        properties.remove(found)
+    properties.append(parse_xml(f'<w:tblLook {nsdecls("w")} w:firstRow="1"/>'))
+    for index, row in enumerate(table.rows):
+        row.cells[0].text = f"Lead{index}"
+        row.cells[0].add_paragraph(f"End{index}")
+        row.cells[1].text = f"Short{index}"
+        if index < 2:
+            row._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+
+    pdf = _pdf_of(test_parameters, document)
+    for index in range(2):
+        assert abs(_baseline(pdf, f"Short{index}") - _baseline(pdf, f"End{index}")) < 1, index
+    assert abs(_baseline(pdf, "Short2") - _baseline(pdf, "Lead2")) < 1, "a row of the body stands at the top"
+
+
+@pytest.mark.parametrize(
+    ("look", "repeated", "repeat"),
+    [
+        ('w:firstRow="1"', 0, "on"),
+        ('w:firstRow="0"', 2, "on"),
+        ('w:firstRow="1"', 2, "on"),
+        (None, 0, "on"),
+        ('w:firstRow="0"', 0, "on"),
+        (None, 1, "on"),
+        (None, 2, "on"),
+        ('w:firstRow="true"', 0, "on"),
+        ('w:firstRow="on"', 0, "on"),
+        ('w:val="0020"', 0, "on"),
+        ('w:firstRow="0" w:val="0020"', 0, "on"),
+        (None, 1, "0"),
+        (None, 1, "false"),
+    ],
+    ids=["first-row", "repeated-rows", "both", "neither", "first-row-off", "one-repeated-row", "two-repeated-rows", "true", "on", "val", "first-row-off-over-val", "repeat-off", "repeat-false"],
+)
+def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters: TestParameters, look: str | None, repeated: int, repeat: str):
+    """The preprocessor carries an alignment for each row pandoc makes the header of, and no other; #372.
+
+    pandoc's reader makes a header of the rows which repeat on each page, and of the first row of a table whose
+    look turns its formatting on.
+    """
+    document = Document()
+    table = document.add_table(rows=4, cols=2)
+    properties = table._tbl.tblPr
+    for found in properties.findall(qn("w:tblLook")):
+        properties.remove(found)
+    if look is not None:
+        properties.append(parse_xml(f"<w:tblLook {nsdecls('w')} {look}/>"))
+    for index in range(repeated):
+        table.rows[index]._tr.get_or_add_trPr().append(parse_xml(f'<w:tblHeader {nsdecls("w")} w:val="{repeat}"/>'))
+    for index, row in enumerate(table.rows):
+        for cell in row.cells:
+            cell.text = f"row {index}"
+    docx = io.BytesIO()
+    document.save(docx)
+
+    with zipfile.ZipFile(docx) as package:
+        root = ET.fromstring(package.read("word/document.xml"))
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    tbl = root.find(f".//{w}tbl")
+    tagged = docx_table_pre_process._head_cell_alignments(tbl, {})
+    ours = sum(1 for row in tbl.findall(f"{w}tr") if any(tc in tagged for tc in row.findall(f"{w}tc")))
+
+    encoded = base64.b64encode(docx.getvalue()).decode()
+    exit_code, output = test_parameters.container.exec_run(["sh", "-c", f"mkdir -p /tmp/test && echo {encoded} | base64 -d > /tmp/test/head.docx && {PANDOC_PATH} -f docx -t native /tmp/test/head.docx"])
+    assert exit_code == 0, output.decode()
+    head = output.decode().split("TableHead", 1)[1].split("TableBody", 1)[0]
+    assert ours == len(re.findall(r"\bRow\b", head))
+
+
+@pytest.mark.parametrize(("alignment", "word"), [(None, 0.0), ("center", 7.2), ("bottom", 14.6)], ids=["none", "center", "bottom"])
+def test_a_cell_of_the_header_takes_its_vertical_alignment(test_parameters: TestParameters, alignment: str | None, word: float):
+    """Word sets "Status" as far below "Requirement" as the alignment of its cell says: on its line without one; #372.
+
+    pandoc sets every cell of the header at the bottom of its row: "Status" stood on the second line.
+    """
+    pdf = _pdf_of(test_parameters, _head_of_two_lines(alignment))
+    below = _baseline(pdf, "Status") - _baseline(pdf, "Requirement")
+    assert abs(below - word) < 1, (below, word)
+    assert _baseline(pdf, "system") - _baseline(pdf, "Requirement") > 10, "the first cell takes two lines"
 
 
 def _sized(text: str, payload: str = "") -> str:
