@@ -29,6 +29,16 @@ commandTests:
     command: bash
     args: [-c, test "$(find /opt/tectonic-cache -type f \( -name graphicx.sty -o -name longtable.sty -o -name colortbl.sty -o -name ulem.sty -o -name soul.sty -o -name geometry.sty -o -name lmmonolt10-bold.otf \) | wc -l)" -eq 7]
     exitCode: 0
+  # The files the docx filters ask for, and a size of the body: see warmup/warmup.md.
+  - name: Tectonic cache holds what a conversion of DOCX needs
+    command: bash
+    args: [-c, test "$(find /opt/tectonic-cache -type f \( -name titlesec.sty -o -name multirow.sty -o -name cancel.sty -o -name size12.clo -o -name svgnam.def \) | wc -l)" -eq 5]
+    exitCode: 0
+  # Tectonic reads only its cache: a conversion never waits for the bundle host, nor fails when it cannot be reached.
+  - name: Tectonic reads only its cache
+    command: bash
+    args: [-c, grep -q -- "--only-cached" /usr/bin/tectonic && test -x /usr/bin/tectonic-bundle]
+    exitCode: 0
   - name: rsvg-convert is weasysvg-convert for pandoc
     command: /opt/weasysvg/bin/rsvg-convert
     args: [--help]

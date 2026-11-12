@@ -81,14 +81,25 @@ ENV TECTONIC_CACHE_DIR=/opt/tectonic-cache
 # fast. Tectonic gives up after three retries roughly half a second apart, which such a limit outlives,
 # so the compile is repeated with a growing pause. Every attempt keeps what it already cached, which
 # walks the cache to completion. A build that never gets there fails on the missing pdf, on purpose.
-COPY warmup/ /tmp/warmup/
-RUN for delay in 0 20 40 60 90 120; do \
-        [ "${delay}" -eq 0 ] || { echo "warm-up failed, retrying in ${delay}s"; sleep "${delay}"; }; \
-        pandoc /tmp/warmup/warmup.md -o /tmp/warmup.pdf --pdf-engine=tectonic --resource-path=/tmp/warmup && break; \
-    done; \
-    test -f /tmp/warmup.pdf && \
+# The document is compiled in each size of the body LaTeX knows, which loads a file of its own.
+COPY warmup/warmup.md warmup/warmup.png /tmp/warmup/
+RUN for size in 10pt 11pt 12pt; do \
+        rm -f /tmp/warmup.pdf; \
+        for delay in 0 20 40 60 90 120; do \
+            [ "${delay}" -eq 0 ] || { echo "warm-up failed, retrying in ${delay}s"; sleep "${delay}"; }; \
+            pandoc /tmp/warmup/warmup.md -o /tmp/warmup.pdf --pdf-engine=tectonic --resource-path=/tmp/warmup -V "fontsize=${size}" && break; \
+        done; \
+        test -f /tmp/warmup.pdf || exit 1; \
+    done && \
     chmod -R a+rX "${TECTONIC_CACHE_DIR}" && \
     rm -rf /tmp/warmup /tmp/warmup.pdf
+
+# From here on tectonic reads only its cache: a conversion never waits for the bundle host, nor fails
+# when it cannot be reached. A file the warm-up missed fails the conversions which need it, each time,
+# and the check at the end of the build fails on it.
+RUN mv /usr/bin/tectonic /usr/bin/tectonic-bundle && \
+    printf '#!/bin/sh\nexec /usr/bin/tectonic-bundle --only-cached "$@"\n' > /usr/bin/tectonic && \
+    chmod 755 /usr/bin/tectonic
 
 ENV WORKING_DIR="/opt/pandoc"
 ENV PANDOC_SERVICE_VERSION="${APP_IMAGE_VERSION}"
@@ -161,6 +172,12 @@ RUN chmod +x "${WORKING_DIR}/entrypoint.sh" "${WORKING_DIR}/healthcheck.sh"
 COPY filters/html/ "/usr/local/share/pandoc/filters/html/"
 COPY filters/docx/ "/usr/local/share/pandoc/filters/docx/"
 COPY filters/common/ "/usr/local/share/pandoc/filters/common/"
+
+# The cache holds what a conversion of DOCX to PDF needs, in every size of the body: see warmup/warmup_docx.py
+COPY warmup/ /tmp/warmup/
+RUN PYTHONPATH="${WORKING_DIR}" uv run --no-sync python /tmp/warmup/warmup_docx.py /tmp/warmup && \
+    test -f /tmp/warmup/done && \
+    rm -rf /tmp/warmup
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/bin/sh", "-c", "./healthcheck.sh"]

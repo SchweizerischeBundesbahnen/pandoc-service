@@ -21,6 +21,18 @@ header-includes:
   - \usepackage{colortbl}
   - \usepackage{soul}
   - \usepackage[normalem]{ulem}
+  # The docx filters: headings and the table of contents in the styles of Word, merged cells, struck formulas
+  - \usepackage{titlesec}
+  - \usepackage{titletoc}
+  - \usepackage{multirow}
+  - \usepackage{cancel}
+  # Files the conversions read by name: tectonic fetches a file when TeX asks whether it exists. The colour
+  # names of xcolor, and the sizes of Latin Modern a script or a monospace run of a fallback font takes
+  - \IfFileExists{dvipsnam.def}{}{}\IfFileExists{svgnam.def}{}{}\IfFileExists{x11nam.def}{}{}\IfFileExists{line10.pfb}{}{}
+  - \IfFileExists{lmroman5-regular.otf}{}{}\IfFileExists{lmroman5-bold.otf}{}{}\IfFileExists{lmroman7-bold.otf}{}{}\IfFileExists{lmroman7-italic.otf}{}{}
+  - \IfFileExists{lmroman9-regular.otf}{}{}\IfFileExists{lmroman9-bold.otf}{}{}\IfFileExists{lmroman12-italic.otf}{}{}
+  - \IfFileExists{lmsans8-regular.otf}{}{}\IfFileExists{lmsans10-regular.otf}{}{}\IfFileExists{lmsans12-regular.otf}{}{}
+  - \IfFileExists{lmmono8-regular.otf}{}{}\IfFileExists{lmmono12-regular.otf}{}{}
 ---
 
 # Heading level one
