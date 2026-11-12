@@ -18,6 +18,8 @@
 --                             table cell, of the Compact style
 --   docx-table-plain-cell-space  the same for a cell paragraph without a
 --                             style, of the Normal style
+--   docx-table-plain-paragraph-space  the space between two such paragraphs:
+--                             the larger of the two spaces of Normal
 --   docx-table-cell-margin    the left and right margin of a table cell
 --   docx-page-numbers         false when no section has a header or footer,
 --                             so Word prints no page number
@@ -53,6 +55,7 @@ local BULLET_ASCENTS = "docx-list-bullet-ascents"
 local LIST_INDENTS = "docx-list-indents"
 local BULLET_LABELS = { "labelitemi", "labelitemii", "labelitemiii", "labelitemiv" }
 local PLAIN_CELL_SPACE = "docx-table-plain-cell-space"
+local PLAIN_PARAGRAPH_SPACE = "docx-table-plain-paragraph-space"
 local CELL_MARGIN = "docx-table-cell-margin"
 local PAGE_NUMBERS = "docx-page-numbers"
 local ACTUAL_TEXT = "docx-actual-text"
@@ -121,6 +124,8 @@ local function table_preamble(meta, lines)
   -- space of Normal below it: filters/docx/docx_tables_to_latex.lua adds it to the depth
   -- of each cell, and switches a table of paragraphs of the Compact style to its rows
   lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainCellSpace}{%gpt}", plain)
+  -- Between two of them Word puts the larger of the spaces of Normal: docx_tables_to_latex puts it there
+  lines[#lines + 1] = string.format("\\newcommand{\\pdcPlainParagraphSpace}{%gpt}", points(meta[PLAIN_PARAGRAPH_SPACE]) or plain)
   -- Only the rows of Compact need the line of the body
   local baseline = points(meta[BASELINE])
   if baseline ~= nil and baseline > 0 then
@@ -1179,6 +1184,11 @@ local function write_preamble(meta)
   lines[#lines + 1] = "\\def\\pdcDisplayLine#1{" .. open .. "#1" .. close .. "}"
   local cell_open, cell_close = display_line(true)
   lines[#lines + 1] = "\\def\\pdcCellDisplayLine#1{" .. cell_open .. "#1" .. cell_close .. "}"
+  if body_size and math_top and math_descent and body_descent then
+    -- What the line of an equation in a cell stands lower for the space before it, which a cell of Compact
+    -- leaves out: the space between two paragraphs of a cell in Normal takes it off, see docx_tables_to_latex
+    lines[#lines + 1] = string.format("\\def\\pdcCellEquationTop{%gbp}", EQUATION_TOP * body_size)
+  end
   -- The last paragraph of a cell: the cell ends it, centered, where a paragraph ended in the cell would add a line
   local last_close = cell_close:match("^(.-)\\par[^\\]*}$") or cell_close:match("^(.-)\\par\\prevdepth\\dp\\strutbox}$") or ""
   -- \\arraybackslash: the \\\\ after the cell ends the row, which \\centering would make a break of the line.
@@ -1189,7 +1199,7 @@ local function write_preamble(meta)
   title_preamble(lines)
   caption_preamble(lines)
   for key, _ in pairs(meta) do
-    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key == HANGING_PUNCTUATION or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
+    if key == SKIP or key == JUSTIFIED or key == HYPHENATED or key == SIZE or key == PARAGRAPH_SPACING or key == LIST_ITEM_SPACE or key == BULLET_ASCENTS or key == LIST_INDENTS or key == BASELINE or key == DESCENT or key == "docx-body-ascent" or key == CELL_SPACE or key == PLAIN_CELL_SPACE or key == PLAIN_PARAGRAPH_SPACE or key == CELL_MARGIN or key == PAGE_NUMBERS or key == ACTUAL_TEXT or key == HANGING_PUNCTUATION or key:sub(1, #STYLE_PREFIX) == STYLE_PREFIX then
       meta[key] = nil
     end
   end

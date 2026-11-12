@@ -1665,6 +1665,50 @@ local function space_before_tables(rows)
   end
 end
 
+-- Between two paragraphs of a cell in Normal, Word puts the larger of the space after the first and before
+-- the second, as between paragraphs of the body: \\pdcPlainParagraphSpace of docx_document_styles_to_latex.
+-- A cell set the paragraphs of a cell a line apart, and the space only after its last one; #380. The space goes
+-- below the last line of the first paragraph, as the space at the end of a cell does: a block of its own would
+-- turn the cell into a minipage.
+local PARAGRAPH_SPACE = "\\ifdefined\\pdcPlainParagraphSpace\\vadjust{\\kern\\pdcPlainParagraphSpace}\\fi"
+-- After an equation, whose line ends its paragraph: between the two paragraphs
+local AFTER_EQUATION_SPACE = "\\ifdefined\\pdcPlainParagraphSpace\\vskip\\pdcPlainParagraphSpace\\fi"
+-- Before an equation, less what its line stands lower in a cell for the space a cell of Compact leaves out
+local EQUATION_SPACE = "\\ifdefined\\pdcPlainParagraphSpace\\vadjust{\\kern\\dimexpr\\pdcPlainParagraphSpace\\ifdefined\\pdcCellEquationTop-\\pdcCellEquationTop\\fi\\relax}\\fi"
+
+local function paragraph(block)
+  return block and (block.t == "Plain" or block.t == "Para") and #block.content > 0
+end
+
+-- An equation of its own paragraph (see display_equations), behind the commands a cell puts before its text
+local function equation(block)
+  for _, inline in ipairs(block.content) do
+    if inline.t == "RawInline" and (inline.text:find("\\pdcDisplayLineEnd{", 1, true) or inline.text:find("\\pdcCellDisplayLine{", 1, true)) then
+      return true
+    end
+  end
+  return false
+end
+
+local function space_between_paragraphs(rows)
+  for _, row in ipairs(rows) do
+    for _, cell in ipairs(row.cells) do
+      for index, block in ipairs(cell.contents) do
+        local following = cell.contents[index + 1]
+        if paragraph(block) and paragraph(following) and equation(block) then
+          -- An equation sets a line of its own, which ends its paragraph: the space goes before the next line
+          block.content:insert(pandoc.RawInline("latex", AFTER_EQUATION_SPACE))
+        elseif paragraph(block) and paragraph(following) then
+          -- Into the last line of a paragraph in a size of its own, before the "\\par}" which ends it
+          local last = block.content[#block.content]
+          local own_line = last.t == "RawInline" and last.text == "\\par}"
+          block.content:insert(own_line and #block.content or #block.content + 1, pandoc.RawInline("latex", equation(following) and EQUATION_SPACE or PARAGRAPH_SPACE))
+        end
+      end
+    end
+  end
+end
+
 -- A word wider than its cell: Word keeps the widths of the grid and breaks the word at a character, as far
 -- out as the line goes; #371. \pdcWord measures a word in the font it stands in, against the line of the cell
 -- within the indents of the paragraph. A word which fits the line, or reaches only into the margin of its
@@ -1802,6 +1846,7 @@ function table_pass.Table(tbl)
     add_plain_cell_space(tbl.foot.rows, cell_end)
     if not layout.cc then
       space_before_tables(all_rows(tbl))
+      space_between_paragraphs(all_rows(tbl))
     end
     modified = true
   end
