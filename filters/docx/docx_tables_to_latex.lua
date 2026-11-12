@@ -942,13 +942,24 @@ local GRID_PREAMBLE = table.concat({
 -- Word sets the header row of a table at the foot of a page where it fits, and repeats it above the rows on the
 -- next page. longtable starts a table on the next page unless its first row fits as well, and keeps the two together.
 -- A minipage takes its position from \\@mpargs, {pos}{height}[inner]{width}, at its end: a cell of the header
--- sets its own from inside it. Outside a minipage the command changes nothing, which the next minipage defines anew
-local CELL_POS_PREAMBLE = table.concat({
+-- sets its own from inside it. The change goes out of the box of the minipage by \\aftergroup, a group at a time
+-- until the box itself has closed (\\currentgrouptype 4, a vbox), whatever groups the minipage opens inside it.
+-- So it applies to that minipage alone, and to no minipage around it, a cell holding a table among them. Each
+-- position has its own macros, so the position of an inner cell cannot take the place of an outer one. Outside a
+-- minipage the command changes nothing
+local CELL_POS_PREAMBLE = {
   "\\makeatletter",
-  "\\def\\pdcCellPos#1{\\ifdefined\\@mpargs\\expandafter\\pdc@cellpos\\@mpargs{#1}\\fi}",
-  "\\def\\pdc@cellpos#1#2[#3]#4#5{\\gdef\\@mpargs{{#5}{#2}[#3]{#4}}}",
-  "\\makeatother",
-}, "\n")
+  "\\def\\pdcCellPos#1{\\ifdefined\\@mpargs\\csname pdc@after@#1\\endcsname\\fi}",
+  "\\def\\pdc@cellpos#1#2[#3]#4#5{\\def\\@mpargs{{#5}{#2}[#3]{#4}}}",
+}
+for _, position in ipairs({ "t", "c", "b" }) do
+  CELL_POS_PREAMBLE[#CELL_POS_PREAMBLE + 1] = string.format(
+    "\\def\\pdc@after@%s{\\ifnum\\currentgrouptype=4 \\aftergroup\\pdc@apply@%s\\else\\aftergroup\\pdc@after@%s\\fi}"
+      .. "\\def\\pdc@apply@%s{\\expandafter\\pdc@cellpos\\@mpargs %s}",
+    position, position, position, position, position)
+end
+CELL_POS_PREAMBLE[#CELL_POS_PREAMBLE + 1] = "\\makeatother"
+CELL_POS_PREAMBLE = table.concat(CELL_POS_PREAMBLE, "\n")
 
 local HEAD_PREAMBLE = table.concat({
   "\\usepackage{etoolbox}",

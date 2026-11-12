@@ -62,7 +62,7 @@ from xml.etree import ElementTree as ET
 
 from . import docx_page_geometry
 from .docx_numbers import whole_number
-from .docx_ooxml import W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
+from .docx_ooxml import STYLES_PART, W_NS, enumerate_body_parts, parse_xml, read_entries, repack, serialize_tree
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -144,8 +144,10 @@ def preprocess(docx_bytes: bytes) -> bytes:
 
     changed = False
     width = docx_page_geometry.package_text_width_twips(entries)
+    # The table styles of the document, as the combined preprocess reads them (docx_latex_pre_process)
+    styles = table_styles(parse_xml(entries[STYLES_PART]) if STYLES_PART in entries else None)
     for part in enumerate_body_parts(entries.keys()):
-        rewritten, part_changed = rewrite_part(entries[part], width)
+        rewritten, part_changed = rewrite_part(entries[part], width, styles.bordered, styles.alignments)
         if part_changed:
             entries[part] = rewritten
             changed = True

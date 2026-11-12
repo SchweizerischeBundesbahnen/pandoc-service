@@ -54,6 +54,23 @@ def test_single_pass_matches_sequential_preprocessors():
         assert single_entries[name] == data, f"{name} differs between single-pass and sequential"
 
 
+def test_single_pass_matches_sequential_preprocessors_for_a_header_of_a_table_style():
+    """The standalone table preprocess reads the table styles as the single pass does: a header the style aligns; #372."""
+    styles = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        b'<w:style w:type="table" w:styleId="Table"><w:tblStylePr w:type="firstRow"><w:tcPr><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr></w:style>'
+        b"</w:styles>"
+    )
+    table = '<w:tbl><w:tblPr><w:tblStyle w:val="Table"/><w:tblLook w:firstRow="1"/></w:tblPr><w:tr><w:tc><w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    blob = _pack({"word/document.xml": _doc(table), "word/styles.xml": styles})
+
+    sequential = docx_math_color_pre_process.preprocess(docx_table_pre_process.preprocess(docx_list_level_pre_process.preprocess(docx_paragraph_pre_process.preprocess(docx_color_pre_process.preprocess(blob)))))
+    single = docx_latex_pre_process.preprocess(blob)
+
+    assert _entries(single)["word/document.xml"] == _entries(sequential)["word/document.xml"]
+    assert b"va=b" in _entries(single)["word/document.xml"]
+
+
 def test_media_is_preserved_and_changes_applied():
     blob = _pack({"word/document.xml": _BODY, "word/styles.xml": STYLES, "word/media/img.png": b"PNGDATA"})
     out = _entries(docx_latex_pre_process.preprocess(blob))

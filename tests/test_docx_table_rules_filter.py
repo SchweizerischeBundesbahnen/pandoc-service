@@ -565,6 +565,35 @@ def _head_of_two_lines(alignment: str | None) -> Document:
     return document
 
 
+def test_a_table_in_a_header_cell_leaves_the_alignment_of_the_cell(test_parameters: TestParameters):
+    """Word sets "Second header cell" on the last line of the header cell beside it, both at the bottom; #372.
+
+    That header cell holds a table whose header stands at the top. The position of the inner cell took the place
+    of the outer one, and the second cell stood 75pt high, at the top of the row.
+    """
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    sides = "".join(f'<w:{side} w:val="single" w:sz="4" w:color="000000"/>' for side in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    table._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    head = table.rows[0].cells
+    for cell in head:
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="bottom"/>'))
+    head[0].text = "Outer header above a table:"
+    inner = head[0].add_table(rows=2, cols=2)
+    inner._tbl.tblPr.append(parse_xml(f"<w:tblBorders {nsdecls('w')}>{sides}</w:tblBorders>"))
+    for row, texts in zip(inner.rows, (("Inner A", "Inner B"), ("a", "b")), strict=True):
+        for cell, text in zip(row.cells, texts, strict=True):
+            cell.text = text
+    for cell in inner.rows[0].cells:
+        cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:vAlign {nsdecls("w")} w:val="top"/>'))
+    head[0].add_paragraph("Last line of the outer header")
+    head[1].text = "Second header cell"
+    table.rows[1].cells[0].text = "Body"
+
+    pdf = _pdf_of(test_parameters, document)
+    assert abs(_baseline(pdf, "Second header") - _baseline(pdf, "Last line")) < 1
+
+
 @pytest.mark.parametrize(
     ("look", "repeated"),
     [("1", 0), ("0", 2), ("1", 2), (None, 0), ("0", 0), (None, 1), (None, 2)],
