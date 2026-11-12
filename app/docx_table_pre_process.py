@@ -701,6 +701,12 @@ def _first_row_look(tblpr: ET.Element | None, on: tuple[str, ...]) -> bool:
     return first_row in on if first_row is not None else _look_bits(look.get(_VAL_ATTR)) & _FIRST_ROW_BIT != 0
 
 
+def _repeats(row: ET.Element) -> bool:
+    """Whether the row repeats on each page, which makes it a header for pandoc: it takes every w:tblHeader but "0"."""
+    header = row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader")
+    return header is not None and header.get(_VAL_ATTR) != "0"
+
+
 def _first_row_formatting(tblpr: ET.Element | None) -> bool:
     """Whether Word formats the header rows with the first-row formatting of the table style."""
     return _first_row_look(tblpr, ("1", "true", "on"))
@@ -776,7 +782,7 @@ def _head_cell_alignments(tbl: ET.Element, alignments: Mapping[str, tuple[str | 
     first_row = _first_row_formatting(tblpr)
     rows = tbl.findall(_TR_TAG)
     count = 0
-    while count < len(rows) and rows[count].find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None:
+    while count < len(rows) and _repeats(rows[count]):
         count += 1
     count = max(count, 1 if _first_row_head(tblpr) and rows else 0)
     style = tblpr.find(f"{{{W_NS}}}tblStyle") if tblpr is not None else None
@@ -801,7 +807,7 @@ def _rules(tbl: ET.Element, bordered_styles: frozenset[str]) -> str:
     ):
         return "grid"
     first_row = _first_row_formatting(tblpr)
-    has_header = any(row.find(f"{{{W_NS}}}trPr/{{{W_NS}}}tblHeader") is not None for row in tbl.findall(f"{{{W_NS}}}tr"))
+    has_header = any(_repeats(row) for row in tbl.findall(f"{{{W_NS}}}tr"))
     return "head" if first_row and has_header else "none"
 
 

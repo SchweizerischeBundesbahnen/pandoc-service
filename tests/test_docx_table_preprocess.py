@@ -692,6 +692,10 @@ def test_a_first_row_turned_off_goes_before_the_bit_of_the_look():
     assert _rules_of(_styled_table('<w:tblLook w:firstRow="0" w:val="0020"/>', header=True)) == "none"
 
 
+def test_a_row_whose_repetition_is_turned_off_draws_no_line():
+    assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>', header=True).replace('<w:tblHeader w:val="on"/>', '<w:tblHeader w:val="0"/>')) == "none"
+
+
 def test_a_first_row_look_without_a_header_row_draws_no_line():
     assert _rules_of(_styled_table('<w:tblLook w:firstRow="1"/>')) == "none"
 
@@ -916,13 +920,16 @@ def test_the_table_styles_give_the_alignment_of_the_first_row_and_of_the_table()
     assert docx_table_pre_process.head_alignments(None) == {}
 
 
-def _two_rows(tblpr: str = "", first_tcpr: str = "", header: bool = False, headers: int | None = None) -> str:
-    """A table of two rows; the first ``headers`` rows repeat on each page, the first one if ``header``."""
-    trpr = '<w:trPr><w:tblHeader w:val="on"/></w:trPr>'
+def _two_rows(tblpr: str = "", first_tcpr: str = "", header: bool = False, headers: int | None = None, repeat: str = "on") -> str:
+    """A table of three rows; the first ``headers`` rows repeat on each page, the first one if ``header``."""
+    trpr = f'<w:trPr><w:tblHeader w:val="{repeat}"/></w:trPr>'
     count = headers if headers is not None else int(header)
-    first = f"<w:tc>{first_tcpr}<w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Other</w:t></w:r></w:p></w:tc>"
-    body = "<w:tc><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>More</w:t></w:r></w:p></w:tc>"
-    return f"<w:tbl><w:tblPr>{tblpr}</w:tblPr><w:tr>{trpr if count > 0 else ''}{first}</w:tr><w:tr>{trpr if count > 1 else ''}{body}</w:tr><w:tr>{body}</w:tr></w:tbl>"
+
+    def row(texts: tuple[str, str], tcpr: str = "") -> str:
+        return "".join(f"<w:tc>{tcpr if index == 0 else ''}<w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>" for index, text in enumerate(texts))
+
+    rows = (row(("Head", "Other"), first_tcpr), row(("Body", "More")), row(("Last", "End")))
+    return f"<w:tbl><w:tblPr>{tblpr}</w:tblPr>" + "".join(f"<w:tr>{trpr if index < count else ''}{cells}</w:tr>" for index, cells in enumerate(rows)) + "</w:tbl>"
 
 
 def _alignments_of(table: str) -> dict[str, str]:
@@ -964,6 +971,9 @@ def _alignments_of(table: str) -> dict[str, str]:
         # Word turns the formatting on for "true", pandoc makes a header only of "1"
         pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="true"/>', header=True), {"Head": "b", "Other": "b"}, id="true-formats"),
         pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="true"/>'), {}, id="true-is-no-header"),
+        # pandoc keeps a row in the body whose w:tblHeader is "0", and only that value
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0"/>', header=True, repeat="0"), {}, id="repeat-off"),
+        pytest.param(_two_rows('<w:tblStyle w:val="Table"/><w:tblLook w:firstRow="0"/>', header=True, repeat="false"), {"Head": "t", "Other": "t"}, id="repeat-false"),
     ],
 )
 def test_the_cells_of_the_first_row_carry_their_vertical_alignment(table: str, expected: dict[str, str]):

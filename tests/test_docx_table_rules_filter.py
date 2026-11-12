@@ -622,23 +622,25 @@ def test_every_repeated_header_row_takes_the_first_row_alignment_of_the_style(te
 
 
 @pytest.mark.parametrize(
-    ("look", "repeated"),
+    ("look", "repeated", "repeat"),
     [
-        ('w:firstRow="1"', 0),
-        ('w:firstRow="0"', 2),
-        ('w:firstRow="1"', 2),
-        (None, 0),
-        ('w:firstRow="0"', 0),
-        (None, 1),
-        (None, 2),
-        ('w:firstRow="true"', 0),
-        ('w:firstRow="on"', 0),
-        ('w:val="0020"', 0),
-        ('w:firstRow="0" w:val="0020"', 0),
+        ('w:firstRow="1"', 0, "on"),
+        ('w:firstRow="0"', 2, "on"),
+        ('w:firstRow="1"', 2, "on"),
+        (None, 0, "on"),
+        ('w:firstRow="0"', 0, "on"),
+        (None, 1, "on"),
+        (None, 2, "on"),
+        ('w:firstRow="true"', 0, "on"),
+        ('w:firstRow="on"', 0, "on"),
+        ('w:val="0020"', 0, "on"),
+        ('w:firstRow="0" w:val="0020"', 0, "on"),
+        (None, 1, "0"),
+        (None, 1, "false"),
     ],
-    ids=["first-row", "repeated-rows", "both", "neither", "first-row-off", "one-repeated-row", "two-repeated-rows", "true", "on", "val", "first-row-off-over-val"],
+    ids=["first-row", "repeated-rows", "both", "neither", "first-row-off", "one-repeated-row", "two-repeated-rows", "true", "on", "val", "first-row-off-over-val", "repeat-off", "repeat-false"],
 )
-def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters: TestParameters, look: str | None, repeated: int):
+def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters: TestParameters, look: str | None, repeated: int, repeat: str):
     """The preprocessor carries an alignment for each row pandoc makes the header of, and no other; #372.
 
     pandoc's reader makes a header of the rows which repeat on each page, and of the first row of a table whose
@@ -652,7 +654,7 @@ def test_the_header_rows_of_the_preprocessor_are_those_of_pandoc(test_parameters
     if look is not None:
         properties.append(parse_xml(f"<w:tblLook {nsdecls('w')} {look}/>"))
     for index in range(repeated):
-        table.rows[index]._tr.get_or_add_trPr().append(parse_xml(f"<w:tblHeader {nsdecls('w')}/>"))
+        table.rows[index]._tr.get_or_add_trPr().append(parse_xml(f'<w:tblHeader {nsdecls("w")} w:val="{repeat}"/>'))
     for index, row in enumerate(table.rows):
         for cell in row.cells:
             cell.text = f"row {index}"
