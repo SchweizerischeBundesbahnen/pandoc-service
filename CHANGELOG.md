@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.15.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.2...v2.15.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency pypdfium2 to v5.15.2 ([0cf85a6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/0cf85a66fdd8795593430b577050099a3dc9e510))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.13.8 ([3e06cab](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/3e06cabc2a9b142a1281315cc238bc9bcb4a1082))
+* keep comments in the cells of a styled table ([#388](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/388)) ([0237901](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/02379012d77022e720d14bb870d6418fe06b855b)), closes [#387](https://github.com/SchweizerischeBundesbahnen/pandoc-service/issues/387)
+
 ## [2.15.2](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.1...v2.15.2) (2026-11-12)
 
 
