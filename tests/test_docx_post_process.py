@@ -1,13 +1,18 @@
+import io
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
+from docx import Document
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
 from docx.table import Table, _Cell
 from lxml import etree
 
 from app import docx_post_process
 from app.docx_post_process import (
+    RAW_COMMENTS_BOOKMARK,
     SCHEMA,
     _has_existing_fixed_width,
     _process_table,
@@ -3443,3 +3448,24 @@ def test_process_keeps_the_orientation_the_dropped_break_states():
     assert _body_texts(result) == ["chapter"]
     assert len(result.sections) == 1
     assert _last_page_size(result).get(f"{{{SCHEMA}}}orient") == "landscape"
+
+
+def test_process_removes_the_paragraph_which_names_raw_comments_to_the_writer():
+    """The filter names the comments inside raw OOXML to pandoc's writer in a paragraph of its own (inline_styles.lua).
+
+    The writer leaves the start of each of these comments there a second time, so the paragraph
+    must not stay in the document. A paragraph with the bookmark of an identifier stays.
+    """
+    document = Document()
+    document.add_paragraph("Commented")._p.append(parse_xml(f'<w:commentRangeStart {nsdecls("w")} w:id="0"/>'))
+    document.add_paragraph("Bookmarked")._p.append(parse_xml(f'<w:bookmarkStart {nsdecls("w")} w:id="1" w:name="_{RAW_COMMENTS_BOOKMARK}"/>'))
+    registration = document.add_paragraph()._p
+    registration.append(parse_xml(f'<w:bookmarkStart {nsdecls("w")} w:id="2" w:name="{RAW_COMMENTS_BOOKMARK}"/>'))
+    registration.append(parse_xml(f'<w:commentRangeStart {nsdecls("w")} w:id="0"/>'))
+    docx = io.BytesIO()
+    document.save(docx)
+
+    processed = Document(io.BytesIO(docx_post_process.process(docx.getvalue())))
+
+    assert [paragraph.text for paragraph in processed.paragraphs] == ["Commented", "Bookmarked"]
+    assert len(processed.element.body.findall(f".//{{{SCHEMA}}}commentRangeStart")) == 1

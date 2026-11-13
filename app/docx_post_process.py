@@ -110,6 +110,8 @@ def process(
     image_sizes: dict[str, list[RequestedSize]] | None = None,
 ) -> bytes:
     doc = Document(io.BytesIO(docx_bytes))
+    # Before every other step, so that none of them takes the paragraph for content of the document.
+    _remove_raw_comment_registrations(doc)
     # Read before the paper size replaces the page pandoc sized its images against.
     text_width = _pandoc_text_width_emu(doc)
     _move_header_footer_references_to_first_section(doc)
@@ -166,6 +168,9 @@ _UNIT_TO_EMU: dict[str, float] = {
 # S5852's "multiple \s* quantifiers" heuristic.
 _DIMENSION_RE = re.compile(r"^(\d+(?:\.\d+)?)([a-z]*|%)$", re.IGNORECASE)
 _HREF_PLACEHOLDER_RE = re.compile(r"\{\{HREF:(.*?)\}\}")
+
+# RAW_COMMENTS_BOOKMARK in filters/html/inline_styles.lua
+RAW_COMMENTS_BOOKMARK = "pandoc_service_comments"
 
 RELATIONSHIPS_SCHEMA = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"  # NOSONAR
 
@@ -610,6 +615,21 @@ _TABLE_RANGE_MARKERS = frozenset(
         "proofErr",
     }
 )
+
+
+def _remove_raw_comment_registrations(doc: DocumentObject) -> None:
+    """Remove the paragraph which named the comments inside raw OOXML to pandoc's writer.
+
+    A styled table and a paragraph with an indent or an alignment are written as raw OOXML
+    (``filters/html/inline_styles.lua``), where the writer sees no comment. The filter writes the
+    markers of such a comment itself, and names the comment once more in a paragraph at the end of
+    the document, so that the writer makes its entry in ``word/comments.xml``. There the writer
+    leaves the start of the comment's range a second time, far from the commented text. The
+    paragraph holds nothing else, and the bookmark tells which one it is.
+    """
+    for bookmark in doc.element.body.findall(f".//{{{SCHEMA}}}p/{{{SCHEMA}}}bookmarkStart[@{{{SCHEMA}}}name='{RAW_COMMENTS_BOOKMARK}']"):
+        paragraph = bookmark.getparent()
+        paragraph.getparent().remove(paragraph)
 
 
 def _is_table_range_marker(element: Any) -> bool:
