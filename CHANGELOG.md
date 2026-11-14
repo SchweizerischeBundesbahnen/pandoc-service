@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.15.4](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.3...v2.15.4) (2026-11-14)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fastapi to v0.162.4 ([c05b62e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c05b62e464359698e69206001afc37320c8b6d6e))
+* **deps:** update dependency pypdf to v7.0.1 ([dc9aae9](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/dc9aae9c332647b1635ebd47db572b2305cee6b9))
+
 ## [2.15.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.2...v2.15.3) (2026-11-13)
 
 
