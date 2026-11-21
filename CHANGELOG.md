@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.16.0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.3...v2.16.0) (2026-11-21)
+
+
+### Features
+
+* **deps:** update dependency jgm/pandoc to v3.14 ([9b2fcc7](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9b2fcc727000b1581fbcb37664cef2044520af39))
+
+
+### Bug Fixes
+
+* **deps:** update dependency coverage to v7.17.3 ([d6282cd](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d6282cddad306f307138430f072b3774944340de))
+* **deps:** update dependency fastapi to v0.162.4 ([c05b62e](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/c05b62e464359698e69206001afc37320c8b6d6e))
+* **deps:** update dependency fastapi to v0.162.5 ([148c1f0](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/148c1f00b9547cbed055e147ac00800414f50a1c))
+* **deps:** update dependency fastapi to v0.162.7 ([9dcc992](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/9dcc992baf776ea09c7fad125d28b5e70c75a621))
+* **deps:** update dependency fastapi to v0.163.0 ([d558510](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/d55851074595eacbbfbb38a04a263a4008f4305b))
+* **deps:** update dependency fastapi to v0.163.1 ([0514f46](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/0514f46763471582fd486f9f40185e5fe18ebd12))
+* **deps:** update dependency fastapi to v0.163.2 ([6bc5faa](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/6bc5faaa47a330eb73500335de666dde14871947))
+* **deps:** update dependency pypdf to v7.0.1 ([dc9aae9](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/dc9aae9c332647b1635ebd47db572b2305cee6b9))
+* **deps:** update dependency pypdf to v7.1.0 ([29a0704](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/29a070479573c0556eb3bdc209b0a45583c19d47))
+* **deps:** update dependency pytest-asyncio to v1.5.0 ([e6e7ef6](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e6e7ef66882826216de592b2b5b9d1b4f17a39da))
+* **deps:** update dependency python-multipart to v0.0.34 ([b369249](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/b3692491c5baf4dd53f5f50bb26d3fe594c99e78))
+* **deps:** update dependency ruff to v0.17.5 ([e2e8c6d](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e2e8c6d3192c7dcacb26d576380f9309b1bfe488))
+* **deps:** update dependency tox to v4.67.15 ([e5ea924](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/e5ea9249a6e0b4a6be26678fa67eb2219d99127d))
+* **deps:** update ghcr.io/astral-sh/uv docker tag to v0.13.9 ([fdbad25](https://github.com/SchweizerischeBundesbahnen/pandoc-service/commit/fdbad25da9f5570086369ca502a8090a37d55e37))
+
 ## [2.15.3](https://github.com/SchweizerischeBundesbahnen/pandoc-service/compare/v2.15.2...v2.15.3) (2026-11-13)
 
 
