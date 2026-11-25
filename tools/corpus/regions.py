@@ -110,7 +110,10 @@ def compare_documents(reference_pdf: Path, converted_pdf: Path | None, differenc
         for number in range(max(len(reference), len(converted) if converted is not None else 0)):
             reference_image = render(reference[number]) if number < len(reference) else None
             converted_image = render(converted[number]) if converted is not None and number < len(converted) else None
-            size = (reference_image or converted_image).size  # ty: ignore[unresolved-attribute]
+            present = reference_image if reference_image is not None else converted_image
+            if present is None:  # the loop counts only pages one of the documents has
+                continue
+            size = present.size
             reference_image = reference_image or Image.new("L", size, 255)
             converted_image = converted_image or Image.new("L", size, 255)
             regions = compare_masks(ink(reference_image), ink(converted_image))
