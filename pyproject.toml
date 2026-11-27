@@ -42,7 +42,7 @@ test = [
     "pytest-timeout==2.4.0",
     "httpx==0.28.1",
     "pypdf==7.1.1",  # reads the text of a produced PDF in the container tests
-    "coverage==7.17.4",
+    "coverage==7.17.5",
     "pypdfium2==5.15.2",  # renders the pages of a produced PDF for the visual tests
     "pillow==13.0.0",  # reads and writes the page images of the visual tests
 ]
